@@ -1,0 +1,37 @@
+{
+  "name": "kairo-anime-platform",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "deploy": "npm run build && wrangler deploy",
+    "cf:typegen": "wrangler types",
+    "db:create": "wrangler d1 create kairo-db",
+    "db:migrate:local": "wrangler d1 migrations apply kairo-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply kairo-db --remote",
+    "typecheck": "tsc -b --pretty",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^5.0.4",
+    "hono": "^4.9.8",
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-router-dom": "^7.9.5"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.13.0",
+    "@cloudflare/workers-types": "^4.20261104.0",
+    "@types/react": "^19.1.16",
+    "@types/react-dom": "^19.1.9",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12",
+    "vitest": "^3.2.4",
+    "wrangler": "^4.68.0"
+  }
+}
