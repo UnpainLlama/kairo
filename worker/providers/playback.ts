@@ -107,7 +107,7 @@ export async function resolvePlayback(
   } catch {
     return { ok: false, code: 'PROVIDER_UNAVAILABLE', message: 'The playback provider did not respond. Please try again.' };
   } finally {
-    clearTimeout(timer);
+    if (timer !== undefined) clearTimeout(timer);
   }
 
   if (raw === null || raw === undefined) return { ok: false, code: 'SOURCE_UNAVAILABLE', message: 'No playable source is available for this episode.' };
