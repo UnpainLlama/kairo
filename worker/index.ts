@@ -1,6 +1,8 @@
 /// <reference types="@cloudflare/workers-types" />
 import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
+import { boundedInt, parseId, parsePagination, parseSearchParams } from './lib/validation';
+import { GENRES_SQL, buildListQuery, buildRelatedQuery, buildSearchQuery } from './repositories/catalog';
 
 interface Bindings {
   DB: D1Database;
@@ -9,6 +11,7 @@ interface Bindings {
 }
 
 type Variables = { requestId: string };
+type AppContext = Context<{ Bindings: Bindings; Variables: Variables }>;
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 app.use('/api/*', async (c, next) => {
@@ -37,13 +40,6 @@ function fail(c: Context<{ Bindings: Bindings; Variables: Variables }>, status: 
   return c.json({ success: false, error: { code, message }, meta: { requestId: c.get('requestId') } }, status);
 }
 
-function boundedInt(value: string | undefined, fallback: number, min: number, max: number): number | null {
-  if (value === undefined || value === '') return fallback;
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < min || parsed > max) return null;
-  return parsed;
-}
-
 app.get('/api/health', (c) => ok(c, { status: 'ok', service: 'kairo-api', environment: c.env.APP_ENV ?? 'unknown' }));
 
 app.get('/api/v1/catalog/featured', async (c) => {
@@ -66,32 +62,63 @@ app.get('/api/v1/catalog/featured', async (c) => {
   }
 });
 
-app.get('/api/v1/catalog/search', async (c) => {
-  const query = (c.req.query('q') ?? '').trim();
-  const page = boundedInt(c.req.query('page'), 1, 1, 500);
-  const limit = boundedInt(c.req.query('limit'), 24, 1, 50);
-  if (query.length < 2 || query.length > 100 || page === null || limit === null) {
-    return fail(c, 400, 'VALIDATION_ERROR', 'Provide a search query of 2–100 characters and valid pagination values.');
-  }
+app.get('/api/ready', async (c) => {
   try {
-    const pattern = `%${query.replace(/[\\%_]/g, '\\$&')}%`;
-    const offset = (page - 1) * limit;
-    const [itemsResult, countResult] = await Promise.all([
-      c.env.DB.prepare(
-        `SELECT id, slug, title, synopsis, poster_url AS posterUrl, format,
-                release_year AS releaseYear, rating, episode_count AS episodeCount
-         FROM anime WHERE title LIKE ? ESCAPE '\\' OR alt_titles_json LIKE ? ESCAPE '\\'
-         ORDER BY popularity_score DESC, title COLLATE NOCASE LIMIT ? OFFSET ?`
-      ).bind(pattern, pattern, limit, offset).all(),
-      c.env.DB.prepare(
-        `SELECT COUNT(*) AS total FROM anime WHERE title LIKE ? ESCAPE '\\' OR alt_titles_json LIKE ? ESCAPE '\\'`
-      ).bind(pattern, pattern).first<{ total: number }>(),
-    ]);
-    const total = Number(countResult?.total ?? 0);
-    return ok(c, { items: itemsResult.results ?? [] }, { page, limit, total, hasNextPage: offset + limit < total });
+    await c.env.DB.prepare('SELECT 1 AS ok').first();
+    return ok(c, { status: 'ready', database: 'ok' });
   } catch (error) {
-    console.error(JSON.stringify({ event: 'catalog_search_failed', requestId: c.get('requestId'), message: error instanceof Error ? error.message : 'unknown' }));
+    logError(c, 'readiness_failed', error);
+    return fail(c, 503, 'CATALOG_UNAVAILABLE', 'The service is not ready.');
+  }
+});
+
+function listRoute(kind: 'trending' | 'latest') {
+  return async (c: AppContext) => {
+    const paging = parsePagination(c.req.query());
+    if (!paging.ok) return fail(c, 400, 'VALIDATION_ERROR', paging.message);
+    const { page, limit, offset } = paging.value;
+    const built = buildListQuery(kind, paging.value);
+    try {
+      const [items, count] = await Promise.all([
+        c.env.DB.prepare(built.sql).bind(...built.binds).all(),
+        c.env.DB.prepare(built.countSql).first<{ total: number }>(),
+      ]);
+      const total = Number(count?.total ?? 0);
+      return ok(c, { items: (items.results ?? []).map((row: Record<string, unknown>) => toCard(row)) }, { page, limit, total, hasNextPage: offset + limit < total });
+    } catch (error) {
+      logError(c, `catalog_${kind}_failed`, error);
+      return fail(c, 503, 'CATALOG_UNAVAILABLE', 'The catalogue is temporarily unavailable.');
+    }
+  };
+}
+app.get('/api/v1/catalog/trending', listRoute('trending'));
+app.get('/api/v1/catalog/latest', listRoute('latest'));
+
+app.get('/api/v1/catalog/search', async (c) => {
+  const parsed = parseSearchParams(c.req.query());
+  if (!parsed.ok) return fail(c, 400, 'VALIDATION_ERROR', parsed.message);
+  const { page, limit, offset } = parsed.value;
+  const built = buildSearchQuery(parsed.value);
+  try {
+    const [items, count] = await Promise.all([
+      c.env.DB.prepare(built.sql).bind(...built.binds).all(),
+      c.env.DB.prepare(built.countSql).bind(...built.countBinds).first<{ total: number }>(),
+    ]);
+    const total = Number(count?.total ?? 0);
+    return ok(c, { items: (items.results ?? []).map((row: Record<string, unknown>) => toCard(row)) }, { page, limit, total, hasNextPage: offset + limit < total });
+  } catch (error) {
+    logError(c, 'catalog_search_failed', error);
     return fail(c, 503, 'CATALOG_UNAVAILABLE', 'Search is temporarily unavailable.');
+  }
+});
+
+app.get('/api/v1/catalog/genres', async (c) => {
+  try {
+    const result = await c.env.DB.prepare(GENRES_SQL).all<{ name: string; count: number }>();
+    return ok(c, { items: result.results ?? [] });
+  } catch (error) {
+    logError(c, 'catalog_genres_failed', error);
+    return fail(c, 503, 'CATALOG_UNAVAILABLE', 'Genres are temporarily unavailable.');
   }
 });
 
@@ -140,6 +167,24 @@ app.get('/api/v1/anime/:id/episodes', async (c) => {
   }
 });
 
+app.get('/api/v1/anime/:id/related', async (c) => {
+  const id = parseId(c.req.param('id'));
+  const limit = boundedInt(c.req.query('limit'), 12, 1, 24);
+  if (id === null || limit === null) return fail(c, 400, 'VALIDATION_ERROR', 'Invalid title identifier or limit.');
+  try {
+    const source = await c.env.DB.prepare('SELECT id, genres_json AS genresJson FROM anime WHERE id = ? OR slug = ? LIMIT 1').bind(id, id).first<{ id: string; genresJson: string }>();
+    if (!source) return fail(c, 404, 'RESOURCE_NOT_FOUND', 'The requested title was not found.');
+    const genres = safeJsonArray(source.genresJson).filter((g): g is string => typeof g === 'string');
+    if (genres.length === 0) return ok(c, { items: [] }, { basis: 'shared_genres', limit });
+    const built = buildRelatedQuery(source.id, genres, limit);
+    const result = await c.env.DB.prepare(built.sql).bind(...built.binds).all();
+    return ok(c, { items: (result.results ?? []).map((row: Record<string, unknown>) => toCard(row)) }, { basis: 'shared_genres', limit });
+  } catch (error) {
+    logError(c, 'anime_related_failed', error);
+    return fail(c, 503, 'CATALOG_UNAVAILABLE', 'Related titles are temporarily unavailable.');
+  }
+});
+
 app.get('/api/v1/me', (c) => fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your profile.'));
 app.get('/api/v1/me/library', (c) => fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your library.'));
 app.get('/api/v1/episodes/:episodeId/playback', (c) => fail(c, 503, 'SOURCE_UNAVAILABLE', 'No authorized playback provider is configured.'));
@@ -149,6 +194,14 @@ app.onError((error, c) => {
   console.error(JSON.stringify({ event: 'unhandled_worker_error', requestId: c.get('requestId'), message: error.message }));
   return fail(c, 500, 'INTERNAL_ERROR', 'An unexpected error occurred.');
 });
+
+function toCard(row: Record<string, unknown>) {
+  return { ...row, genres: safeJsonArray(row.genresJson), genresJson: undefined };
+}
+
+function logError(c: AppContext, event: string, error: unknown) {
+  console.error(JSON.stringify({ event, requestId: c.get('requestId'), message: error instanceof Error ? error.message : 'unknown' }));
+}
 
 function safeJsonArray(value: unknown): unknown[] {
   if (typeof value !== 'string') return [];
