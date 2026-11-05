@@ -40,7 +40,8 @@ Do not expose stack traces, SQL, provider tokens, internal hostnames, or secret 
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/health` | Basic health probe |
+| GET | `/api/health` | Liveness probe (no dependencies) |
+| GET | `/api/ready` | Readiness probe (verifies D1 is reachable; 503 `CATALOG_UNAVAILABLE` otherwise) |
 | GET | `/api/v1/catalog/featured` | Featured titles |
 | GET | `/api/v1/catalog/trending?page=1&limit=24` | Trending titles |
 | GET | `/api/v1/catalog/latest?page=1&limit=24` | Recently updated titles |
@@ -54,8 +55,15 @@ Search parameters:
 - `q`: trimmed string, 2–100 characters.
 - `page`: integer 1–500.
 - `limit`: integer 1–50; default 24.
-- Optional filters: `genre`, `year`, `format`, `status`, `season`, `sort`.
+- Optional filters: `genre` (letters/numbers/space/`&`/`'`/`-`, up to 40 chars, matched case-insensitively against a title's genre list), `year` (1900–2100), `format` (`series|movie|ova|ona|special`), `status` (`airing|finished|upcoming|hiatus`), `season` (`winter|spring|summer|fall`), `sort` (`relevance|popularity|latest|rating`). Enum values are case-insensitive. Stored catalogue values must be normalised to these forms at ingestion for the filters to match.
+- `sort=rating` places titles without a rating last; it never invents a rating.
 - Reject invalid sort keys rather than interpolating them into SQL.
+
+### Implementation notes (current behaviour)
+
+- `trending` ranks by the stored `popularity_score`; `latest` ranks by the catalogue row's `updated_at`. Both are only as meaningful as the ingested data.
+- `genres` returns `{ items: [{ name, count }] }`, derived from each title's stored genre list. Rows with malformed genre JSON are skipped.
+- `related` currently means *titles sharing genres* (ranked by overlap, then popularity). Each item also carries `sharedGenres`, and `meta.basis` is `"shared_genres"`. Provider-supplied relations (sequels, prequels) need a schema addition and are not implemented. Accepts `limit` (1–24, default 12).
 
 ## 3. Authenticated user routes
 
@@ -125,6 +133,7 @@ The example is a schema illustration, not a live URL. Return only provider-autho
 - `RESOURCE_NOT_FOUND` — missing record.
 - `SOURCE_UNAVAILABLE` — authorized provider has no playable source.
 - `PROVIDER_UNAVAILABLE` — provider timed out or returned an error.
+- `CATALOG_UNAVAILABLE` — the catalogue database could not be read (HTTP 503).
 - `RATE_LIMITED` — request limit reached.
 - `INTERNAL_ERROR` — unexpected server error.
 
