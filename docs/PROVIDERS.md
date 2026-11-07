@@ -68,11 +68,11 @@ Static priority per field, highest first: **anilist, kitsu, manami**, with unlis
 
 ## 4. Configuration steps (owner)
 
-**Which providers are on.** `wrangler.jsonc` > `vars` > `METADATA_PROVIDERS` is a comma-separated list. It ships as `"anilist"`. Empty means no live providers (the site still works from the stored catalogue). To enable Kitsu later, first read https://kitsu.io/terms and confirm its limits, then set `"anilist,kitsu"`.
+**Which providers are on.** This experiment branch uses `LIVE_PROVIDERS` for the live catalogue (`jikan` in development and staging). `METADATA_PROVIDERS` controls the separate stored-catalogue enrichment path; it is blank in development and staging on this branch. The `production` block is unchanged and still lists AniList, so this experiment does not alter production's provider configuration.
 
-**Cache.** The KV namespace and its `METADATA_CACHE` binding are declared per environment in `wrangler.jsonc`; creating it is step 2b of docs/DEPLOYMENT.md. Without it the Worker still runs, using the Cache API (no effect on workers.dev) or per-isolate memory.
+**Episode discovery.** `EPISODE_PROVIDERS` is independent of `LIVE_PROVIDERS`: staging uses `hianime,jikan`, while development and production use `jikan`. HiAnime is deliberately staging-only and `termsVerified: false`. `HIANIME_BASE_URL` is optional configuration, not a credential, and is restricted by the adapter to an explicit HTTPS hostname allowlist.
 
-No API key or secret is needed for AniList or Kitsu public reads. Never put a key in the repository.
+**Cache.** The existing KV namespace and its `METADATA_CACHE` binding are reused. No new D1 table, KV namespace, API key, or secret is introduced by this experiment.
 
 ## 5. Adding a provider later
 1. Write `worker/metadata/providers/<name>.ts` that returns a `MetadataProvider` (a `fetchById` and a `search` returning `NormalizedMetadata`, plus its `Attribution` and `termsVerified`).
@@ -80,14 +80,21 @@ No API key or secret is needed for AniList or Kitsu public reads. Never put a ke
 3. Add it to `DEFAULT_PRIORITY` in `merge.ts` if it should outrank the unlisted default.
 4. Add it to `METADATA_PROVIDERS`. The frontend needs no change: sources and statuses come from the API.
 
-## 6. First live check (not done yet)
-The adapters were tested only against **hand-written fixtures** that follow each provider's documented shape (`worker/metadata/providers.test.ts` says so). No real provider response has been captured. After the first deploy:
+## 6. Episode discovery (separate service)
+
+Episode providers live in `worker/episodes/providers/` and implement the `EpisodeProvider` contract in `worker/metadata/types.ts`. They receive a normalized title, alternate titles and known external IDs. `worker/episodes/service.ts` owns cache, timeout, circuit-breaker and fallback behavior.
+
+The experiment branch configures `EPISODE_PROVIDERS="hianime,jikan"` in staging only. HiAnime is marked `termsVerified: false`; the supplied unofficial endpoint notes do not prove permission to reuse its catalogue data. The adapter currently uses only search and episode-list discovery. It deliberately does not query servers, extract or decrypt stream sources, or proxy media. Jikan is the fallback when it has a MAL ID.
+
+## 7. First live check (not done yet)
+Fixture tests have been added for the HiAnime parser/provider and episode-service fallback. They have **not yet been run in this working session** because dependencies are incomplete. No real HiAnime response has been captured. After the first staging deploy:
 1. Open `/api/v1/providers`, then `/api/v1/anime/<slug>/metadata` for a title that exists in the catalogue.
 2. Check `providers[]`: `ok` is good; `failed` with `invalid_response` means the real shape differs from the fixture. Send me that output and I will fix the adapter.
 3. Adapters fail closed: an unexpected shape becomes an `invalid_response` outcome, never wrong data.
 
-## 7. Not built yet
+## 8. Not built yet
 - The dataset import job (download a release, check its licence, map, load chunked SQL into D1). The mapper and the licence check exist in `providers/manami.ts`; D1's current bulk-load limits still need checking.
 - Dataset "tags" are not mapped to genres (they are not the same thing), so imported titles have no genres until a provider fills them in on demand.
-- Kitsu episode discovery (a separate `EpisodeProvider`, only after Kitsu's terms are verified).
+- HiAnime episode discovery is a separate `EpisodeProvider`, enabled only in staging for the experiment. Its terms and permission for reuse have not been verified; do not enable it in production without owner review. The adapter performs title search and episode-list discovery only. It does not request servers, extract HLS, decrypt payloads, or proxy media.
+- Jikan episode discovery is also implemented as a separate `EpisodeProvider`; review Jikan/MyAnimeList terms before launch.
 - Authentication. Decision: a standard identity provider for public users, with Cloudflare Access reserved for admin tools. Not chosen or built; it stays behind its own module so it can be swapped.

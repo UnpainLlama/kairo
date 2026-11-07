@@ -18,8 +18,12 @@ interface Bindings {
   METADATA_CACHE?: KVNamespace;
   /** "live" (default): serve the catalogue from AniList and Jikan, no database. "db": the original D1 routes. */
   CATALOG_SOURCE?: string;
-  /** Live provider priority, comma-separated. Default "anilist,jikan". */
+  /** Catalogue-provider priority, comma-separated. */
   LIVE_PROVIDERS?: string;
+  /** Independent episode-provider priority, e.g. "hianime,jikan". */
+  EPISODE_PROVIDERS?: string;
+  /** HiAnime mirror base URL; adapter enforces a fixed HTTPS host allowlist. */
+  HIANIME_BASE_URL?: string;
 }
 
 type Variables = { requestId: string };
@@ -54,7 +58,7 @@ function fail(c: Context<{ Bindings: Bindings; Variables: Variables }>, status: 
 
 app.get('/api/health', (c) => ok(c, { status: 'ok', service: 'kairo-api', environment: c.env.APP_ENV ?? 'unknown' }));
 
-// Live catalogue (AniList + Jikan). Each route below answers first when CATALOG_SOURCE is not "db" and otherwise falls through
+// Live catalogue providers and independent episode-discovery providers. Public API paths remain stable. Each route below answers first when CATALOG_SOURCE is not "db" and otherwise falls through
 // to the original D1 route registered further down, so the API paths and response shapes are unchanged.
 const live = createLiveHandlers((input, init) => fetch(input, init));
 const serveLive = (pick: (h: LiveHandlers) => (r: LiveRequest) => Promise<LiveResult>) => async (c: AppContext, next: Next) => {

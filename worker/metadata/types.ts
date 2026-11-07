@@ -69,11 +69,31 @@ export interface MetadataProvider {
   search(title: string, signal: AbortSignal, limit?: number): Promise<NormalizedMetadata[]>;
 }
 
-// Separate service boundaries. Only the contracts exist today; no implementation is assumed for any provider.
-export type EpisodeRecord = { episodeNumber: number; title: string; synopsis: string; airedAt: string | null; durationSeconds: number | null };
+// Episode discovery is a separate service from catalogue metadata and playback.
+export type EpisodeLookup = {
+  /** Stable KAIRO title id, used only to key short-lived cache entries. */
+  cacheKey: string;
+  title: string;
+  alternateTitles: string[];
+  externalIds: ExternalIds;
+};
+
+export type EpisodeRecord = {
+  episodeNumber: number;
+  title: string;
+  airedAt: string | null;
+  synopsis: string;
+  durationSeconds: number | null;
+};
+
+export type EpisodePage = { items: EpisodeRecord[]; hasNextPage: boolean; total: number | null };
+
 export interface EpisodeProvider {
   readonly id: string;
-  listEpisodes(ids: ExternalIds, signal: AbortSignal): Promise<EpisodeRecord[]>;
+  readonly displayName: string;
+  /** false until the owner has reviewed the provider's terms and confirmed permitted use. */
+  readonly termsVerified: boolean;
+  listEpisodes(title: EpisodeLookup, page: number, signal: AbortSignal): Promise<EpisodePage>;
 }
 // Playback is handled by worker/providers/playback.ts (the authorized-playback boundary).
 
