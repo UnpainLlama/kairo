@@ -4,13 +4,13 @@ import { useApi } from '../lib/useApi';
 import type { CatalogCard, ItemList } from '../lib/catalog';
 import { NotFoundPage } from './StaticPages';
 
-const CATEGORIES = {
+const CATEGORIES: Record<string, { title: string; blurb: string; endpoint?: string }> = {
   trending: { title: 'Trending', blurb: 'What people are watching right now.', endpoint: '/catalog/trending' },
   latest: { title: 'Recently updated', blurb: 'Currently airing, newest first.', endpoint: '/catalog/latest' },
   anime: { title: 'Anime', blurb: 'TV series, most popular first.', endpoint: '/catalog/browse?format=series&sort=popularity' },
   movies: { title: 'Movies', blurb: 'Feature films, most popular first.', endpoint: '/catalog/browse?format=movie&sort=popularity' },
   seasonal: { title: 'Seasonal', blurb: 'Titles from the current season.', endpoint: '/catalog/browse?season=current&sort=popularity' },
-} as const;
+};
 type Category = keyof typeof CATEGORIES;
 const isCategory = (v: string | undefined): v is Category => v !== undefined && v in CATEGORIES;
 
@@ -31,7 +31,10 @@ export default function BrowsePage() {
   const { category } = useParams();
   if (!isCategory(category)) return <NotFoundPage />;
   const config = CATEGORIES[category];
-  return config.endpoint ? <ListBrowse title={config.title} blurb={config.blurb} endpoint={config.endpoint} /> : <UnavailableBrowse title={config.title} />;
+  if (config.endpoint) {
+    return <ListBrowse title={config.title} blurb={config.blurb} endpoint={config.endpoint} />;
+  }
+  return <UnavailableBrowse title={config.title} />;
 }
 
 function ListBrowse({ title, blurb, endpoint }: { title: string; blurb: string; endpoint: string }) {
@@ -50,7 +53,7 @@ function ListBrowse({ title, blurb, endpoint }: { title: string; blurb: string; 
           : <>
               <CardGrid items={result.data.items} />
               <Pager page={page} hasNextPage={result.meta.hasNextPage === true} total={result.meta.total} onPage={(p) => setParams(p > 1 ? { page: String(p) } : {})} />
-            </>)}
+            </>) }
       </div>
     </>
   );
@@ -61,7 +64,7 @@ function UnavailableBrowse({ title }: { title: string }) {
     <>
       <header className="kc-page-head"><span className="kc-eyebrow">BROWSE</span><h1>{title}</h1></header>
       <EmptyState title="Not available yet">
-        This list needs a filter-only catalogue endpoint. The current search endpoint requires title text. Meanwhile you can <Link className="kc-link" to="/search">search by title</Link>, or open Trending or Recently updated.
+        This list needs a filter-only catalogue endpoint. The current search endpoint requires title text. Meanwhile you can <Link className="kc-link" to="/search">search by title</Link>, or open <Link className="kc-link" to="/browse">browse other categories</Link>.
       </EmptyState>
     </>
   );
