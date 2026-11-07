@@ -86,7 +86,7 @@ export default function App() {
             <Route path="/settings" element={<AccountPage title="Settings" />} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
-          <footer className="kc-footer">KAIRO is a personal, non-commercial project. Artwork belongs to its owners and is linked from the original sources. Catalogue data attribution will be listed here once a data source is connected.</footer>
+          <footer className="kc-footer">KAIRO is a personal, non-commercial project. Artwork belongs to its owners and is linked from the original sources. Where each title’s data comes from is listed on its page.</footer>
         </div>
       </main>
 

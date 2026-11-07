@@ -1,5 +1,8 @@
 # KAIRO — Anime Discovery Platform Starter
 
+> **Superseded for deployment:** follow [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) (staging first). The `DEPLOY_ENABLED` variable and the `db:create` / `db:migrate:remote` scripts mentioned below no longer exist.
+
+
 A design-forward, implementation-ready starter pack for a premium anime discovery and licensed-playback web application. This pack includes the product brief, a detailed build prompt for Claude, design tokens, API contracts, Cloudflare Worker + D1 scaffolding, GitHub Actions deployment, and setup documentation.
 
 > **Scope:** The starter is designed for authorized catalogue metadata and playback providers. It does not implement third-party scraping, access-control circumvention, protected-stream extraction, or decryption of provider-protected payloads. Connect providers only when their terms and permissions allow it.

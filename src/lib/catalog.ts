@@ -69,3 +69,18 @@ export function dateLabel(iso: string | null): string | null {
 
 /** Only http(s) image URLs are ever used as an <img src>. */
 export const safeImageUrl = (url: string | null): string | null => (url && /^https?:\/\//i.test(url) ? url : null);
+
+export type SourceRef = { providerId: string; displayName: string; text: string; url: string; license: string | null };
+export type ProviderOutcome = { provider: string; state: 'ok' | 'cached' | 'not_found' | 'skipped' | 'failed'; reason?: string };
+/** GET /anime/:id/metadata: the unified, multi-provider record. Only the fields the UI uses are typed. */
+export type UnifiedMetadata = {
+  title: string | null;
+  synopsis: string | null;
+  rating: number | null;
+  episodeCount: number | null;
+  genres: unknown[];
+  posterUrl: string | null;
+  bannerUrl: string | null;
+  sources: SourceRef[];
+  providers: ProviderOutcome[];
+};

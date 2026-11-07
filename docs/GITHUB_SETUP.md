@@ -1,5 +1,8 @@
 # GitHub repository and automated deployment
 
+> **Superseded for deployment:** follow [docs/DEPLOYMENT.md](DEPLOYMENT.md) (staging first). The `DEPLOY_ENABLED` variable and the `db:create` / `db:migrate:remote` scripts mentioned below no longer exist.
+
+
 ## 1. Create the repository
 
 1. Sign in to GitHub and create a new empty repository, for example `kairo-anime-platform`.

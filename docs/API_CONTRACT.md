@@ -65,6 +65,15 @@ Search parameters:
 - `genres` returns `{ items: [{ name, count }] }`, derived from each title's stored genre list. Rows with malformed genre JSON are skipped.
 - `related` currently means *titles sharing genres* (ranked by overlap, then popularity). Each item also carries `sharedGenres`, and `meta.basis` is `"shared_genres"`. Provider-supplied relations (sequels, prequels) need a schema addition and are not implemented. Accepts `limit` (1–24, default 12).
 
+## 2b. Provider routes (added; existing routes unchanged)
+
+| Route | Purpose |
+|---|---|
+| `GET /api/v1/providers` | Metadata providers: enabled flag, `termsVerified`, capabilities, attribution. Also `unknownConfigured` for names in `METADATA_PROVIDERS` that no adapter handles. |
+| `GET /api/v1/anime/:id/metadata` | Unified record for a title (id or slug): the stored row merged with enabled providers. Adds `provenance`, `conflicts`, `ids`, `sources` and `providers` (per-provider outcome: `ok`, `cached`, `not_found`, `skipped`, `failed`). `meta.degraded` is true when any enabled provider failed. A provider failure never fails the request; the stored row is always the floor. Errors: `VALIDATION_ERROR`, `RESOURCE_NOT_FOUND`, `CATALOG_UNAVAILABLE`. |
+
+Ratings are on a 0-10 scale. See docs/PROVIDERS.md.
+
 ## 3. Authenticated user routes
 
 These routes require a valid identity-provider session/token and server-side ownership checks.

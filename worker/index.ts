@@ -3,11 +3,17 @@ import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { boundedInt, parseId, parsePagination, parseSearchParams } from './lib/validation';
 import { GENRES_SQL, buildListQuery, buildRelatedQuery, buildSearchQuery } from './repositories/catalog';
+import { BASE_RECORD_SQL, INSERT_PROVIDER_ID_SQL, PROVIDER_IDS_SQL } from './repositories/providerIds';
+import { buildRegistry, createCache, resolveUnified, sharedBreaker, toBaseRecord, type BaseRow } from './metadata/service';
 
 interface Bindings {
   DB: D1Database;
   APP_ENV?: string;
   ALLOWED_ORIGIN?: string;
+  /** Comma-separated metadata provider ids to enable, e.g. "anilist". Empty = none. */
+  METADATA_PROVIDERS?: string;
+  /** Optional Workers KV namespace used as the provider-response cache (recommended on workers.dev). */
+  METADATA_CACHE?: KVNamespace;
 }
 
 type Variables = { requestId: string };
@@ -65,7 +71,14 @@ app.get('/api/v1/catalog/featured', async (c) => {
 app.get('/api/ready', async (c) => {
   try {
     await c.env.DB.prepare('SELECT 1 AS ok').first();
-    return ok(c, { status: 'ready', database: 'ok' });
+    // Proves migrations 0001 and 0002 ran: a reachable but empty/unmigrated database must not report ready.
+    const tables = await c.env.DB.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('anime', 'episodes', 'anime_provider_ids')`).all();
+    if ((tables.results ?? []).length < 3) {
+      logError(c, 'readiness_schema_missing', new Error('expected tables not found'));
+      return fail(c, 503, 'CATALOG_UNAVAILABLE', 'The database is reachable but its schema is not up to date. Apply migrations.');
+    }
+    const providers = buildRegistry(c.env.METADATA_PROVIDERS, fetch).enabled.map((p) => p.id);
+    return ok(c, { status: 'ready', database: 'ok', schema: 'ok', cache: c.env.METADATA_CACHE ? 'kv' : 'none', providers });
   } catch (error) {
     logError(c, 'readiness_failed', error);
     return fail(c, 503, 'CATALOG_UNAVAILABLE', 'The service is not ready.');
@@ -182,6 +195,31 @@ app.get('/api/v1/anime/:id/related', async (c) => {
   } catch (error) {
     logError(c, 'anime_related_failed', error);
     return fail(c, 503, 'CATALOG_UNAVAILABLE', 'Related titles are temporarily unavailable.');
+  }
+});
+
+app.get('/api/v1/providers', (c) => {
+  const registry = buildRegistry(c.env.METADATA_PROVIDERS, fetch);
+  return ok(c, { items: registry.info, unknownConfigured: registry.unknown });
+});
+
+// Unified, multi-provider view of one title. The stored catalogue row is always the floor: if every provider fails, this still answers.
+app.get('/api/v1/anime/:id/metadata', async (c) => {
+  const id = parseId(c.req.param('id'));
+  if (id === null) return fail(c, 400, 'VALIDATION_ERROR', 'Invalid anime identifier.');
+  try {
+    const row = await c.env.DB.prepare(BASE_RECORD_SQL).bind(id, id).first<BaseRow>();
+    if (!row) return fail(c, 404, 'RESOURCE_NOT_FOUND', 'The requested title was not found.');
+    const mappings = (await c.env.DB.prepare(PROVIDER_IDS_SQL).bind(row.id).all<{ provider: string; externalId: string }>()).results ?? [];
+    const registry = buildRegistry(c.env.METADATA_PROVIDERS, fetch);
+    const { payload, discovered, degraded } = await resolveUnified(toBaseRecord(row, mappings), registry.enabled, { cache: createCache(c.env), breaker: sharedBreaker });
+    for (const d of discovered) {
+      try { await c.env.DB.prepare(INSERT_PROVIDER_ID_SQL).bind(row.id, d.provider, d.externalId, d.confidence).run(); } catch (error) { logError(c, 'provider_id_save_failed', error); }
+    }
+    return ok(c, payload, { degraded, basis: 'multi_provider' });
+  } catch (error) {
+    logError(c, 'anime_metadata_failed', error);
+    return fail(c, 503, 'CATALOG_UNAVAILABLE', 'Title metadata is temporarily unavailable.');
   }
 });
 

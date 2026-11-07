@@ -4,13 +4,14 @@ import { Poster, Rail, EmptyState, ErrorState, LoadingState, Pager } from '../co
 import { useApi } from '../lib/useApi';
 import {
   dateLabel, durationLabel, episodeCountLabel, episodeNumberLabel, formatLabel, safeImageUrl, seasonLabel, statusLabel, textList,
-  type AnimeDetails, type CatalogCard, type Episode, type ItemList,
+  type AnimeDetails, type CatalogCard, type Episode, type ItemList, type UnifiedMetadata,
 } from '../lib/catalog';
 
 export default function AnimePage() {
   const { slug = '' } = useParams();
   const key = encodeURIComponent(slug);
   const details = useApi<AnimeDetails>(`/anime/${key}`);
+  const enriched = useApi<UnifiedMetadata>(`/anime/${key}/metadata`);
 
   if (details.status === 'loading') return <LoadingState label="Loading title" />;
   if (details.status === 'error') {
@@ -21,7 +22,13 @@ export default function AnimePage() {
       </>
     );
   }
-  const a = details.data;
+  // The stored record shows immediately; provider details fill gaps when they arrive. A provider failure never hides the page.
+  const u = enriched.status === 'ok' ? enriched.data : null;
+  const a: AnimeDetails = u
+    ? { ...details.data, synopsis: u.synopsis ?? details.data.synopsis, rating: u.rating ?? details.data.rating, episodeCount: u.episodeCount ?? details.data.episodeCount,
+        posterUrl: u.posterUrl ?? details.data.posterUrl, bannerUrl: u.bannerUrl ?? details.data.bannerUrl, genres: u.genres.length ? u.genres : details.data.genres }
+    : details.data;
+  const someFailed = u?.providers.some((p) => p.state === 'failed') ?? false;
   const genres = textList(a.genres);
   const alt = textList(a.altTitles);
   const facts = [formatLabel(a.format), statusLabel(a.status), seasonLabel(a.season, a.releaseYear), episodeCountLabel(a.episodeCount)].filter(Boolean);
@@ -49,6 +56,14 @@ export default function AnimePage() {
           <p id="library-note" className="kc-hint">Libraries need an account, and sign-in is not set up yet.</p>
         </div>
       </div>
+      <section className="kc-sources" aria-label="Data sources">
+        {enriched.status === 'loading' && <p className="kc-hint">Loading details from data providers…</p>}
+        {enriched.status === 'error' && <p className="kc-hint">Extra details from data providers are unavailable right now. Showing the catalogue record only.</p>}
+        {someFailed && <p className="kc-hint">Some data providers could not be reached, so details may be incomplete.</p>}
+        {u && u.sources.length > 0 && (
+          <ul>{u.sources.map((s) => <li key={s.providerId}><a className="kc-link" href={s.url} target="_blank" rel="noopener noreferrer">{s.displayName}</a>: {s.text}{s.license ? ` (${s.license})` : ''}</li>)}</ul>
+        )}
+      </section>
       <Episodes slug={key} />
       <Related slug={key} />
     </article>

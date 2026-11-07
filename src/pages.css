@@ -81,3 +81,4 @@
 .kc-footer{margin-top:50px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:13px;max-width:80ch}
 @media (max-width:720px){.kc-hero,.kc-detail-main{grid-template-columns:1fr}.kc-hero-art,.kc-detail-poster{max-width:200px;justify-self:start}.kc-episodes img{width:96px}}
 @media (prefers-reduced-motion:reduce){.kc-spinner{animation:none}}
+.kc-sources{margin-top:26px;color:var(--muted);font-size:13px}.kc-sources ul{padding-left:18px;margin:8px 0}.kc-sources li{margin:4px 0}

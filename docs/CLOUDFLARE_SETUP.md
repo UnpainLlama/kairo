@@ -1,5 +1,8 @@
 # Cloudflare setup and deployment runbook
 
+> **Superseded for deployment:** follow [docs/DEPLOYMENT.md](DEPLOYMENT.md) (staging first). The `DEPLOY_ENABLED` variable and the `db:create` / `db:migrate:remote` scripts mentioned below no longer exist.
+
+
 This project uses Cloudflare Workers with the Cloudflare Vite plugin. The Worker serves the React app's static assets and routes `/api/*` requests to the backend. D1 stores relational data.
 
 ## 1. Prerequisites
