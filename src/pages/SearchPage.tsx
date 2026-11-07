@@ -52,7 +52,7 @@ export default function SearchPage() {
             <select value={state.genre} onChange={(e) => update({ genre: e.target.value })}>
               <option value="">Any genre</option>
               {state.genre && !(genres.status === 'ok' && genres.data.items.some((g) => g.name === state.genre)) && <option value={state.genre}>{state.genre}</option>}
-              {genres.status === 'ok' && genres.data.items.map((g) => <option key={g.name} value={g.name}>{g.name} ({g.count})</option>)}
+              {genres.status === 'ok' && genres.data.items.map((g) => <option key={g.name} value={g.name}>{g.count > 0 ? `${g.name} (${g.count})` : g.name}</option>)}
             </select>
           </label>
           <label>Format

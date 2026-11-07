@@ -1,10 +1,12 @@
 /// <reference types="@cloudflare/workers-types" />
-import { Hono, type Context } from 'hono';
+import { Hono, type Context, type Next } from 'hono';
 import { cors } from 'hono/cors';
 import { boundedInt, parseId, parsePagination, parseSearchParams } from './lib/validation';
 import { GENRES_SQL, buildListQuery, buildRelatedQuery, buildSearchQuery } from './repositories/catalog';
 import { BASE_RECORD_SQL, INSERT_PROVIDER_ID_SQL, PROVIDER_IDS_SQL } from './repositories/providerIds';
 import { buildRegistry, createCache, resolveUnified, sharedBreaker, toBaseRecord, type BaseRow } from './metadata/service';
+import { createLiveHandlers, isLiveMode, type LiveHandlers } from './live/handlers';
+import type { LiveRequest, LiveResult } from './live/types';
 
 interface Bindings {
   DB: D1Database;
@@ -14,6 +16,10 @@ interface Bindings {
   METADATA_PROVIDERS?: string;
   /** Optional Workers KV namespace used as the provider-response cache (recommended on workers.dev). */
   METADATA_CACHE?: KVNamespace;
+  /** "live" (default): serve the catalogue from AniList and Jikan, no database. "db": the original D1 routes. */
+  CATALOG_SOURCE?: string;
+  /** Live provider priority, comma-separated. Default "anilist,jikan". */
+  LIVE_PROVIDERS?: string;
 }
 
 type Variables = { requestId: string };
@@ -47,6 +53,27 @@ function fail(c: Context<{ Bindings: Bindings; Variables: Variables }>, status: 
 }
 
 app.get('/api/health', (c) => ok(c, { status: 'ok', service: 'kairo-api', environment: c.env.APP_ENV ?? 'unknown' }));
+
+// Live catalogue (AniList + Jikan). Each route below answers first when CATALOG_SOURCE is not "db" and otherwise falls through
+// to the original D1 route registered further down, so the API paths and response shapes are unchanged.
+const live = createLiveHandlers((input, init) => fetch(input, init));
+const serveLive = (pick: (h: LiveHandlers) => (r: LiveRequest) => Promise<LiveResult>) => async (c: AppContext, next: Next) => {
+  if (!isLiveMode(c.env.CATALOG_SOURCE)) return next();
+  const result = await pick(live)({ query: c.req.query(), param: (name) => c.req.param(name), requestId: c.get('requestId'), env: c.env });
+  return c.json(result.body as Record<string, unknown>, result.status as 200);
+};
+app.get('/api/ready', serveLive((h) => h.ready));
+app.get('/api/v1/catalog/featured', serveLive((h) => h.featured));
+app.get('/api/v1/catalog/trending', serveLive((h) => h.trending));
+app.get('/api/v1/catalog/latest', serveLive((h) => h.latest));
+app.get('/api/v1/catalog/search', serveLive((h) => h.search));
+app.get('/api/v1/catalog/browse', serveLive((h) => h.browse));
+app.get('/api/v1/catalog/genres', serveLive((h) => h.genres));
+app.get('/api/v1/providers', serveLive((h) => h.providers));
+app.get('/api/v1/anime/:id/episodes', serveLive((h) => h.episodes));
+app.get('/api/v1/anime/:id/related', serveLive((h) => h.related));
+app.get('/api/v1/anime/:id/metadata', serveLive((h) => h.metadata));
+app.get('/api/v1/anime/:id', serveLive((h) => h.anime));
 
 app.get('/api/v1/catalog/featured', async (c) => {
   try {

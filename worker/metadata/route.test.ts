@@ -21,7 +21,7 @@ describe('metadata route end to end (real SQLite, fake provider fetch)', () => {
   db.exec(readFileSync('migrations/0002_provider_architecture.sql', 'utf8')); // idempotent re-run
   db.prepare(`INSERT INTO anime (id, slug, title, format, release_year, status, episode_count, provider_id, provider_title_id) VALUES ('a1','death-note','Death Note','series',2006,'airing',36,'manami','mal:1535')`).run();
   db.prepare(`INSERT INTO anime_provider_ids (anime_id, provider, external_id, source) VALUES ('a1','mal','1535','dataset')`).run();
-  const env = { DB: d1(db), APP_ENV: 'test', METADATA_PROVIDERS: 'anilist' };
+  const env = { DB: d1(db), APP_ENV: 'test', METADATA_PROVIDERS: 'anilist', CATALOG_SOURCE: 'db' };
 
   it('lists providers without secrets', async () => {
     const res = await app.request('/api/v1/providers', {}, env as never);
@@ -59,7 +59,7 @@ describe('metadata route end to end (real SQLite, fake provider fetch)', () => {
     const ready = await app.request('/api/ready', {}, env as never);
     expect(ready.status).toBe(200);
     expect(((await ready.json()) as { data: Record<string, unknown> }).data).toMatchObject({ database: 'ok', schema: 'ok', cache: 'none', providers: ['anilist'] });
-    const empty = { DB: d1(new DatabaseSync(':memory:')), APP_ENV: 'test' };
+    const empty = { DB: d1(new DatabaseSync(':memory:')), APP_ENV: 'test', CATALOG_SOURCE: 'db' };
     const notReady = await app.request('/api/ready', {}, empty as never);
     expect(notReady.status).toBe(503);
     expect(((await notReady.json()) as { error: { code: string } }).error.code).toBe('CATALOG_UNAVAILABLE');

@@ -14,7 +14,7 @@
   "d1_databases": [
     { "binding": "DB", "database_name": "kairo-db-local", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }
   ],
-  "vars": { "APP_ENV": "development", "METADATA_PROVIDERS": "anilist" },
+  "vars": { "APP_ENV": "development", "METADATA_PROVIDERS": "anilist", "CATALOG_SOURCE": "live", "LIVE_PROVIDERS": "anilist,jikan" },
 
   "env": {
     // Staging: a separate Worker named kairo-anime-platform-staging, its own D1 database and KV namespace.
@@ -25,7 +25,7 @@
       "kv_namespaces": [
         { "binding": "METADATA_CACHE", "id": "bddfe8f83eb54167a7418c9c1482cd8f" }
       ],
-      "vars": { "APP_ENV": "staging", "METADATA_PROVIDERS": "anilist" }
+      "vars": { "APP_ENV": "staging", "METADATA_PROVIDERS": "anilist", "CATALOG_SOURCE": "live", "LIVE_PROVIDERS": "anilist,jikan" }
     },
 
     // Production: defined but NOT deployable until you approve it (see docs/DEPLOYMENT.md, section 8).
@@ -36,7 +36,7 @@
       "kv_namespaces": [
         { "binding": "METADATA_CACHE", "id": "REPLACE_WITH_PRODUCTION_KV_NAMESPACE_ID" }
       ],
-      "vars": { "APP_ENV": "production", "METADATA_PROVIDERS": "anilist" }
+      "vars": { "APP_ENV": "production", "METADATA_PROVIDERS": "anilist", "CATALOG_SOURCE": "live", "LIVE_PROVIDERS": "anilist,jikan" }
     }
   }
 }

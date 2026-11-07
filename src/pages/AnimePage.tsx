@@ -110,5 +110,5 @@ function Related({ slug }: { slug: string }) {
   if (result.status === 'loading') return <LoadingState label="Loading related titles" />;
   if (result.status === 'error') return <ErrorState error={result.error} onRetry={result.reload} />;
   if (result.data.items.length === 0) return null;
-  return <Rail title="Similar titles" eyebrow="SHARES GENRES" items={result.data.items} />;
+  return <Rail title="Related titles" items={result.data.items} />;
 }

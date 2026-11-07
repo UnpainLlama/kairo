@@ -5,11 +5,11 @@ import type { CatalogCard, ItemList } from '../lib/catalog';
 import { NotFoundPage } from './StaticPages';
 
 const CATEGORIES = {
-  trending: { title: 'Trending', blurb: 'Ranked by stored popularity score.', endpoint: '/catalog/trending' },
-  latest: { title: 'Recently updated', blurb: 'Ordered by when each catalogue entry last changed.', endpoint: '/catalog/latest' },
-  anime: { title: 'Anime', blurb: 'All series.', endpoint: null },
-  movies: { title: 'Movies', blurb: 'Feature films.', endpoint: null },
-  seasonal: { title: 'Seasonal', blurb: 'Titles by season.', endpoint: null },
+  trending: { title: 'Trending', blurb: 'What people are watching right now.', endpoint: '/catalog/trending' },
+  latest: { title: 'Recently updated', blurb: 'Currently airing, newest first.', endpoint: '/catalog/latest' },
+  anime: { title: 'Anime', blurb: 'TV series, most popular first.', endpoint: '/catalog/browse?format=series&sort=popularity' },
+  movies: { title: 'Movies', blurb: 'Feature films, most popular first.', endpoint: '/catalog/browse?format=movie&sort=popularity' },
+  seasonal: { title: 'Seasonal', blurb: 'Titles from the current season.', endpoint: '/catalog/browse?season=current&sort=popularity' },
 } as const;
 type Category = keyof typeof CATEGORIES;
 const isCategory = (v: string | undefined): v is Category => v !== undefined && v in CATEGORIES;
@@ -38,7 +38,7 @@ function ListBrowse({ title, blurb, endpoint }: { title: string; blurb: string; 
   const [params, setParams] = useSearchParams();
   const raw = Number(params.get('page') ?? '1');
   const page = Number.isInteger(raw) && raw >= 1 && raw <= 500 ? raw : 1;
-  const result = useApi<ItemList<CatalogCard>>(`${endpoint}?page=${page}&limit=24`);
+  const result = useApi<ItemList<CatalogCard>>(`${endpoint}${endpoint.includes('?') ? '&' : '?'}page=${page}&limit=24`);
   return (
     <>
       <header className="kc-page-head"><span className="kc-eyebrow">BROWSE</span><h1>{title}</h1><p>{blurb}</p></header>
