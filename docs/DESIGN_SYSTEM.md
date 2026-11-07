@@ -1,5 +1,8 @@
 # Design system — KAIRO
 
+> **Update (Noir redesign):** the app now uses a single "Noir" theme taken from the Kurosaw reference mock-up: near-black canvas (`#0b0b0c`), white pill actions, a top navigation bar (Home, Anime, Movies, Seasonal, Library) instead of the left rail, and a full-bleed hero that uses the title's `bannerUrl`. The four palettes and the theme switcher described below were removed; sections 1 and 4 (palettes, rail) are kept only as history. Tokens live in `src/styles.css`.
+
+
 ## 1. Art direction
 
 **Concept:** “A private cinema at the edge of an animated universe.” Use a premium dark foundation, vivid but controlled accent colors, oversized editorial typography, character cutouts, and atmospheric depth. It may borrow the browsing rhythm of streaming platforms—hero plus content rails—without copying a competitor's brand, layouts, or signature red/black treatment.
