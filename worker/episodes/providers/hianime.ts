@@ -1,95 +1,59 @@
-import { ProviderError, type EpisodeLookup, type EpisodePage, type EpisodeProvider } from '../../metadata/types';
-import { parseHiAnimeEpisodeLinks, parseHiAnimeEpisodeListPayload, parseHiAnimeSearchResults, normalizeProviderTitle } from '../parsers/hianime';
+import { ProviderError, type EpisodeLookup, type EpisodePage, type EpisodeProvider, type EpisodeServer } from '../../metadata/types';
+import type { FetchLike } from '../../metadata/providers/http';
+import { createHiAnimeClient } from '../../hianime/client';
+import { parseHiAnimeEpisodePayload, parseHiAnimeEpisodes, parseHiAnimeServers, parseHiAnimeSearch } from '../../hianime/parser';
 
-export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
-
-const DEFAULT_BASE_URL = 'https://hianimez.to';
-const ALLOWED_HOSTS = new Set(['hianimez.to', 'hianime.to', 'hianime.nz', 'hianime.sx', 'hianime.vc']);
 const PAGE_SIZE = 50;
-const MAX_RESPONSE_CHARS = 2_000_000;
-const USER_AGENT = 'KAIRO/0.3 (+https://github.com/UnpainLlama/kairo)';
+const ALLOWED_HOSTS = new Set(['hianime.at', 'hianimez.to', 'hianime.to', 'hianime.nz', 'hianime.sx', 'hianime.vc']);
 
-function resolveBaseUrl(raw?: string): URL {
-  let url: URL;
-  try { url = new URL(raw || DEFAULT_BASE_URL); }
-  catch { throw new ProviderError('unavailable', 'HiAnime base URL is invalid.'); }
-  if (url.protocol !== 'https:' || !ALLOWED_HOSTS.has(url.hostname.toLowerCase()) || url.username || url.password || (url.pathname !== '/' && url.pathname !== '')) {
-    throw new ProviderError('unavailable', 'HiAnime base URL is not on the HTTPS host allowlist.');
-  }
-  return new URL(url.origin);
-}
-
-function normalizeStatus(response: Response): void {
-  if (response.status === 404) throw new ProviderError('not_found', 'HiAnime has no matching title or episode list.');
-  if (response.status === 429) {
-    const retry = Number(response.headers.get('Retry-After'));
-    throw new ProviderError('rate_limited', 'HiAnime rate limit was reached.', Number.isFinite(retry) && retry > 0 ? Math.min(retry, 600) : 60);
-  }
-  if (response.status === 403 || response.status >= 500) throw new ProviderError('unavailable', `HiAnime returned ${response.status}.`);
-  if (!response.ok) throw new ProviderError('unavailable', `HiAnime returned ${response.status}.`);
+function providerSlug(value: string | null | undefined): { slug: string; numericId: string } | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || !ALLOWED_HOSTS.has(url.hostname)) return null;
+    const slug = url.pathname.match(/\/watch\/([a-z0-9-]+)\/?$/i)?.[1];
+    const numericId = slug?.match(/-(\d+)$/)?.[1];
+    return slug && numericId ? { slug, numericId } : null;
+  } catch { return null; }
 }
 
 export function createHiAnimeEpisodeProvider(fetchImpl: FetchLike, baseUrl?: string): EpisodeProvider {
-  const base = resolveBaseUrl(baseUrl);
+  const client = createHiAnimeClient(fetchImpl, baseUrl);
 
-  async function fetchText(url: URL, referer: string, signal: AbortSignal): Promise<string> {
-    let response: Response;
-    try {
-      response = await fetchImpl(url.toString(), {
-        method: 'GET',
-        redirect: 'manual',
-        signal,
-        headers: {
-          Accept: 'text/html,application/json;q=0.9,*/*;q=0.8',
-          'User-Agent': USER_AGENT,
-          'X-Requested-With': 'XMLHttpRequest',
-          Referer: referer,
-        },
-      });
-    } catch {
-      throw new ProviderError('unavailable', 'Could not reach HiAnime.');
+  async function findTitle(lookup: EpisodeLookup, signal: AbortSignal): Promise<{ slug: string; numericId: string }> {
+    const fromUrl = providerSlug(lookup.providerUrl);
+    if (fromUrl) {
+      return fromUrl;
     }
-    normalizeStatus(response);
-    const text = await response.text();
-    if (text.length > MAX_RESPONSE_CHARS) throw new ProviderError('invalid_response', 'HiAnime response exceeded the parser size limit.');
-    return text;
-  }
-
-  async function findSlug(lookup: EpisodeLookup, signal: AbortSignal): Promise<{ slug: string; numericId: string }> {
     const queries = [...new Set([lookup.title, ...lookup.alternateTitles].map((s) => s.trim()).filter(Boolean))].slice(0, 3);
-    const targets = new Set(queries.map(normalizeProviderTitle).filter(Boolean));
-    if (targets.size === 0) throw new ProviderError('not_found', 'No title was supplied for HiAnime search.');
-
     for (const query of queries) {
-      const url = new URL('/search', base);
-      url.searchParams.set('keyword', query);
-      url.searchParams.set('page', '1');
-      const html = await fetchText(url, `${base.origin}/`, signal);
-      const exact = parseHiAnimeSearchResults(html, base.origin).find((result) => targets.has(normalizeProviderTitle(result.title)));
-      if (exact) return { slug: exact.slug, numericId: exact.numericId };
+      const response = await client.get(`/search?keyword=${encodeURIComponent(query)}&page=1`, '/', signal);
+      const normalized = query.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+      const match = parseHiAnimeSearch(response.text, response.baseUrl).find((item) => item.title.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ') === normalized);
+      if (match) return { slug: match.slug, numericId: match.id };
     }
     throw new ProviderError('not_found', 'HiAnime has no exact title match.');
   }
 
-  return {
+  async function loadEpisodeHtml(episodeId: string, slug: string, signal: AbortSignal) {
+    const response = await client.get(`/api/theme/episode/list/${episodeId}`, `/watch/${slug}`, signal);
+    let raw: unknown;
+    try { raw = JSON.parse(response.text); }
+    catch { raw = response.text; }
+    return parseHiAnimeEpisodePayload(raw);
+  }
+
+  const provider: EpisodeProvider = {
     id: 'hianime',
     displayName: 'HiAnime episode catalogue',
-    // The supplied documentation describes unofficial reverse-engineered endpoints and does not establish reuse rights.
     termsVerified: false,
 
     async listEpisodes(lookup, page, signal): Promise<EpisodePage> {
       if (!Number.isInteger(page) || page < 1 || page > 500) throw new ProviderError('invalid_response', 'Episode page is outside the supported range.');
-      const match = await findSlug(lookup, signal);
-      const url = new URL(`/ajax/v2/episode/list/${match.numericId}`, base);
-      const raw = await fetchText(url, `${base.origin}/watch/${match.slug}`, signal);
-      let parsed: unknown;
-      try { parsed = JSON.parse(raw); }
-      catch { throw new ProviderError('invalid_response', 'HiAnime episode-list endpoint did not return JSON.'); }
-
-      const html = parseHiAnimeEpisodeListPayload(parsed);
-      const all = parseHiAnimeEpisodeLinks(html);
-      if (all.length === 0) throw new ProviderError('invalid_response', 'HiAnime episode-list HTML contained no valid episode links.');
-
+      const match = await findTitle(lookup, signal);
+      const html = await loadEpisodeHtml(match.numericId, match.slug, signal);
+      const all = parseHiAnimeEpisodes(html);
+      if (all.length === 0) throw new ProviderError('invalid_response', 'HiAnime episode HTML contained no valid episode links.');
       const start = (page - 1) * PAGE_SIZE;
       const selected = all.slice(start, start + PAGE_SIZE);
       return {
@@ -97,12 +61,25 @@ export function createHiAnimeEpisodeProvider(fetchImpl: FetchLike, baseUrl?: str
           episodeNumber: episode.episodeNumber,
           title: episode.title,
           airedAt: null,
-          synopsis: '',
+          synopsis: episode.isFiller ? 'Filler episode.' : '',
           durationSeconds: null,
+          providerEpisodeId: episode.providerEpisodeId,
         })),
         hasNextPage: start + PAGE_SIZE < all.length,
         total: all.length,
       };
     },
+
+    async listServers(providerEpisodeId: string, lookup: EpisodeLookup, signal): Promise<EpisodeServer[]> {
+      if (!/^\d+$/.test(providerEpisodeId)) throw new ProviderError('invalid_response', 'Invalid HiAnime episode id.');
+      const match = await findTitle(lookup, signal);
+      const response = await client.get(`/api/theme/episode/servers?episodeId=${encodeURIComponent(providerEpisodeId)}`, `/watch/${match.slug}`, signal);
+      let raw: unknown;
+      try { raw = JSON.parse(response.text); }
+      catch { raw = response.text; }
+      const html = parseHiAnimeEpisodePayload(raw);
+      return parseHiAnimeServers(html).map((server) => ({ id: server.providerServerId, type: server.type, name: server.name }));
+    },
   };
+  return provider;
 }

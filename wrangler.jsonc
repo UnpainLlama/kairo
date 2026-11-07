@@ -25,7 +25,7 @@
       "kv_namespaces": [
         { "binding": "METADATA_CACHE", "id": "bddfe8f83eb54167a7418c9c1482cd8f" }
       ],
-      "vars": { "APP_ENV": "staging", "METADATA_PROVIDERS": "", "CATALOG_SOURCE": "live", "LIVE_PROVIDERS": "jikan", "EPISODE_PROVIDERS": "hianime,jikan", "HIANIME_BASE_URL": "https://hianimez.to" }
+      "vars": { "APP_ENV": "staging", "METADATA_PROVIDERS": "", "CATALOG_SOURCE": "live", "LIVE_PROVIDERS": "hianime,jikan", "EPISODE_PROVIDERS": "hianime,jikan", "HIANIME_BASE_URL": "https://hianime.at" }
     },
 
     // Production: defined but NOT deployable until you approve it (see docs/DEPLOYMENT.md, section 8).

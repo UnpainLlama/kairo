@@ -76,6 +76,8 @@ export type EpisodeLookup = {
   title: string;
   alternateTitles: string[];
   externalIds: ExternalIds;
+  /** Canonical source page URL, used to avoid an unnecessary title search. */
+  providerUrl?: string | null;
 };
 
 export type EpisodeRecord = {
@@ -84,7 +86,11 @@ export type EpisodeRecord = {
   airedAt: string | null;
   synopsis: string;
   durationSeconds: number | null;
+  /** Provider-side episode identifier; never a playable media URL. */
+  providerEpisodeId?: string;
 };
+
+export type EpisodeServer = { id: string; type: 'sub' | 'dub' | 'raw'; name: string };
 
 export type EpisodePage = { items: EpisodeRecord[]; hasNextPage: boolean; total: number | null };
 
@@ -94,6 +100,8 @@ export interface EpisodeProvider {
   /** false until the owner has reviewed the provider's terms and confirmed permitted use. */
   readonly termsVerified: boolean;
   listEpisodes(title: EpisodeLookup, page: number, signal: AbortSignal): Promise<EpisodePage>;
+  /** Optional server/language discovery. This does not resolve or extract playback URLs. */
+  listServers?(providerEpisodeId: string, title: EpisodeLookup, signal: AbortSignal): Promise<EpisodeServer[]>;
 }
 // Playback is handled by worker/providers/playback.ts (the authorized-playback boundary).
 

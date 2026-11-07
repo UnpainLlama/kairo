@@ -2,7 +2,7 @@
 
 KAIRO combines several metadata sources into one unified record. No provider is a permanent dependency: each one is an adapter that can be switched off, replaced or added without touching the frontend or the routes.
 
-**Three separate services.** Metadata (this document), episode discovery (`EpisodeProvider`, contract only) and playback (`worker/providers/playback.ts`) are independent. A metadata provider is never assumed to supply episodes or streams.
+**Three separate services.** Metadata/catalogue lookup (this document and `worker/live/`), episode/server discovery (`EpisodeProvider`) and playback (`worker/providers/playback.ts`) are independent. A metadata provider is never assumed to supply episodes or streams.
 
 ## 1. What was verified (2026-11-06)
 
@@ -11,6 +11,7 @@ KAIRO combines several metadata sources into one unified record. No provider is 
 | **AniList** (GraphQL, `graphql.anilist.co`) | Live detail: synopsis, genres, banner, score | None for public reads | 90 requests/min. A burst limiter also exists, and 429 carries `Retry-After`. One docs page warns of a temporary 30/min degraded mode. | Read in full at docs.anilist.co/guide/terms-of-use | **Verified.** Free for non-commercial use; no use as backup or data storage; no hoarding or mass collection; naming guidelines; no competing list/tracker services. |
 | **Kitsu** (JSON:API, `kitsu.io/api/edge`) | Live detail (secondary) | Third-party client docs say public reads need no key | Not published in anything I could read | `kitsu.io/terms` **could not be fetched**; not read | **Unverified.** Adapter is built but `termsVerified = false` and it is OFF by default. |
 | **anime-offline-database** (manami-project) | Catalogue index and cross-provider ID map (dataset, not an API) | None (a file download) | n/a | Recent releases: ODbL-1.0 (attribution and share-alike). Older releases: AGPL-3.0. The file carries its own `license` field. | **Partly verified** from repository pages. The importer refuses any licence that is not ODbL-1.0. Re-check the release you import. |
+| **HiAnime** (`hianime.at`) | Staging live catalogue, search, details, episodes and server labels | None observed by the supplied CloudStream extension | Not documented; mirror/client throttling is possible | Website terms and reuse permission not verified | **Behavioural reference available; permission unverified.** Staging only. |
 
 Not verified, and so not used: Kitsu's own terms and rate limits; Kitsu/AniList field names against live responses (see section 6).
 
@@ -68,9 +69,9 @@ Static priority per field, highest first: **anilist, kitsu, manami**, with unlis
 
 ## 4. Configuration steps (owner)
 
-**Which providers are on.** This experiment branch uses `LIVE_PROVIDERS` for the live catalogue (`jikan` in development and staging). `METADATA_PROVIDERS` controls the separate stored-catalogue enrichment path; it is blank in development and staging on this branch. The `production` block is unchanged and still lists AniList, so this experiment does not alter production's provider configuration.
+**Which providers are on.** `LIVE_PROVIDERS` controls live catalogue providers. Development uses `jikan`; staging uses `hianime,jikan` (HiAnime first, Jikan fallback); production remains `anilist,jikan`. `METADATA_PROVIDERS` controls the separate stored-catalogue enrichment path and is blank in development and staging.
 
-**Episode discovery.** `EPISODE_PROVIDERS` is independent of `LIVE_PROVIDERS`: staging uses `hianime,jikan`, while development and production use `jikan`. HiAnime is deliberately staging-only and `termsVerified: false`. `HIANIME_BASE_URL` is optional configuration, not a credential, and is restricted by the adapter to an explicit HTTPS hostname allowlist.
+**Episode and server discovery.** `EPISODE_PROVIDERS` is independent of `LIVE_PROVIDERS`: staging uses `hianime,jikan`, while development and production use `jikan`. HiAnime is deliberately staging-only and `termsVerified: false`. `HIANIME_BASE_URL` defaults to `https://hianime.at`, the base hardcoded by the supplied CloudStream extension. The client rotates through a fixed HTTPS mirror allowlist on upstream failures.
 
 **Cache.** The existing KV namespace and its `METADATA_CACHE` binding are reused. No new D1 table, KV namespace, API key, or secret is introduced by this experiment.
 
@@ -84,17 +85,17 @@ Static priority per field, highest first: **anilist, kitsu, manami**, with unlis
 
 Episode providers live in `worker/episodes/providers/` and implement the `EpisodeProvider` contract in `worker/metadata/types.ts`. They receive a normalized title, alternate titles and known external IDs. `worker/episodes/service.ts` owns cache, timeout, circuit-breaker and fallback behavior.
 
-The experiment branch configures `EPISODE_PROVIDERS="hianime,jikan"` in staging only. HiAnime is marked `termsVerified: false`; the supplied unofficial endpoint notes do not prove permission to reuse its catalogue data. The adapter currently uses only search and episode-list discovery. It deliberately does not query servers, extract or decrypt stream sources, or proxy media. Jikan is the fallback when it has a MAL ID.
+The staging experiment configures both `LIVE_PROVIDERS="hianime,jikan"` and `EPISODE_PROVIDERS="hianime,jikan"`. The catalogue adapter uses the website's search, category and detail pages. The episode adapter uses the CloudStream extension's `/api/theme/episode/list/{numericAnimeId}` and `/api/theme/episode/servers?episodeId={providerEpisodeId}` endpoints. Server discovery returns only server names and sub/dub/raw labels. It does not request source URLs, extract or decrypt streams, or proxy media. Jikan remains the catalogue/episode fallback where a MAL ID is available. HiAnime is marked `termsVerified: false`; the extension demonstrates endpoint behaviour, not permission to reuse the site's content.
 
 ## 7. First live check (not done yet)
-Fixture tests have been added for the HiAnime parser/provider and episode-service fallback. They have **not yet been run in this working session** because dependencies are incomplete. No real HiAnime response has been captured. After the first staging deploy:
-1. Open `/api/v1/providers`, then `/api/v1/anime/<slug>/metadata` for a title that exists in the catalogue.
-2. Check `providers[]`: `ok` is good; `failed` with `invalid_response` means the real shape differs from the fixture. Send me that output and I will fix the adapter.
+Fixture tests cover the HiAnime catalogue parser, episode parser, server discovery, mirror rotation and provider fallback. They still need to run in CI; no live upstream response has yet been captured from this Worker environment. After the first staging deploy:
+1. Open `/api/ready`, `/api/v1/providers`, `/api/v1/catalog/featured`, search, a title detail route, its episodes route, and `/api/v1/anime/<slug>/episodes/1/servers`.
+2. Check `meta.source` on catalogue/episode responses. `hianime` means the primary worked; `jikan` means fallback worked. A 503 or parser error means the live response differs from the fixtures. Save the response (without credentials) so the adapter can be corrected.
 3. Adapters fail closed: an unexpected shape becomes an `invalid_response` outcome, never wrong data.
 
 ## 8. Not built yet
 - The dataset import job (download a release, check its licence, map, load chunked SQL into D1). The mapper and the licence check exist in `providers/manami.ts`; D1's current bulk-load limits still need checking.
 - Dataset "tags" are not mapped to genres (they are not the same thing), so imported titles have no genres until a provider fills them in on demand.
-- HiAnime episode discovery is a separate `EpisodeProvider`, enabled only in staging for the experiment. Its terms and permission for reuse have not been verified; do not enable it in production without owner review. The adapter performs title search and episode-list discovery only. It does not request servers, extract HLS, decrypt payloads, or proxy media.
+- HiAnime catalogue and episode/server discovery are separate adapters, enabled only in staging for the experiment. Its terms and permission for reuse have not been verified; do not enable it in production without owner review. Server discovery returns server labels and IDs only; it does not request source URLs, extract HLS, decrypt payloads, or proxy media.
 - Jikan episode discovery is also implemented as a separate `EpisodeProvider`; review Jikan/MyAnimeList terms before launch.
 - Authentication. Decision: a standard identity provider for public users, with Cloudflare Access reserved for admin tools. Not chosen or built; it stays behind its own module so it can be swapped.

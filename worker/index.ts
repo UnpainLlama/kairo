@@ -16,7 +16,7 @@ interface Bindings {
   METADATA_PROVIDERS?: string;
   /** Optional Workers KV namespace used as the provider-response cache (recommended on workers.dev). */
   METADATA_CACHE?: KVNamespace;
-  /** "live" (default): serve the catalogue from AniList and Jikan, no database. "db": the original D1 routes. */
+  /** "live" (default): serve the catalogue from configured live providers, no database. "db": the original D1 routes. */
   CATALOG_SOURCE?: string;
   /** Catalogue-provider priority, comma-separated. */
   LIVE_PROVIDERS?: string;
@@ -75,6 +75,7 @@ app.get('/api/v1/catalog/browse', serveLive((h) => h.browse));
 app.get('/api/v1/catalog/genres', serveLive((h) => h.genres));
 app.get('/api/v1/providers', serveLive((h) => h.providers));
 app.get('/api/v1/anime/:id/episodes', serveLive((h) => h.episodes));
+app.get('/api/v1/anime/:id/episodes/:episodeNumber/servers', serveLive((h) => h.servers));
 app.get('/api/v1/anime/:id/related', serveLive((h) => h.related));
 app.get('/api/v1/anime/:id/metadata', serveLive((h) => h.metadata));
 app.get('/api/v1/anime/:id', serveLive((h) => h.anime));

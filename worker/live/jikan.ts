@@ -1,6 +1,6 @@
 // Live Jikan catalogue source (REST, https://api.jikan.moe/v4, unofficial MyAnimeList API, no key).
 // Documented limits: 3 requests/second and 60/minute, 24-hour server cache. Jikan scrapes MyAnimeList, so it can answer 504 on a cache miss.
-// It is therefore the FALLBACK for lists and search, and the source for episode lists. It has no banner images.
+// It is therefore the FALLBACK for catalogue lists and search. Its episode-list adapter lives separately in worker/episodes/providers/jikan.ts. It has no banner images.
 // NOTE: Jikan's own terms policy has not been read by the owner yet. Do that before launch (see docs/LIVE_CATALOGUE.md).
 // Field names below follow the v4 docs from memory and are untested against live responses; every field is read defensively.
 import { httpsUrlOrNull, normalizeFormat, normalizeSeason, plainText, positiveInt, uniqueStrings, yearOrNull } from '../metadata/normalize';

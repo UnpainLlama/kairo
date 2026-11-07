@@ -49,6 +49,7 @@ Do not expose stack traces, SQL, provider tokens, internal hostnames, or secret 
 | GET | `/api/v1/catalog/genres` | Available genres |
 | GET | `/api/v1/anime/:id` | Anime details |
 | GET | `/api/v1/anime/:id/episodes?page=1&limit=50` | Episodes from the separately configured `EPISODE_PROVIDERS`; response shape remains compatible. |
+| GET | `/api/v1/anime/:id/episodes/:episodeNumber/servers` | Sub/dub/raw server labels and provider IDs only; no source or playback URLs. |
 | GET | `/api/v1/anime/:id/related` | Related titles |
 
 Search parameters:
@@ -155,3 +156,7 @@ The example is a schema illustration, not a live URL. Return only provider-autho
 - Use `Cache-Control: no-store` on authenticated responses.
 - Use explicit CORS origins only if the API is hosted on a separate origin. Same-origin deployment is preferred.
 - Retry only idempotent reads, with bounded timeouts and backoff.
+
+## HiAnime server discovery
+
+`GET /api/v1/anime/:id/episodes/:episodeNumber/servers` returns server identifiers and sub/dub/raw labels for the selected episode. It does not return source URLs or playback streams.

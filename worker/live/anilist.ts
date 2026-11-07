@@ -93,7 +93,7 @@ export function createAniListSource(fetchImpl: FetchLike, now: () => string = ()
     displayName: 'AniList',
     attribution: ANILIST_ATTRIBUTION,
     maxLimit: MAX_LIMIT,
-    supports: () => true,
+    supports: (ref: Ref) => ref.kind === 'a' || ref.kind === 'm',
 
     async list(kind: ListKind, pageNo, limit, signal) {
       if (kind === 'featured') {

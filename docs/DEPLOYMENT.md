@@ -62,7 +62,7 @@ Open these in a browser (replace the host with your staging URL):
 | URL | Expect |
 |---|---|
 | `/api/health` | JSON, `"success":true`, `"environment":"staging"` |
-| `/api/ready` | `"database":"not used"` in live-catalogue mode, `"cache":"kv"`, `"providers":["jikan"]`, `"episodeProviders":["hianime","jikan"]` |
+| `/api/ready` | `"database":"not used"` in live-catalogue mode, `"cache":"kv"`, `"providers":["hianime","jikan"]`, `"episodeProviders":["hianime","jikan"]` |
 | `/api/v1/providers` | Jikan catalogue provider; separate episode providers list includes HiAnime (terms not verified) and Jikan |
 | `/` | The site loads. The catalogue is **empty** until Phase 2, so you see the "catalogue is empty" notice. That is correct. |
 
@@ -76,9 +76,9 @@ Open these in a browser (replace the host with your staging URL):
 | `METADATA_CACHE` | KV binding | `wrangler.jsonc` per environment | Short-lived provider response cache (needed on workers.dev) |
 | `APP_ENV` | var | `wrangler.jsonc` | `development`, `staging`, `production` |
 | `METADATA_PROVIDERS` | var | `wrangler.jsonc` | Enabled metadata-enrichment providers; blank on the experiment branch |
-| `LIVE_PROVIDERS` | var | `wrangler.jsonc` | Catalogue-provider priority; experiment branch uses `jikan` |
+| `LIVE_PROVIDERS` | var | `wrangler.jsonc` | Catalogue-provider priority; staging uses `hianime,jikan` (HiAnime first, Jikan fallback) |
 | `EPISODE_PROVIDERS` | var | `wrangler.jsonc` | Separate episode-provider priority; staging uses `hianime,jikan`, other environments use `jikan` |
-| `HIANIME_BASE_URL` | var | `wrangler.jsonc` | HTTPS HiAnime mirror base, checked against a fixed host allowlist; no secret required |
+| `HIANIME_BASE_URL` | var | `wrangler.jsonc` | HTTPS HiAnime mirror base (staging default `https://hianime.at`), checked against a fixed mirror allowlist; no secret required |
 | `ALLOWED_ORIGIN` | var, optional | not set | Only for cross-origin API use |
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | GitHub environment **secrets** | GitHub only | Deploying. Never in the repo or the Worker |
 | `STAGING_DEPLOY_ENABLED` | GitHub variable | GitHub | Auto-deploy staging on merge to main |
@@ -106,7 +106,7 @@ The Worker needs **no new secrets for episode discovery**. HiAnime and Jikan req
 ## 7. Verified vs assumed
 **Previously verified in the base project:** a local Wrangler dry-run, local D1 migrations, local Worker routes and SPA fallback, typecheck, 73 tests and build. Those baseline checks predate the HiAnime episode-provider changes.
 
-**This HiAnime experiment is not yet fully verified:** `git diff --check` and Wrangler JSONC parsing pass, but the current working session cannot run TypeScript/Vitest because the installed dependencies are incomplete and `npm ci` timed out. No real HiAnime response, remote Cloudflare deploy, remote migration, KV read/write, or GitHub Actions deployment has been verified. Re-run typecheck, tests and build in CI before deploying staging.
+**This HiAnime experiment is not yet fully verified:** isolated Worker-module and test-fixture TypeScript checks pass, mocked runtime smoke tests pass for detail, episode list, sub/dub server discovery and 429 handling, `git diff --check` passes, and Wrangler JSONC settings parse correctly. The full Vitest suite and full project build were not run because the local `node_modules` package folders are empty. No real HiAnime response, remote Cloudflare deploy, remote migration, KV read/write, or GitHub Actions deployment has been verified. The CloudStream reference package identifies `hianime.at` and the `/api/theme/episode/...` endpoints; this is evidence of the extension implementation, not proof that the endpoints remain available or that reuse is licensed. Re-run typecheck, tests and build in CI before deploying staging.
 
 ## 8. Production (blocked)
 Production deploys are blocked by design until you approve. They need all of: a separate D1 database and KV namespace, their IDs in the `production` block, a separate token in the `production` environment, the variable `PRODUCTION_DEPLOY_APPROVED=true`, a run from `main`, and your approval as required reviewer. Do none of this until staging is proven with a real catalogue.

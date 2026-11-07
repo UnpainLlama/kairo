@@ -10,7 +10,7 @@ const num = (v: string | undefined): number | null => {
 
 /** Normalised provider metadata -> the card and record KAIRO serves. */
 export function toLiveTitle(meta: NormalizedMetadata, provider: SourceId): LiveTitle {
-  const kind: RefKind = provider === 'anilist' ? 'a' : 'm';
+  const kind: RefKind = provider === 'anilist' ? 'a' : provider === 'hianime' ? 'h' : 'm';
   const own = Number(meta.externalId);
   const title = meta.title ?? meta.titleRomaji ?? meta.titleNative ?? 'Untitled';
   const altTitles = uniqueStrings([meta.titleEnglish, meta.titleRomaji, meta.titleNative, ...meta.synonyms])

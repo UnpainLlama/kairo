@@ -48,6 +48,7 @@ describe('ids', () => {
     expect(makeSlug('Death Note', 'a', 1535)).toBe('death-note-a1535');
     expect(parseRef('death-note-a1535')).toEqual({ kind: 'a', id: 1535 });
     expect(parseRef('m21')).toEqual({ kind: 'm', id: 21 });
+    expect(parseRef('death-note-8-h8')).toEqual({ kind: 'h', id: 8, slug: 'death-note-8' });
     expect(parseRef('x1')).toBeNull();
     expect(parseRef('a0')).toBeNull();
     expect(parseRef('death-note')).toBeNull();
@@ -126,6 +127,7 @@ describe('Jikan source', () => {
     const src = createJikanSource(async () => json({}), { pacer: instant });
     expect(src.supports({ kind: 'm', id: 1 })).toBe(true);
     expect(src.supports({ kind: 'a', id: 1 })).toBe(false);
+    expect(src.supports({ kind: 'h', id: 1 })).toBe(false);
   });
 });
 

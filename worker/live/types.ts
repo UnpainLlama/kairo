@@ -3,7 +3,7 @@ import type { Attribution } from '../metadata/types';
 import type { Ref } from './ids';
 import type { SortKey } from '../lib/validation';
 
-export type SourceId = 'anilist' | 'jikan';
+export type SourceId = 'anilist' | 'jikan' | 'hianime';
 export type ListKind = 'featured' | 'trending' | 'latest';
 
 export type Card = {
@@ -55,13 +55,13 @@ export interface CatalogSource {
 
 export type LiveEnv = {
   APP_ENV?: string;
-  /** "live" (default) serves AniList/Jikan; "db" keeps the original D1 routes. */
+  /** "live" (default) serves the configured live providers; "db" keeps the original D1 routes. */
   CATALOG_SOURCE?: string;
   /** Catalogue-provider priority, comma-separated. */
   LIVE_PROVIDERS?: string;
   /** Independent episode-provider priority. Default "jikan". */
   EPISODE_PROVIDERS?: string;
-  /** HiAnime mirror hostname; must be one of the adapter's fixed HTTPS allowlist. */
+  /** HiAnime mirror base URL; must be one of the adapter's fixed HTTPS allowlist. */
   HIANIME_BASE_URL?: string;
   METADATA_CACHE?: { get(key: string, type: 'json'): Promise<unknown>; put(key: string, value: string, options: { expirationTtl: number }): Promise<void> };
 };

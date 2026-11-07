@@ -65,7 +65,7 @@ export function parseBrowse(q: Query, today: Date): Result<BrowseQuery> {
   return { ok: true, value: { sort, genre, year: cur?.year ?? year, format, status, season: cur?.season ?? season, page: paging.value.page, limit: paging.value.limit } };
 }
 
-export type LiveHandlers = Record<'featured' | 'trending' | 'latest' | 'search' | 'browse' | 'genres' | 'anime' | 'episodes' | 'related' | 'metadata' | 'providers' | 'ready', Handler>;
+export type LiveHandlers = Record<'featured' | 'trending' | 'latest' | 'search' | 'browse' | 'genres' | 'anime' | 'episodes' | 'related' | 'metadata' | 'servers' | 'providers' | 'ready', Handler>;
 
 export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: LiveRequest) => svc.Deps): LiveHandlers {
   const depsFor = (req: LiveRequest): svc.Deps =>
@@ -146,6 +146,18 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
       } catch (e) { return providerFailure(req, 'live_episodes_failed', e); }
     },
 
+    async servers(req) {
+      const t = parseTitle(req);
+      const rawEpisodeNumber = req.param('episodeNumber');
+      const episodeNumber = rawEpisodeNumber === undefined ? null : boundedInt(rawEpisodeNumber, 1, 1, 100_000);
+      if (t.bad || episodeNumber === null) return failBody(req, 400, 'VALIDATION_ERROR', 'Invalid title or episode number.');
+      if (!t.ref) return failBody(req, 404, 'RESOURCE_NOT_FOUND', 'The requested title was not found.');
+      try {
+        const out = await svc.getEpisodeServers(depsFor(req), t.ref, episodeNumber);
+        return okBody(req, { items: out.items }, { source: out.via, episodeNumber });
+      } catch (e) { return providerFailure(req, 'live_episode_servers_failed', e); }
+    },
+
     async related(req) {
       const t = parseTitle(req);
       const limit = boundedInt(req.query.limit, 12, 1, 24);
@@ -181,8 +193,8 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
     async providers(req) {
       const deps = depsFor(req);
       return okBody(req, {
-        items: deps.sources.map((s, i) => ({ id: s.id, displayName: s.displayName, enabled: true, priority: i + 1, maxPageSize: s.maxLimit, capabilities: { list: true, search: true, episodes: false }, attribution: s.attribution })),
-        episodeProviders: deps.episodeProviders.map((p, i) => ({ id: p.id, displayName: p.displayName, enabled: true, priority: i + 1, termsVerified: p.termsVerified, capabilities: { episodes: true } })),
+        items: deps.sources.map((s, i) => ({ id: s.id, displayName: s.displayName, enabled: true, priority: i + 1, maxPageSize: s.maxLimit, capabilities: { list: true, search: true, details: true, episodes: false }, attribution: s.attribution })),
+        episodeProviders: deps.episodeProviders.map((p, i) => ({ id: p.id, displayName: p.displayName, enabled: true, priority: i + 1, termsVerified: p.termsVerified, capabilities: { episodes: true, servers: typeof p.listServers === 'function' } })),
         unknownConfigured: [],
         unknownEpisodeProviders: deps.unknownEpisodeProviders,
       });

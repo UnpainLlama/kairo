@@ -1,8 +1,8 @@
 // Stable ids and slugs for live (database-free) titles.
-// A title id is a provider letter plus that provider's numeric id: "a1535" (AniList) or "m1535" (MyAnimeList, served by Jikan).
+// A title id is a provider letter plus that provider's numeric id: "a1535" (AniList), "m1535" (MAL) or "h8" (HiAnime).
 // A slug is a readable prefix plus the id: "death-note-a1535". Only the trailing id matters when resolving.
-export type RefKind = 'a' | 'm';
-export type Ref = { kind: RefKind; id: number };
+export type RefKind = 'a' | 'm' | 'h';
+export type Ref = { kind: RefKind; id: number; /** Provider slug for hianime references, when present in the public route. */ slug?: string };
 
 export function slugify(title: string): string {
   const s = title
@@ -19,11 +19,13 @@ export function slugify(title: string): string {
 export const makeId = (kind: RefKind, id: number): string => `${kind}${id}`;
 export const makeSlug = (title: string, kind: RefKind, id: number): string => `${slugify(title)}-${kind}${id}`;
 
-/** Accepts "a1535", "m1535" or "death-note-a1535". Anything else is null. */
+/** Accepts provider ids such as a1535, m1535, h8 or slugs such as death-note-8-h8. */
 export function parseRef(raw: string | undefined): Ref | null {
   if (raw === undefined) return null;
-  const m = /^(?:[a-z0-9-]*-)?([am])(\d{1,9})$/.exec(raw);
+  const m = /^(?:([a-z0-9-]+)-)?([amh])(\d{1,9})$/.exec(raw);
   if (!m) return null;
-  const id = Number(m[2]);
-  return id > 0 ? { kind: m[1] as RefKind, id } : null;
+  const id = Number(m[3]);
+  if (id <= 0) return null;
+  const kind = m[2] as RefKind;
+  return kind === 'h' ? { kind, id, ...(m[1] ? { slug: m[1] } : {}) } : { kind, id };
 }
