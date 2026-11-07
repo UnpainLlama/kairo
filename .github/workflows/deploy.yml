@@ -4,8 +4,14 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches: [main, testing]
   workflow_dispatch:
+    inputs:
+      target:
+        description: 'Where to deploy after the checks pass'
+        type: choice
+        options: [none, staging, production]
+        default: none
 
 permissions:
   contents: read
@@ -20,9 +26,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
       - name: Install dependencies
@@ -34,35 +40,66 @@ jobs:
       - name: Build
         run: npm run build
 
+  # One deploy job for both targets. Staging is the default; production is double-gated (see the guard step).
   deploy:
-    name: Deploy to Cloudflare Workers
-    # Off until you create the repository variable DEPLOY_ENABLED=true (Settings > Secrets and variables > Actions > Variables).
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    name: Deploy to Cloudflare
     needs: verify
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.STAGING_DEPLOY_ENABLED == 'true') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.target == 'staging' || inputs.target == 'production'))
     runs-on: ubuntu-latest
-    environment: production
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'staging' }}
+    env:
+      TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'staging' }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
+      - name: Guard - production needs explicit approval
+        if: env.TARGET == 'production'
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then echo "::error::Production deploys only run from main."; exit 1; fi
+          if [ "${{ vars.PRODUCTION_DEPLOY_APPROVED }}" != "true" ]; then
+            echo "::error::Production deploy is not approved. The owner must set the repository variable PRODUCTION_DEPLOY_APPROVED=true."; exit 1
+          fi
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+      - name: Guard - Cloudflare credentials and resource IDs
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID are missing in the '$TARGET' GitHub environment. See docs/DEPLOYMENT.md."; exit 1
+          fi
+          WANT=$(echo "$TARGET" | tr a-z A-Z)
+          if grep -q "REPLACE_WITH_${WANT}_" wrangler.jsonc; then
+            echo "::error file=wrangler.jsonc::Replace the REPLACE_WITH_${WANT}_... placeholders with your real Cloudflare IDs. See docs/DEPLOYMENT.md."; exit 1
+          fi
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
       - name: Install dependencies
         run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
-      - name: Refuse to deploy with a placeholder D1 ID
-        run: |
-          if grep -q "REPLACE_WITH_D1_DATABASE_ID" wrangler.jsonc; then
-            echo "::error file=wrangler.jsonc::Replace REPLACE_WITH_D1_DATABASE_ID with your real D1 database ID before enabling deployment."
-            exit 1
-          fi
+      # Migrations are additive-only, so the previous Worker keeps working against the new schema while the deploy happens.
       - name: Apply D1 migrations
-        run: npm run db:migrate:remote
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler d1 migrations apply DB --remote --env "$TARGET"
+      - name: Build for the target environment
+        run: CLOUDFLARE_ENV="$TARGET" npm run build
       - name: Deploy Worker and static assets
-        run: npm run deploy
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: CLOUDFLARE_ENV="$TARGET" npx wrangler deploy 2>&1 | tee deploy.log
+      - name: Verify health and database connectivity
+        run: |
+          URL=$(grep -o 'https://[A-Za-z0-9._-]*\.workers\.dev' deploy.log | head -1 || true)
+          URL="${URL:-${{ vars.STAGING_URL }}}"
+          if [ -z "$URL" ]; then echo "::error::Could not find the deployed URL in the deploy log. Set the repository variable STAGING_URL."; exit 1; fi
+          echo "Checking $URL"
+          for path in /api/health /api/ready; do
+            ok=0
+            for i in 1 2 3 4 5 6; do
+              code=$(curl -s -o body.json -w '%{http_code}' "$URL$path" || true)
+              if [ "$code" = "200" ] && grep -q '"success":true' body.json; then ok=1; break; fi
+              echo "$path -> HTTP $code (attempt $i), retrying in 10s"; sleep 10
+            done
+            if [ "$ok" != "1" ]; then echo "::error::$URL$path did not return a healthy response."; cat body.json; exit 1; fi
+            echo "$path OK: $(cat body.json)"
+          done
+          grep -q '"cache":"kv"' body.json || echo "::warning::The KV cache binding is not active (ready reports cache != kv)."
+          { echo "### Deployed $TARGET"; echo "$URL"; echo; echo '```json'; cat body.json; echo; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

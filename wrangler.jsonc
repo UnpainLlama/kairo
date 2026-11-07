@@ -20,10 +20,10 @@
     // Staging: a separate Worker named kairo-anime-platform-staging, its own D1 database and KV namespace.
     "staging": {
       "d1_databases": [
-        { "binding": "DB", "database_name": "kairo-db-staging", "database_id": "REPLACE_WITH_STAGING_D1_DATABASE_ID", "migrations_dir": "migrations" }
+        { "binding": "DB", "database_name": "kairo-db-staging", "database_id": "30aa5446-f146-4253-b778-0ab88193ebe8", "migrations_dir": "migrations" }
       ],
       "kv_namespaces": [
-        { "binding": "METADATA_CACHE", "id": "REPLACE_WITH_STAGING_KV_NAMESPACE_ID" }
+        { "binding": "METADATA_CACHE", "id": "bddfe8f83eb54167a7418c9c1482cd8f" }
       ],
       "vars": { "APP_ENV": "staging", "METADATA_PROVIDERS": "anilist" }
     },
