@@ -16,14 +16,10 @@ interface Bindings {
   METADATA_PROVIDERS?: string;
   /** Optional Workers KV namespace used as the provider-response cache (recommended on workers.dev). */
   METADATA_CACHE?: KVNamespace;
-  /** "live" (default): serve the catalogue from configured live providers, no database. "db": the original D1 routes. */
+  /** "live" (default): serve the catalogue from AniList and Jikan, no database. "db": the original D1 routes. */
   CATALOG_SOURCE?: string;
-  /** Catalogue-provider priority, comma-separated. */
+  /** Live provider priority, comma-separated. Default "anilist,jikan". */
   LIVE_PROVIDERS?: string;
-  /** Independent episode-provider priority, e.g. "hianime,jikan". */
-  EPISODE_PROVIDERS?: string;
-  /** HiAnime mirror base URL; adapter enforces a fixed HTTPS host allowlist. */
-  HIANIME_BASE_URL?: string;
 }
 
 type Variables = { requestId: string };
@@ -58,7 +54,7 @@ function fail(c: Context<{ Bindings: Bindings; Variables: Variables }>, status: 
 
 app.get('/api/health', (c) => ok(c, { status: 'ok', service: 'kairo-api', environment: c.env.APP_ENV ?? 'unknown' }));
 
-// Live catalogue providers and independent episode-discovery providers. Public API paths remain stable. Each route below answers first when CATALOG_SOURCE is not "db" and otherwise falls through
+// Live catalogue (AniList + Jikan). Each route below answers first when CATALOG_SOURCE is not "db" and otherwise falls through
 // to the original D1 route registered further down, so the API paths and response shapes are unchanged.
 const live = createLiveHandlers((input, init) => fetch(input, init));
 const serveLive = (pick: (h: LiveHandlers) => (r: LiveRequest) => Promise<LiveResult>) => async (c: AppContext, next: Next) => {
@@ -75,7 +71,6 @@ app.get('/api/v1/catalog/browse', serveLive((h) => h.browse));
 app.get('/api/v1/catalog/genres', serveLive((h) => h.genres));
 app.get('/api/v1/providers', serveLive((h) => h.providers));
 app.get('/api/v1/anime/:id/episodes', serveLive((h) => h.episodes));
-app.get('/api/v1/anime/:id/episodes/:episodeNumber/servers', serveLive((h) => h.servers));
 app.get('/api/v1/anime/:id/related', serveLive((h) => h.related));
 app.get('/api/v1/anime/:id/metadata', serveLive((h) => h.metadata));
 app.get('/api/v1/anime/:id', serveLive((h) => h.anime));

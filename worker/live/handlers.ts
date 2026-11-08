@@ -5,7 +5,7 @@ import { ProviderError } from '../metadata/types';
 import type { FetchLike } from '../metadata/providers/http';
 import { parseRef } from './ids';
 import * as svc from './service';
-import type { BrowseQuery, LiveRequest, LiveResult, Paged } from './types';
+import type { BrowseQuery, LiveRequest, LiveResult, Paged, SourceId } from './types';
 
 export const isLiveMode = (v: string | undefined): boolean => (v ?? 'live').toLowerCase() !== 'db';
 
@@ -15,7 +15,7 @@ type Query = Record<string, string | undefined>;
 const okBody = (req: LiveRequest, data: unknown, meta: Record<string, unknown> = {}): LiveResult => ({ status: 200, body: { success: true, data, meta: { requestId: req.requestId, ...meta } } });
 const failBody = (req: LiveRequest, status: number, code: string, message: string): LiveResult => ({ status, body: { success: false, error: { code, message }, meta: { requestId: req.requestId } } });
 
-const sourceMeta = (o: { via: string; degraded: boolean; stale: boolean }): Record<string, unknown> => ({ source: o.via, ...(o.degraded ? { degraded: true } : {}), ...(o.stale ? { stale: true } : {}) });
+const sourceMeta = (o: { via: SourceId; degraded: boolean; stale: boolean }): Record<string, unknown> => ({ source: o.via, ...(o.degraded ? { degraded: true } : {}), ...(o.stale ? { stale: true } : {}) });
 
 function providerFailure(req: LiveRequest, event: string, error: unknown): LiveResult {
   const kind = error instanceof ProviderError ? error.kind : 'unavailable';
@@ -65,7 +65,7 @@ export function parseBrowse(q: Query, today: Date): Result<BrowseQuery> {
   return { ok: true, value: { sort, genre, year: cur?.year ?? year, format, status, season: cur?.season ?? season, page: paging.value.page, limit: paging.value.limit } };
 }
 
-export type LiveHandlers = Record<'featured' | 'trending' | 'latest' | 'search' | 'browse' | 'genres' | 'anime' | 'episodes' | 'related' | 'metadata' | 'servers' | 'providers' | 'ready', Handler>;
+export type LiveHandlers = Record<'featured' | 'trending' | 'latest' | 'search' | 'browse' | 'genres' | 'anime' | 'episodes' | 'related' | 'metadata' | 'providers' | 'ready', Handler>;
 
 export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: LiveRequest) => svc.Deps): LiveHandlers {
   const depsFor = (req: LiveRequest): svc.Deps =>
@@ -140,22 +140,10 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
         const deps = depsFor(req);
         const out = await svc.getEpisodes(deps, t.ref, page);
         const animeId = `${t.ref.kind}${t.ref.id}`;
-        const items = out.page.items.map((e) => ({ id: `${animeId}-e${e.episodeNumber}`, animeId, episodeNumber: e.episodeNumber, title: e.title, synopsis: e.synopsis, thumbnailUrl: null, durationSeconds: e.durationSeconds, publishedAt: e.airedAt }));
+        const items = out.page.items.map((e) => ({ id: `${animeId}-e${e.number}`, animeId, episodeNumber: e.number, title: e.title, synopsis: '', thumbnailUrl: null, durationSeconds: null, publishedAt: e.airedAt }));
         // The provider decides the page size, so the client's limit is ignored and page N maps straight to the provider's page N.
-        return okBody(req, { items }, { page, limit: items.length, ...(out.page.total !== null ? { total: out.page.total } : {}), hasNextPage: out.page.hasNextPage, ...(out.via ? { ...sourceMeta({ via: out.via, degraded: out.degraded, stale: out.stale }), ...(out.cached ? { cached: true } : {}) } : {}) });
+        return okBody(req, { items }, { page, limit: items.length, ...(out.page.total !== null ? { total: out.page.total } : {}), hasNextPage: out.page.hasNextPage, ...(out.via ? sourceMeta({ via: out.via, degraded: out.degraded, stale: out.stale }) : {}) });
       } catch (e) { return providerFailure(req, 'live_episodes_failed', e); }
-    },
-
-    async servers(req) {
-      const t = parseTitle(req);
-      const rawEpisodeNumber = req.param('episodeNumber');
-      const episodeNumber = rawEpisodeNumber === undefined ? null : boundedInt(rawEpisodeNumber, 1, 1, 100_000);
-      if (t.bad || episodeNumber === null) return failBody(req, 400, 'VALIDATION_ERROR', 'Invalid title or episode number.');
-      if (!t.ref) return failBody(req, 404, 'RESOURCE_NOT_FOUND', 'The requested title was not found.');
-      try {
-        const out = await svc.getEpisodeServers(depsFor(req), t.ref, episodeNumber);
-        return okBody(req, { items: out.items }, { source: out.via, episodeNumber });
-      } catch (e) { return providerFailure(req, 'live_episode_servers_failed', e); }
     },
 
     async related(req) {
@@ -193,17 +181,15 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
     async providers(req) {
       const deps = depsFor(req);
       return okBody(req, {
-        items: deps.sources.map((s, i) => ({ id: s.id, displayName: s.displayName, enabled: true, priority: i + 1, maxPageSize: s.maxLimit, capabilities: { list: true, search: true, details: true, episodes: false }, attribution: s.attribution })),
-        episodeProviders: deps.episodeProviders.map((p, i) => ({ id: p.id, displayName: p.displayName, enabled: true, priority: i + 1, termsVerified: p.termsVerified, capabilities: { episodes: true, servers: typeof p.listServers === 'function' } })),
+        items: deps.sources.map((s, i) => ({ id: s.id, displayName: s.displayName, enabled: true, priority: i + 1, maxPageSize: s.maxLimit, capabilities: { list: true, search: true, episodes: s.episodes !== undefined }, attribution: s.attribution })),
         unknownConfigured: [],
-        unknownEpisodeProviders: deps.unknownEpisodeProviders,
       });
     },
 
     // Readiness does not call the providers: that would spend their rate limits on every probe. It reports configuration only.
     async ready(req) {
       const deps = depsFor(req);
-      return okBody(req, { status: 'ready', catalogSource: 'live', database: 'not used', cache: req.env.METADATA_CACHE ? 'kv' : 'none', providers: deps.sources.map((s) => s.id), episodeProviders: deps.episodeProviders.map((p) => p.id), unknownEpisodeProviders: deps.unknownEpisodeProviders });
+      return okBody(req, { status: 'ready', catalogSource: 'live', database: 'not used', cache: req.env.METADATA_CACHE ? 'kv' : 'none', providers: deps.sources.map((s) => s.id) });
     },
   };
 }

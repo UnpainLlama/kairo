@@ -4,24 +4,19 @@ import type { CircuitBreaker } from '../metadata/breaker';
 import type { MetadataCache } from '../metadata/cache';
 import { sharedBreaker, createCache } from '../metadata/service';
 import type { FetchLike } from '../metadata/providers/http';
-import { ProviderError, type EpisodePage, type EpisodeProvider } from '../metadata/types';
-import { buildEpisodeProviders, listEpisodes as resolveEpisodes } from '../episodes/service';
+import { ProviderError } from '../metadata/types';
 import { createAniListSource } from './anilist';
 import { createJikanSource } from './jikan';
-import { createHiAnimeSource } from './hianime';
 import type { Ref } from './ids';
-import type { BrowseQuery, CatalogSource, ListKind, LiveEnv, LiveTitle, Paged, SourceId } from './types';
+import type { BrowseQuery, CatalogSource, EpisodePage, ListKind, LiveEnv, LiveTitle, Paged, SourceId } from './types';
 
 export type Deps = {
   sources: CatalogSource[];
-  episodeProviders: EpisodeProvider[];
-  unknownEpisodeProviders: string[];
   cache: MetadataCache;
   breaker: CircuitBreaker;
   now: () => number;
   timeoutMs?: number;
   onError?: (source: SourceId, error: ProviderError) => void;
-  onEpisodeError?: (source: string, error: ProviderError) => void;
 };
 
 /** Fresh = served without calling a provider. Stale = only used when every provider fails. All values are seconds. */
@@ -152,72 +147,23 @@ export async function getRelated(deps: Deps, ref: Ref, limit: number): Promise<O
   return resolve(deps, { key: `live:related:${ref.kind}${ref.id}:${limit}`, ttl: TTL.related, candidates });
 }
 
-export type EpisodesOutcome = { page: EpisodePage; via: string | null; degraded: boolean; stale: boolean; cached: boolean };
+export type EpisodesOutcome = { page: EpisodePage; via: SourceId | null; degraded: boolean; stale: boolean };
 
 export async function getEpisodes(deps: Deps, ref: Ref, page: number): Promise<EpisodesOutcome> {
-  if (deps.episodeProviders.length === 0) {
-    return { page: { items: [], hasNextPage: false, total: 0 }, via: null, degraded: false, stale: false, cached: false };
-  }
-
-  const title = (await getTitle(deps, ref)).value;
-  const lookup = {
-    cacheKey: `${ref.kind}${ref.id}`,
-    title: title.card.title,
-    alternateTitles: title.altTitles,
-    externalIds: {
-      ...(title.anilistId ? { anilist: String(title.anilistId) } : {}),
-      ...(title.malId ? { mal: String(title.malId) } : {}),
-    },
-    providerUrl: title.url,
-  };
-  const out = await resolveEpisodes({
-    providers: deps.episodeProviders, cache: deps.cache, breaker: deps.breaker, now: deps.now,
-    timeoutMs: deps.timeoutMs, onError: deps.onEpisodeError,
-  }, lookup, page);
-  return { page: out.page, via: out.via, degraded: out.degraded, stale: out.stale, cached: out.cached };
+  const source = deps.sources.find((s) => s.episodes !== undefined);
+  if (!source || !source.episodes) return { page: { items: [], hasNextPage: false, total: 0 }, via: null, degraded: false, stale: false };
+  const malId = ref.kind === 'm' ? ref.id : (await getTitle(deps, ref)).value.malId;
+  if (malId === null) return { page: { items: [], hasNextPage: false, total: 0 }, via: null, degraded: false, stale: false };
+  const fetchEpisodes = source.episodes.bind(source);
+  const out = await resolve(deps, {
+    key: `live:episodes:${malId}:${page}`,
+    ttl: TTL.episodes,
+    candidates: [{ source, run: (signal) => fetchEpisodes(malId, page, signal) }],
+  });
+  return { page: out.value, via: out.via, degraded: out.degraded, stale: out.stale };
 }
 
-export async function getEpisodeServers(deps: Deps, ref: Ref, episodeNumber: number) {
-  if (!Number.isFinite(episodeNumber) || episodeNumber <= 0 || episodeNumber > 100_000) throw new ProviderError('not_found', 'Invalid episode number.');
-  const title = (await getTitle(deps, ref)).value;
-  const lookup = {
-    cacheKey: `${ref.kind}${ref.id}`,
-    title: title.card.title,
-    alternateTitles: title.altTitles,
-    externalIds: {
-      ...(title.anilistId ? { anilist: String(title.anilistId) } : {}),
-      ...(title.malId ? { mal: String(title.malId) } : {}),
-    },
-    providerUrl: title.url,
-  };
-  const provider = deps.episodeProviders.find((item) => typeof item.listServers === 'function');
-  if (!provider?.listServers) throw new ProviderError('unavailable', 'No episode server-discovery provider is enabled.');
-  const breakerKey = `episode:${provider.id}`;
-  if (!deps.breaker.canRequest(breakerKey, deps.now())) throw new ProviderError('unavailable', `${provider.displayName} is temporarily paused after repeated failures.`);
-  try {
-    // HiAnime returns the episode list as one page; page through providers that split long-running shows.
-    for (let page = 1; page <= 20; page++) {
-      const episodes = await withTimeout(deps.timeoutMs ?? 8000, (signal) => provider.listEpisodes(lookup, page, signal));
-      const match = episodes.items.find((item) => item.episodeNumber === episodeNumber);
-      if (match?.providerEpisodeId) {
-        const items = await withTimeout(deps.timeoutMs ?? 8000, (signal) => provider.listServers!(match.providerEpisodeId!, lookup, signal));
-        deps.breaker.recordSuccess(breakerKey);
-        return { items, via: provider.id };
-      }
-      if (!episodes.hasNextPage) break;
-    }
-    deps.breaker.recordSuccess(breakerKey);
-    throw new ProviderError('not_found', 'The requested episode was not found by the server-discovery provider.');
-  } catch (error) {
-    if (error instanceof ProviderError && error.kind === 'not_found') throw error;
-    const providerError = error instanceof ProviderError ? error : new ProviderError('unavailable', 'Unexpected episode server-discovery failure.');
-    deps.breaker.recordFailure(breakerKey, deps.now(), providerError.retryAfterSeconds);
-    deps.onEpisodeError?.(provider.id, providerError);
-    throw providerError;
-  }
-}
-
-const FACTORIES: Record<SourceId, (f: FetchLike, baseUrl?: string) => CatalogSource> = { anilist: (f) => createAniListSource(f), jikan: (f) => createJikanSource(f), hianime: (f, baseUrl) => createHiAnimeSource(f, baseUrl) };
+const FACTORIES: Record<SourceId, (f: FetchLike) => CatalogSource> = { anilist: (f) => createAniListSource(f), jikan: (f) => createJikanSource(f) };
 
 export function parseSourceList(csv: string | undefined): SourceId[] {
   const wanted = (csv ?? 'anilist,jikan').split(',').map((s) => s.trim().toLowerCase()).filter((s): s is SourceId => s in FACTORIES);
@@ -225,15 +171,11 @@ export function parseSourceList(csv: string | undefined): SourceId[] {
 }
 
 export function buildDeps(env: LiveEnv, fetchImpl: FetchLike, onError?: Deps['onError']): Deps {
-  const episodeRegistry = buildEpisodeProviders(env.EPISODE_PROVIDERS, env.HIANIME_BASE_URL, fetchImpl);
   return {
-    sources: parseSourceList(env.LIVE_PROVIDERS).map((id) => FACTORIES[id](fetchImpl, env.HIANIME_BASE_URL)),
-    episodeProviders: episodeRegistry.providers,
-    unknownEpisodeProviders: episodeRegistry.unknown,
+    sources: parseSourceList(env.LIVE_PROVIDERS).map((id) => FACTORIES[id](fetchImpl)),
     cache: createCache(env),
     breaker: sharedBreaker,
     now: Date.now,
     onError,
-    onEpisodeError: (source, error) => console.error(JSON.stringify({ event: 'episode_provider_failed', source, kind: error.kind })),
   };
 }

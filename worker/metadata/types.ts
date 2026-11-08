@@ -69,39 +69,11 @@ export interface MetadataProvider {
   search(title: string, signal: AbortSignal, limit?: number): Promise<NormalizedMetadata[]>;
 }
 
-// Episode discovery is a separate service from catalogue metadata and playback.
-export type EpisodeLookup = {
-  /** Stable KAIRO title id, used only to key short-lived cache entries. */
-  cacheKey: string;
-  title: string;
-  alternateTitles: string[];
-  externalIds: ExternalIds;
-  /** Canonical source page URL, used to avoid an unnecessary title search. */
-  providerUrl?: string | null;
-};
-
-export type EpisodeRecord = {
-  episodeNumber: number;
-  title: string;
-  airedAt: string | null;
-  synopsis: string;
-  durationSeconds: number | null;
-  /** Provider-side episode identifier; never a playable media URL. */
-  providerEpisodeId?: string;
-};
-
-export type EpisodeServer = { id: string; type: 'sub' | 'dub' | 'raw'; name: string };
-
-export type EpisodePage = { items: EpisodeRecord[]; hasNextPage: boolean; total: number | null };
-
+// Separate service boundaries. Only the contracts exist today; no implementation is assumed for any provider.
+export type EpisodeRecord = { episodeNumber: number; title: string; synopsis: string; airedAt: string | null; durationSeconds: number | null };
 export interface EpisodeProvider {
   readonly id: string;
-  readonly displayName: string;
-  /** false until the owner has reviewed the provider's terms and confirmed permitted use. */
-  readonly termsVerified: boolean;
-  listEpisodes(title: EpisodeLookup, page: number, signal: AbortSignal): Promise<EpisodePage>;
-  /** Optional server/language discovery. This does not resolve or extract playback URLs. */
-  listServers?(providerEpisodeId: string, title: EpisodeLookup, signal: AbortSignal): Promise<EpisodeServer[]>;
+  listEpisodes(ids: ExternalIds, signal: AbortSignal): Promise<EpisodeRecord[]>;
 }
 // Playback is handled by worker/providers/playback.ts (the authorized-playback boundary).
 

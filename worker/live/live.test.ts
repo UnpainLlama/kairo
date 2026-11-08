@@ -5,7 +5,6 @@ import { MemoryCache } from '../metadata/cache';
 import { CircuitBreaker } from '../metadata/breaker';
 import { createAniListSource, buildPageQuery } from './anilist';
 import { createJikanSource, mapJikanAnime, Pacer } from './jikan';
-import { createJikanEpisodeProvider } from '../episodes/providers/jikan';
 import { createLiveHandlers, parseBrowse, currentSeason } from './handlers';
 import { makeSlug, parseRef, slugify } from './ids';
 import type { Deps } from './service';
@@ -33,7 +32,6 @@ function deps(handler: (url: string, init?: RequestInit) => Promise<Response>, o
   const f = (url: string, init?: RequestInit) => handler(url, init);
   return {
     sources: [createAniListSource(f, () => NOW), createJikanSource(f, { pacer: instant, now: () => NOW })],
-    episodeProviders: [createJikanEpisodeProvider(f, async () => {})], unknownEpisodeProviders: [],
     cache: new MemoryCache(), breaker: new CircuitBreaker(), now: Date.now, ...over,
   };
 }
@@ -48,7 +46,6 @@ describe('ids', () => {
     expect(makeSlug('Death Note', 'a', 1535)).toBe('death-note-a1535');
     expect(parseRef('death-note-a1535')).toEqual({ kind: 'a', id: 1535 });
     expect(parseRef('m21')).toEqual({ kind: 'm', id: 21 });
-    expect(parseRef('death-note-8-h8')).toEqual({ kind: 'h', id: 8, slug: 'death-note-8' });
     expect(parseRef('x1')).toBeNull();
     expect(parseRef('a0')).toBeNull();
     expect(parseRef('death-note')).toBeNull();
@@ -119,7 +116,9 @@ describe('Jikan source', () => {
     expect((await src.browse({ sort: 'popularity', status: 'hiatus', page: 1, limit: 24 }, signal)).items).toEqual([]);
     expect((await src.browse({ sort: 'popularity', genre: 'Nope', page: 1, limit: 24 }, signal)).items).toEqual([]);
   });
-  it('maps provider errors for missing and unavailable catalogue titles', async () => {
+  it('reads episodes and maps 404 to not_found, 504 to unavailable', async () => {
+    const ok = createJikanSource(async () => json({ data: [{ mal_id: 1, title: 'Pilot', aired: '2026-10-01T00:00:00+00:00' }, { mal_id: 'x' }], pagination: { has_next_page: false } }), { pacer: instant });
+    expect(await ok.episodes!(5, 1, signal)).toEqual({ items: [{ number: 1, title: 'Pilot', airedAt: '2026-10-01T00:00:00+00:00' }], hasNextPage: false, total: null });
     await expect(createJikanSource(async () => json({}, { status: 404 }), { pacer: instant }).byRef({ kind: 'm', id: 1 }, signal)).rejects.toMatchObject({ kind: 'not_found' });
     await expect(createJikanSource(async () => json({}, { status: 504 }), { pacer: instant }).byRef({ kind: 'm', id: 1 }, signal)).rejects.toMatchObject({ kind: 'unavailable' });
   });
@@ -127,7 +126,6 @@ describe('Jikan source', () => {
     const src = createJikanSource(async () => json({}), { pacer: instant });
     expect(src.supports({ kind: 'm', id: 1 })).toBe(true);
     expect(src.supports({ kind: 'a', id: 1 })).toBe(false);
-    expect(src.supports({ kind: 'h', id: 1 })).toBe(false);
   });
 });
 
@@ -198,8 +196,8 @@ describe('service and handlers', () => {
   it('lists providers and reports ready without calling them', async () => {
     let calls = 0;
     const d = deps(async () => { calls++; return json({}); });
-    expect(await call(d, 'providers', req())).toMatchObject({ body: { data: { items: [{ id: 'anilist', priority: 1, capabilities: { episodes: false } }, { id: 'jikan', priority: 2, capabilities: { episodes: false } }], episodeProviders: [{ id: 'jikan', priority: 1, termsVerified: false, capabilities: { episodes: true } }] } } });
-    expect(await call(d, 'ready', req())).toMatchObject({ body: { data: { status: 'ready', providers: ['anilist', 'jikan'], episodeProviders: ['jikan'] } } });
+    expect(await call(d, 'providers', req())).toMatchObject({ body: { data: { items: [{ id: 'anilist', priority: 1 }, { id: 'jikan', priority: 2, capabilities: { episodes: true } }] } } });
+    expect(await call(d, 'ready', req())).toMatchObject({ body: { data: { status: 'ready', providers: ['anilist', 'jikan'] } } });
     expect(calls).toBe(0);
   });
 });
