@@ -48,8 +48,7 @@ Do not expose stack traces, SQL, provider tokens, internal hostnames, or secret 
 | GET | `/api/v1/catalog/search?q=...&page=1&limit=24` | Search |
 | GET | `/api/v1/catalog/genres` | Available genres |
 | GET | `/api/v1/anime/:id` | Anime details |
-| GET | `/api/v1/anime/:id/episodes?page=1&limit=50` | Episodes from the separately configured `EPISODE_PROVIDERS`; response shape remains compatible. |
-| GET | `/api/v1/anime/:id/episodes/:episodeNumber/servers` | Sub/dub/raw server labels and provider IDs only; no source or playback URLs. |
+| GET | `/api/v1/anime/:id/episodes?page=1&limit=50` | Episodes |
 | GET | `/api/v1/anime/:id/related` | Related titles |
 
 Search parameters:
@@ -70,7 +69,7 @@ Search parameters:
 
 | Route | Purpose |
 |---|---|
-| `GET /api/v1/providers` | Catalogue/metadata providers plus a separate `episodeProviders` array (including `termsVerified`); reports unknown configured provider IDs. |
+| `GET /api/v1/providers` | Metadata providers: enabled flag, `termsVerified`, capabilities, attribution. Also `unknownConfigured` for names in `METADATA_PROVIDERS` that no adapter handles. |
 | `GET /api/v1/anime/:id/metadata` | Unified record for a title (id or slug): the stored row merged with enabled providers. Adds `provenance`, `conflicts`, `ids`, `sources` and `providers` (per-provider outcome: `ok`, `cached`, `not_found`, `skipped`, `failed`). `meta.degraded` is true when any enabled provider failed. A provider failure never fails the request; the stored row is always the floor. Errors: `VALIDATION_ERROR`, `RESOURCE_NOT_FOUND`, `CATALOG_UNAVAILABLE`. |
 
 Ratings are on a 0-10 scale. See docs/PROVIDERS.md.
@@ -156,7 +155,3 @@ The example is a schema illustration, not a live URL. Return only provider-autho
 - Use `Cache-Control: no-store` on authenticated responses.
 - Use explicit CORS origins only if the API is hosted on a separate origin. Same-origin deployment is preferred.
 - Retry only idempotent reads, with bounded timeouts and backoff.
-
-## HiAnime server discovery
-
-`GET /api/v1/anime/:id/episodes/:episodeNumber/servers` returns server identifiers and sub/dub/raw labels for the selected episode. It does not return source URLs or playback streams.
