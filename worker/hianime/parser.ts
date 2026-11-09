@@ -24,48 +24,34 @@ export type HiAnimeServer = {
   providerServerId: string;
   type: 'sub' | 'dub' | 'raw';
   name: string;
-  /** Base64 data-hash from the servers HTML; decodes to an embed URL when present. */
+  /** Provider-supplied base64 data-hash. Kept opaque; never treated as trusted URL input. */
   dataHash?: string;
-  /** Decoded HTTPS embed URL when data-hash was present and valid. */
+  /** Plain HTTPS URL only when the public payload directly contains one. */
   embedUrl?: string;
 };
 
-/** Stable numeric id derived from a data-hash so API routes that require digits still work. */
+/** Reversible, collision-free path-safe identifier for an opaque provider hash. */
 export function stableServerIdFromHash(hash: string): string {
-  let n = 2166136261;
-  for (let i = 0; i < hash.length; i++) {
-    n ^= hash.charCodeAt(i);
-    n = Math.imul(n, 16777619);
-  }
-  return String(n >>> 0);
+  return `h_${hash.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')}`;
 }
 
-/** Decode a HiAnime data-hash into a plain HTTPS URL when possible. */
+/** Decode only a plainly encoded URL/JSON URL. No eval, decryption, or challenge bypass. */
 export function decodeHiAnimeDataHash(hash: string): string | null {
-  if (!hash || hash.length > 4096) return null;
+  if (!hash || hash.length > 1800 || !/^[A-Za-z0-9_+\/-]+={0,2}$/.test(hash)) return null;
   try {
-    const decoded = atob(hash).trim();
-    if (/^https:\/\//i.test(decoded)) {
-      const url = new URL(decoded);
-      if (url.protocol === 'https:' && !url.username && !url.password) return url.href;
-      return null;
+    const normalized = hash.replace(/-/g, '+').replace(/_/g, '/');
+    const decoded = atob(normalized + '='.repeat((4 - normalized.length % 4) % 4)).trim();
+    let candidate = decoded;
+    if (!/^https:\/\//i.test(candidate)) {
+      const parsed: unknown = JSON.parse(decoded);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+      const root = parsed as Record<string, unknown>;
+      const nested = root.link && typeof root.link === 'object' && !Array.isArray(root.link) ? root.link as Record<string, unknown> : null;
+      candidate = (typeof root.link === 'string' ? root.link : '') || (typeof root.url === 'string' ? root.url : '') || (typeof root.file === 'string' ? root.file : '') || (typeof nested?.url === 'string' ? nested.url : '');
     }
-    const parsed: unknown = JSON.parse(decoded);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-    const root = parsed as Record<string, unknown>;
-    const nested = root.link && typeof root.link === 'object' && !Array.isArray(root.link) ? (root.link as Record<string, unknown>) : null;
-    const candidate =
-      (typeof root.link === 'string' && root.link) ||
-      (typeof root.url === 'string' && root.url) ||
-      (typeof root.file === 'string' && root.file) ||
-      (typeof nested?.url === 'string' ? nested.url : '');
-    if (!candidate) return null;
     const url = new URL(candidate);
-    if (url.protocol === 'https:' && !url.username && !url.password) return url.href;
-  } catch {
-    return null;
-  }
-  return null;
+    return url.protocol === 'https:' && !url.username && !url.password && !url.port ? url.href : null;
+  } catch { return null; }
 }
 
 export function decodeEntities(value: string): string {
@@ -239,7 +225,7 @@ export function parseHiAnimeEpisodes(html: string): HiAnimeEpisode[] {
   for (const match of html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)) {
     const attrs = parseAttributes(match[1] ?? '');
     if (!(attrs.class ?? '').split(/\s+/).includes('ep-item')) continue;
-    const id = attrs['data-id'] ?? attrs['data-server-id'];
+    const id = attrs['data-id'];
     const number = Number(attrs['data-number'] ?? textContent(match[2] ?? '').match(/(?:episode|ep)\s*(\d+(?:\.\d+)?)/i)?.[1]);
     if (!id || !/^\d+$/.test(id) || !Number.isFinite(number) || number <= 0 || seen.has(id)) continue;
     const title = attrs.title ?? attrs['data-title'] ?? (textContent(match[2] ?? '') || `Episode ${number}`);
@@ -252,36 +238,27 @@ export function parseHiAnimeEpisodes(html: string): HiAnimeEpisode[] {
 export function parseHiAnimeServers(html: string): HiAnimeServer[] {
   const out: HiAnimeServer[] = [];
   const seen = new Set<string>();
-  // Current hianime.at theme markup uses data-hash (base64 embed URL) and often
-  // omits numeric data-id. Prefer data-hash; fall back to legacy numeric ids.
-  for (const match of html.matchAll(/<([a-z][\w:-]*)\b([^>]*)>/gi)) {
-    const attrs = parseAttributes(match[2] ?? '');
-    const classes = (attrs.class ?? '').split(/\s+/);
-    if (!classes.includes('server-item')) continue;
+  for (const item of elementsByClass(html, 'server-item')) {
+    const opening = item.match(/^\s*<[^>]+>/)?.[0] ?? '';
+    const attrs = parseAttributes(opening);
     const type = (attrs['data-type'] ?? '').toLowerCase();
     if (!['sub', 'dub', 'raw'].includes(type)) continue;
 
     const dataHash = (attrs['data-hash'] ?? '').trim();
     const legacyId = attrs['data-id'] ?? attrs['data-server-id'];
-    let id: string | null = null;
-    let embedUrl: string | undefined;
-    if (dataHash) {
-      id = stableServerIdFromHash(dataHash);
-      embedUrl = decodeHiAnimeDataHash(dataHash) ?? undefined;
-    } else if (legacyId && /^\d+$/.test(legacyId)) {
-      id = legacyId;
-    }
+    const id = dataHash
+      ? stableServerIdFromHash(dataHash)
+      : legacyId && /^\d+$/.test(legacyId) ? legacyId : '';
     if (!id || seen.has(`${type}:${id}`)) continue;
 
-    const tag = (match[1] ?? '').toLowerCase();
-    const tail = html.slice((match.index ?? 0) + match[0].length);
-    const closingTag = tail.search(new RegExp(`</${tag}\\s*>`, 'i'));
-    const inlineName = closingTag >= 0 ? textContent(tail.slice(0, closingTag)) : '';
-    const name = attrs['data-server-name'] ?? attrs.title ?? inlineName ?? `HD-${id}`;
+    const body = item.slice(opening.length, item.lastIndexOf('</'));
+    const label = attrs['data-server-name'] || attrs.title || textContent(body);
+    const name = textContent(label) || `HD-${out.length + 1}`;
+    const embedUrl = dataHash ? decodeHiAnimeDataHash(dataHash) ?? undefined : undefined;
     out.push({
       providerServerId: id,
       type: type as HiAnimeServer['type'],
-      name: textContent(name) || `HD-${id}`,
+      name,
       ...(dataHash ? { dataHash } : {}),
       ...(embedUrl ? { embedUrl } : {}),
     });

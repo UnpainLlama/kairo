@@ -55,7 +55,7 @@
         "LIVE_PROVIDERS": "hianime,jikan",
         "EPISODE_PROVIDERS": "hianime,jikan",
         "HIANIME_BASE_URL": "https://hianime.at",
-        "HIANIME_PLAYBACK_ALLOWED_HOSTS": "zokoanime.video,megaplay.buzz,hls.dramahot.top,hls1.drama1.cfd,mysubsplay.com,emeralddrift.world,hianime.at"
+        "HIANIME_PLAYBACK_ALLOWED_HOSTS": "zokoanime.video,megaplay.buzz,hls.dramahot.top,hls1.drama1.cfd,mysubsplay.com,emeralddrift.world,hianime.at,hls1drama1.cfd,mysubplay.com,emeralddrift.com"
       }
     },
 

@@ -3,6 +3,7 @@ import { ProviderError, type EpisodeLookup } from '../metadata/types';
 import { createHiAnimeEpisodeProvider } from './providers/hianime';
 import { createJikanEpisodeProvider } from './providers/jikan';
 import { normalizeProviderTitle, parseHiAnimeEpisodeLinks, parseHiAnimeSearchResults } from './parsers/hianime';
+import { decodeHiAnimeDataHash, parseHiAnimeServers, stableServerIdFromHash } from '../hianime/parser';
 
 const lookup: EpisodeLookup = {
   cacheKey: 'h8', title: 'Death Note', alternateTitles: ['デスノート', 'DN'], externalIds: {},
@@ -53,51 +54,46 @@ describe('HiAnime episode provider', () => {
     const urls: string[] = [];
     const provider = createHiAnimeEpisodeProvider(async (input) => {
       urls.push(input);
-      return json({ status: true, html: '<div class="server-item" data-id="901" data-type="sub" data-server-id="1"><div class="server-item" data-id="902" data-type="dub" data-server-id="2">' });
+      return json({ status: true, html: '<div class="server-item" data-id="901" data-type="sub" data-server-id="1">HD-1</div><div class="server-item" data-id="902" data-type="dub" data-server-id="2">HD-2</div>' });
     }, 'https://hianime.at');
     const servers = await provider.listServers!('2001', lookup, signal);
     expect(urls).toEqual(['https://hianime.at/api/theme/episode/servers?episodeId=2001']);
     expect(servers).toEqual([{ id: '901', type: 'sub', name: 'HD-1' }, { id: '902', type: 'dub', name: 'HD-2' }]);
   });
 
-  it('accepts server fragments that expose the numeric id as data-server-id', async () => {
-    const provider = createHiAnimeEpisodeProvider(async () => json({ status: 200, html: '<div class="server-item" data-type="sub" data-server-id="77">HD-2</div>' }), 'https://hianime.at');
-    await expect(provider.listServers!('2001', lookup, signal)).resolves.toEqual([{ id: '77', type: 'sub', name: 'HD-2' }]);
-  });
-
-  it('resolves only plain allowlisted HLS or iframe URLs from the public source response', async () => {
-    const urls: string[] = [];
-    const provider = createHiAnimeEpisodeProvider(async (input) => {
-      urls.push(input);
-      return json({ status: true, data: { file: 'https://media.example.test/master.m3u8' } });
-    }, 'https://hianime.at', ['media.example.test']);
-    await expect(provider.resolveServer!('901', lookup, signal)).resolves.toEqual({
-      provider: 'hianime', protocol: 'hls', manifestUrl: 'https://media.example.test/master.m3u8', subtitles: [], variants: [],
-    });
-    expect(urls).toEqual(['https://hianime.at/ajax/v2/episode/sources?id=901']);
-  });
-
-  it('accepts provider-returned plain HLS source arrays without attempting decryption', async () => {
-    const provider = createHiAnimeEpisodeProvider(async () => json({ encrypted: false, sources: [{ file: 'https://media.example.test/master.m3u8', quality: '1080p' }], tracks: [{ lang: 'en', label: 'English', file: 'https://media.example.test/en.vtt' }] }), 'https://hianime.at', ['media.example.test']);
-    await expect(provider.resolveServer!('901', lookup, signal)).resolves.toEqual({
-      provider: 'hianime', protocol: 'hls', manifestUrl: 'https://media.example.test/master.m3u8', subtitles: [{ language: 'en', label: 'English', url: 'https://media.example.test/en.vtt', format: 'vtt' }], variants: [{ label: '1080p' }],
-    });
-  });
-
-  it('fails closed for unallowlisted URLs and encrypted/unknown source payloads', async () => {
-    const untrusted = createHiAnimeEpisodeProvider(async () => json({ data: { link: 'https://evil.example/embed' } }), 'https://hianime.at', ['media.example.test']);
-    await expect(untrusted.resolveServer!('901', lookup, signal)).resolves.toBeNull();
-    const encrypted = createHiAnimeEpisodeProvider(async () => json({ data: { sources: 'encrypted-payload' } }), 'https://hianime.at', ['media.example.test']);
-    await expect(encrypted.resolveServer!('901', lookup, signal)).resolves.toBeNull();
-    const unsupportedFile = createHiAnimeEpisodeProvider(async () => json({ data: { file: 'https://media.example.test/video.mp4' } }), 'https://hianime.at', ['media.example.test']);
-    await expect(unsupportedFile.resolveServer!('901', lookup, signal)).resolves.toBeNull();
-    const disabled = createHiAnimeEpisodeProvider(async () => { throw new Error('must not fetch'); }, 'https://hianime.at');
-    await expect(disabled.resolveServer!('901', lookup, signal)).resolves.toBeNull();
+  it('resolves only a plain provider-returned URL on an exact approved host', async () => {
+    const hash = btoa('https://zokoanime.video/embed/abc');
+    const provider = createHiAnimeEpisodeProvider(async () => json({ status: true, html: `<div class="server-item" data-type="sub" data-hash="${hash}">Zoko</div>` }), 'https://hianime.at', ['zokoanime.video']);
+    const serverId = stableServerIdFromHash(hash);
+    await expect(provider.resolveServer!(serverId, lookup, signal, '2001')).resolves.toMatchObject({ provider: 'hianime', protocol: 'embed', embedUrl: 'https://zokoanime.video/embed/abc' });
+    const blocked = createHiAnimeEpisodeProvider(async () => json({ status: true, html: `<div class="server-item" data-type="sub" data-hash="${hash}">Zoko</div>` }), 'https://hianime.at', ['megaplay.buzz']);
+    await expect(blocked.resolveServer!(serverId, lookup, signal, '2001')).resolves.toBeNull();
   });
 
   it('rejects an unsafe configured mirror', () => {
     expect(() => createHiAnimeEpisodeProvider(async () => new Response(''), 'http://hianime.at')).toThrow(ProviderError);
     expect(() => createHiAnimeEpisodeProvider(async () => new Response(''), 'https://evil.example')).toThrow(ProviderError);
+  });
+});
+
+
+
+describe('HiAnime playback server parsing', () => {
+  it('preserves readable server names and legacy numeric ids', () => {
+    expect(parseHiAnimeServers('<div class="server-item" data-id="901" data-type="sub">HD-1</div><div class="server-item" data-server-id="902" data-type="dub"><span>HD-2</span></div>'))
+      .toMatchObject([{ providerServerId: '901', name: 'HD-1' }, { providerServerId: '902', name: 'HD-2' }]);
+  });
+
+  it('uses reversible opaque ids for data-hash values and decodes only plain HTTPS URLs', () => {
+    const hash = btoa('https://zokoanime.video/embed/abc');
+    const servers = parseHiAnimeServers(`<div class="server-item" data-type="sub" data-hash="${hash}">Zoko</div>`);
+    expect(servers).toEqual([{ providerServerId: stableServerIdFromHash(hash), type: 'sub', name: 'Zoko', dataHash: hash, embedUrl: 'https://zokoanime.video/embed/abc' }]);
+    expect(decodeHiAnimeDataHash(btoa('javascript:alert(1)'))).toBeNull();
+    expect(decodeHiAnimeDataHash('%%%')).toBeNull();
+  });
+
+  it('does not collapse distinct hashes to the same server id', () => {
+    expect(stableServerIdFromHash('YWJj')).not.toBe(stableServerIdFromHash('YWJk'));
   });
 });
 

@@ -81,57 +81,24 @@ export function createHiAnimeEpisodeProvider(fetchImpl: FetchLike, baseUrl?: str
       return parseHiAnimeServers(html).map((server) => ({ id: server.providerServerId, type: server.type, name: server.name }));
     },
 
-    /**
-     * Resolve a playable source for a server id.
-     * On hianime.at the theme servers HTML carries a base64 data-hash that decodes to a
-     * plain HTTPS embed (typically zokoanime.video). Encrypted MegaPlay payloads are not decoded.
-     * providerEpisodeId is required so the servers response can be re-fetched and matched.
-     */
-    async resolveServer(providerServerId, lookup, signal, providerEpisodeId?: string) {
-      if (!/^\d+$/.test(providerServerId)) throw new ProviderError('invalid_response', 'Invalid HiAnime server id.');
-      if (playbackAllowedHosts.length === 0) return null;
-      if (!providerEpisodeId || !/^\d+$/.test(providerEpisodeId)) return null;
-
+    async resolveServer(providerServerId, lookup, signal, providerEpisodeId) {
+      if (!/^(?:\d{1,12}|h_[A-Za-z0-9_-]{1,1800})$/.test(providerServerId)) throw new ProviderError('invalid_response', 'Invalid HiAnime server id.');
+      if (!providerEpisodeId || !/^\d{1,12}$/.test(providerEpisodeId) || playbackAllowedHosts.length === 0) return null;
       const match = await findTitle(lookup, signal);
-      const response = await client.get(
-        `/api/theme/episode/servers?episodeId=${encodeURIComponent(providerEpisodeId)}`,
-        `/watch/${match.slug}`,
-        signal,
-      );
+      const response = await client.get(`/api/theme/episode/servers?episodeId=${encodeURIComponent(providerEpisodeId)}`, `/watch/${match.slug}`, signal);
       let raw: unknown;
-      try { raw = JSON.parse(response.text); }
-      catch { raw = response.text; }
+      try { raw = JSON.parse(response.text); } catch { raw = response.text; }
       const html = parseHiAnimeEpisodePayload(raw);
-      const servers = parseHiAnimeServers(html);
-      const selected = servers.find((server) => server.providerServerId === providerServerId);
+      const selected = parseHiAnimeServers(html).find((server) => server.providerServerId === providerServerId);
       if (!selected?.embedUrl) return null;
-
-      let embed: URL;
-      try { embed = new URL(selected.embedUrl); }
-      catch { return null; }
-
-      const hostAllowed = playbackAllowedHosts.some((host) => {
-        const pattern = host.toLowerCase();
-        const hostname = embed.hostname.toLowerCase();
-        return pattern.startsWith('*.') ? hostname.endsWith(pattern.slice(1)) : hostname === pattern;
-      });
-      if (embed.protocol !== 'https:' || embed.username || embed.password || embed.port || !hostAllowed) return null;
-
-      // Prefer iframe embed (Zoko). Plain m3u8 is only returned when the decoded URL itself is an HLS playlist.
-      if (/\.m3u8(?:$|[?#])/i.test(embed.pathname + embed.search)) {
-        return {
-          provider: 'hianime',
-          protocol: 'hls' as const,
-          manifestUrl: embed.href,
-          subtitles: [],
-          variants: [],
-        };
+      let url: URL;
+      try { url = new URL(selected.embedUrl); } catch { return null; }
+      const hostAllowed = playbackAllowedHosts.includes(url.hostname.toLowerCase());
+      if (url.protocol !== 'https:' || url.username || url.password || url.port || !hostAllowed) return null;
+      if (/\.m3u8$/i.test(url.pathname)) {
+        return { provider: 'hianime', protocol: 'hls' as const, manifestUrl: url.href, subtitles: [], variants: [] };
       }
-      return {
-        provider: 'hianime',
-        protocol: 'embed' as const,
-        embedUrl: embed.href,
-      };
+      return { provider: 'hianime', protocol: 'embed' as const, embedUrl: url.href };
     },
   };
   return provider;
