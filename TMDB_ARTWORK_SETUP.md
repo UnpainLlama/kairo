@@ -66,3 +66,8 @@ Official references:
 - https://developer.themoviedb.org/reference/tv-series-images
 - https://developer.themoviedb.org/docs/image-basics
 - https://www.themoviedb.org/faq/api
+
+
+## Episode stills
+
+The Worker also enriches live episode rows with TMDB season stills. It resolves the matched TV series, selects a season using an explicit season number in the catalogue title when available and otherwise the nearest season air year, then reads `still_path` from the TV season details response. The episode API returns these as `thumbnailUrl`. If an episode has no TMDB still, Kairo falls back to the series backdrop or poster. This is optional: a TMDB lookup failure never prevents episode discovery.

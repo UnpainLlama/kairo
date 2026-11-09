@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryCache } from '../metadata/cache';
 import type { LiveTitle } from '../live/types';
-import { enrichArtwork } from './service';
+import { enrichArtwork, enrichEpisodeArtwork } from './service';
 import type { ArtworkProvider } from './tmdb';
 
 const title: LiveTitle = {
@@ -45,6 +45,38 @@ describe('TMDB artwork enrichment service', () => {
     expect(result[0]?.card).toEqual(title.card);
     expect(retry[0]?.card).toEqual(title.card);
     expect(provider.lookup).toHaveBeenCalledTimes(1);
+  });
+
+  it('adds per-episode stills and falls back to the series backdrop when a still is missing', async () => {
+    const provider: ArtworkProvider = {
+      id: 'tmdb',
+      lookup: vi.fn(async () => artwork),
+      episodeStills: vi.fn(async () => ({ 1: 'https://image.tmdb.org/t/p/w780/episode-1.jpg' })),
+    };
+    const episodes = [
+      { episodeNumber: 1, title: 'Episode One', airedAt: null, synopsis: '', durationSeconds: null },
+      { episodeNumber: 2, title: 'Episode Two', airedAt: null, synopsis: '', durationSeconds: null },
+    ];
+    const result = await enrichEpisodeArtwork(title, episodes, provider, new MemoryCache());
+    expect(result.map((episode) => episode.thumbnailUrl)).toEqual([
+      'https://image.tmdb.org/t/p/w780/episode-1.jpg',
+      artwork.bannerUrl,
+    ]);
+    expect(provider.episodeStills).toHaveBeenCalledTimes(1);
+  });
+
+  it('caches episode stills so repeated episode page requests do not repeat TMDB calls', async () => {
+    const cache = new MemoryCache();
+    const provider: ArtworkProvider = {
+      id: 'tmdb',
+      lookup: vi.fn(async () => artwork),
+      episodeStills: vi.fn(async () => ({ 1: 'https://image.tmdb.org/t/p/w780/episode-1.jpg' })),
+    };
+    const episodes = [{ episodeNumber: 1, title: 'Episode One', airedAt: null, synopsis: '', durationSeconds: null }];
+    await enrichEpisodeArtwork(title, episodes, provider, cache);
+    await enrichEpisodeArtwork(title, episodes, provider, cache);
+    expect(provider.lookup).toHaveBeenCalledTimes(1);
+    expect(provider.episodeStills).toHaveBeenCalledTimes(1);
   });
 
   it('does nothing when the TMDB secret is not configured', async () => {

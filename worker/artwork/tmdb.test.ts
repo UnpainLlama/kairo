@@ -68,6 +68,34 @@ describe('TMDB artwork provider', () => {
     expect(artwork?.bannerUrl).toBeNull();
   });
 
+  it('loads season-local episode stills for a season-specific anime listing', async () => {
+    const requested: string[] = [];
+    const provider = createTmdbArtworkProvider(async (url) => {
+      const path = new URL(url).pathname;
+      requested.push(path);
+      if (path === '/3/search/tv') return Response.json({ results: [{
+        id: 1429, name: 'Kaiju No. 8', first_air_date: '2024-06-01', poster_path: '/poster.jpg', backdrop_path: '/backdrop.jpg', adult: false,
+      }] });
+      if (path === '/3/tv/1429') return Response.json({ seasons: [
+        { season_number: 1, air_date: '2024-06-01', episode_count: 12 },
+        { season_number: 2, air_date: '2025-07-01', episode_count: 11 },
+      ] });
+      if (path === '/3/tv/1429/season/2') return Response.json({ episodes: [
+        { episode_number: 1, still_path: '/kaiju-s2-ep1.jpg' },
+        { episode_number: 2, still_path: '/kaiju-s2-ep2.jpg' },
+      ] });
+      return Response.json({});
+    }, 'token');
+    const input = { title: 'Kaiju No. 8 Season 2', year: 2025, format: 'series' };
+    const artwork = await provider.lookup(input, signal);
+    const stills = await provider.episodeStills?.(artwork!, input, signal);
+    expect(requested).toEqual(['/3/search/tv', '/3/tv/1429', '/3/tv/1429/season/2']);
+    expect(stills).toEqual({
+      1: 'https://image.tmdb.org/t/p/w780/kaiju-s2-ep1.jpg',
+      2: 'https://image.tmdb.org/t/p/w780/kaiju-s2-ep2.jpg',
+    });
+  });
+
   it('rejects weak matches and unsafe image paths', async () => {
     const provider = createTmdbArtworkProvider(async () => Response.json({ results: [{ id: 10, name: 'Completely Different Show', poster_path: 'https://evil.test/image.jpg', backdrop_path: '/../bad.jpg' }] }), 'token');
     expect(await provider.lookup({ title: 'Death Note', year: 2006, format: 'series' }, signal)).toBeNull();

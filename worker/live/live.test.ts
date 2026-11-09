@@ -209,6 +209,21 @@ describe('service and handlers', () => {
     expect(urls.some((u) => u.includes('/anime/1007/episodes?page=2'))).toBe(true);
     expect(r.body).toMatchObject({ data: { items: [{ id: 'a7-e1', episodeNumber: 1, title: 'One' }, { episodeNumber: 2 }] }, meta: { page: 2, hasNextPage: true, source: 'jikan' } });
   });
+  it('returns TMDB episode stills on the live episode route when artwork enrichment is enabled', async () => {
+    const episodeProvider = {
+      id: 'test-episodes', displayName: 'Test episodes', termsVerified: true,
+      listEpisodes: async () => ({ items: [{ episodeNumber: 1, title: 'The First Mission', airedAt: null, synopsis: '', durationSeconds: null }], hasNextPage: false, total: 1 }),
+    };
+    const artworkProvider: ArtworkProvider = {
+      id: 'tmdb',
+      lookup: async () => ({ tmdbId: 1429, mediaType: 'tv', posterUrl: 'https://image.tmdb.org/t/p/w500/poster.jpg', bannerUrl: 'https://image.tmdb.org/t/p/w1280/backdrop.jpg' }),
+      episodeStills: async () => ({ 1: 'https://image.tmdb.org/t/p/w780/episode-1.jpg' }),
+    };
+    const d = deps(async () => json({ data: { Media: media(7) } }), { episodeProviders: [episodeProvider], artworkProvider });
+    const response = await call(d, 'episodes', req({ page: '1' }, { id: 'a7' }));
+    expect(response.body).toMatchObject({ data: { items: [{ id: 'a7-e1', episodeNumber: 1, thumbnailUrl: 'https://image.tmdb.org/t/p/w780/episode-1.jpg' }] } });
+  });
+
   it('lists providers and reports ready without calling them', async () => {
     let calls = 0;
     const d = deps(async () => { calls++; return json({}); });

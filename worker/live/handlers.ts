@@ -150,8 +150,10 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
       try {
         const deps = depsFor(req);
         const out = await svc.getEpisodes(deps, t.ref, page);
+        const title = (await svc.getTitle(deps, t.ref)).value;
+        const episodeRows = await svc.withEpisodeArtwork(deps, title, out.page.items);
         const animeId = `${t.ref.kind}${t.ref.id}`;
-        const items = out.page.items.map((e) => ({ id: `${animeId}-e${e.episodeNumber}`, animeId, episodeNumber: e.episodeNumber, title: e.title, synopsis: e.synopsis, thumbnailUrl: null, durationSeconds: e.durationSeconds, publishedAt: e.airedAt }));
+        const items = episodeRows.map((e) => ({ id: `${animeId}-e${e.episodeNumber}`, animeId, episodeNumber: e.episodeNumber, title: e.title, synopsis: e.synopsis, thumbnailUrl: e.thumbnailUrl ?? null, durationSeconds: e.durationSeconds, publishedAt: e.airedAt }));
         // The provider decides the page size, so the client's limit is ignored and page N maps straight to the provider's page N.
         return okBody(req, { items }, { page, limit: items.length, ...(out.page.total !== null ? { total: out.page.total } : {}), hasNextPage: out.page.hasNextPage, ...(out.via ? { ...sourceMeta({ via: out.via, degraded: out.degraded, stale: out.stale }), ...(out.cached ? { cached: true } : {}) } : {}) });
       } catch (e) { return providerFailure(req, 'live_episodes_failed', e); }

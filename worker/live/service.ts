@@ -4,13 +4,13 @@ import type { CircuitBreaker } from '../metadata/breaker';
 import type { MetadataCache } from '../metadata/cache';
 import { sharedBreaker, createCache } from '../metadata/service';
 import type { FetchLike } from '../metadata/providers/http';
-import { ProviderError, type EpisodePage, type EpisodeProvider } from '../metadata/types';
+import { ProviderError, type EpisodePage, type EpisodeProvider, type EpisodeRecord } from '../metadata/types';
 import { buildEpisodeProviders, listEpisodes as resolveEpisodes } from '../episodes/service';
 import { createAniListSource } from './anilist';
 import { createJikanSource } from './jikan';
 import { createHiAnimeSource } from './hianime';
 import { createTmdbArtworkProvider } from '../artwork/tmdb';
-import { enrichArtwork, enrichArtworkOne } from '../artwork/service';
+import { enrichArtwork, enrichArtworkOne, enrichEpisodeArtwork } from '../artwork/service';
 import type { Ref } from './ids';
 import type { BrowseQuery, CatalogSource, ListKind, LiveEnv, LiveTitle, Paged, SourceId } from './types';
 
@@ -34,6 +34,11 @@ export function withArtwork(deps: Deps, titles: LiveTitle[]): Promise<LiveTitle[
 
 export function titleWithArtwork(deps: Deps, title: LiveTitle): Promise<LiveTitle> {
   return enrichArtworkOne(title, deps.artworkProvider, deps.cache);
+}
+
+/** Episode still enrichment is independent of HiAnime episode discovery and fails open. */
+export function withEpisodeArtwork(deps: Deps, title: LiveTitle, episodes: EpisodeRecord[]): Promise<EpisodeRecord[]> {
+  return enrichEpisodeArtwork(title, episodes, deps.artworkProvider, deps.cache);
 }
 
 /** Fresh = served without calling a provider. Stale = only used when every provider fails. All values are seconds. */

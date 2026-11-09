@@ -17,6 +17,8 @@ export type TmdbArtwork = {
 export type ArtworkProvider = {
   readonly id: 'tmdb';
   lookup(input: ArtworkLookup, signal: AbortSignal): Promise<TmdbArtwork | null>;
+  /** Optional season still lookup. Returns a map keyed by the season-local episode number. */
+  episodeStills?(artwork: TmdbArtwork, input: ArtworkLookup, signal: AbortSignal): Promise<Record<number, string>>;
 };
 
 type SearchRecord = {
@@ -80,12 +82,12 @@ function titleSimilarity(left: string, right: string): number {
   return Math.max(edit, dice * 0.94);
 }
 
-function imageUrl(path: unknown, size: 'w500' | 'w1280'): string | null {
+function imageUrl(path: unknown, size: 'w500' | 'w780' | 'w1280'): string | null {
   if (typeof path !== 'string' || !/^\/[A-Za-z0-9_./-]+\.(?:jpg|jpeg|png|webp)$/i.test(path) || path.includes('..')) return null;
   return `${IMAGE}/${size}${path}`;
 }
 
-function chooseImage(records: unknown, size: 'w500' | 'w1280'): string | null {
+function chooseImage(records: unknown, size: 'w500' | 'w780' | 'w1280'): string | null {
   if (!Array.isArray(records)) return null;
   const candidates = records.filter((item): item is ImageRecord => typeof item === 'object' && item !== null && !Array.isArray(item))
     .map((record) => {
@@ -146,6 +148,49 @@ function chooseResult(records: unknown[], input: ArtworkLookup, type: 'tv' | 'mo
       || Number(b.record.vote_count ?? 0) - Number(a.record.vote_count ?? 0)
       || Number(b.record.popularity ?? 0) - Number(a.record.popularity ?? 0));
   return candidates[0]?.record ?? null;
+}
+
+type TmdbSeasonSummary = { season_number?: unknown; air_date?: unknown; episode_count?: unknown };
+type TmdbSeasonEpisode = { episode_number?: unknown; still_path?: unknown };
+
+function seasonHint(input: ArtworkLookup): number | null {
+  const text = input.title;
+  const patterns = [
+    /\bseason\s*0*(\d{1,2})\b/i,
+    /\bs\s*0*(\d{1,2})\b/i,
+    /\b(\d{1,2})(?:st|nd|rd|th)\s+season\b/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    const value = match ? Number(match[1]) : NaN;
+    if (Number.isInteger(value) && value > 0 && value <= 50) return value;
+  }
+  return null;
+}
+
+function chooseSeason(seasons: unknown, input: ArtworkLookup): number | null {
+  if (!Array.isArray(seasons)) return null;
+  const valid = seasons.filter((item): item is TmdbSeasonSummary => typeof item === 'object' && item !== null && !Array.isArray(item))
+    .map((item) => ({
+      number: typeof item.season_number === 'number' && Number.isInteger(item.season_number) ? item.season_number : -1,
+      year: typeof item.air_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item.air_date) ? Number(item.air_date.slice(0, 4)) : null,
+      count: typeof item.episode_count === 'number' && Number.isFinite(item.episode_count) ? item.episode_count : 0,
+    }))
+    .filter((item) => item.number > 0 && item.count > 0);
+  if (valid.length === 0) return null;
+
+  const explicit = seasonHint(input);
+  if (explicit !== null && valid.some((item) => item.number === explicit)) return explicit;
+
+  if (input.year) {
+    const byYear = [...valid].sort((a, b) => {
+      const aGap = a.year === null ? Number.MAX_SAFE_INTEGER : Math.abs(a.year - input.year!);
+      const bGap = b.year === null ? Number.MAX_SAFE_INTEGER : Math.abs(b.year - input.year!);
+      return aGap - bGap || b.number - a.number;
+    });
+    if (byYear[0]?.year !== null && byYear[0]?.year !== undefined && Math.abs(byYear[0].year - input.year) <= 2) return byYear[0].number;
+  }
+  return valid.sort((a, b) => a.number - b.number)[0]?.number ?? null;
 }
 
 export function createTmdbArtworkProvider(fetchImpl: FetchLike, accessToken: string): ArtworkProvider {
@@ -219,6 +264,41 @@ export function createTmdbArtworkProvider(fetchImpl: FetchLike, accessToken: str
         }
       }
       return { tmdbId: id, mediaType: type, posterUrl, bannerUrl };
+    },
+
+    async episodeStills(artwork, input, signal) {
+      if (artwork.mediaType !== 'tv' || !Number.isSafeInteger(artwork.tmdbId) || artwork.tmdbId <= 0) return {};
+      const headers = { Accept: 'application/json', Authorization: `Bearer ${token}` };
+      try {
+        const detailsUrl = new URL(`${API}/tv/${artwork.tmdbId}`);
+        detailsUrl.searchParams.set('language', 'en-US');
+        const detailsResponse = await fetchImpl(detailsUrl.toString(), { method: 'GET', headers, signal });
+        if (!detailsResponse.ok) return {};
+        const details: unknown = await detailsResponse.json();
+        const seasons = typeof details === 'object' && details !== null ? (details as { seasons?: unknown }).seasons : undefined;
+        const seasonNumber = chooseSeason(seasons, input);
+        if (seasonNumber === null) return {};
+
+        const seasonUrl = new URL(`${API}/tv/${artwork.tmdbId}/season/${seasonNumber}`);
+        seasonUrl.searchParams.set('language', 'en-US');
+        const seasonResponse = await fetchImpl(seasonUrl.toString(), { method: 'GET', headers, signal });
+        if (!seasonResponse.ok) return {};
+        const seasonBody: unknown = await seasonResponse.json();
+        const rawEpisodes = typeof seasonBody === 'object' && seasonBody !== null ? (seasonBody as { episodes?: unknown }).episodes : undefined;
+        if (!Array.isArray(rawEpisodes)) return {};
+        const stills: Record<number, string> = {};
+        for (const rawEpisode of rawEpisodes) {
+          if (typeof rawEpisode !== 'object' || rawEpisode === null || Array.isArray(rawEpisode)) continue;
+          const episode = rawEpisode as TmdbSeasonEpisode;
+          const number = episode.episode_number;
+          const still = imageUrl(episode.still_path, 'w780');
+          if (typeof number === 'number' && Number.isInteger(number) && number > 0 && still) stills[number] = still;
+        }
+        return stills;
+      } catch {
+        // Episode artwork is optional and must never make the catalogue/episode API fail.
+        return {};
+      }
     },
   };
 }

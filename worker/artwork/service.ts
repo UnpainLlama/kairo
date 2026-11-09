@@ -1,9 +1,11 @@
 import type { MetadataCache } from '../metadata/cache';
 import type { LiveTitle } from '../live/types';
+import type { EpisodeRecord } from '../metadata/types';
 import type { ArtworkLookup, ArtworkProvider, TmdbArtwork } from './tmdb';
 
 type CachedArtwork = { artwork: TmdbArtwork | null };
 const inflight = new Map<string, Promise<TmdbArtwork | null>>();
+const episodeInflight = new Map<string, Promise<Record<number, string>>>();
 
 function hash(value: string): string {
   let result = 0x811c9dc5;
@@ -99,4 +101,56 @@ export async function enrichArtworkOne(
   cache: MetadataCache,
 ): Promise<LiveTitle> {
   return (await enrichArtwork([title], provider, cache))[0] ?? title;
+}
+
+
+/** Add TMDB season stills to episode rows. A series backdrop/poster is used when an individual still is absent. */
+export async function enrichEpisodeArtwork(
+  title: LiveTitle,
+  episodes: EpisodeRecord[],
+  provider: ArtworkProvider | undefined,
+  cache: MetadataCache,
+): Promise<EpisodeRecord[]> {
+  if (!provider || !provider.episodeStills || episodes.length === 0) return episodes;
+  const input: ArtworkLookup = {
+    title: title.card.title,
+    alternateTitles: title.altTitles,
+    year: title.card.releaseYear,
+    format: title.card.format,
+  };
+  let artwork: TmdbArtwork | null;
+  try {
+    artwork = await lookupCached(input, provider, cache);
+  } catch {
+    return episodes;
+  }
+  if (!artwork || artwork.mediaType !== 'tv') return episodes;
+  const fallback = artwork.bannerUrl ?? artwork.posterUrl;
+  const key = `artwork:tmdb:episode-stills:${hash(`${artwork.tmdbId}|${input.title}|${input.year ?? ''}`)}`;
+  let stills = await cache.get<Record<number, string>>(key);
+  if (!stills) {
+    let pending = episodeInflight.get(key);
+    if (!pending) {
+      pending = (async () => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 6000);
+        try {
+          const found = await provider.episodeStills!(artwork!, input, controller.signal);
+          await cache.put(key, found, Object.keys(found).length ? 30 * 86_400 : 6 * 3_600);
+          return found;
+        } catch {
+          await cache.put(key, {}, 5 * 60);
+          return {};
+        } finally {
+          clearTimeout(timer);
+        }
+      })().finally(() => episodeInflight.delete(key));
+      episodeInflight.set(key, pending);
+    }
+    stills = await pending;
+  }
+  return episodes.map((episode) => ({
+    ...episode,
+    thumbnailUrl: stills?.[episode.episodeNumber] ?? episode.thumbnailUrl ?? fallback,
+  }));
 }

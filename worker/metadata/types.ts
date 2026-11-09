@@ -86,6 +86,8 @@ export type EpisodeRecord = {
   airedAt: string | null;
   synopsis: string;
   durationSeconds: number | null;
+  /** Optional TMDB episode still or series-artwork fallback; never a playable media URL. */
+  thumbnailUrl?: string | null;
   /** Provider-side episode identifier; never a playable media URL. */
   providerEpisodeId?: string;
 };
