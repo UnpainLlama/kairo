@@ -74,15 +74,17 @@ Example:
 ```bash
 npx wrangler secret put IDENTITY_PROVIDER_CLIENT_SECRET
 npx wrangler secret put PROVIDER_SERVER_TOKEN
+npx wrangler secret put TMDB_ACCESS_TOKEN
 ```
 
-Use names matching the integrations actually implemented. Do not add unused secret declarations. Never paste production secrets into Claude, source files, issue trackers, or GitHub commits.
+Use names matching the integrations actually implemented. Do not add unused secret declarations. Never paste production secrets into Claude, source files, issue trackers, or GitHub commits. TMDB artwork is optional: without `TMDB_ACCESS_TOKEN`, KAIRO keeps the catalogue provider artwork. For local development put the token in `.dev.vars`; for staging use `npx wrangler secret put TMDB_ACCESS_TOKEN --env staging`; for production use `npx wrangler secret put TMDB_ACCESS_TOKEN --env production` only after confirming your TMDB licence permits that use.
 
 For local secret values, create `.dev.vars` in the project root. It is gitignored. Example structure only:
 
 ```dotenv
 IDENTITY_PROVIDER_CLIENT_SECRET="local-development-value"
 PROVIDER_SERVER_TOKEN="local-development-value"
+TMDB_ACCESS_TOKEN="your-tmdb-api-read-access-token"
 ```
 
 Use test credentials locally and rotate any credential that is accidentally exposed.

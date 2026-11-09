@@ -25,7 +25,8 @@ function providerFailure(req: LiveRequest, event: string, error: unknown): LiveR
 }
 
 const pagedMeta = (p: Paged, page: number): Record<string, unknown> => ({ page, limit: p.limit, ...(p.total !== null ? { total: p.total } : {}), hasNextPage: p.hasNextPage });
-const cards = (p: Paged) => p.items.map((t) => t.card);
+const cards = (titles: Awaited<ReturnType<typeof svc.withArtwork>>) => titles.map((t) => t.card);
+const artworkMeta = (deps: svc.Deps): Record<string, unknown> => ({ artworkProvider: deps.artworkProvider?.id ?? null });
 
 export function currentSeason(d: Date): { season: 'winter' | 'spring' | 'summer' | 'fall'; year: number } {
   const m = d.getUTCMonth();
@@ -75,8 +76,10 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
     const paging = parsePagination(req.query);
     if (!paging.ok) return failBody(req, 400, 'VALIDATION_ERROR', paging.message);
     try {
-      const out = await svc.getList(depsFor(req), kind, paging.value.page, paging.value.limit);
-      return okBody(req, { items: cards(out.value) }, { ...pagedMeta(out.value, paging.value.page), ...sourceMeta(out) });
+      const deps = depsFor(req);
+      const out = await svc.getList(deps, kind, paging.value.page, paging.value.limit);
+      const items = cards(await svc.withArtwork(deps, out.value.items));
+      return okBody(req, { items }, { ...pagedMeta(out.value, paging.value.page), ...sourceMeta(out), ...artworkMeta(deps) });
     } catch (e) { return providerFailure(req, `live_${kind}_failed`, e); }
   };
 
@@ -88,8 +91,10 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
   return {
     async featured(req) {
       try {
-        const out = await svc.getList(depsFor(req), 'featured', 1, 12);
-        return okBody(req, { items: cards(out.value) }, { count: out.value.items.length, ...sourceMeta(out) });
+        const deps = depsFor(req);
+        const out = await svc.getList(deps, 'featured', 1, 12);
+        const items = cards(await svc.withArtwork(deps, out.value.items));
+        return okBody(req, { items }, { count: out.value.items.length, ...sourceMeta(out), ...artworkMeta(deps) });
       } catch (e) { return providerFailure(req, 'live_featured_failed', e); }
     },
     trending: listHandler('trending'),
@@ -100,8 +105,10 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
       if (!parsed.ok) return failBody(req, 400, 'VALIDATION_ERROR', parsed.message);
       const { page, limit, q, sort, genre, year, format, status, season } = parsed.value;
       try {
-        const out = await svc.browse(depsFor(req), { q, sort, genre, year, format, status, season, page, limit });
-        return okBody(req, { items: cards(out.value) }, { ...pagedMeta(out.value, page), ...sourceMeta(out) });
+        const deps = depsFor(req);
+        const out = await svc.browse(deps, { q, sort, genre, year, format, status, season, page, limit });
+        const items = cards(await svc.withArtwork(deps, out.value.items));
+        return okBody(req, { items }, { ...pagedMeta(out.value, page), ...sourceMeta(out), ...artworkMeta(deps) });
       } catch (e) { return providerFailure(req, 'live_search_failed', e); }
     },
 
@@ -109,8 +116,10 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
       const parsed = parseBrowse(req.query, new Date());
       if (!parsed.ok) return failBody(req, 400, 'VALIDATION_ERROR', parsed.message);
       try {
-        const out = await svc.browse(depsFor(req), parsed.value);
-        return okBody(req, { items: cards(out.value) }, { ...pagedMeta(out.value, parsed.value.page), ...sourceMeta(out) });
+        const deps = depsFor(req);
+        const out = await svc.browse(deps, parsed.value);
+        const items = cards(await svc.withArtwork(deps, out.value.items));
+        return okBody(req, { items }, { ...pagedMeta(out.value, parsed.value.page), ...sourceMeta(out), ...artworkMeta(deps) });
       } catch (e) { return providerFailure(req, 'live_browse_failed', e); }
     },
 
@@ -126,8 +135,10 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
       if (t.bad) return failBody(req, 400, 'VALIDATION_ERROR', 'Invalid anime identifier.');
       if (!t.ref) return failBody(req, 404, 'RESOURCE_NOT_FOUND', 'The requested title was not found.');
       try {
-        const out = await svc.getTitle(depsFor(req), t.ref);
-        return okBody(req, { ...out.value.card, altTitles: out.value.altTitles }, sourceMeta(out));
+        const deps = depsFor(req);
+        const out = await svc.getTitle(deps, t.ref);
+        const title = await svc.titleWithArtwork(deps, out.value);
+        return okBody(req, { ...title.card, altTitles: title.altTitles }, { ...sourceMeta(out), ...artworkMeta(deps) });
       } catch (e) { return providerFailure(req, 'live_anime_failed', e); }
     },
 
@@ -164,8 +175,10 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
       if (t.bad || limit === null) return failBody(req, 400, 'VALIDATION_ERROR', 'Invalid title identifier or limit.');
       if (!t.ref) return failBody(req, 404, 'RESOURCE_NOT_FOUND', 'The requested title was not found.');
       try {
-        const out = await svc.getRelated(depsFor(req), t.ref, limit);
-        return okBody(req, { items: out.value.map((x) => x.card) }, { basis: out.via === 'anilist' ? 'relations_and_recommendations' : 'recommendations', limit, ...sourceMeta(out) });
+        const deps = depsFor(req);
+        const out = await svc.getRelated(deps, t.ref, limit);
+        const titles = await svc.withArtwork(deps, out.value);
+        return okBody(req, { items: titles.map((x) => x.card) }, { basis: out.via === 'anilist' ? 'relations_and_recommendations' : 'recommendations', limit, ...sourceMeta(out), ...artworkMeta(deps) });
       } catch (e) { return providerFailure(req, 'live_related_failed', e); }
     },
 
@@ -176,17 +189,18 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
       try {
         const deps = depsFor(req);
         const out = await svc.getTitle(deps, t.ref);
-        const title = out.value;
+        const title = await svc.titleWithArtwork(deps, out.value);
         const src = deps.sources.find((s) => s.id === out.via);
         const providers: { provider: string; state: string }[] = [{ provider: out.via, state: out.cached ? 'cached' : 'ok' }];
         if (out.primary !== out.via || out.stale) providers.push({ provider: out.primary, state: 'failed' });
+        const tmdbArtworkUsed = [title.card.posterUrl, title.card.bannerUrl].some((url) => url?.startsWith('https://image.tmdb.org/'));
         return okBody(req, {
           title: title.card.title, synopsis: title.card.synopsis || null, rating: title.card.rating, episodeCount: title.card.episodeCount,
           genres: title.card.genres, posterUrl: title.card.posterUrl, bannerUrl: title.card.bannerUrl,
           ids: { ...(title.anilistId ? { anilist: String(title.anilistId) } : {}), ...(title.malId ? { mal: String(title.malId) } : {}) },
-          sources: src ? [{ providerId: src.id, displayName: src.attribution.displayName, text: src.attribution.text, url: title.url ?? src.attribution.url, license: src.attribution.license }] : [],
-          providers,
-        }, { degraded: out.degraded, basis: 'live', ...sourceMeta(out) });
+          sources: [...(src ? [{ providerId: src.id, displayName: src.attribution.displayName, text: src.attribution.text, url: title.url ?? src.attribution.url, license: src.attribution.license }] : []), ...(tmdbArtworkUsed ? [{ providerId: 'tmdb', displayName: 'TMDB', text: 'Artwork from The Movie Database. This product uses the TMDB API but is not endorsed or certified by TMDB.', url: 'https://www.themoviedb.org', license: null }] : [])],
+          providers: [...providers, ...(tmdbArtworkUsed ? [{ provider: 'tmdb', state: 'ok' }] : [])],
+        }, { degraded: out.degraded, basis: 'live', ...sourceMeta(out), ...artworkMeta(deps) });
       } catch (e) { return providerFailure(req, 'live_metadata_failed', e); }
     },
 
@@ -197,13 +211,14 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
         episodeProviders: deps.episodeProviders.map((p, i) => ({ id: p.id, displayName: p.displayName, enabled: true, priority: i + 1, termsVerified: p.termsVerified, capabilities: { episodes: true, servers: typeof p.listServers === 'function' } })),
         unknownConfigured: [],
         unknownEpisodeProviders: deps.unknownEpisodeProviders,
+        artworkProvider: { id: 'tmdb', displayName: 'The Movie Database', enabled: Boolean(deps.artworkProvider) },
       });
     },
 
     // Readiness does not call the providers: that would spend their rate limits on every probe. It reports configuration only.
     async ready(req) {
       const deps = depsFor(req);
-      return okBody(req, { status: 'ready', catalogSource: 'live', database: 'not used', cache: req.env.METADATA_CACHE ? 'kv' : 'none', providers: deps.sources.map((s) => s.id), episodeProviders: deps.episodeProviders.map((p) => p.id), unknownEpisodeProviders: deps.unknownEpisodeProviders });
+      return okBody(req, { status: 'ready', catalogSource: 'live', database: 'not used', cache: req.env.METADATA_CACHE ? 'kv' : 'none', providers: deps.sources.map((s) => s.id), episodeProviders: deps.episodeProviders.map((p) => p.id), artworkProvider: deps.artworkProvider?.id ?? null, unknownEpisodeProviders: deps.unknownEpisodeProviders });
     },
   };
 }

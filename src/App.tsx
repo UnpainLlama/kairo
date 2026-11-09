@@ -7,7 +7,7 @@ import SearchPage from './pages/SearchPage';
 import BrowsePage from './pages/BrowsePage';
 import AnimePage from './pages/AnimePage';
 import WatchPage from './pages/WatchPage';
-import { AccountPage, HistoryPage, NotFoundPage, ProfilePage } from './pages/StaticPages';
+import { AboutPage, AccountPage, HistoryPage, NotFoundPage, ProfilePage } from './pages/StaticPages';
 
 const navItems = [
   { to: '/', label: 'Home', icon: Home, end: true },
@@ -67,10 +67,11 @@ export default function App() {
           <Route path="/library" element={<AccountPage title="My Library" />} />
           <Route path="/favorites" element={<AccountPage title="Favorites" />} />
           <Route path="/settings" element={<AccountPage title="Settings" />} />
+          <Route path="/about" element={<AboutPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
         <footer className="kc-footer">
-          <Link to="/">Home</Link><Link to="/browse/trending">Trending</Link><Link to="/browse/anime">Discover</Link><Link to="/search">Search</Link>
+          <Link to="/">Home</Link><Link to="/browse/trending">Trending</Link><Link to="/browse/anime">Discover</Link><Link to="/search">Search</Link><Link to="/about">About &amp; credits</Link>
         </footer>
       </main>
 

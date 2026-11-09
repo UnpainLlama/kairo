@@ -83,6 +83,10 @@ img { display: block; }
 .kc-page-head { margin: 0 0 22px; }
 .kc-page-head h1 { font-size: clamp(26px, 3.4vw, 34px); font-weight: 800; letter-spacing: -.5px; line-height: 1.15; }
 .kc-page-head p { margin-top: 4px; color: var(--muted); font-size: 14px; }
+.kc-about-panel { display: grid; justify-items: start; gap: 12px; max-width: 760px; padding: 22px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--muted); font-size: 14px; line-height: 1.65; }
+.kc-about-panel h2 { color: var(--text); font-size: 18px; font-weight: 800; }
+.kc-about-tmdb-logo { display: inline-flex; align-items: center; padding: 8px 10px; border-radius: 8px; background: #fff; }
+.kc-about-tmdb-logo img { display: block; width: 112px; height: 34px; object-fit: contain; }
 .kc-link { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 .kc-hint { margin: 10px 0 0; color: var(--muted); font-size: 13px; }
 .kc-count { margin: 0 0 14px; color: var(--muted); font-size: 13px; }

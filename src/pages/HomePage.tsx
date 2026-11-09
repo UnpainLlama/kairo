@@ -87,7 +87,7 @@ function Hero({ items }: { items: CatalogCard[] }) {
   const active = index % count;
   const item = items[active];
   const chips = [episodeCountLabel(item.episodeCount), formatLabel(item.format), seasonLabel(item.season, item.releaseYear), ...textList(item.genres).slice(0, 3)].filter((v): v is string => Boolean(v));
-  const image = safeImageUrl(item.bannerUrl) ?? safeImageUrl(item.posterUrl);
+  const image = safeImageUrl(item.bannerUrl);
   const step = (delta: number) => setIndex((active + delta + count) % count);
 
   return (

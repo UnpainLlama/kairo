@@ -32,7 +32,7 @@ export default function AnimePage() {
   const genres = textList(a.genres);
   const alt = textList(a.altTitles);
   const facts = [formatLabel(a.format), seasonLabel(a.season, a.releaseYear), episodeCountLabel(a.episodeCount)].filter((v): v is string => Boolean(v));
-  const backdrop = safeImageUrl(a.bannerUrl) ?? safeImageUrl(a.posterUrl);
+  const backdrop = safeImageUrl(a.bannerUrl);
   const status = statusLabel(a.status);
 
   return (

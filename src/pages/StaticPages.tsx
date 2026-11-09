@@ -43,6 +43,27 @@ export function AccountPage({ title }: { title: string }) {
   );
 }
 
+
+export function AboutPage() {
+  return (
+    <>
+      <header className="kc-page-head">
+        <h1>About Kairo</h1>
+        <p>A personal anime discovery catalogue.</p>
+      </header>
+      <section className="kc-about-panel" aria-labelledby="artwork-credit-title">
+        <h2 id="artwork-credit-title">Artwork credits</h2>
+        <a className="kc-about-tmdb-logo" href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">
+          <img src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_long_2-9665a76b1ae401a510ec1e0ca40ddcb3b0cfe45f1d51b77a308fea0845885648.svg" alt="The Movie Database (TMDB)" loading="lazy" />
+        </a>
+        <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
+        <p>TMDB provides artwork such as posters and landscape backdrops. Kairo's catalogue and episode information are supplied separately.</p>
+        <a className="kc-link" href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">Visit The Movie Database</a>
+      </section>
+    </>
+  );
+}
+
 export function NotFoundPage() {
   return (
     <>

@@ -32,7 +32,7 @@ export default function DiscoverPage() {
     navigate(animeHref(pool[Math.floor(Math.random() * pool.length)]));
   };
 
-  const backdrop = item ? safeImageUrl(item.bannerUrl) ?? safeImageUrl(item.posterUrl) : null;
+  const backdrop = item ? safeImageUrl(item.bannerUrl) : null;
   const chips = item ? [formatLabel(item.format), seasonLabel(item.season, item.releaseYear), episodeCountLabel(item.episodeCount), ...textList(item.genres).slice(0, 3)].filter((v): v is string => Boolean(v)) : [];
 
   return (

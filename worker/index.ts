@@ -24,6 +24,8 @@ interface Bindings {
   EPISODE_PROVIDERS?: string;
   /** HiAnime mirror base URL; adapter enforces a fixed HTTPS host allowlist. */
   HIANIME_BASE_URL?: string;
+  /** TMDB API Read Access Token stored as a Cloudflare Worker secret. */
+  TMDB_ACCESS_TOKEN?: string;
 }
 
 type Variables = { requestId: string };

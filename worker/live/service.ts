@@ -9,6 +9,8 @@ import { buildEpisodeProviders, listEpisodes as resolveEpisodes } from '../episo
 import { createAniListSource } from './anilist';
 import { createJikanSource } from './jikan';
 import { createHiAnimeSource } from './hianime';
+import { createTmdbArtworkProvider } from '../artwork/tmdb';
+import { enrichArtwork, enrichArtworkOne } from '../artwork/service';
 import type { Ref } from './ids';
 import type { BrowseQuery, CatalogSource, ListKind, LiveEnv, LiveTitle, Paged, SourceId } from './types';
 
@@ -22,7 +24,17 @@ export type Deps = {
   timeoutMs?: number;
   onError?: (source: SourceId, error: ProviderError) => void;
   onEpisodeError?: (source: string, error: ProviderError) => void;
+  artworkProvider?: ReturnType<typeof createTmdbArtworkProvider>;
 };
+
+/** Artwork enrichment is deliberately independent from the catalogue provider and fails open. */
+export function withArtwork(deps: Deps, titles: LiveTitle[]): Promise<LiveTitle[]> {
+  return enrichArtwork(titles, deps.artworkProvider, deps.cache);
+}
+
+export function titleWithArtwork(deps: Deps, title: LiveTitle): Promise<LiveTitle> {
+  return enrichArtworkOne(title, deps.artworkProvider, deps.cache);
+}
 
 /** Fresh = served without calling a provider. Stale = only used when every provider fails. All values are seconds. */
 export const TTL = {
@@ -234,6 +246,7 @@ export function buildDeps(env: LiveEnv, fetchImpl: FetchLike, onError?: Deps['on
     breaker: sharedBreaker,
     now: Date.now,
     onError,
+    ...(env.TMDB_ACCESS_TOKEN?.trim() ? { artworkProvider: createTmdbArtworkProvider(fetchImpl, env.TMDB_ACCESS_TOKEN) } : {}),
     onEpisodeError: (source, error) => console.error(JSON.stringify({ event: 'episode_provider_failed', source, kind: error.kind })),
   };
 }

@@ -4,17 +4,22 @@ KAIRO combines several metadata sources into one unified record. No provider is 
 
 **Three separate services.** Metadata (this document), episode discovery (`EpisodeProvider`, contract only) and playback (`worker/providers/playback.ts`) are independent. A metadata provider is never assumed to supply episodes or streams.
 
-## 1. What was verified (2026-11-06)
+## 1. Provider roles
+
+The catalogue provider supplies title identity and episode discovery metadata. **TMDB is a separate artwork enrichment provider**: it searches the TV or movie catalogue by title/year and returns portrait poster and landscape backdrop URLs. It does not replace HiAnime, Jikan or AniList catalogue IDs, and it does not supply episode or playback data.
+
+## 2. What was verified (2026-11-06)
 
 | Source | Role | Auth | Rate limit | Terms | Status |
 |---|---|---|---|---|---|
 | **AniList** (GraphQL, `graphql.anilist.co`) | Live detail: synopsis, genres, banner, score | None for public reads | 90 requests/min. A burst limiter also exists, and 429 carries `Retry-After`. One docs page warns of a temporary 30/min degraded mode. | Read in full at docs.anilist.co/guide/terms-of-use | **Verified.** Free for non-commercial use; no use as backup or data storage; no hoarding or mass collection; naming guidelines; no competing list/tracker services. |
 | **Kitsu** (JSON:API, `kitsu.io/api/edge`) | Live detail (secondary) | Third-party client docs say public reads need no key | Not published in anything I could read | `kitsu.io/terms` **could not be fetched**; not read | **Unverified.** Adapter is built but `termsVerified = false` and it is OFF by default. |
 | **anime-offline-database** (manami-project) | Catalogue index and cross-provider ID map (dataset, not an API) | None (a file download) | n/a | Recent releases: ODbL-1.0 (attribution and share-alike). Older releases: AGPL-3.0. The file carries its own `license` field. | **Partly verified** from repository pages. The importer refuses any licence that is not ODbL-1.0. Re-check the release you import. |
+| **TMDB** (v3 REST API) | Independent artwork only: posters and landscape backdrops | API Read Access Token (Bearer secret) | Rate limiting applies; KAIRO uses bounded concurrency, caching and fail-open behavior | Developer API is free for non-commercial use with attribution; commercial use requires a separate licence | **Enabled only when `TMDB_ACCESS_TOKEN` is configured.** It does not supply catalogue identity, episodes or playback. |
 
-Not verified, and so not used: Kitsu's own terms and rate limits; Kitsu/AniList field names against live responses (see section 6).
+Not verified, and so not used: Kitsu's own terms and rate limits; Kitsu/AniList field names against live responses (see section 7). TMDB API authentication, search and image-path documentation were checked, but KAIRO's live API key and title-match quality still need to be validated after deployment.
 
-## 2. Architecture
+## 3. Architecture
 
 ```
 route /api/v1/anime/:id/metadata
@@ -44,6 +49,12 @@ route /api/v1/anime/:id/metadata
 3. 0.85 or more is accepted. 0.6 to 0.85 is "ambiguous" and is NOT merged. A tie between candidates is refused.
 4. There is no fuzzy matching on purpose: a wrong merge puts one show's data on another, which is worse than a missed merge.
 
+### Artwork matching
+- TMDB matching is separate from metadata merge and never changes title identity or provider IDs. It searches TV shows for series/OVA/ONA/special titles and movies for films.
+- Candidate titles are compared against the catalogue title and alternate titles, with the release year used as a confidence signal. Low-confidence matches are ignored.
+- Search-result poster/backdrop paths are preferred. If either image is absent, the adapter requests the matching TV/movie images endpoint and selects an appropriate alternate poster or landscape backdrop. Paths are converted to HTTPS `image.tmdb.org` URLs (`w500` poster and `w1280` backdrop).
+- Positive matches are cached for 30 days; no-match results for 7 days. TMDB failures do not fail catalogue requests.
+
 ### Conflict resolution
 Static priority per field, highest first: **anilist, kitsu, manami**, with unlisted providers last (alphabetical). Edit `DEFAULT_PRIORITY` in `merge.ts` to change it.
 
@@ -60,33 +71,34 @@ Static priority per field, highest first: **anilist, kitsu, manami**, with unlis
 - **Cloudflare's docs say the Cache API has no effect on `*.workers.dev` and does not replicate between data centres.** For a workers.dev deploy, use the KV cache (section 4).
 - The circuit breaker is held in one Worker isolate's memory, so it is a best-effort guard. A 429 opens it for the `Retry-After` period (default 60 s).
 
-## 3. Attribution
+## 4. Attribution
 - Each title page lists the sources that contributed to it, with the provider's attribution text and link. The footer states that.
 - AniList: the terms do not require an on-page credit; it is shown as a courtesy and says KAIRO is unofficial. Never name anything "AniList" alone.
 - anime-offline-database: ODbL requires attribution, shown. Share-alike applies to a *publicly shared* derived database. KAIRO is a private personal site and does not distribute the database. If that ever changes, review this first.
-- Artwork: hotlinked from the provider, never re-hosted. Rights stay with their owners.
+- TMDB artwork: hotlinked from TMDB image CDN, never re-hosted. Include the official TMDB logo and the notice “This product uses the TMDB API but is not endorsed or certified by TMDB.” in the app footer/About area. The developer API is for non-commercial use with attribution; contact TMDB for commercial licensing.
+- Other artwork: hotlinked from its source provider, never re-hosted. Rights stay with their owners.
 
-## 4. Configuration steps (owner)
+## 5. Configuration steps (owner)
 
 **Which providers are on.** `wrangler.jsonc` > `vars` > `METADATA_PROVIDERS` is a comma-separated list. It ships as `"anilist"`. Empty means no live providers (the site still works from the stored catalogue). To enable Kitsu later, first read https://kitsu.io/terms and confirm its limits, then set `"anilist,kitsu"`.
 
 **Cache.** The KV namespace and its `METADATA_CACHE` binding are declared per environment in `wrangler.jsonc`; creating it is step 2b of docs/DEPLOYMENT.md. Without it the Worker still runs, using the Cache API (no effect on workers.dev) or per-isolate memory.
 
-No API key or secret is needed for AniList or Kitsu public reads. Never put a key in the repository.
+AniList and Kitsu public reads need no API key. TMDB requires an API Read Access Token stored as the Worker secret `TMDB_ACCESS_TOKEN`. Set it with `npx wrangler secret put TMDB_ACCESS_TOKEN --env staging`; do not add it to `wrangler.jsonc` or commit it. For local development, put `TMDB_ACCESS_TOKEN="..."` in gitignored `.dev.vars`. Without the token, catalogue artwork remains the fallback.
 
-## 5. Adding a provider later
+## 6. Adding a provider later
 1. Write `worker/metadata/providers/<name>.ts` that returns a `MetadataProvider` (a `fetchById` and a `search` returning `NormalizedMetadata`, plus its `Attribution` and `termsVerified`).
 2. Add one line to `FACTORIES` (and `ATTRIBUTIONS`) in `worker/metadata/service.ts`.
 3. Add it to `DEFAULT_PRIORITY` in `merge.ts` if it should outrank the unlisted default.
 4. Add it to `METADATA_PROVIDERS`. The frontend needs no change: sources and statuses come from the API.
 
-## 6. First live check (not done yet)
+## 7. First live check (not done yet)
 The adapters were tested only against **hand-written fixtures** that follow each provider's documented shape (`worker/metadata/providers.test.ts` says so). No real provider response has been captured. After the first deploy:
 1. Open `/api/v1/providers`, then `/api/v1/anime/<slug>/metadata` for a title that exists in the catalogue.
 2. Check `providers[]`: `ok` is good; `failed` with `invalid_response` means the real shape differs from the fixture. Send me that output and I will fix the adapter.
 3. Adapters fail closed: an unexpected shape becomes an `invalid_response` outcome, never wrong data.
 
-## 7. Not built yet
+## 8. Not built yet
 - The dataset import job (download a release, check its licence, map, load chunked SQL into D1). The mapper and the licence check exist in `providers/manami.ts`; D1's current bulk-load limits still need checking.
 - Dataset "tags" are not mapped to genres (they are not the same thing), so imported titles have no genres until a provider fills them in on demand.
 - Kitsu episode discovery (a separate `EpisodeProvider`, only after Kitsu's terms are verified).

@@ -1,6 +1,6 @@
 # API contract — `/api/v1`
 
-All routes are same-origin behind the Cloudflare Worker unless a deployment architecture explicitly separates the API. Use JSON and UTF-8. Query values must be validated and bounded.
+All routes are same-origin behind the Cloudflare Worker unless a deployment architecture explicitly separates the API. Use JSON and UTF-8. Query values must be validated and bounded. When the `TMDB_ACCESS_TOKEN` Worker secret is configured, catalogue cards and anime details are enriched with TMDB poster/backdrop URLs; `posterUrl` remains portrait artwork and `bannerUrl` is landscape artwork. Catalogue results remain available if TMDB is unavailable.
 
 ## 1. Response envelope
 

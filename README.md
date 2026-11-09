@@ -67,6 +67,10 @@ npm run deploy
 
 See the complete runbooks in `docs/CLOUDFLARE_SETUP.md` and `docs/GITHUB_SETUP.md` before production deployment.
 
+## Artwork provider
+
+KAIRO uses TMDB as an optional, independent artwork enrichment provider. It matches catalogue titles to TMDB TV/movie records and supplies separate portrait posters and landscape backdrops. Configure the TMDB API Read Access Token as a Worker secret named `TMDB_ACCESS_TOKEN`; never commit it or put it in `wrangler.jsonc`. Without the secret, existing provider artwork remains the fallback. See [docs/PROVIDERS.md](docs/PROVIDERS.md) for matching, cache and attribution details.
+
 ## Important configuration
 
 1. Replace `REPLACE_WITH_D1_DATABASE_ID` in `wrangler.jsonc` with the ID returned by `wrangler d1 create`.

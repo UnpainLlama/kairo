@@ -2,6 +2,7 @@
 // Run the first live check in docs/LIVE_CATALOGUE.md before trusting the adapters.
 import { describe, it, expect } from 'vitest';
 import { MemoryCache } from '../metadata/cache';
+import type { ArtworkProvider } from '../artwork/tmdb';
 import { CircuitBreaker } from '../metadata/breaker';
 import { createAniListSource, buildPageQuery } from './anilist';
 import { createJikanSource, mapJikanAnime, Pacer } from './jikan';
@@ -141,6 +142,19 @@ describe('Pacer', () => {
 });
 
 describe('service and handlers', () => {
+  it('enriches live catalogue cards with TMDB artwork without changing their Kairo ids', async () => {
+    const artworkProvider: ArtworkProvider = {
+      id: 'tmdb',
+      lookup: async () => ({ tmdbId: 1429, mediaType: 'tv', posterUrl: 'https://image.tmdb.org/t/p/w500/poster.jpg', bannerUrl: 'https://image.tmdb.org/t/p/w1280/backdrop.jpg' }),
+    };
+    const d = deps(async (u) => isAni(u) ? aniPage([media(1)]) : json({}), { artworkProvider });
+    const response = await call(d, 'featured', req());
+    expect(response.body).toMatchObject({
+      data: { items: [{ id: 'a1', posterUrl: 'https://image.tmdb.org/t/p/w500/poster.jpg', bannerUrl: 'https://image.tmdb.org/t/p/w1280/backdrop.jpg' }] },
+      meta: { artworkProvider: 'tmdb' },
+    });
+  });
+
   it('serves AniList data with the API envelope and caches it', async () => {
     let calls = 0;
     const d = deps(async (u) => { calls++; return isAni(u) ? aniPage([media(1, { bannerImage: 'https://img.test/b.jpg' })]) : json({}, { status: 500 }); });
