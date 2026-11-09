@@ -60,6 +60,36 @@ describe('HiAnime episode provider', () => {
     expect(servers).toEqual([{ id: '901', type: 'sub', name: 'HD-1' }, { id: '902', type: 'dub', name: 'HD-2' }]);
   });
 
+  it('resolves only plain allowlisted HLS or iframe URLs from the public source response', async () => {
+    const urls: string[] = [];
+    const provider = createHiAnimeEpisodeProvider(async (input) => {
+      urls.push(input);
+      return json({ status: true, data: { file: 'https://media.example.test/master.m3u8' } });
+    }, 'https://hianime.at', ['media.example.test']);
+    await expect(provider.resolveServer!('901', lookup, signal)).resolves.toEqual({
+      provider: 'hianime', protocol: 'hls', manifestUrl: 'https://media.example.test/master.m3u8', subtitles: [], variants: [],
+    });
+    expect(urls).toEqual(['https://hianime.at/ajax/v2/episode/sources?id=901']);
+  });
+
+  it('accepts provider-returned plain HLS source arrays without attempting decryption', async () => {
+    const provider = createHiAnimeEpisodeProvider(async () => json({ encrypted: false, sources: [{ file: 'https://media.example.test/master.m3u8', quality: '1080p' }], tracks: [{ lang: 'en', label: 'English', file: 'https://media.example.test/en.vtt' }] }), 'https://hianime.at', ['media.example.test']);
+    await expect(provider.resolveServer!('901', lookup, signal)).resolves.toEqual({
+      provider: 'hianime', protocol: 'hls', manifestUrl: 'https://media.example.test/master.m3u8', subtitles: [{ language: 'en', label: 'English', url: 'https://media.example.test/en.vtt', format: 'vtt' }], variants: [{ label: '1080p' }],
+    });
+  });
+
+  it('fails closed for unallowlisted URLs and encrypted/unknown source payloads', async () => {
+    const untrusted = createHiAnimeEpisodeProvider(async () => json({ data: { link: 'https://evil.example/embed' } }), 'https://hianime.at', ['media.example.test']);
+    await expect(untrusted.resolveServer!('901', lookup, signal)).resolves.toBeNull();
+    const encrypted = createHiAnimeEpisodeProvider(async () => json({ data: { sources: 'encrypted-payload' } }), 'https://hianime.at', ['media.example.test']);
+    await expect(encrypted.resolveServer!('901', lookup, signal)).resolves.toBeNull();
+    const unsupportedFile = createHiAnimeEpisodeProvider(async () => json({ data: { file: 'https://media.example.test/video.mp4' } }), 'https://hianime.at', ['media.example.test']);
+    await expect(unsupportedFile.resolveServer!('901', lookup, signal)).resolves.toBeNull();
+    const disabled = createHiAnimeEpisodeProvider(async () => { throw new Error('must not fetch'); }, 'https://hianime.at');
+    await expect(disabled.resolveServer!('901', lookup, signal)).resolves.toBeNull();
+  });
+
   it('rejects an unsafe configured mirror', () => {
     expect(() => createHiAnimeEpisodeProvider(async () => new Response(''), 'http://hianime.at')).toThrow(ProviderError);
     expect(() => createHiAnimeEpisodeProvider(async () => new Response(''), 'https://evil.example')).toThrow(ProviderError);

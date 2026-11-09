@@ -2,6 +2,7 @@
 // worker/index.ts wraps each one. Response shapes match docs/API_CONTRACT.md and what the React app already reads.
 import { boundedInt, parseId, parsePagination, parseSearchParams, FORMATS, SEASONS, SORT_KEYS, STATUSES, type Result } from '../lib/validation';
 import { ProviderError } from '../metadata/types';
+import { validatePlaybackResult } from '../providers/playback';
 import type { FetchLike } from '../metadata/providers/http';
 import { parseRef } from './ids';
 import * as svc from './service';
@@ -66,7 +67,7 @@ export function parseBrowse(q: Query, today: Date): Result<BrowseQuery> {
   return { ok: true, value: { sort, genre, year: cur?.year ?? year, format, status, season: cur?.season ?? season, page: paging.value.page, limit: paging.value.limit } };
 }
 
-export type LiveHandlers = Record<'featured' | 'trending' | 'latest' | 'search' | 'browse' | 'genres' | 'anime' | 'episodes' | 'related' | 'metadata' | 'servers' | 'providers' | 'ready', Handler>;
+export type LiveHandlers = Record<'featured' | 'trending' | 'latest' | 'search' | 'browse' | 'genres' | 'anime' | 'episodes' | 'related' | 'metadata' | 'servers' | 'playback' | 'providers' | 'ready', Handler>;
 
 export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: LiveRequest) => svc.Deps): LiveHandlers {
   const depsFor = (req: LiveRequest): svc.Deps =>
@@ -169,6 +170,26 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
         const out = await svc.getEpisodeServers(depsFor(req), t.ref, episodeNumber);
         return okBody(req, { items: out.items }, { source: out.via, episodeNumber });
       } catch (e) { return providerFailure(req, 'live_episode_servers_failed', e); }
+    },
+
+    async playback(req) {
+      const t = parseTitle(req);
+      const episodeNumber = boundedInt(req.param('episodeNumber'), 0, 1, 100_000);
+      const serverId = req.query.serverId;
+      if (t.bad || episodeNumber === null || !serverId || serverId.length > 20 || !/^\d+$/.test(serverId)) return failBody(req, 400, 'VALIDATION_ERROR', 'Invalid episode or playback server identifier.');
+      if (!t.ref) return failBody(req, 404, 'RESOURCE_NOT_FOUND', 'The requested title was not found.');
+      try {
+        const deps = depsFor(req);
+        const raw = await svc.getEpisodePlayback(deps, t.ref, episodeNumber, serverId);
+        const provider = deps.episodeProviders.find((item) => item.id === 'hianime');
+        const allowedHosts = (req.env.HIANIME_PLAYBACK_ALLOWED_HOSTS ?? '').split(',').map((host) => host.trim().toLowerCase()).filter(Boolean);
+        const checked = validatePlaybackResult(raw, { providerId: provider?.id ?? 'hianime', allowedHosts, now: new Date() });
+        if (!checked.ok) return failBody(req, 503, 'SOURCE_UNAVAILABLE', 'No approved playback source is available for this server.');
+        return okBody(req, checked.value, { source: provider?.id ?? 'hianime', episodeNumber });
+      } catch (e) {
+        if (e instanceof ProviderError && e.kind === 'not_found') return failBody(req, 404, 'RESOURCE_NOT_FOUND', 'The requested episode or server was not found.');
+        return providerFailure(req, 'live_playback_failed', e);
+      }
     },
 
     async related(req) {

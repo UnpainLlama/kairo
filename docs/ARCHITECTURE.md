@@ -93,3 +93,5 @@ The Watch page requests playback only after a user selects a discovered server. 
 - **Analytics Engine:** optional aggregate usage metrics, avoiding personal or sensitive payloads.
 
 Add these bindings only when the feature is implemented and configured. Do not leave dummy IDs in production bindings.
+
+Playback resolution is fail-closed: configure `HIANIME_PLAYBACK_ALLOWED_HOSTS` as a comma-separated list of exact hosts or `*.subdomain` patterns for playback hosts explicitly approved for use. An empty value disables source resolution. The HiAnime adapter accepts only plain HTTPS URL fields returned by its source endpoint; it does not decrypt source payloads or bypass challenges. Validated HLS manifests can play through native browser HLS support, and approved embed URLs render in a sandboxed iframe.

@@ -281,7 +281,10 @@ img { display: block; }
 .kc-watch-layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
 .kc-watch-main { min-width: 0; }
 .kc-player { position: relative; display: grid; place-items: center; aspect-ratio: 16 / 9; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: radial-gradient(ellipse at 50% 45%, #22202b 0%, #121215 62%, #09090b 100%); }
-.kc-player-frame { display: block; width: 100%; height: 100%; border: 0; background: #000; }
+.kc-player-frame, .kc-player-video { display: block; width: 100%; height: 100%; border: 0; background: #000; }
+.kc-player-video { object-fit: contain; }
+.kc-player-hls { position: absolute; inset: 0; background: #000; }
+.kc-player-overlay { position: absolute; inset: 0; display: grid; align-content: center; justify-items: center; background: rgba(0, 0, 0, .88); }
 .kc-player-mark { position: absolute; inset: 0; display: grid; place-items: center; color: rgba(255, 255, 255, .025); font-size: clamp(160px, 28vw, 340px); font-weight: 800; user-select: none; }
 .kc-player-message { position: relative; max-width: 420px; padding: 24px; text-align: center; }
 .kc-player-icon { display: inline-grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: var(--accent-bg); color: var(--accent); }

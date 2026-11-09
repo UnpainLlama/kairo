@@ -63,6 +63,8 @@ export type LiveEnv = {
   EPISODE_PROVIDERS?: string;
   /** HiAnime mirror base URL; must be one of the adapter's fixed HTTPS allowlist. */
   HIANIME_BASE_URL?: string;
+  /** Comma-separated HTTPS host allowlist for approved HiAnime playback hosts. Empty disables playback resolution. */
+  HIANIME_PLAYBACK_ALLOWED_HOSTS?: string;
   /** TMDB API Read Access Token; configure as a Cloudflare Worker secret, never in vars or source. */
   TMDB_ACCESS_TOKEN?: string;
   METADATA_CACHE?: { get(key: string, type: 'json'): Promise<unknown>; put(key: string, value: string, options: { expirationTtl: number }): Promise<void> };

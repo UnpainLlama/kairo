@@ -187,6 +187,11 @@ describe('service and handlers', () => {
     expect(r).toMatchObject({ status: 404, body: { error: { code: 'RESOURCE_NOT_FOUND' } } });
     expect(jikanCalled).toBe(false);
   });
+  it('rejects client-supplied playback URLs and malformed server ids', async () => {
+    const d = deps(async () => json({}));
+    const response = await call(d, 'playback', req({ serverId: 'https://evil.example/video.m3u8' }, { id: 'a7', episodeNumber: '1' }));
+    expect(response).toMatchObject({ status: 400, body: { success: false, error: { code: 'VALIDATION_ERROR' } } });
+  });
   it('validates ids and parameters', async () => {
     const d = deps(async () => json({}));
     expect(await call(d, 'anime', req({}, { id: 'bad id!' }))).toMatchObject({ status: 400 });

@@ -134,7 +134,7 @@ A successful playback response may include:
 }
 ```
 
-An approved iframe provider may instead return `protocol: "embed"` with an allowlisted HTTPS `embedUrl`. The client renders only this validated embed response in a sandboxed iframe. HLS responses are validated by the Worker; browser HLS playback integration is a separate player task.
+An approved iframe provider may instead return `protocol: "embed"` with an allowlisted HTTPS `embedUrl`. The client renders only this validated embed response in a sandboxed iframe. HLS responses are validated by the Worker and played through native browser HLS support where available.
 
 The example is a schema illustration, not a live URL. Return only provider-authorized URLs and only fields the provider actually supplies. If no source is available, return `SOURCE_UNAVAILABLE` with a non-sensitive message.
 
@@ -159,3 +159,8 @@ The example is a schema illustration, not a live URL. Return only provider-autho
 - Use `Cache-Control: no-store` on authenticated responses.
 - Use explicit CORS origins only if the API is hosted on a separate origin. Same-origin deployment is preferred.
 - Retry only idempotent reads, with bounded timeouts and backoff.
+
+### Playback
+
+`GET /api/v1/anime/:id/episodes/:episodeNumber/playback?serverId=:providerServerId` resolves only a server id previously listed for that episode. The Worker requests the provider's plain source response and accepts only a direct HTTPS HLS manifest (`.m3u8`) or HTTPS iframe URL whose hostname is explicitly configured in `HIANIME_PLAYBACK_ALLOWED_HOSTS`. Client-supplied URLs are never accepted. Encrypted/obfuscated payloads and anti-bot challenges are not decoded or bypassed. If the provider does not return a plain allowlisted URL, the API responds with `SOURCE_UNAVAILABLE`.
+

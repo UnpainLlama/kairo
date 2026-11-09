@@ -150,6 +150,40 @@ export function getTitle(deps: Deps, ref: Ref): Promise<Outcome<LiveTitle>> {
   });
 }
 
+
+/** Resolves a selected provider server without accepting URLs from the client. */
+export async function getEpisodePlayback(deps: Deps, ref: Ref, episodeNumber: number, serverId: string) {
+  if (!Number.isInteger(episodeNumber) || episodeNumber < 1 || episodeNumber > 100_000 || !/^\d+$/.test(serverId)) throw new ProviderError('not_found', 'Invalid episode or server identifier.');
+  const title = (await getTitle(deps, ref)).value;
+  const lookup = {
+    cacheKey: `${ref.kind}${ref.id}`, title: title.card.title, alternateTitles: title.altTitles,
+    externalIds: { ...(title.anilistId ? { anilist: String(title.anilistId) } : {}), ...(title.malId ? { mal: String(title.malId) } : {}) }, providerUrl: title.url,
+  };
+  const provider = deps.episodeProviders.find((item) => typeof item.resolveServer === 'function' && typeof item.listServers === 'function');
+  if (!provider?.resolveServer || !provider.listServers) throw new ProviderError('unavailable', 'No approved playback resolver is configured.');
+  const breakerKey = `episode:${provider.id}`;
+  if (!deps.breaker.canRequest(breakerKey, deps.now())) throw new ProviderError('unavailable', 'The playback provider is temporarily paused.');
+  try {
+    for (let page = 1; page <= 20; page++) {
+      const episodes = await withTimeout(deps.timeoutMs ?? 8000, (signal) => provider.listEpisodes(lookup, page, signal));
+      const episode = episodes.items.find((item) => item.episodeNumber === episodeNumber);
+      if (episode?.providerEpisodeId) {
+        const servers = await withTimeout(deps.timeoutMs ?? 8000, (signal) => provider.listServers!(episode.providerEpisodeId!, lookup, signal));
+        if (!servers.some((server) => server.id === serverId)) throw new ProviderError('not_found', 'The selected server is not listed for this episode.');
+        const raw = await withTimeout(deps.timeoutMs ?? 8000, (signal) => provider.resolveServer!(serverId, lookup, signal));
+        deps.breaker.recordSuccess(breakerKey);
+        return raw;
+      }
+      if (!episodes.hasNextPage) break;
+    }
+    throw new ProviderError('not_found', 'The requested episode was not found.');
+  } catch (error) {
+    const providerError = error instanceof ProviderError ? error : new ProviderError('unavailable', 'Playback provider failed.');
+    if (providerError.kind !== 'not_found') deps.breaker.recordFailure(breakerKey, deps.now(), providerError.retryAfterSeconds);
+    throw providerError;
+  }
+}
+
 export async function getRelated(deps: Deps, ref: Ref, limit: number): Promise<Outcome<LiveTitle[]>> {
   const candidates: Candidate<LiveTitle[]>[] = candidatesFor(deps, ref, (s, signal) => s.related(ref, limit, signal));
   // An AniList title can still get Jikan recommendations through its MyAnimeList id, if AniList itself is unavailable.
@@ -242,7 +276,8 @@ export function parseSourceList(csv: string | undefined): SourceId[] {
 }
 
 export function buildDeps(env: LiveEnv, fetchImpl: FetchLike, onError?: Deps['onError']): Deps {
-  const episodeRegistry = buildEpisodeProviders(env.EPISODE_PROVIDERS, env.HIANIME_BASE_URL, fetchImpl);
+  const playbackHosts = (env.HIANIME_PLAYBACK_ALLOWED_HOSTS ?? '').split(',').map((host) => host.trim().toLowerCase()).filter((host) => /^(?:\*\.)?[a-z0-9.-]+$/.test(host));
+  const episodeRegistry = buildEpisodeProviders(env.EPISODE_PROVIDERS, env.HIANIME_BASE_URL, fetchImpl, playbackHosts);
   return {
     sources: parseSourceList(env.LIVE_PROVIDERS).map((id) => FACTORIES[id](fetchImpl, env.HIANIME_BASE_URL)),
     episodeProviders: episodeRegistry.providers,

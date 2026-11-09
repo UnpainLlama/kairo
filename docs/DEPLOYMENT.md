@@ -107,3 +107,7 @@ The Worker needs **no secrets today** (public AniList reads need no key). Authen
 
 ## 8. Production (blocked)
 Production deploys are blocked by design until you approve. They need all of: a separate D1 database and KV namespace, their IDs in the `production` block, a separate token in the `production` environment, the variable `PRODUCTION_DEPLOY_APPROVED=true`, a run from `main`, and your approval as required reviewer. Do none of this until staging is proven with a real catalogue.
+
+### Approved playback host allowlist
+
+The HiAnime playback resolver is fail-closed. Before playback can return a source in staging, set `HIANIME_PLAYBACK_ALLOWED_HOSTS` in the existing staging Worker variables to the exact HTTPS hostnames approved by the provider (comma-separated; `*.example.com` matches subdomains only). Keep it empty until those hostnames have been verified. Do not add broad wildcard domains. The staging Wrangler configuration intentionally leaves this value empty by default.

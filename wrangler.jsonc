@@ -25,7 +25,8 @@
     "CATALOG_SOURCE": "live",
     "LIVE_PROVIDERS": "jikan",
     "EPISODE_PROVIDERS": "jikan",
-    "HIANIME_BASE_URL": "https://hianimez.to"
+    "HIANIME_BASE_URL": "https://hianimez.to",
+    "HIANIME_PLAYBACK_ALLOWED_HOSTS": ""
   },
 
   "env": {
@@ -53,7 +54,8 @@
         "CATALOG_SOURCE": "live",
         "LIVE_PROVIDERS": "hianime,jikan",
         "EPISODE_PROVIDERS": "hianime,jikan",
-        "HIANIME_BASE_URL": "https://hianime.at"
+        "HIANIME_BASE_URL": "https://hianime.at",
+        "HIANIME_PLAYBACK_ALLOWED_HOSTS": ""
       }
     },
 

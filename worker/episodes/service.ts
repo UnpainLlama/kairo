@@ -31,10 +31,10 @@ async function withTimeout<T>(ms: number, fn: (signal: AbortSignal) => Promise<T
   finally { clearTimeout(timer); }
 }
 
-export function buildEpisodeProviders(csv: string | undefined, hianimeBaseUrl: string | undefined, fetchImpl: FetchLike): { providers: EpisodeProvider[]; unknown: string[] } {
+export function buildEpisodeProviders(csv: string | undefined, hianimeBaseUrl: string | undefined, fetchImpl: FetchLike, playbackAllowedHosts: readonly string[] = []): { providers: EpisodeProvider[]; unknown: string[] } {
   const requested = (csv === undefined ? 'jikan' : csv).split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
   const factories: Record<string, () => EpisodeProvider> = {
-    hianime: () => createHiAnimeEpisodeProvider(fetchImpl, hianimeBaseUrl),
+    hianime: () => createHiAnimeEpisodeProvider(fetchImpl, hianimeBaseUrl, playbackAllowedHosts),
     jikan: () => createJikanEpisodeProvider(fetchImpl),
   };
   const unknown = [...new Set(requested.filter((id) => !(id in factories)))];
