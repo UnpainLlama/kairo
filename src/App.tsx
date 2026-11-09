@@ -43,7 +43,7 @@ export default function App() {
       <a className="kc-skip" href="#main">Skip to content</a>
 
       <aside className="kc-rail" aria-label="Primary">
-        <Link to="/" className="kc-brand" aria-label="Kairo home">K</Link>
+        <Link to="/" className="kc-brand" aria-label="Kairo home"><img src="/kairo-k.svg" alt="" width="22" height="26" /></Link>
         <nav className="kc-rail-links" aria-label="Main navigation">
           {navItems.map((item) => <RailLink key={item.label} {...item} />)}
         </nav>
