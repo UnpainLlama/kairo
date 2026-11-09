@@ -49,7 +49,7 @@ export default function WatchPage() {
 
           <section className="kc-player" aria-label="Video player">
             {playback.status === 'ok' && playback.data.source.protocol === 'embed' && (
-              <iframe className="kc-player-frame" src={playback.data.source.embedUrl} title={`${anime.title} episode ${parsedEpisode} player`} allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen referrerPolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation" />
+              <iframe className="kc-player-frame" src={playback.data.source.embedUrl} title={`${anime.title} episode ${parsedEpisode} player`} allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen referrerPolicy="no-referrer" />
             )}
             {playback.status === 'ok' && playback.data.source.protocol === 'hls' && (
               <video className="kc-player-video" src={playback.data.source.manifestUrl} controls playsInline preload="metadata" crossOrigin="anonymous">
