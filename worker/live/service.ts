@@ -194,6 +194,54 @@ export async function getEpisodes(deps: Deps, ref: Ref, page: number): Promise<E
   return { page: out.page, via: out.via, degraded: out.degraded, stale: out.stale, cached: out.cached };
 }
 
+/** Resolve a selected server only after re-discovering it for the requested episode.
+ * The browser supplies an episode number and opaque server id, never a media URL.
+ */
+export async function getEpisodePlayback(deps: Deps, ref: Ref, episodeNumber: number, serverId: string) {
+  if (!Number.isInteger(episodeNumber) || episodeNumber < 1 || episodeNumber > 100_000 ||
+      typeof serverId !== 'string' || !/^(?:\d{1,12}|h_[A-Za-z0-9_-]{1,1800})$/.test(serverId)) {
+    throw new ProviderError('not_found', 'Invalid episode or server identifier.');
+  }
+  const title = (await getTitle(deps, ref)).value;
+  const lookup = {
+    cacheKey: `${ref.kind}${ref.id}`,
+    title: title.card.title,
+    alternateTitles: title.altTitles,
+    externalIds: {
+      ...(title.anilistId ? { anilist: String(title.anilistId) } : {}),
+      ...(title.malId ? { mal: String(title.malId) } : {}),
+    },
+    providerUrl: title.url,
+  };
+  const provider = deps.episodeProviders.find((item) => typeof item.listServers === 'function' && typeof item.resolveServer === 'function');
+  if (!provider?.listServers || !provider.resolveServer) throw new ProviderError('unavailable', 'No approved playback resolver is configured.');
+  const breakerKey = `episode:${provider.id}`;
+  if (!deps.breaker.canRequest(breakerKey, deps.now())) throw new ProviderError('unavailable', `${provider.displayName} is temporarily paused after repeated failures.`);
+  try {
+    for (let page = 1; page <= 20; page++) {
+      const episodes = await withTimeout(deps.timeoutMs ?? 8000, (signal) => provider.listEpisodes(lookup, page, signal));
+      const episode = episodes.items.find((item) => item.episodeNumber === episodeNumber);
+      if (episode?.providerEpisodeId) {
+        const providerEpisodeId = episode.providerEpisodeId;
+        const servers = await withTimeout(deps.timeoutMs ?? 8000, (signal) => provider.listServers!(providerEpisodeId, lookup, signal));
+        if (!servers.some((server) => server.id === serverId)) throw new ProviderError('not_found', 'The selected server is not listed for this episode.');
+        const raw = await withTimeout(deps.timeoutMs ?? 8000, (signal) => provider.resolveServer!(serverId, lookup, signal, providerEpisodeId));
+        if (raw === null || raw === undefined) throw new ProviderError('unavailable', 'The provider did not return an approved playable source.');
+        deps.breaker.recordSuccess(breakerKey);
+        return raw;
+      }
+      if (!episodes.hasNextPage) break;
+    }
+    throw new ProviderError('not_found', 'The requested episode was not found.');
+  } catch (error) {
+    if (error instanceof ProviderError && error.kind === 'not_found') throw error;
+    const providerError = error instanceof ProviderError ? error : new ProviderError('unavailable', 'Unexpected playback resolver failure.');
+    deps.breaker.recordFailure(breakerKey, deps.now(), providerError.retryAfterSeconds);
+    deps.onEpisodeError?.(provider.id, providerError);
+    throw providerError;
+  }
+}
+
 export async function getEpisodeServers(deps: Deps, ref: Ref, episodeNumber: number) {
   if (!Number.isFinite(episodeNumber) || episodeNumber <= 0 || episodeNumber > 100_000) throw new ProviderError('not_found', 'Invalid episode number.');
   const title = (await getTitle(deps, ref)).value;
