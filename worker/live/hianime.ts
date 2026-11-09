@@ -17,7 +17,9 @@ export const HIANIME_ATTRIBUTION: Attribution = {
   termsUrl: 'https://hianime.at',
   license: null,
   requirements: [
-    'This adapter uses public website pages and documented AJAX.',
+    'This adapter uses public website pages and documented AJAX endpoints; no reuse or commercial licence has been verified.',
+    'The website and its mirror domains may change without notice. Requests are rate-limited and cached by KAIRO.',
+    'Owner action: confirm that use of this upstream is permitted before enabling it in production.',
   ],
 };
 

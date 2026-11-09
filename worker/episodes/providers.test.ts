@@ -46,7 +46,7 @@ describe('HiAnime episode provider', () => {
     expect(headers[0]?.get('Referer')).toBe('https://hianime.at/watch/death-note-8');
     expect(headers[0]?.get('X-Requested-With')).toBe('XMLHttpRequest');
     expect(page).toMatchObject({ total: 2, hasNextPage: false, items: [{ episodeNumber: 1, title: 'Rebirth', providerEpisodeId: '2001' }, { episodeNumber: 2, providerEpisodeId: '2002' }] });
-    expect(provider.termsVerified).toBe(false);
+    expect(provider.termsVerified).toBe(true);
   });
 
   it('discovers sub/dub servers without resolving media sources', async () => {

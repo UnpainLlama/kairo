@@ -1,4 +1,5 @@
 import { Link, useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { ArrowLeft, ListVideo, Play } from 'lucide-react';
 import { ErrorState, LoadingState } from '../components/catalog';
 import { useApi } from '../lib/useApi';
@@ -14,6 +15,8 @@ export default function WatchPage() {
   const details = useApi<AnimeDetails>(`/anime/${key}`);
   const episodes = useApi<ItemList<Episode>>(`/anime/${key}/episodes?page=1&limit=50`);
   const servers = useApi<ServerList>(validEpisode ? `/anime/${key}/episodes/${parsedEpisode}/servers` : null);
+  const [selectedServer, setSelectedServer] = useState<string | null>(null);
+  useEffect(() => setSelectedServer(null), [key, parsedEpisode]);
 
   if (!validEpisode) return <div className="kc-watch-error"><h1>Invalid episode</h1><p>Choose an episode from the anime page.</p><Link className="kc-btn kc-btn-dark" to={`/anime/${key}`}>Back to anime</Link></div>;
   if (details.status === 'loading' || episodes.status === 'loading') return <LoadingState label="Loading episode" />;
@@ -25,6 +28,7 @@ export default function WatchPage() {
   const serverItems = servers.status === 'ok' ? servers.data.items : [];
   const subServers = serverItems.filter((server) => server.type === 'sub');
   const dubServers = serverItems.filter((server) => server.type === 'dub');
+  const selected = serverItems.find((server) => server.id === selectedServer) ?? null;
   const currentThumb = safeImageUrl(current?.thumbnailUrl ?? null);
   const ordered = [...episodes.data.items].sort((a, b) => a.episodeNumber - b.episodeNumber);
   const position = ordered.findIndex((episode) => episode.episodeNumber === parsedEpisode);
@@ -41,8 +45,8 @@ export default function WatchPage() {
             <div className="kc-player-mark" aria-hidden="true">K</div>
             <div className="kc-player-message">
               <span className="kc-player-icon"><Play size={24} fill="currentColor" aria-hidden="true" /></span>
-              <h2>No video source available</h2>
-              <p>There is no playable source for this episode yet.</p>
+              <h2>{selected ? `${selected.name} selected` : 'Choose a playback server'}</h2>
+              <p>{selected ? 'The server is available, but it has not supplied a validated playback URL yet.' : 'Choose a Sub or Dub server below to continue.'}</p>
             </div>
           </section>
 
@@ -71,8 +75,8 @@ export default function WatchPage() {
             {servers.status === 'ok' && serverItems.length === 0 && <p className="kc-hint">No servers are listed for this episode.</p>}
             {servers.status === 'ok' && serverItems.length > 0 && (
               <div className="kc-server-groups">
-                <div><b>Sub</b><span>{subServers.length ? subServers.map((server) => server.name).join(' · ') : 'Not listed'}</span></div>
-                <div><b>Dub</b><span>{dubServers.length ? dubServers.map((server) => server.name).join(' · ') : 'Not listed'}</span></div>
+                <div><b>Sub</b><span>{subServers.length ? subServers.map((server) => <button key={server.id} type="button" className={`kc-server-choice${selectedServer === server.id ? ' active' : ''}`} aria-pressed={selectedServer === server.id} onClick={() => setSelectedServer(server.id)}>{server.name}</button>) : 'Not listed'}</span></div>
+                <div><b>Dub</b><span>{dubServers.length ? dubServers.map((server) => <button key={server.id} type="button" className={`kc-server-choice${selectedServer === server.id ? ' active' : ''}`} aria-pressed={selectedServer === server.id} onClick={() => setSelectedServer(server.id)}>{server.name}</button>) : 'Not listed'}</span></div>
               </div>
             )}
           </section>
