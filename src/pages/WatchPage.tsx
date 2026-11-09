@@ -3,12 +3,11 @@ import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ListVideo, Play, Search, Settings2, ChevronDown, Maximize } from 'lucide-react';
 import { ErrorState, LoadingState } from '../components/catalog';
 import { useApi } from '../lib/useApi';
+import KairoMediaPlayer, { type KairoPlaybackSource } from '../components/KairoMediaPlayer';
 import { dateLabel, durationLabel, episodeNumberLabel, safeImageUrl, type AnimeDetails, type Episode, type EpisodeServer, type ItemList } from '../lib/catalog';
 
 type ServerList = ItemList<EpisodeServer>;
-type PlaybackSource =
-  | { provider: string; protocol: 'hls'; manifestUrl: string; subtitles?: { language: string; label: string; url: string; format: 'vtt' }[]; variants?: { label: string; height?: number }[] }
-  | { provider: string; protocol: 'embed'; embedUrl: string };
+type PlaybackSource = KairoPlaybackSource;
 type PlaybackResponse = { source: PlaybackSource; urlValidated: boolean };
 
 export default function WatchPage() {
@@ -51,13 +50,15 @@ export default function WatchPage() {
           <div className="kc-watch-topline"><Link to={`/anime/${key}`} className="kc-back-link"><ArrowLeft size={15} aria-hidden="true" /> Back to anime</Link><span className="kc-watch-breadcrumb">{anime.title} <span>/</span> Episode {episodeNumberLabel(parsedEpisode)}</span></div>
 
           <section className="kc-player" aria-label="Video player">
-            {playback.status === 'ok' && playback.data.source.protocol === 'embed' && (
-              <iframe className="kc-player-frame" src={playback.data.source.embedUrl} title={`${anime.title} episode ${parsedEpisode} player`} allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen referrerPolicy="no-referrer" />
-            )}
-            {playback.status === 'ok' && playback.data.source.protocol === 'hls' && (
-              <video className="kc-player-video" src={playback.data.source.manifestUrl} controls playsInline preload="metadata" crossOrigin="anonymous">
-                Your browser cannot play this HLS stream natively. Try an approved embed server if available.
-              </video>
+            {playback.status === 'ok' && (
+              <KairoMediaPlayer
+                source={playback.data.source}
+                title={`${anime.title} · Episode ${parsedEpisode}`}
+                progressKey={`${slug}:${parsedEpisode}:${selectedServer?.id ?? ''}`}
+                introEnd={(current as (Episode & { introEndSeconds?: number | null }) | undefined)?.introEndSeconds}
+                outroStart={(current as (Episode & { outroStartSeconds?: number | null }) | undefined)?.outroStartSeconds}
+                nextUrl={next ? `/watch/${key}/${next.episodeNumber}` : null}
+              />
             )}
             {playback.status !== 'ok' && (
               <div className="kc-player-message">
