@@ -101,8 +101,8 @@ export default function WatchPage() {
           <section className="kc-servers" aria-label="Servers">
             <h2>Servers</h2>
             {servers.status === 'loading' && <LoadingState label="Checking servers" />}
-            {servers.status === 'error' && <p className="kc-hint">Servers could not be loaded.</p>}
-            {servers.status === 'ok' && serverItems.length === 0 && <p className="kc-hint">No servers are listed for this episode.</p>}
+            {servers.status === 'error' && <p className="kc-hint">Servers could not be loaded. <button type="button" className="kc-inline-retry" onClick={servers.reload}>Retry</button></p>}
+            {servers.status === 'ok' && serverItems.length === 0 && <p className="kc-hint">The provider returned no servers for this episode. <button type="button" className="kc-inline-retry" onClick={servers.reload}>Check again</button></p>}
             {servers.status === 'ok' && serverItems.length > 0 && (
               <div className="kc-server-groups">
                 <div><b>Sub</b><span>{subServers.length ? subServers.map((server) => <button key={server.id} type="button" className={`kc-server-choice${selectedServer === server.id ? ' active' : ''}`} aria-pressed={selectedServer === server.id} onClick={() => setSelectedServer(server.id)}>{server.name}</button>) : 'Not listed'}</span></div>

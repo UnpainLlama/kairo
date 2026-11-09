@@ -396,3 +396,15 @@ img { display: block; }
 .kc-server-choice { margin: 4px 6px 4px 0; padding: 7px 11px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
 .kc-server-choice:hover, .kc-server-choice.active { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
 .kc-server-choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.kc-inline-retry {
+  margin-left: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--kc-accent, #a78bfa);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.kc-inline-retry:hover { text-decoration: underline; }

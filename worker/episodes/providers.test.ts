@@ -53,11 +53,16 @@ describe('HiAnime episode provider', () => {
     const urls: string[] = [];
     const provider = createHiAnimeEpisodeProvider(async (input) => {
       urls.push(input);
-      return json({ status: true, html: '<div class="server-item" data-id="901" data-type="sub" data-server-id="1">HD-1</div><div class="server-item" data-id="902" data-type="dub" data-server-id="2">HD-2</div>' });
+      return json({ status: true, html: '<div class="server-item" data-id="901" data-type="sub" data-server-id="1"><div class="server-item" data-id="902" data-type="dub" data-server-id="2">' });
     }, 'https://hianime.at');
     const servers = await provider.listServers!('2001', lookup, signal);
     expect(urls).toEqual(['https://hianime.at/api/theme/episode/servers?episodeId=2001']);
     expect(servers).toEqual([{ id: '901', type: 'sub', name: 'HD-1' }, { id: '902', type: 'dub', name: 'HD-2' }]);
+  });
+
+  it('accepts server fragments that expose the numeric id as data-server-id', async () => {
+    const provider = createHiAnimeEpisodeProvider(async () => json({ status: 200, html: '<div class="server-item" data-type="sub" data-server-id="77">HD-2</div>' }), 'https://hianime.at');
+    await expect(provider.listServers!('2001', lookup, signal)).resolves.toEqual([{ id: '77', type: 'sub', name: 'HD-2' }]);
   });
 
   it('resolves only plain allowlisted HLS or iframe URLs from the public source response', async () => {

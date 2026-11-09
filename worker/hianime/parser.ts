@@ -193,7 +193,7 @@ export function parseHiAnimeEpisodes(html: string): HiAnimeEpisode[] {
   for (const match of html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)) {
     const attrs = parseAttributes(match[1] ?? '');
     if (!(attrs.class ?? '').split(/\s+/).includes('ep-item')) continue;
-    const id = attrs['data-id'];
+    const id = attrs['data-id'] ?? attrs['data-server-id'];
     const number = Number(attrs['data-number'] ?? textContent(match[2] ?? '').match(/(?:episode|ep)\s*(\d+(?:\.\d+)?)/i)?.[1]);
     if (!id || !/^\d+$/.test(id) || !Number.isFinite(number) || number <= 0 || seen.has(id)) continue;
     const title = attrs.title ?? attrs['data-title'] ?? (textContent(match[2] ?? '') || `Episode ${number}`);
@@ -206,14 +206,19 @@ export function parseHiAnimeEpisodes(html: string): HiAnimeEpisode[] {
 export function parseHiAnimeServers(html: string): HiAnimeServer[] {
   const out: HiAnimeServer[] = [];
   const seen = new Set<string>();
-  for (const item of elementsByClass(html, 'server-item')) {
-    const opening = item.match(/^\s*<[^>]+>/)?.[0] ?? '';
-    const attrs = parseAttributes(opening);
+  // Only the opening element is needed. Parsing the complete nested fragment with
+  // the generic balanced-tag helper was brittle when HiAnime returned malformed
+  // or minified server markup, which could silently turn a populated response
+  // into an empty server list.
+  for (const match of html.matchAll(/<([a-z][\w:-]*)\b([^>]*)>/gi)) {
+    const attrs = parseAttributes(match[2] ?? '');
+    const classes = (attrs.class ?? '').split(/\s+/);
+    if (!classes.includes('server-item')) continue;
     const type = (attrs['data-type'] ?? '').toLowerCase();
-    const id = attrs['data-id'];
+    const id = attrs['data-id'] ?? attrs['data-server-id'];
     if (!id || !/^\d+$/.test(id) || !['sub', 'dub', 'raw'].includes(type) || seen.has(`${type}:${id}`)) continue;
-    const name = attrs['data-server-name'] ?? attrs.title ?? (textContent(item) || `Server ${attrs['data-server-id'] ?? ''}`);
-    out.push({ providerServerId: id, type: type as HiAnimeServer['type'], name });
+    const name = attrs['data-server-name'] ?? attrs.title ?? `Server ${attrs['data-server-id'] ?? id}`;
+    out.push({ providerServerId: id, type: type as HiAnimeServer['type'], name: textContent(name) || `Server ${id}` });
     seen.add(`${type}:${id}`);
   }
   return out;
