@@ -46,7 +46,7 @@ export function createHiAnimeEpisodeProvider(fetchImpl: FetchLike, baseUrl?: str
   const provider: EpisodeProvider = {
     id: 'hianime',
     displayName: 'HiAnime episode catalogue',
-    termsVerified: true,
+    termsVerified: false,
 
     async listEpisodes(lookup, page, signal): Promise<EpisodePage> {
       if (!Number.isInteger(page) || page < 1 || page > 500) throw new ProviderError('invalid_response', 'Episode page is outside the supported range.');
