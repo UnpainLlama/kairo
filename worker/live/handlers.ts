@@ -176,7 +176,7 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
       const t = parseTitle(req);
       const episodeNumber = boundedInt(req.param('episodeNumber'), 0, 1, 100_000);
       const serverId = req.query.serverId;
-      if (t.bad || episodeNumber === null || !serverId || serverId.length > 20 || !/^\d+$/.test(serverId)) return failBody(req, 400, 'VALIDATION_ERROR', 'Invalid episode or playback server identifier.');
+      if (t.bad || episodeNumber === null || !serverId || serverId.length > 1802 || !/^(?:\d{1,12}|h_[A-Za-z0-9_-]{1,1800})$/.test(serverId)) return failBody(req, 400, 'VALIDATION_ERROR', 'Invalid episode or playback server identifier.');
       if (!t.ref) return failBody(req, 404, 'RESOURCE_NOT_FOUND', 'The requested title was not found.');
       try {
         const deps = depsFor(req);
