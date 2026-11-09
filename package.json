@@ -25,7 +25,8 @@
     "lucide-react": "^0.468.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "react-router-dom": "^7.9.5"
+    "react-router-dom": "^7.9.5",
+    "hls.js": "^1.6.15"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.13.0",
