@@ -1,6 +1,6 @@
 // Live Jikan catalogue source (REST, https://api.jikan.moe/v4, unofficial MyAnimeList API, no key).
 // Documented limits: 3 requests/second and 60/minute, 24-hour server cache. Jikan scrapes MyAnimeList, so it can answer 504 on a cache miss.
-// It is therefore the FALLBACK for lists and search, and the source for episode lists. It has no banner images.
+// It is therefore the FALLBACK for catalogue lists and search. Its episode-list adapter lives separately in worker/episodes/providers/jikan.ts. It has no banner images.
 // NOTE: Jikan's own terms policy has not been read by the owner yet. Do that before launch (see docs/LIVE_CATALOGUE.md).
 // Field names below follow the v4 docs from memory and are untested against live responses; every field is read defensively.
 import { httpsUrlOrNull, normalizeFormat, normalizeSeason, plainText, positiveInt, uniqueStrings, yearOrNull } from '../metadata/normalize';
@@ -8,7 +8,7 @@ import { asString, isObject, providerFetch, readJson, USER_AGENT, type FetchLike
 import { ProviderError, type Attribution, type NormalizedMetadata, type Status } from '../metadata/types';
 import { toLiveTitle } from './map';
 import type { Ref } from './ids';
-import type { BrowseQuery, CatalogSource, EpisodePage, ListKind, LiveTitle, Paged } from './types';
+import type { BrowseQuery, CatalogSource, ListKind, LiveTitle, Paged } from './types';
 
 const BASE = 'https://api.jikan.moe/v4';
 const HOST = 'api.jikan.moe';
@@ -44,6 +44,9 @@ export class Pacer {
   }
 }
 const sharedPacer = new Pacer(400);
+
+/** Shared by catalogue and episode adapters so combined Jikan traffic observes one per-isolate pace. */
+export const waitForJikanSlot = (): Promise<void> => sharedPacer.wait();
 
 const TYPES = { series: 'tv', movie: 'movie', ova: 'ova', ona: 'ona', special: 'special' } as const;
 const STATUS = { airing: 'airing', finished: 'complete', upcoming: 'upcoming' } as const;
@@ -229,18 +232,5 @@ export function createJikanSource(fetchImpl: FetchLike, opts: { pacer?: Pacer; n
       return out;
     },
 
-    async episodes(malId, page, signal): Promise<EpisodePage> {
-      const body = await get(`/anime/${malId}/episodes`, { page }, signal);
-      if (!Array.isArray(body.data)) throw new ProviderError('invalid_response', 'Jikan returned no episode array.');
-      const items = body.data.flatMap((e) => {
-        if (!isObject(e)) return [];
-        const number = positiveInt(e.mal_id);
-        if (number === null) return [];
-        return [{ number, title: asString(e.title) ?? asString(e.title_romanji) ?? '', airedAt: asString(e.aired) }];
-      });
-      const pg = isObject(body.pagination) ? body.pagination : {};
-      const it = isObject(pg.items) ? pg.items : {};
-      return { items, hasNextPage: pg.has_next_page === true, total: typeof it.total === 'number' && it.total >= 0 ? it.total : null };
-    },
   };
 }
