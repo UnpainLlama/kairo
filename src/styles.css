@@ -393,3 +393,49 @@ img { display: block; }
 .kc-server-options { display: flex; flex-wrap: wrap; gap: 6px; }
 .kc-server-option { padding: 6px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--text); cursor: pointer; font: inherit; font-size: 12px; }
 .kc-server-option.active { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+
+/* ---------- Kairo watch page refresh: Phase 1 foundation ---------- */
+.kc-watch { max-width: 1760px; margin: 0 auto; }
+.kc-watch-topline { display:flex; align-items:center; gap:14px; min-width:0; margin-bottom:12px; }
+.kc-watch-breadcrumb { min-width:0; overflow:hidden; color:var(--muted); font-size:12px; text-overflow:ellipsis; white-space:nowrap; }
+.kc-watch-breadcrumb span { padding:0 7px; color:var(--dim); }
+.kc-player { border:0; border-radius:9px; background:#050506; box-shadow:0 12px 36px rgba(0,0,0,.24); }
+.kc-player-toolbar { position:relative; display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:42px; padding:0 4px; border-bottom:1px solid var(--line); }
+.kc-player-toolbar-left,.kc-player-toolbar-actions { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:11px; }
+.kc-live-dot { width:7px; height:7px; border-radius:50%; background:#55c88a; box-shadow:0 0 0 3px rgba(85,200,138,.12); }
+.kc-toolbar-divider { width:1px; height:14px; background:var(--line-2); }
+.kc-player-tool { display:inline-flex; align-items:center; gap:6px; padding:7px 9px; border:1px solid transparent; border-radius:7px; background:transparent; color:var(--muted); cursor:pointer; font:inherit; font-size:11px; }
+.kc-player-tool:hover,.kc-player-tool[aria-expanded="true"] { border-color:var(--line); background:var(--surface); color:var(--text); }
+.kc-player-settings-popover { position:absolute; z-index:20; top:38px; right:90px; width:250px; padding:14px; border:1px solid var(--line-2); border-radius:10px; background:#17171b; box-shadow:0 12px 34px rgba(0,0,0,.4); color:var(--text); }
+.kc-player-settings-popover b { font-size:13px; }
+.kc-player-settings-popover p,.kc-player-settings-popover span { display:block; margin-top:7px; color:var(--muted); font-size:11px; line-height:1.5; }
+.kc-watch-bar { margin-top:15px; }
+.kc-watch-bar h1 { font-size:19px; }
+.kc-section-heading { display:flex; align-items:end; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.kc-section-kicker { display:block; margin-bottom:3px; color:var(--dim); font-size:9px; font-weight:800; letter-spacing:.14em; }
+.kc-section-heading h2 { margin:0; font-size:16px; font-weight:800; }
+.kc-server-count { color:var(--dim); font-size:11px; }
+.kc-queue { border-radius:9px; }
+.kc-queue-head { align-items:end; }
+.kc-queue-head h2 { font-size:16px; }
+.kc-episode-search { display:flex; align-items:center; gap:8px; margin:10px 10px 4px; padding:9px 10px; border:1px solid var(--line); border-radius:7px; background:#0d0d10; color:var(--dim); }
+.kc-episode-search input { width:100%; min-width:0; border:0; outline:0; background:transparent; color:var(--text); font:inherit; font-size:12px; }
+.kc-episode-search input::placeholder { color:var(--dim); }
+.kc-queue-list { padding-top:5px; }
+.kc-queue-item { grid-template-columns:104px minmax(0,1fr); gap:10px; padding:7px; }
+.kc-queue-item.active { border-color:rgba(151,116,255,.48); background:rgba(126,91,232,.13); }
+.kc-queue-copy b { font-size:12px; }
+.kc-episode-empty { padding:18px 10px; color:var(--muted); text-align:center; font-size:12px; }
+.kc-server-groups > div { background:rgba(255,255,255,.015); }
+@media(max-width:860px) {
+ .kc-watch-topline { flex-wrap:wrap; }
+ .kc-player-toolbar { flex-wrap:wrap; padding:7px 2px; }
+ .kc-player-settings-popover { right:0; }
+ .kc-queue { max-height:560px; }
+}
+@media(max-width:560px) {
+ .kc-watch-breadcrumb { flex-basis:100%; padding-left:24px; }
+ .kc-player-toolbar-left { font-size:10px; }
+ .kc-player-tool { padding:7px 6px; }
+ .kc-player-settings-popover { right:0; width:min(250px, calc(100vw - 48px)); }
+}

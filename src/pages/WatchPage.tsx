@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, ListVideo, Play } from 'lucide-react';
+import { ArrowLeft, ListVideo, Play, Search, Settings2, ChevronDown, Maximize } from 'lucide-react';
 import { ErrorState, LoadingState } from '../components/catalog';
 import { useApi } from '../lib/useApi';
 import { dateLabel, durationLabel, episodeNumberLabel, safeImageUrl, type AnimeDetails, type Episode, type EpisodeServer, type ItemList } from '../lib/catalog';
@@ -15,6 +15,8 @@ export default function WatchPage() {
   const { slug = '', episodeNumber: rawEpisode = '1' } = useParams();
   const key = encodeURIComponent(slug);
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
+  const [episodeFilter, setEpisodeFilter] = useState('');
+  const [showPlayerSettings, setShowPlayerSettings] = useState(false);
   useEffect(() => setSelectedServerId(null), [slug, rawEpisode]);
   const parsedEpisode = Number(rawEpisode);
   const validEpisode = Number.isInteger(parsedEpisode) && parsedEpisode >= 1 && parsedEpisode <= 100000;
@@ -40,12 +42,13 @@ export default function WatchPage() {
   const position = ordered.findIndex((episode) => episode.episodeNumber === parsedEpisode);
   const prev = position > 0 ? ordered[position - 1] : null;
   const next = position >= 0 && position < ordered.length - 1 ? ordered[position + 1] : null;
+  const visibleEpisodes = ordered.filter((episode) => `${episode.title ?? ''} ${episode.episodeNumber}`.toLowerCase().includes(episodeFilter.toLowerCase()));
 
   return (
     <div className="kc-watch">
       <div className="kc-watch-layout">
         <div className="kc-watch-main">
-          <Link to={`/anime/${key}`} className="kc-back-link"><ArrowLeft size={15} aria-hidden="true" /> {anime.title}</Link>
+          <div className="kc-watch-topline"><Link to={`/anime/${key}`} className="kc-back-link"><ArrowLeft size={15} aria-hidden="true" /> Back to anime</Link><span className="kc-watch-breadcrumb">{anime.title} <span>/</span> Episode {episodeNumberLabel(parsedEpisode)}</span></div>
 
           <section className="kc-player" aria-label="Video player">
             {playback.status === 'ok' && playback.data.source.protocol === 'embed' && (
@@ -64,6 +67,15 @@ export default function WatchPage() {
               </div>
             )}
           </section>
+
+          <div className="kc-player-toolbar">
+            <div className="kc-player-toolbar-left"><span className="kc-live-dot" /> <span>{selectedServer?.name ?? 'Select a source'}</span><span className="kc-toolbar-divider" /> <span>Episode {episodeNumberLabel(parsedEpisode)}</span></div>
+            <div className="kc-player-toolbar-actions">
+              <button type="button" className="kc-player-tool" onClick={() => setShowPlayerSettings((value) => !value)} aria-expanded={showPlayerSettings}><Settings2 size={15}/> Settings <ChevronDown size={13}/></button>
+              {showPlayerSettings && <div className="kc-player-settings-popover"><b>Playback settings</b><p>Player preferences will be available for supported direct streams.</p><span>Current source: {playback.status === 'ok' ? playback.data.source.protocol.toUpperCase() : 'Not loaded'}</span></div>}
+              <button type="button" className="kc-player-tool" onClick={() => document.querySelector('.kc-player')?.requestFullscreen?.()}><Maximize size={15}/> Fullscreen</button>
+            </div>
+          </div>
 
           <div className="kc-watch-bar">
             <div>
@@ -84,7 +96,7 @@ export default function WatchPage() {
           )}
 
           <section className="kc-servers" aria-label="Servers">
-            <h2>Servers</h2>
+            <div className="kc-section-heading"><div><span className="kc-section-kicker">PLAYBACK</span><h2>Choose a server</h2></div><span className="kc-server-count">{serverItems.length} available</span></div>
             {servers.status === 'loading' && <LoadingState label="Checking servers" />}
             {servers.status === 'error' && <p className="kc-hint">Servers could not be loaded.</p>}
             {servers.status === 'ok' && serverItems.length === 0 && <p className="kc-hint">No servers are listed for this episode.</p>}
@@ -103,9 +115,10 @@ export default function WatchPage() {
         </div>
 
         <aside className="kc-queue" aria-label="Episodes">
-          <div className="kc-queue-head"><h2>Episodes</h2><span>{episodes.data.items.length}</span></div>
+          <div className="kc-queue-head"><div><span className="kc-section-kicker">UP NEXT</span><h2>Episodes</h2></div><span>{episodes.data.items.length}</span></div>
+          <label className="kc-episode-search"><Search size={14}/><input value={episodeFilter} onChange={(event) => setEpisodeFilter(event.target.value)} placeholder="Find an episode…" aria-label="Find an episode"/></label>
           <div className="kc-queue-list">
-            {ordered.map((episode) => {
+            {visibleEpisodes.map((episode) => {
               const selected = episode.episodeNumber === parsedEpisode;
               const thumb = safeImageUrl(episode.thumbnailUrl);
               return (
@@ -115,6 +128,7 @@ export default function WatchPage() {
                 </Link>
               );
             })}
+            {visibleEpisodes.length === 0 && <p className="kc-episode-empty">No episodes match your search.</p>}
           </div>
           {episodes.meta.hasNextPage && <p className="kc-hint kc-queue-note">More episodes are listed on the anime page.</p>}
         </aside>
