@@ -257,6 +257,18 @@ app.get('/api/v1/anime/:id/metadata', async (c) => {
   }
 });
 
+// Playback endpoint contract: server IDs are opaque provider identifiers, never URLs. A concrete
+// resolver must be registered and pass validatePlaybackResult before this route can return a source.
+app.get('/api/v1/anime/:id/episodes/:episodeNumber/playback', (c) => {
+  const id = parseId(c.req.param('id'));
+  const episodeNumber = boundedInt(c.req.param('episodeNumber'), 0, 1, 100_000);
+  const serverId = c.req.query('serverId');
+  if (id === null || episodeNumber === null || !serverId || serverId.length > 160 || !/^[a-zA-Z0-9_-]+$/.test(serverId)) {
+    return fail(c, 400, 'VALIDATION_ERROR', 'Invalid episode or playback server identifier.');
+  }
+  return fail(c, 503, 'SOURCE_UNAVAILABLE', 'This server has no configured, approved playback resolver yet.');
+});
+
 app.get('/api/v1/me', (c) => fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your profile.'));
 app.get('/api/v1/me/library', (c) => fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your library.'));
 app.get('/api/v1/episodes/:episodeId/playback', (c) => fail(c, 503, 'SOURCE_UNAVAILABLE', 'No authorized playback provider is configured.'));

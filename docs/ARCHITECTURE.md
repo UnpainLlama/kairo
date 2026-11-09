@@ -82,7 +82,7 @@ export interface AuthorizedPlaybackProvider {
 
 ## 8. Playback and media
 
-The app may use HLS.js for browser playback of authorized HLS manifests. Keep player logic behind a `PlaybackAdapter` so providers can change independently. Only accept source URLs returned by a configured, approved provider. Use secure HTTPS, provider entitlement checks, source expiry handling, and appropriate CORS configuration. Do not proxy third-party media unless the provider contract explicitly permits it.
+The Watch page requests playback only after a user selects a discovered server. It renders a provider iframe only when the Worker returns a validated `protocol: "embed"` result, using a sandboxed iframe and no-referrer policy. A server ID is an opaque identifier, never a URL. The current route intentionally returns `SOURCE_UNAVAILABLE` until an approved resolver is configured. The app may use HLS.js for browser playback of authorized HLS manifests. Keep player logic behind a `PlaybackAdapter` so providers can change independently. Only accept source URLs returned by a configured, approved provider. Use secure HTTPS, provider entitlement checks, source expiry handling, and appropriate CORS configuration. Do not proxy third-party media unless the provider contract explicitly permits it.
 
 ## 9. Optional Cloudflare products
 

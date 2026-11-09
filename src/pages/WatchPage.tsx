@@ -6,6 +6,9 @@ import { useApi } from '../lib/useApi';
 import { dateLabel, durationLabel, episodeNumberLabel, safeImageUrl, type AnimeDetails, type Episode, type EpisodeServer, type ItemList } from '../lib/catalog';
 
 type ServerList = ItemList<EpisodeServer>;
+type PlaybackSource =
+  | { provider: string; protocol: 'embed'; embedUrl: string; expiresAt?: string }
+  | { provider: string; protocol: 'hls'; manifestUrl: string; expiresAt?: string; subtitles: { language: string; label: string; url: string; format: 'vtt' }[]; variants: { label: string; height?: number }[] };
 
 export default function WatchPage() {
   const { slug = '', episodeNumber: rawEpisode = '1' } = useParams();
@@ -17,6 +20,10 @@ export default function WatchPage() {
   const servers = useApi<ServerList>(validEpisode ? `/anime/${key}/episodes/${parsedEpisode}/servers` : null);
   const [selectedServer, setSelectedServer] = useState<string | null>(null);
   useEffect(() => setSelectedServer(null), [key, parsedEpisode]);
+  const playbackPath = selectedServer
+    ? `/anime/${key}/episodes/${parsedEpisode}/playback?serverId=${encodeURIComponent(selectedServer)}`
+    : null;
+  const playback = useApi<PlaybackSource>(playbackPath);
 
   if (!validEpisode) return <div className="kc-watch-error"><h1>Invalid episode</h1><p>Choose an episode from the anime page.</p><Link className="kc-btn kc-btn-dark" to={`/anime/${key}`}>Back to anime</Link></div>;
   if (details.status === 'loading' || episodes.status === 'loading') return <LoadingState label="Loading episode" />;
@@ -42,12 +49,24 @@ export default function WatchPage() {
           <Link to={`/anime/${key}`} className="kc-back-link"><ArrowLeft size={15} aria-hidden="true" /> {anime.title}</Link>
 
           <section className="kc-player" aria-label="Video player">
-            <div className="kc-player-mark" aria-hidden="true">K</div>
-            <div className="kc-player-message">
-              <span className="kc-player-icon"><Play size={24} fill="currentColor" aria-hidden="true" /></span>
-              <h2>{selected ? `${selected.name} selected` : 'Choose a playback server'}</h2>
-              <p>{selected ? 'The server is available, but it has not supplied a validated playback URL yet.' : 'Choose a Sub or Dub server below to continue.'}</p>
-            </div>
+            {selected && playback.status === 'ok' && playback.data.protocol === 'embed' ? (
+              <iframe
+                className="kc-player-frame"
+                src={playback.data.embedUrl}
+                title={`${anime.title} episode ${parsedEpisode} — ${selected.name}`}
+                referrerPolicy="no-referrer"
+                sandbox="allow-scripts allow-same-origin allow-presentation"
+                allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                allowFullScreen
+              />
+            ) : (
+              <div className="kc-player-message">
+                <span className="kc-player-icon"><Play size={24} fill="currentColor" aria-hidden="true" /></span>
+                <h2>{!selected ? 'Choose a playback server' : playback.status === 'loading' ? 'Connecting to server' : playback.status === 'error' ? 'Playback unavailable' : playback.data.protocol === 'hls' ? 'HLS player integration pending' : 'Playback unavailable'}</h2>
+                <p>{!selected ? 'Choose a Sub or Dub server below to continue.' : playback.status === 'loading' ? 'Checking for an approved playback source…' : playback.status === 'error' ? playback.error.message : playback.data.protocol === 'hls' ? 'This source is validated, but native HLS playback is not enabled in this player yet.' : 'No approved playback source was returned for this server.'}</p>
+                {selected && playback.status === 'error' && <button type="button" className="kc-btn kc-btn-dark" onClick={playback.reload}>Try again</button>}
+              </div>
+            )}
           </section>
 
           <div className="kc-watch-bar">

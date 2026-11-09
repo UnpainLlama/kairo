@@ -110,7 +110,9 @@ Validate finite non-negative numbers, enforce sensible duration/position bounds,
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/v1/episodes/:episodeId/playback` | Resolve playback through an authorized configured provider |
+| GET | `/api/v1/anime/:id/episodes/:episodeNumber/playback?serverId=:serverId` | Resolve the selected episode server through an authorized configured provider |
+
+The legacy `/api/v1/episodes/:episodeId/playback` route remains reserved for compatibility. Server IDs are opaque provider identifiers, not URLs. The current implementation returns `503 SOURCE_UNAVAILABLE` until an approved provider resolver is configured; it must never infer or scrape a media URL from a server ID.
 
 A successful playback response may include:
 
@@ -131,6 +133,8 @@ A successful playback response may include:
   }
 }
 ```
+
+An approved iframe provider may instead return `protocol: "embed"` with an allowlisted HTTPS `embedUrl`. The client renders only this validated embed response in a sandboxed iframe. HLS responses are validated by the Worker; browser HLS playback integration is a separate player task.
 
 The example is a schema illustration, not a live URL. Return only provider-authorized URLs and only fields the provider actually supplies. If no source is available, return `SOURCE_UNAVAILABLE` with a non-sensitive message.
 
