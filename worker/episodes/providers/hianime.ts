@@ -81,58 +81,57 @@ export function createHiAnimeEpisodeProvider(fetchImpl: FetchLike, baseUrl?: str
       return parseHiAnimeServers(html).map((server) => ({ id: server.providerServerId, type: server.type, name: server.name }));
     },
 
-    async resolveServer(providerServerId, lookup, signal) {
+    /**
+     * Resolve a playable source for a server id.
+     * On hianime.at the theme servers HTML carries a base64 data-hash that decodes to a
+     * plain HTTPS embed (typically zokoanime.video). Encrypted MegaPlay payloads are not decoded.
+     * providerEpisodeId is required so the servers response can be re-fetched and matched.
+     */
+    async resolveServer(providerServerId, lookup, signal, providerEpisodeId?: string) {
       if (!/^\d+$/.test(providerServerId)) throw new ProviderError('invalid_response', 'Invalid HiAnime server id.');
       if (playbackAllowedHosts.length === 0) return null;
-      // HiAnime's public source endpoint is consulted only for a plain provider-declared URL.
-      // Encrypted payloads, challenges, and undocumented transformations are intentionally unsupported.
+      if (!providerEpisodeId || !/^\d+$/.test(providerEpisodeId)) return null;
+
       const match = await findTitle(lookup, signal);
-      const response = await client.get(`/ajax/v2/episode/sources?id=${encodeURIComponent(providerServerId)}`, `/watch/${match.slug}`, signal);
-      let payload: unknown;
-      try { payload = JSON.parse(response.text); }
-      catch { throw new ProviderError('invalid_response', 'HiAnime source endpoint did not return JSON.'); }
-      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new ProviderError('invalid_response', 'HiAnime source response was invalid.');
-      const root = payload as Record<string, unknown>;
-      const data = root.data && typeof root.data === 'object' && !Array.isArray(root.data) ? root.data as Record<string, unknown> : root;
-      const isAllowed = (url: URL) => url.protocol === 'https:' && !url.username && !url.password && !url.port && playbackAllowedHosts.some((host) => url.hostname === host || (host.startsWith('*.') && url.hostname.endsWith(host.slice(1))));
-      const expiresAt = typeof data.expiresAt === 'string' ? data.expiresAt : typeof data.expires_at === 'string' ? data.expires_at : undefined;
-      const plainSources = Array.isArray(data.sources) ? data.sources : Array.isArray(root.sources) ? root.sources : [];
-      // Some provider responses expose an already-plain source array. An encrypted string is never decoded here.
-      const plainHls = plainSources.find((item) => item && typeof item === 'object' && !Array.isArray(item) && typeof (item as Record<string, unknown>).file === 'string' && /\.m3u8(?:$|[?#])/i.test(String((item as Record<string, unknown>).file)));
-      if (plainHls && (data.encrypted === false || root.encrypted === false || Array.isArray(data.sources) || Array.isArray(root.sources))) {
-        const manifestRaw = String((plainHls as Record<string, unknown>).file);
-        let manifest: URL;
-        try { manifest = new URL(manifestRaw); } catch { return null; }
-        if (!isAllowed(manifest)) return null;
-        const rawTracks = Array.isArray(data.tracks) ? data.tracks : Array.isArray(root.tracks) ? root.tracks : [];
-        const subtitles = rawTracks.flatMap((track) => {
-          if (!track || typeof track !== 'object' || Array.isArray(track)) return [];
-          const item = track as Record<string, unknown>;
-          const trackUrl = typeof item.file === 'string' ? item.file : typeof item.url === 'string' ? item.url : '';
-          const language = typeof item.lang === 'string' ? item.lang : typeof item.language === 'string' ? item.language : '';
-          const label = typeof item.label === 'string' ? item.label : language;
-          try {
-            const url = new URL(trackUrl);
-            return isAllowed(url) && language && label && /\.vtt(?:$|[?#])/i.test(url.pathname + url.search) ? [{ language: language.toLowerCase(), label, url: url.href, format: 'vtt' as const }] : [];
-          } catch { return []; }
-        }).slice(0, 50);
-        const variants = plainSources.flatMap((item) => {
-          if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
-          const quality = (item as Record<string, unknown>).quality;
-          return typeof quality === 'string' && quality.length <= 30 ? [{ label: quality }] : [];
-        }).slice(0, 20);
-        return { provider: 'hianime', protocol: 'hls', manifestUrl: manifest.href, subtitles, variants, ...(expiresAt ? { expiresAt } : {}) };
+      const response = await client.get(
+        `/api/theme/episode/servers?episodeId=${encodeURIComponent(providerEpisodeId)}`,
+        `/watch/${match.slug}`,
+        signal,
+      );
+      let raw: unknown;
+      try { raw = JSON.parse(response.text); }
+      catch { raw = response.text; }
+      const html = parseHiAnimeEpisodePayload(raw);
+      const servers = parseHiAnimeServers(html);
+      const selected = servers.find((server) => server.providerServerId === providerServerId);
+      if (!selected?.embedUrl) return null;
+
+      let embed: URL;
+      try { embed = new URL(selected.embedUrl); }
+      catch { return null; }
+
+      const hostAllowed = playbackAllowedHosts.some((host) => {
+        const pattern = host.toLowerCase();
+        const hostname = embed.hostname.toLowerCase();
+        return pattern.startsWith('*.') ? hostname.endsWith(pattern.slice(1)) : hostname === pattern;
+      });
+      if (embed.protocol !== 'https:' || embed.username || embed.password || embed.port || !hostAllowed) return null;
+
+      // Prefer iframe embed (Zoko). Plain m3u8 is only returned when the decoded URL itself is an HLS playlist.
+      if (/\.m3u8(?:$|[?#])/i.test(embed.pathname + embed.search)) {
+        return {
+          provider: 'hianime',
+          protocol: 'hls' as const,
+          manifestUrl: embed.href,
+          subtitles: [],
+          variants: [],
+        };
       }
-      const nestedLink = data.link && typeof data.link === 'object' && !Array.isArray(data.link) ? data.link as Record<string, unknown> : null;
-      const file = typeof data.file === 'string' ? data.file : typeof root.file === 'string' ? root.file : undefined;
-      const link = typeof data.link === 'string' ? data.link : typeof data.url === 'string' ? data.url : typeof root.link === 'string' ? root.link : typeof root.url === 'string' ? root.url : typeof nestedLink?.url === 'string' ? nestedLink.url : undefined;
-      const rawUrl = file && /\.m3u8(?:$|[?#])/i.test(file) ? file : link;
-      if (!rawUrl) return null;
-      let parsed: URL;
-      try { parsed = new URL(rawUrl); } catch { return null; }
-      if (!isAllowed(parsed)) return null;
-      if (file && rawUrl === file) return { provider: 'hianime', protocol: 'hls', manifestUrl: parsed.href, subtitles: [], variants: [], ...(expiresAt ? { expiresAt } : {}) };
-      return { provider: 'hianime', protocol: 'embed', embedUrl: parsed.href, ...(expiresAt ? { expiresAt } : {}) };
+      return {
+        provider: 'hianime',
+        protocol: 'embed' as const,
+        embedUrl: embed.href,
+      };
     },
   };
   return provider;

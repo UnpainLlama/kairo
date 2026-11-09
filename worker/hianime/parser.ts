@@ -20,7 +20,53 @@ export type HiAnimeDetail = HiAnimeCard & {
 };
 
 export type HiAnimeEpisode = { providerEpisodeId: string; episodeNumber: number; title: string; isFiller: boolean };
-export type HiAnimeServer = { providerServerId: string; type: 'sub' | 'dub' | 'raw'; name: string };
+export type HiAnimeServer = {
+  providerServerId: string;
+  type: 'sub' | 'dub' | 'raw';
+  name: string;
+  /** Base64 data-hash from the servers HTML; decodes to an embed URL when present. */
+  dataHash?: string;
+  /** Decoded HTTPS embed URL when data-hash was present and valid. */
+  embedUrl?: string;
+};
+
+/** Stable numeric id derived from a data-hash so API routes that require digits still work. */
+export function stableServerIdFromHash(hash: string): string {
+  let n = 2166136261;
+  for (let i = 0; i < hash.length; i++) {
+    n ^= hash.charCodeAt(i);
+    n = Math.imul(n, 16777619);
+  }
+  return String(n >>> 0);
+}
+
+/** Decode a HiAnime data-hash into a plain HTTPS URL when possible. */
+export function decodeHiAnimeDataHash(hash: string): string | null {
+  if (!hash || hash.length > 4096) return null;
+  try {
+    const decoded = atob(hash).trim();
+    if (/^https:\/\//i.test(decoded)) {
+      const url = new URL(decoded);
+      if (url.protocol === 'https:' && !url.username && !url.password) return url.href;
+      return null;
+    }
+    const parsed: unknown = JSON.parse(decoded);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const root = parsed as Record<string, unknown>;
+    const nested = root.link && typeof root.link === 'object' && !Array.isArray(root.link) ? (root.link as Record<string, unknown>) : null;
+    const candidate =
+      (typeof root.link === 'string' && root.link) ||
+      (typeof root.url === 'string' && root.url) ||
+      (typeof root.file === 'string' && root.file) ||
+      (typeof nested?.url === 'string' ? nested.url : '');
+    if (!candidate) return null;
+    const url = new URL(candidate);
+    if (url.protocol === 'https:' && !url.username && !url.password) return url.href;
+  } catch {
+    return null;
+  }
+  return null;
+}
 
 export function decodeEntities(value: string): string {
   return value
@@ -206,23 +252,39 @@ export function parseHiAnimeEpisodes(html: string): HiAnimeEpisode[] {
 export function parseHiAnimeServers(html: string): HiAnimeServer[] {
   const out: HiAnimeServer[] = [];
   const seen = new Set<string>();
-  // Only the opening element is needed. Parsing the complete nested fragment with
-  // the generic balanced-tag helper was brittle when HiAnime returned malformed
-  // or minified server markup, which could silently turn a populated response
-  // into an empty server list.
+  // Current hianime.at theme markup uses data-hash (base64 embed URL) and often
+  // omits numeric data-id. Prefer data-hash; fall back to legacy numeric ids.
   for (const match of html.matchAll(/<([a-z][\w:-]*)\b([^>]*)>/gi)) {
     const attrs = parseAttributes(match[2] ?? '');
     const classes = (attrs.class ?? '').split(/\s+/);
     if (!classes.includes('server-item')) continue;
     const type = (attrs['data-type'] ?? '').toLowerCase();
-    const id = attrs['data-id'] ?? attrs['data-server-id'];
-    if (!id || !/^\d+$/.test(id) || !['sub', 'dub', 'raw'].includes(type) || seen.has(`${type}:${id}`)) continue;
+    if (!['sub', 'dub', 'raw'].includes(type)) continue;
+
+    const dataHash = (attrs['data-hash'] ?? '').trim();
+    const legacyId = attrs['data-id'] ?? attrs['data-server-id'];
+    let id: string | null = null;
+    let embedUrl: string | undefined;
+    if (dataHash) {
+      id = stableServerIdFromHash(dataHash);
+      embedUrl = decodeHiAnimeDataHash(dataHash) ?? undefined;
+    } else if (legacyId && /^\d+$/.test(legacyId)) {
+      id = legacyId;
+    }
+    if (!id || seen.has(`${type}:${id}`)) continue;
+
     const tag = (match[1] ?? '').toLowerCase();
     const tail = html.slice((match.index ?? 0) + match[0].length);
-    const closingTag = tail.search(new RegExp(`<\/${tag}\\s*>`, 'i'));
+    const closingTag = tail.search(new RegExp(`</${tag}\\s*>`, 'i'));
     const inlineName = closingTag >= 0 ? textContent(tail.slice(0, closingTag)) : '';
-    const name = attrs['data-server-name'] ?? attrs.title ?? inlineName ?? `HD-${attrs['data-server-id'] ?? id}`;
-    out.push({ providerServerId: id, type: type as HiAnimeServer['type'], name: textContent(name) || `HD-${attrs['data-server-id'] ?? id}` });
+    const name = attrs['data-server-name'] ?? attrs.title ?? inlineName ?? `HD-${id}`;
+    out.push({
+      providerServerId: id,
+      type: type as HiAnimeServer['type'],
+      name: textContent(name) || `HD-${id}`,
+      ...(dataHash ? { dataHash } : {}),
+      ...(embedUrl ? { embedUrl } : {}),
+    });
     seen.add(`${type}:${id}`);
   }
   return out;

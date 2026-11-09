@@ -170,7 +170,9 @@ export async function getEpisodePlayback(deps: Deps, ref: Ref, episodeNumber: nu
       if (episode?.providerEpisodeId) {
         const servers = await withTimeout(deps.timeoutMs ?? 8000, (signal) => provider.listServers!(episode.providerEpisodeId!, lookup, signal));
         if (!servers.some((server) => server.id === serverId)) throw new ProviderError('not_found', 'The selected server is not listed for this episode.');
-        const raw = await withTimeout(deps.timeoutMs ?? 8000, (signal) => provider.resolveServer!(serverId, lookup, signal));
+        const raw = await withTimeout(deps.timeoutMs ?? 8000, (signal) =>
+          provider.resolveServer!(serverId, lookup, signal, episode.providerEpisodeId),
+        );
         deps.breaker.recordSuccess(breakerKey);
         return raw;
       }

@@ -105,7 +105,13 @@ export interface EpisodeProvider {
   /** Optional server/language discovery. This does not resolve or extract playback URLs. */
   listServers?(providerEpisodeId: string, title: EpisodeLookup, signal: AbortSignal): Promise<EpisodeServer[]>;
   /** Returns only a provider-declared direct HLS manifest or iframe URL; encrypted/obfuscated payloads are unsupported. */
-  resolveServer?(providerServerId: string, title: EpisodeLookup, signal: AbortSignal): Promise<unknown | null>;
+  resolveServer?(
+    providerServerId: string,
+    title: EpisodeLookup,
+    signal: AbortSignal,
+    /** HiAnime theme servers require the episode id to re-fetch and match data-hash embeds. */
+    providerEpisodeId?: string,
+  ): Promise<unknown | null>;
 }
 // Playback is handled by worker/providers/playback.ts (the authorized-playback boundary).
 
