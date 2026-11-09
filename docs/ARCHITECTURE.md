@@ -62,7 +62,7 @@ export interface AuthorizedPlaybackProvider {
 }
 ```
 
-`AuthorizedPlaybackResult` must identify the provider, authorization/entitlement context, expiry if applicable, manifest URL, subtitle tracks, and selectable variants only when supplied by that provider. Never place provider secrets in the browser. Do not treat arbitrary user-supplied URLs as playable sources. The backend must allowlist provider hosts and validate URL schemes before returning a source.
+`AuthorizedPlaybackResult` identifies the provider and may describe either an HLS manifest (with subtitle tracks and variants supplied by the provider) or an approved iframe embed URL. Both forms may include an expiry. Never place provider secrets in the browser. Do not treat arbitrary user-supplied URLs as playable sources. The backend must allowlist provider hosts, require HTTPS, reject credentials and non-standard ports, and validate expiry before returning a source. Iframe sources are not equivalent to direct media extraction; the client must render them in a restricted player frame.
 
 ## 6. Data ownership
 

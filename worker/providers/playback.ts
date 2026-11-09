@@ -5,7 +5,7 @@
 export type PlaybackSubtitle = { language: string; label: string; url: string; format: 'vtt' };
 export type PlaybackVariant = { label: string; height?: number };
 
-export type AuthorizedPlaybackResult = {
+export type AuthorizedHlsPlaybackResult = {
   provider: string;
   protocol: 'hls';
   manifestUrl: string;
@@ -13,6 +13,16 @@ export type AuthorizedPlaybackResult = {
   subtitles: PlaybackSubtitle[];
   variants: PlaybackVariant[];
 };
+
+/** Some approved providers expose an iframe player rather than a direct media manifest. */
+export type AuthorizedEmbedPlaybackResult = {
+  provider: string;
+  protocol: 'embed';
+  embedUrl: string;
+  expiresAt?: string;
+};
+
+export type AuthorizedPlaybackResult = AuthorizedHlsPlaybackResult | AuthorizedEmbedPlaybackResult;
 
 export interface AuthorizedPlaybackProvider {
   readonly id: string;
@@ -49,9 +59,7 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 
 /** Returns a copy containing only validated, known fields. Unknown provider fields are dropped. */
 export function validatePlaybackResult(raw: unknown, ctx: { providerId: string; allowedHosts: readonly string[]; now: Date }): Validation {
-  if (!isRecord(raw) || raw.provider !== ctx.providerId || raw.protocol !== 'hls') return invalid;
-  const manifest = parseAllowedUrl(raw.manifestUrl, ctx.allowedHosts);
-  if (!manifest) return invalid;
+  if (!isRecord(raw) || raw.provider !== ctx.providerId || !['hls', 'embed'].includes(String(raw.protocol))) return invalid;
 
   let expiresAt: string | undefined;
   if (raw.expiresAt !== undefined) {
@@ -60,6 +68,15 @@ export function validatePlaybackResult(raw: unknown, ctx: { providerId: string; 
     if (ms <= ctx.now.getTime()) return { ok: false, reason: 'expired' };
     expiresAt = new Date(ms).toISOString();
   }
+
+  if (raw.protocol === 'embed') {
+    const embed = parseAllowedUrl(raw.embedUrl, ctx.allowedHosts);
+    if (!embed) return invalid;
+    return { ok: true, value: { provider: ctx.providerId, protocol: 'embed', embedUrl: embed.href, ...(expiresAt ? { expiresAt } : {}) } };
+  }
+
+  const manifest = parseAllowedUrl(raw.manifestUrl, ctx.allowedHosts);
+  if (!manifest) return invalid;
 
   const subtitles: PlaybackSubtitle[] = [];
   if (raw.subtitles !== undefined) {

@@ -39,6 +39,16 @@ describe('resolvePlayback', () => {
       });
     }
   });
+  it('accepts an allowlisted HTTPS iframe source and normalizes its expiry', async () => {
+    const out = await run(mock({ provider: 'mock', protocol: 'embed', embedUrl: 'https://media.provider.test/embed/episode-1', expiresAt: '2026-11-04T12:00:00Z', extra: 'discard' }));
+    expect(out).toEqual({ ok: true, data: { provider: 'mock', protocol: 'embed', embedUrl: 'https://media.provider.test/embed/episode-1', expiresAt: '2026-11-04T12:00:00.000Z' } });
+  });
+  it('rejects untrusted or expired iframe sources', async () => {
+    expect(await run(mock({ provider: 'mock', protocol: 'embed', embedUrl: 'https://evil.test/embed' }))).toMatchObject({ ok: false, code: 'PROVIDER_UNAVAILABLE' });
+    expect(await run(mock({ provider: 'mock', protocol: 'embed', embedUrl: 'http://media.provider.test/embed' }))).toMatchObject({ ok: false, code: 'PROVIDER_UNAVAILABLE' });
+    expect(await run(mock({ provider: 'mock', protocol: 'embed', embedUrl: 'https://media.provider.test/embed', expiresAt: '2026-11-04T09:59:59Z' }))).toMatchObject({ ok: false, code: 'SOURCE_UNAVAILABLE' });
+  });
+
   it('reports SOURCE_UNAVAILABLE when no provider is configured, or the provider has nothing', async () => {
     expect(await run(undefined)).toMatchObject({ ok: false, code: 'SOURCE_UNAVAILABLE' });
     expect(await run(mock(null))).toMatchObject({ ok: false, code: 'SOURCE_UNAVAILABLE' });
