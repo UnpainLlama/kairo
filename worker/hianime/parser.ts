@@ -217,8 +217,12 @@ export function parseHiAnimeServers(html: string): HiAnimeServer[] {
     const type = (attrs['data-type'] ?? '').toLowerCase();
     const id = attrs['data-id'] ?? attrs['data-server-id'];
     if (!id || !/^\d+$/.test(id) || !['sub', 'dub', 'raw'].includes(type) || seen.has(`${type}:${id}`)) continue;
-    const name = attrs['data-server-name'] ?? attrs.title ?? `Server ${attrs['data-server-id'] ?? id}`;
-    out.push({ providerServerId: id, type: type as HiAnimeServer['type'], name: textContent(name) || `Server ${id}` });
+    const tag = (match[1] ?? '').toLowerCase();
+    const tail = html.slice((match.index ?? 0) + match[0].length);
+    const closingTag = tail.search(new RegExp(`<\/${tag}\\s*>`, 'i'));
+    const inlineName = closingTag >= 0 ? textContent(tail.slice(0, closingTag)) : '';
+    const name = attrs['data-server-name'] ?? attrs.title ?? inlineName ?? `HD-${attrs['data-server-id'] ?? id}`;
+    out.push({ providerServerId: id, type: type as HiAnimeServer['type'], name: textContent(name) || `HD-${attrs['data-server-id'] ?? id}` });
     seen.add(`${type}:${id}`);
   }
   return out;
