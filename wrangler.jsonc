@@ -9,34 +9,78 @@
     "run_worker_first": ["/api/*"]
   },
 
-  // Top level = local development only (vite dev, local D1). It is never deployed by CI.
-  // Bindings and vars are NOT inherited by environments, so each environment below declares its own.
+  // Local development
   "d1_databases": [
-    { "binding": "DB", "database_name": "kairo-db-local", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }
+    {
+      "binding": "DB",
+      "database_name": "kairo-db-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
   ],
-  "vars": { "APP_ENV": "development", "METADATA_PROVIDERS": "anilist" },
+
+  "vars": {
+    "APP_ENV": "development",
+    "METADATA_PROVIDERS": "anilist",
+    "CATALOG_SOURCE": "live",
+    "LIVE_PROVIDERS": "jikan",
+    "EPISODE_PROVIDERS": "jikan",
+    "HIANIME_BASE_URL": "https://hianimez.to"
+  },
 
   "env": {
-    // Staging: a separate Worker named kairo-anime-platform-staging, its own D1 database and KV namespace.
+    // Staging
     "staging": {
       "d1_databases": [
-        { "binding": "DB", "database_name": "kairo-db-staging", "database_id": "30aa5446-f146-4253-b778-0ab88193ebe8", "migrations_dir": "migrations" }
+        {
+          "binding": "DB",
+          "database_name": "kairo-db-staging",
+          "database_id": "30aa5446-f146-4253-b778-0ab88193ebe8",
+          "migrations_dir": "migrations"
+        }
       ],
+
       "kv_namespaces": [
-        { "binding": "METADATA_CACHE", "id": "bddfe8f83eb54167a7418c9c1482cd8f" }
+        {
+          "binding": "METADATA_CACHE",
+          "id": "bddfe8f83eb54167a7418c9c1482cd8f"
+        }
       ],
-      "vars": { "APP_ENV": "staging", "METADATA_PROVIDERS": "anilist" }
+
+      "vars": {
+        "APP_ENV": "staging",
+        "METADATA_PROVIDERS": "anilist",
+        "CATALOG_SOURCE": "live",
+        "LIVE_PROVIDERS": "hianime,jikan",
+        "EPISODE_PROVIDERS": "hianime,jikan",
+        "HIANIME_BASE_URL": "https://hianime.at"
+      }
     },
 
-    // Production: defined but NOT deployable until you approve it (see docs/DEPLOYMENT.md, section 8).
+    // Production - unchanged; do not deploy until approved
     "production": {
       "d1_databases": [
-        { "binding": "DB", "database_name": "kairo-db", "database_id": "REPLACE_WITH_PRODUCTION_D1_DATABASE_ID", "migrations_dir": "migrations" }
+        {
+          "binding": "DB",
+          "database_name": "kairo-db",
+          "database_id": "REPLACE_WITH_PRODUCTION_D1_DATABASE_ID",
+          "migrations_dir": "migrations"
+        }
       ],
+
       "kv_namespaces": [
-        { "binding": "METADATA_CACHE", "id": "REPLACE_WITH_PRODUCTION_KV_NAMESPACE_ID" }
+        {
+          "binding": "METADATA_CACHE",
+          "id": "REPLACE_WITH_PRODUCTION_KV_NAMESPACE_ID"
+        }
       ],
-      "vars": { "APP_ENV": "production", "METADATA_PROVIDERS": "anilist" }
+
+      "vars": {
+        "APP_ENV": "production",
+        "METADATA_PROVIDERS": "anilist",
+        "CATALOG_SOURCE": "live",
+        "LIVE_PROVIDERS": "anilist,jikan"
+      }
     }
   }
 }
