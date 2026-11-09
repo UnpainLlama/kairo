@@ -9,5 +9,7 @@ declare module 'hls.js' {
     on(event: string, callback: (...args: any[]) => void): void;
     levels: { height: number }[];
     currentLevel: number;
+    startLoad(): void;
+    recoverMediaError(): void;
   }
 }

@@ -3,11 +3,11 @@ import { Captions, Maximize, Pause, Play, Settings, SkipBack, SkipForward, Volum
 
 type Subtitle = { language: string; label: string; url: string; format: 'vtt' };
 type Variant = { label: string; height?: number };
-type Props = { src: string; subtitles?: Subtitle[]; variants?: Variant[]; title: string; progressKey: string; introEnd?: number | null; outroStart?: number | null; nextUrl?: string | null };
+type Props = { src: string; subtitles?: Subtitle[]; variants?: Variant[]; title: string; progressKey: string; introEnd?: number | null; outroStart?: number | null; nextUrl?: string | null; previousUrl?: string | null };
 const rates = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 const stamp = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 
-export default function KairoVideoPlayer({ src, subtitles = [], variants = [], title, progressKey, introEnd, outroStart, nextUrl }: Props) {
+export default function KairoVideoPlayer({ src, subtitles = [], variants = [], title, progressKey, introEnd, outroStart, nextUrl, previousUrl }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<{ destroy: () => void; levels?: { height: number }[]; currentLevel?: number; loadSource: (url: string) => void; attachMedia: (video: HTMLVideoElement) => void; on: (event: string, cb: (...args: any[]) => void) => void; static?: { isSupported?: () => boolean }; Events?: { ERROR: string } } | null>(null);
@@ -43,8 +43,8 @@ export default function KairoVideoPlayer({ src, subtitles = [], variants = [], t
             const hls = new Hls({ enableWorker: true, capLevelToPlayerSize: true });
             hlsRef.current = hls as any;
             hls.attachMedia(video); hls.loadSource(src);
-            hls.on(Hls.Events.MANIFEST_PARSED, () => { setAvailableQualities([...new Set<number>(hls.levels.map((level: { height: number }) => level.height).filter(Boolean))].sort((a: number, b: number) => b-a)); if (restore > 0 && restore < (video.duration || Infinity) - 15) video.currentTime = restore; });
-            hls.on(Hls.Events.ERROR, (_event: unknown, data: { fatal?: boolean; type?: string }) => { if (data.fatal) setError('The stream encountered a playback error. Try another server.'); });
+            hls.on(Hls.Events.MANIFEST_PARSED, () => { setAvailableQualities([...new Set<number>(hls.levels.map((level: { height: number }) => level.height).filter(Boolean))].sort((a: number, b: number) => b-a)); if (restore > 0 && restore < (video.duration || Infinity) - 15) video.currentTime = restore; window.setTimeout(selectEnglishSubtitle, 0); });
+            hls.on(Hls.Events.ERROR, (_event: unknown, data: { fatal?: boolean; type?: string }) => { if (!data.fatal) return; if (data.type === 'networkError') hls.startLoad?.(); else if (data.type === 'mediaError') hls.recoverMediaError?.(); else setError('The stream encountered a playback error. Try another server.'); });
             return;
           }
         } catch { setError('HLS playback is unavailable in this browser. Try an embed server.'); return; }
@@ -56,6 +56,8 @@ export default function KairoVideoPlayer({ src, subtitles = [], variants = [], t
     void attach();
     return () => { cancelled = true; hlsRef.current?.destroy(); hlsRef.current = null; video.removeAttribute('src'); video.load(); };
   }, [src, progressKey]);
+
+  const selectEnglishSubtitle = () => { const video = videoRef.current; if (!video || !subtitles.length) return; const english = subtitles.findIndex((track) => /^en(?:[-_]|$)/i.test(track.language)); if (english >= 0 && video.textTracks[english]) video.textTracks[english].mode = 'showing'; };
 
   const togglePlay = useCallback(() => { const v = videoRef.current; if (!v) return; if (v.paused) void v.play().catch(() => setError('Playback was blocked. Press play to try again.')); else v.pause(); }, []);
   const seek = (delta: number) => { const v = videoRef.current; if (v) v.currentTime = Math.max(0, Math.min(v.duration || 0, v.currentTime + delta)); };
@@ -69,9 +71,11 @@ export default function KairoVideoPlayer({ src, subtitles = [], variants = [], t
       else if (event.key === 'ArrowRight') { event.preventDefault(); seek(10); }
       else if (event.key.toLowerCase() === 'm') { const v = videoRef.current; if (v) v.muted = !v.muted; }
       else if (event.key.toLowerCase() === 'f') fullscreen();
+      else if (event.key.toLowerCase() === 'n' && nextUrl) window.location.assign(nextUrl);
+      else if (event.key.toLowerCase() === 'p' && previousUrl) window.location.assign(previousUrl);
     };
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
-  }, [togglePlay]);
+  }, [togglePlay, nextUrl, previousUrl]);
 
   const onTime = () => {
     const v = videoRef.current; if (!v) return;
@@ -87,7 +91,7 @@ export default function KairoVideoPlayer({ src, subtitles = [], variants = [], t
   const togglePip = async () => { const v = videoRef.current; if (!v || !('pictureInPictureEnabled' in document)) return; try { if (document.pictureInPictureElement) await document.exitPictureInPicture(); else await v.requestPictureInPicture(); } catch { /* browser declined */ } };
 
   return <div className="kairo-video-player" ref={rootRef}>
-    <video ref={videoRef} playsInline preload="metadata" crossOrigin="anonymous" onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onTimeUpdate={onTime} onDurationChange={(e) => setDuration(e.currentTarget.duration || 0)} onError={() => setError('This source could not be played. Try another server.')}>
+    <video ref={videoRef} playsInline preload="metadata" onEnded={() => { if (nextUrl) window.location.assign(nextUrl); }} crossOrigin="anonymous" onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onTimeUpdate={onTime} onDurationChange={(e) => setDuration(e.currentTarget.duration || 0)} onError={() => setError('This source could not be played. Try another server.')}>
       {subtitles.map((track) => <track key={track.url} kind="subtitles" src={track.url} srcLang={track.language} label={track.label} />)}
     </video>
     {error && <div className="kairo-player-error" role="alert">{error}</div>}

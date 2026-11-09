@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, ListVideo, Play, Search, Settings2, ChevronDown, Maximize } from 'lucide-react';
+import { ArrowLeft, ListVideo, Play, Search, RefreshCw, ExternalLink } from 'lucide-react';
 import { ErrorState, LoadingState } from '../components/catalog';
+import KairoVideoPlayer from '../components/KairoVideoPlayer';
 import { useApi } from '../lib/useApi';
-import KairoMediaPlayer, { type KairoPlaybackSource } from '../components/KairoMediaPlayer';
 import { dateLabel, durationLabel, episodeNumberLabel, safeImageUrl, type AnimeDetails, type Episode, type EpisodeServer, type ItemList } from '../lib/catalog';
 
 type ServerList = ItemList<EpisodeServer>;
-type PlaybackSource = KairoPlaybackSource;
+type PlaybackSource =
+  | { provider: string; protocol: 'hls'; manifestUrl: string; subtitles?: { language: string; label: string; url: string; format: 'vtt' }[]; variants?: { label: string; height?: number }[] }
+  | { provider: string; protocol: 'embed'; embedUrl: string };
 type PlaybackResponse = { source: PlaybackSource; urlValidated: boolean };
 
 export default function WatchPage() {
@@ -15,7 +17,7 @@ export default function WatchPage() {
   const key = encodeURIComponent(slug);
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
   const [episodeFilter, setEpisodeFilter] = useState('');
-  const [showPlayerSettings, setShowPlayerSettings] = useState(false);
+  const [autoNext, setAutoNext] = useState(() => { try { return localStorage.getItem('kairo-auto-next') !== 'false'; } catch { return true; } });
   useEffect(() => setSelectedServerId(null), [slug, rawEpisode]);
   const parsedEpisode = Number(rawEpisode);
   const validEpisode = Number.isInteger(parsedEpisode) && parsedEpisode >= 1 && parsedEpisode <= 100000;
@@ -42,6 +44,15 @@ export default function WatchPage() {
   const prev = position > 0 ? ordered[position - 1] : null;
   const next = position >= 0 && position < ordered.length - 1 ? ordered[position + 1] : null;
   const visibleEpisodes = ordered.filter((episode) => `${episode.title ?? ''} ${episode.episodeNumber}`.toLowerCase().includes(episodeFilter.toLowerCase()));
+  const progressFor = (episodeNumber: number) => {
+    try {
+      const raw = localStorage.getItem(`kairo-progress:${slug}:${episodeNumber}:${selectedServer?.id ?? ''}`);
+      const seconds = raw ? Number(raw) : 0;
+      const duration = ordered.find((item) => item.episodeNumber === episodeNumber)?.durationSeconds ?? 0;
+      return duration > 0 && Number.isFinite(seconds) ? Math.max(0, Math.min(100, seconds / duration * 100)) : 0;
+    } catch { return 0; }
+  };
+  const toggleAutoNext = () => setAutoNext((value) => { const nextValue = !value; try { localStorage.setItem('kairo-auto-next', String(nextValue)); } catch { /* storage may be unavailable */ } return nextValue; });
 
   return (
     <div className="kc-watch">
@@ -49,16 +60,12 @@ export default function WatchPage() {
         <div className="kc-watch-main">
           <div className="kc-watch-topline"><Link to={`/anime/${key}`} className="kc-back-link"><ArrowLeft size={15} aria-hidden="true" /> Back to anime</Link><span className="kc-watch-breadcrumb">{anime.title} <span>/</span> Episode {episodeNumberLabel(parsedEpisode)}</span></div>
 
-          <section className="kc-player" aria-label="Video player">
-            {playback.status === 'ok' && (
-              <KairoMediaPlayer
-                source={playback.data.source}
-                title={`${anime.title} · Episode ${parsedEpisode}`}
-                progressKey={`${slug}:${parsedEpisode}:${selectedServer?.id ?? ''}`}
-                introEnd={(current as (Episode & { introEndSeconds?: number | null }) | undefined)?.introEndSeconds}
-                outroStart={(current as (Episode & { outroStartSeconds?: number | null }) | undefined)?.outroStartSeconds}
-                nextUrl={next ? `/watch/${key}/${next.episodeNumber}` : null}
-              />
+          <section className="kc-player" aria-label="Video player" key={`${slug}:${parsedEpisode}:${selectedServer?.id ?? 'none'}`}>
+            {playback.status === 'ok' && playback.data.source.protocol === 'embed' && (
+              <iframe className="kc-player-frame" src={playback.data.source.embedUrl} title={`${anime.title} episode ${parsedEpisode} player`} allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen referrerPolicy="no-referrer" />
+            )}
+            {playback.status === 'ok' && playback.data.source.protocol === 'hls' && (
+              <KairoVideoPlayer src={playback.data.source.manifestUrl} subtitles={playback.data.source.subtitles ?? []} variants={playback.data.source.variants ?? []} title={`${anime.title} · Episode ${parsedEpisode}`} progressKey={`${slug}:${parsedEpisode}:${selectedServer?.id ?? ''}`} introEnd={(current as (Episode & { introEndSeconds?: number | null }) | undefined)?.introEndSeconds} outroStart={(current as (Episode & { outroStartSeconds?: number | null }) | undefined)?.outroStartSeconds} nextUrl={next && autoNext ? `/watch/${key}/${next.episodeNumber}` : null} previousUrl={prev ? `/watch/${key}/${prev.episodeNumber}` : null} />
             )}
             {playback.status !== 'ok' && (
               <div className="kc-player-message">
@@ -72,9 +79,8 @@ export default function WatchPage() {
           <div className="kc-player-toolbar">
             <div className="kc-player-toolbar-left"><span className="kc-live-dot" /> <span>{selectedServer?.name ?? 'Select a source'}</span><span className="kc-toolbar-divider" /> <span>Episode {episodeNumberLabel(parsedEpisode)}</span></div>
             <div className="kc-player-toolbar-actions">
-              <button type="button" className="kc-player-tool" onClick={() => setShowPlayerSettings((value) => !value)} aria-expanded={showPlayerSettings}><Settings2 size={15}/> Settings <ChevronDown size={13}/></button>
-              {showPlayerSettings && <div className="kc-player-settings-popover"><b>Playback settings</b><p>Player preferences will be available for supported direct streams.</p><span>Current source: {playback.status === 'ok' ? playback.data.source.protocol.toUpperCase() : 'Not loaded'}</span></div>}
-              <button type="button" className="kc-player-tool" onClick={() => document.querySelector('.kc-player')?.requestFullscreen?.()}><Maximize size={15}/> Fullscreen</button>
+              <button type="button" className={`kc-player-tool${autoNext ? ' is-on' : ''}`} onClick={toggleAutoNext} aria-pressed={autoNext}>Auto next: {autoNext ? 'On' : 'Off'}</button>
+              <button type="button" className="kc-player-tool" onClick={() => { void navigator.clipboard?.writeText(window.location.href); }}><ExternalLink size={14}/> Share</button>
             </div>
           </div>
 
@@ -99,7 +105,7 @@ export default function WatchPage() {
           <section className="kc-servers" aria-label="Servers">
             <div className="kc-section-heading"><div><span className="kc-section-kicker">PLAYBACK</span><h2>Choose a server</h2></div><span className="kc-server-count">{serverItems.length} available</span></div>
             {servers.status === 'loading' && <LoadingState label="Checking servers" />}
-            {servers.status === 'error' && <p className="kc-hint">Servers could not be loaded.</p>}
+            {servers.status === 'error' && <div className="kc-watch-retry"><p className="kc-hint">Servers could not be loaded: {servers.error.message}</p><button type="button" className="kc-player-tool" onClick={servers.reload}><RefreshCw size={13}/> Retry</button></div>}
             {servers.status === 'ok' && serverItems.length === 0 && <p className="kc-hint">No servers are listed for this episode.</p>}
             {servers.status === 'ok' && serverItems.length > 0 && (
               <div className="kc-server-groups">
@@ -110,7 +116,7 @@ export default function WatchPage() {
                 ))}
               </div>
             )}
-            {playback.status === 'error' && <p className="kc-hint" role="status">{playback.error.message}</p>}
+            {playback.status === 'error' && <div className="kc-watch-retry"><p className="kc-hint" role="status">{playback.error.message}</p><button type="button" className="kc-player-tool" onClick={playback.reload}><RefreshCw size={13}/> Retry source</button></div>}
             {playback.status === 'ok' && <p className="kc-hint" role="status">URL passed Kairo’s configured HTTPS host allowlist. This does not guarantee stream uptime or confirm licensing.</p>}
           </section>
         </div>
@@ -124,8 +130,8 @@ export default function WatchPage() {
               const thumb = safeImageUrl(episode.thumbnailUrl);
               return (
                 <Link key={episode.id} to={`/watch/${key}/${episode.episodeNumber}`} className={`kc-queue-item${selected ? ' active' : ''}`} aria-current={selected ? 'page' : undefined}>
-                  <span className="kc-queue-thumb">{thumb ? <img src={thumb} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <ListVideo size={16} aria-hidden="true" />}<span className="kc-ep-badge">EP {episodeNumberLabel(episode.episodeNumber)}</span></span>
-                  <span className="kc-queue-copy"><b>{episode.title || `Episode ${episodeNumberLabel(episode.episodeNumber)}`}</b><small>{durationLabel(episode.durationSeconds) || `Episode ${episodeNumberLabel(episode.episodeNumber)}`}</small></span>
+                  <span className="kc-queue-thumb">{thumb ? <img src={thumb} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <ListVideo size={16} aria-hidden="true" />}<span className="kc-ep-badge">EP {episodeNumberLabel(episode.episodeNumber)}</span>{progressFor(episode.episodeNumber) > 0 && <span className="kc-episode-progress" style={{ width: `${progressFor(episode.episodeNumber)}%` }} />}</span>
+                  <span className="kc-queue-copy"><b>{episode.title || `Episode ${episodeNumberLabel(episode.episodeNumber)}`}</b><small>{progressFor(episode.episodeNumber) >= 95 ? 'Watched' : progressFor(episode.episodeNumber) > 0 ? `${Math.round(progressFor(episode.episodeNumber))}% watched` : durationLabel(episode.durationSeconds) || `Episode ${episodeNumberLabel(episode.episodeNumber)}`}</small></span>
                 </Link>
               );
             })}
