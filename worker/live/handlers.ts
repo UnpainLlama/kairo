@@ -2,10 +2,10 @@
 // worker/index.ts wraps each one. Response shapes match docs/API_CONTRACT.md and what the React app already reads.
 import { boundedInt, parseId, parsePagination, parseSearchParams, FORMATS, SEASONS, SORT_KEYS, STATUSES, type Result } from '../lib/validation';
 import { ProviderError } from '../metadata/types';
-import { validatePlaybackResult } from '../providers/playback';
 import type { FetchLike } from '../metadata/providers/http';
 import { parseRef } from './ids';
 import * as svc from './service';
+import { parseAllowedUrl } from '../providers/playback';
 import type { BrowseQuery, LiveRequest, LiveResult, Paged } from './types';
 
 export const isLiveMode = (v: string | undefined): boolean => (v ?? 'live').toLowerCase() !== 'db';
@@ -174,21 +174,39 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
 
     async playback(req) {
       const t = parseTitle(req);
-      const episodeNumber = boundedInt(req.param('episodeNumber'), 0, 1, 100_000);
-      const serverId = req.query.serverId;
-      if (t.bad || episodeNumber === null || !serverId || serverId.length > 1802 || !/^(?:\d{1,12}|h_[A-Za-z0-9_-]{1,1800})$/.test(serverId)) return failBody(req, 400, 'VALIDATION_ERROR', 'Invalid episode or playback server identifier.');
+      const rawEpisodeNumber = req.param('episodeNumber');
+      const episodeNumber = rawEpisodeNumber === undefined ? null : boundedInt(rawEpisodeNumber, 1, 1, 100_000);
+      const serverId = req.param('serverId') ?? '';
+      if (t.bad || episodeNumber === null || !serverId || serverId.length > 1802 || !/^(?:\d{1,12}|h_[A-Za-z0-9_-]{1,1800})$/.test(serverId)) {
+        return failBody(req, 400, 'VALIDATION_ERROR', 'Invalid episode or playback server identifier.');
+      }
       if (!t.ref) return failBody(req, 404, 'RESOURCE_NOT_FOUND', 'The requested title was not found.');
       try {
-        const deps = depsFor(req);
-        const raw = await svc.getEpisodePlayback(deps, t.ref, episodeNumber, serverId);
-        const provider = deps.episodeProviders.find((item) => item.id === 'hianime');
-        const allowedHosts = (req.env.HIANIME_PLAYBACK_ALLOWED_HOSTS ?? '').split(',').map((host) => host.trim().toLowerCase()).filter(Boolean);
-        const checked = validatePlaybackResult(raw, { providerId: provider?.id ?? 'hianime', allowedHosts, now: new Date() });
-        if (!checked.ok) return failBody(req, 503, 'SOURCE_UNAVAILABLE', 'No approved playback source is available for this server.');
-        return okBody(req, checked.value, { source: provider?.id ?? 'hianime', episodeNumber });
+        const raw: unknown = await svc.getEpisodePlayback(depsFor(req), t.ref, episodeNumber, serverId);
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return failBody(req, 503, 'SOURCE_UNAVAILABLE', 'The provider did not return a supported playable source.');
+        const candidate = raw as Record<string, unknown>;
+        const provider = typeof candidate.provider === 'string' ? candidate.provider : '';
+        const hosts = (req.env.HIANIME_PLAYBACK_ALLOWED_HOSTS ?? '').split(',').map((host) => host.trim()).filter(Boolean);
+        if (candidate.protocol === 'embed') {
+          const url = parseAllowedUrl(candidate.embedUrl, hosts);
+          if (!provider || !url) return failBody(req, 503, 'SOURCE_UNAVAILABLE', 'The provider returned an unapproved embed URL.');
+          const source = { provider, protocol: 'embed' as const, embedUrl: url.href };
+          return okBody(req, { source, urlValidated: true }, { episodeNumber, provider, protocol: source.protocol });
+        }
+        if (candidate.protocol === 'hls') {
+          const url = parseAllowedUrl(candidate.manifestUrl, hosts);
+          if (!provider || !url) return failBody(req, 503, 'SOURCE_UNAVAILABLE', 'The provider returned an unapproved HLS URL.');
+          const source = { provider, protocol: 'hls' as const, manifestUrl: url.href };
+          return okBody(req, { source, urlValidated: true }, { episodeNumber, provider, protocol: source.protocol });
+        }
+        return failBody(req, 503, 'SOURCE_UNAVAILABLE', 'The provider returned an unsupported playback format.');
       } catch (e) {
-        if (e instanceof ProviderError && e.kind === 'not_found') return failBody(req, 404, 'RESOURCE_NOT_FOUND', 'The requested episode or server was not found.');
-        return providerFailure(req, 'live_playback_failed', e);
+        if (e instanceof ProviderError) {
+          if (e.kind === 'not_found') return failBody(req, 404, 'RESOURCE_NOT_FOUND', 'The selected server or episode was not found.');
+          console.error(JSON.stringify({ event: 'live_episode_playback_failed', requestId: req.requestId, kind: e.kind, message: e.message }));
+          return failBody(req, 503, 'SOURCE_UNAVAILABLE', e.message || 'No approved playable source is available for this server.');
+        }
+        return providerFailure(req, 'live_episode_playback_failed', e);
       }
     },
 

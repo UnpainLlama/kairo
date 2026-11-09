@@ -253,7 +253,8 @@ export function parseHiAnimeServers(html: string): HiAnimeServer[] {
 
     const body = item.slice(opening.length, item.lastIndexOf('</'));
     const label = attrs['data-server-name'] || attrs.title || textContent(body);
-    const name = textContent(label) || `HD-${out.length + 1}`;
+    const fallbackNumber = attrs['data-server-id'] && /^\d+$/.test(attrs['data-server-id']) ? attrs['data-server-id'] : String(out.length + 1);
+    const name = textContent(label) || `HD-${fallbackNumber}`;
     const embedUrl = dataHash ? decodeHiAnimeDataHash(dataHash) ?? undefined : undefined;
     out.push({
       providerServerId: id,

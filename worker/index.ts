@@ -24,7 +24,6 @@ interface Bindings {
   EPISODE_PROVIDERS?: string;
   /** HiAnime mirror base URL; adapter enforces a fixed HTTPS host allowlist. */
   HIANIME_BASE_URL?: string;
-  HIANIME_PLAYBACK_ALLOWED_HOSTS?: string;
   /** TMDB API Read Access Token stored as a Cloudflare Worker secret. */
   TMDB_ACCESS_TOKEN?: string;
 }
@@ -67,7 +66,7 @@ const live = createLiveHandlers((input, init) => fetch(input, init));
 const serveLive = (pick: (h: LiveHandlers) => (r: LiveRequest) => Promise<LiveResult>) => async (c: AppContext, next: Next) => {
   if (!isLiveMode(c.env.CATALOG_SOURCE)) return next();
   const result = await pick(live)({ query: c.req.query(), param: (name) => c.req.param(name), requestId: c.get('requestId'), env: c.env });
-  return new Response(JSON.stringify(result.body), { status: result.status, headers: { 'Content-Type': 'application/json; charset=UTF-8' } });
+  return c.json(result.body as Record<string, unknown>, result.status as 200);
 };
 app.get('/api/ready', serveLive((h) => h.ready));
 app.get('/api/v1/catalog/featured', serveLive((h) => h.featured));
@@ -79,7 +78,7 @@ app.get('/api/v1/catalog/genres', serveLive((h) => h.genres));
 app.get('/api/v1/providers', serveLive((h) => h.providers));
 app.get('/api/v1/anime/:id/episodes', serveLive((h) => h.episodes));
 app.get('/api/v1/anime/:id/episodes/:episodeNumber/servers', serveLive((h) => h.servers));
-app.get('/api/v1/anime/:id/episodes/:episodeNumber/playback', serveLive((h) => h.playback));
+app.get('/api/v1/anime/:id/episodes/:episodeNumber/servers/:serverId/playback', serveLive((h) => h.playback));
 app.get('/api/v1/anime/:id/related', serveLive((h) => h.related));
 app.get('/api/v1/anime/:id/metadata', serveLive((h) => h.metadata));
 app.get('/api/v1/anime/:id', serveLive((h) => h.anime));
@@ -261,7 +260,7 @@ app.get('/api/v1/anime/:id/metadata', async (c) => {
 
 app.get('/api/v1/me', (c) => fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your profile.'));
 app.get('/api/v1/me/library', (c) => fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your library.'));
-app.get('/api/v1/episodes/:episodeId/playback', (c) => fail(c, 503, 'SOURCE_UNAVAILABLE', 'No authorized playback provider is configured.'));
+app.get('/api/v1/anime/:id/episodes/:episodeNumber/servers/:serverId/playback', (c) => fail(c, 503, 'SOURCE_UNAVAILABLE', 'Live playback is not enabled for this catalogue configuration.'));
 
 app.notFound((c) => fail(c, 404, 'RESOURCE_NOT_FOUND', 'The requested API route was not found.'));
 app.onError((error, c) => {
