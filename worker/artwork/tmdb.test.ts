@@ -55,13 +55,15 @@ describe('TMDB artwork provider', () => {
   });
 
   it('uses movie search for film titles', async () => {
-    let requested = '';
+    const requested: string[] = [];
     const provider = createTmdbArtworkProvider(async (url) => {
-      requested = url;
+      requested.push(url);
       return Response.json({ results: [{ id: 99, title: 'Your Name', original_title: '君の名は。', release_date: '2016-08-26', poster_path: '/movie.jpg', backdrop_path: null, adult: false }] });
     }, 'token');
     const artwork = await provider.lookup({ title: 'Your Name', year: 2016, format: 'movie' }, signal);
-    expect(new URL(requested).pathname).toBe('/3/search/movie');
+    expect(new URL(requested[0]!).pathname).toBe('/3/search/movie');
+    // Search has no backdrop, so the provider correctly checks the movie images endpoint too.
+    expect(new URL(requested[1]!).pathname).toBe('/3/movie/99/images');
     expect(artwork?.posterUrl).toBe('https://image.tmdb.org/t/p/w500/movie.jpg');
     expect(artwork?.bannerUrl).toBeNull();
   });
