@@ -29,6 +29,21 @@ describe('TMDB artwork enrichment service', () => {
     });
   });
 
+  it('skips TMDB when AniList already supplied complete card metadata and both images', async () => {
+    const complete: LiveTitle = {
+      ...title,
+      card: {
+        ...title.card, synopsis: 'A complete synopsis.',
+        posterUrl: 'https://img.test/poster.jpg', bannerUrl: 'https://img.test/banner.jpg',
+        rating: 8.5, episodeCount: 25, genres: ['Action'],
+      },
+    };
+    const provider: ArtworkProvider = { id: 'tmdb', lookup: vi.fn(async () => artwork) };
+    const result = await enrichArtwork([complete], provider, new MemoryCache());
+    expect(result[0]).toEqual(complete);
+    expect(provider.lookup).not.toHaveBeenCalled();
+  });
+
   it('fills missing metadata from TMDB even when TMDB has no artwork images', async () => {
     const metadataOnly = {
       tmdbId: 1429, mediaType: 'tv' as const, posterUrl: null, bannerUrl: null,
