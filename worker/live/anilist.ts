@@ -103,10 +103,10 @@ export function createAniListSource(fetchImpl: FetchLike, now: () => string = ()
         const wide = await page([{ name: 'sort', gqlType: '[MediaSort]', value: ['TRENDING_DESC'] }], trendingPage, 30, signal);
         const withBanner = wide.items.filter((t) => t.card.bannerUrl);
         const rest = wide.items.filter((t) => !t.card.bannerUrl);
-        const ordered = [...withBanner, ...rest];
-        const offset = ordered.length ? Math.abs(dayIndex) % ordered.length : 0;
-        const rotated = [...ordered.slice(offset), ...ordered.slice(0, offset)];
-        const items = rotated.slice(0, Math.min(limit, 12));
+        // Rotate within the banner group so wide hero art always stays ahead of poster-only cards.
+        const offset = withBanner.length ? Math.abs(dayIndex) % withBanner.length : 0;
+        const rotatedBanners = [...withBanner.slice(offset), ...withBanner.slice(0, offset)];
+        const items = [...rotatedBanners, ...rest].slice(0, Math.min(limit, 12));
         return { items, total: items.length, hasNextPage: false, limit: items.length };
       }
       if (kind === 'trending') return page([{ name: 'sort', gqlType: '[MediaSort]', value: ['TRENDING_DESC'] }], pageNo, limit, signal);
