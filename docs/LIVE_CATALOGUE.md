@@ -28,7 +28,11 @@ Nothing is written to D1. Cache entries all expire (fresh 10 min to 24 h, stale 
 Adult content is excluded everywhere: `isAdult: false` on AniList, `sfw=true` plus a drop of `Rx` ratings on Jikan, and Hentai/Erotica removed from genre lists.
 
 ## Configuration
-`wrangler.jsonc` vars: `CATALOG_SOURCE` (`live` or `db`), `LIVE_PROVIDERS` (`anilist,jikan`, `jikan,anilist`, or a single one). Bind a KV namespace as `METADATA_CACHE` on workers.dev; without it the cache does not persist between requests and you will hit rate limits quickly. KV's free tier allows 1,000 writes a day, and each cache miss is one write.
+`wrangler.jsonc` vars: `CATALOG_SOURCE` (`live` or `db`), `LIVE_PROVIDERS` (`anilist,jikan`, `jikan,anilist`, or a single one), and `EPISODE_PROVIDERS` (configured independently).
+
+KAIRO's local and staging catalogue priority is `anilist,jikan`: AniList supplies the canonical catalogue IDs and metadata, while Jikan is the fallback for catalogue list/search requests. Staging keeps `EPISODE_PROVIDERS=hianime,jikan`; local development uses Jikan for episodes. This separation is intentional: selecting AniList for the catalogue does not change episode discovery or playback. HiAnime finds a title from its display/alternate titles; Jikan uses the MyAnimeList ID mapped from the AniList record.
+
+Bind a KV namespace as `METADATA_CACHE` on workers.dev; without it the cache does not persist between requests and you will hit rate limits quickly. KV's free tier allows 1,000 writes a day, and each cache miss is one write.
 
 ## Owner actions before launch
 - **First live check.** The adapters and tests use hand-written fixtures that follow the documented shapes. Call each route against the real APIs once and compare. In particular check Jikan's field names, the 25-item page limit, and the episodes page size.
