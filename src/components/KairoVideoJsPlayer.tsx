@@ -80,13 +80,14 @@ export default function KairoVideoJsPlayer({
     srcLang: track.language,
     label: track.label,
   }));
-  const media = createElement(mediaType === 'hls' ? 'hlsjs-video' : 'video', {
+  const mediaProps = {
     ref: (element: HTMLElement | null) => { mediaRef.current = element as VideoJsMediaElement | null; },
     className: 'kc-videojs-media',
     src,
     playsInline: true,
     preload: 'metadata',
-  }, ...tracks);
+  };
+  const media = createElement(mediaType === 'hls' ? 'hlsjs-video' : 'video', mediaProps as any, ...tracks);
   const skin = createElement('video-skin', { className: 'kc-videojs-skin' }, media);
   const player = createElement('video-player', { className: 'kc-videojs-element', title }, skin);
 
