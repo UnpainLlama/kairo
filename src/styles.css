@@ -986,3 +986,76 @@ img { display: block; }
     right: 10px;
   }
 }
+
+
+/* Video.js 10 player integration */
+.kc-videojs-player {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #000;
+  color-scheme: dark;
+  --media-accent-color: #a78bfa;
+  --media-font-family: 'Kumbh Sans', system-ui, sans-serif;
+  --media-border-radius: 8px;
+}
+
+.kc-videojs-element,
+.kc-videojs-skin {
+  display: block;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: 16 / 9;
+}
+
+.kc-videojs-media {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.kc-videojs-skip,
+.kc-videojs-next {
+  position: absolute;
+  z-index: 5;
+  right: 18px;
+  bottom: 76px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 8px;
+  background: rgba(15,15,17,.88);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  backdrop-filter: blur(10px);
+}
+
+.kc-videojs-skip:hover,
+.kc-videojs-next a:hover {
+  border-color: var(--accent);
+  color: #d8ccff;
+}
+
+.kc-videojs-next {
+  bottom: 22px;
+  justify-content: space-between;
+  left: 18px;
+}
+
+.kc-videojs-next a {
+  color: #d8ccff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 600px) {
+  .kc-videojs-player { border-radius: 8px; }
+  .kc-videojs-skip, .kc-videojs-next { right: 10px; bottom: 58px; padding: 8px 10px; font-size: 12px; }
+  .kc-videojs-next { right: 10px; left: 10px; bottom: 10px; }
+}
