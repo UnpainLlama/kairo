@@ -10,6 +10,7 @@ import { createJikanEpisodeProvider } from '../episodes/providers/jikan';
 import { createLiveHandlers, parseBrowse, currentSeason } from './handlers';
 import { makeSlug, parseRef, slugify } from './ids';
 import type { Deps } from './service';
+import type { CatalogSource, LiveTitle } from './types';
 import type { LiveRequest } from './types';
 
 const json = (body: unknown, init: ResponseInit = {}) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' }, ...init });
@@ -63,6 +64,23 @@ describe('AniList source', () => {
     expect(q.query).toContain('genre: $genre');
     expect(q.query).not.toContain('$search');
     expect(q.variables).toEqual({ page: 2, perPage: 24, genre: 'Action' });
+  });
+  it('rotates the featured lineup to a different trending page and starting title each UTC day', async () => {
+    let day = '2026-11-10T00:00:00.000Z';
+    const pages: number[] = [];
+    const source = createAniListSource(async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as { variables: { page: number } };
+      pages.push(body.variables.page);
+      return aniPage([
+        media(1, { bannerImage: 'https://img.test/1-banner.jpg' }),
+        media(2, { bannerImage: 'https://img.test/2-banner.jpg' }),
+      ]);
+    }, () => day);
+    const first = await source.list('featured', 1, 12, signal);
+    day = '2026-11-11T00:00:00.000Z';
+    const second = await source.list('featured', 1, 12, signal);
+    expect(pages[0]).not.toBe(pages[1]);
+    expect(first.items[0]?.card.id).not.toBe(second.items[0]?.card.id);
   });
   it('features titles with banners first and drops adult entries', async () => {
     const src = createAniListSource(async () => aniPage([media(1), media(2, { bannerImage: 'https://img.test/b2.jpg' }), media(3, { isAdult: true }), media(4, { bannerImage: 'https://img.test/b4.jpg' })]), () => NOW);
@@ -198,6 +216,51 @@ describe('service and handlers', () => {
     await call(d, 'featured', req());
     expect(calls).toBe(1);
   });
+  it('falls back to Jikan when AniList returns no search matches and does not wait for TMDB artwork', async () => {
+    let tmdbCalls = 0;
+    const artworkProvider: ArtworkProvider = { id: 'tmdb', lookup: async () => { tmdbCalls += 1; return null; } };
+    const d = deps(async (u) => isAni(u) ? aniPage([]) : jikanList([jikanAnime(3)]), { artworkProvider });
+    const response = await call(d, 'search', req({ q: 'Example Anime', sort: 'relevance' }));
+    expect(response).toMatchObject({ status: 200, body: { data: { items: [{ id: 'm3' }] }, meta: { source: 'jikan', degraded: true } } });
+    expect(tmdbCalls).toBe(0);
+  });
+
+  it('resolves legacy HiAnime title ids while AniList remains the primary catalogue', async () => {
+    const legacyTitle: LiveTitle = {
+      card: {
+        id: 'h8', slug: 'attack-on-titan-8-h8', title: 'Attack on Titan', synopsis: 'Humanity fights for survival.',
+        posterUrl: null, bannerUrl: null, format: 'series', releaseYear: 2013, season: 'spring',
+        status: 'finished', rating: 8.5, episodeCount: 25, genres: ['Action'],
+      },
+      altTitles: ['Shingeki no Kyojin'], malId: null, anilistId: null,
+      url: 'https://hianime.at/watch/attack-on-titan-8', provider: 'hianime',
+    };
+    const legacySource: CatalogSource = {
+      id: 'hianime', displayName: 'HiAnime',
+      attribution: { providerId: 'hianime', displayName: 'HiAnime', text: 'HiAnime catalogue.', url: 'https://hianime.at', termsUrl: 'https://hianime.at', license: null, requirements: [] },
+      maxLimit: 24, supports: (ref) => ref.kind === 'h',
+      list: async (_kind, _page, limit) => ({ items: [], total: 0, hasNextPage: false, limit }),
+      browse: async (query) => ({ items: [], total: 0, hasNextPage: false, limit: query.limit }),
+      genres: async () => [], byRef: async () => legacyTitle, related: async () => [],
+    };
+    const base = deps(async () => json({}));
+    const d = { ...base, sources: [...base.sources, legacySource] };
+    const response = await call(d, 'anime', req({}, { id: 'attack-on-titan-8-h8' }));
+    expect(response).toMatchObject({ status: 200, body: { data: { id: 'h8', title: 'Attack on Titan' } } });
+  });
+
+  it('does not reuse list cache entries after the configured catalogue providers change', async () => {
+    const cache = new MemoryCache();
+    let jikanCalls = 0;
+    const first = deps(async (u) => isAni(u) ? aniPage([media(1)]) : json({}), { cache });
+    await call(first, 'trending', req());
+    const onlyJikan = createJikanSource(async () => { jikanCalls += 1; return jikanList([jikanAnime(2)]); }, { pacer: instant, now: () => NOW });
+    const second: Deps = { ...first, sources: [onlyJikan] };
+    const response = await call(second, 'trending', req());
+    expect(response).toMatchObject({ status: 200, body: { data: { items: [{ id: 'm2' }] }, meta: { source: 'jikan' } } });
+    expect(jikanCalls).toBe(1);
+  });
+
   it('fails over to Jikan when AniList is rate limited, and marks the response degraded', async () => {
     const d = deps(async (u) => isAni(u) ? json({ errors: [{ status: 429 }] }, { status: 429, headers: { 'Retry-After': '30' } }) : jikanList([jikanAnime(1)]));
     const r = await call(d, 'trending', req({ page: '1', limit: '12' }));
