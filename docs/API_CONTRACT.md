@@ -1,6 +1,6 @@
 # API contract — `/api/v1`
 
-All routes are same-origin behind the Cloudflare Worker unless a deployment architecture explicitly separates the API. Use JSON and UTF-8. Query values must be validated and bounded. When the `TMDB_ACCESS_TOKEN` Worker secret is configured, catalogue cards and anime details are enriched with TMDB poster/backdrop URLs; `posterUrl` remains portrait artwork and `bannerUrl` is landscape artwork. Catalogue results remain available if TMDB is unavailable.
+All routes are same-origin behind the Cloudflare Worker unless a deployment architecture explicitly separates the API. Use JSON and UTF-8. Query values must be validated and bounded. In live mode, when the `TMDB_ACCESS_TOKEN` Worker secret is configured, catalogue cards and anime details are enriched with TMDB poster/backdrop URLs and TMDB may fill missing synopsis, rating, genres, release year and total TV episode count. Existing non-empty catalogue metadata takes precedence. Episode rows may receive TMDB still thumbnails, but episode discovery and playback remain separate. The legacy `CATALOG_SOURCE=db` routes do not use this enrichment. Catalogue results remain available if TMDB is unavailable.
 
 ## 1. Response envelope
 

@@ -16,31 +16,77 @@ describe('TMDB artwork provider', () => {
     const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
       requested.push(url);
       authorization = new Headers(init?.headers).get('Authorization') ?? '';
-      return Response.json({ results: [{
-        id: 1429, name: 'Attack on Titan', original_name: '進撃の巨人', first_air_date: '2013-04-07',
-        poster_path: '/poster.jpg', backdrop_path: '/backdrop.jpg', media_type: 'tv', adult: false, vote_count: 100,
-      }] });
+      if (new URL(url).pathname === '/3/search/tv') {
+        return Response.json({ results: [{
+          id: 1429, name: 'Attack on Titan', original_name: '進撃の巨人', first_air_date: '2013-04-07',
+          poster_path: '/poster.jpg', backdrop_path: '/backdrop.jpg', media_type: 'tv', adult: false, vote_count: 100,
+          overview: 'Search synopsis', vote_average: 8.1,
+        }] });
+      }
+      return Response.json({
+        first_air_date: '2013-04-07', overview: 'A war for humanity.', vote_average: 8.6,
+        number_of_episodes: 87, genres: [{ id: 10759, name: 'Action' }, { id: 18, name: 'Drama' }],
+      });
     });
     const provider = createTmdbArtworkProvider(fetcher, 'secret-read-token');
     const artwork = await provider.lookup({ title: 'Attack on Titan', year: 2013, format: 'series' }, signal);
 
     expect(new URL(requested[0]!).pathname).toBe('/3/search/tv');
     expect(new URL(requested[0]!).searchParams.get('query')).toBe('Attack on Titan');
+    expect(new URL(requested[1]!).pathname).toBe('/3/tv/1429');
     expect(authorization).toBe('Bearer secret-read-token');
     expect(artwork).toEqual({
       tmdbId: 1429, mediaType: 'tv',
       posterUrl: 'https://image.tmdb.org/t/p/w500/poster.jpg',
       bannerUrl: 'https://image.tmdb.org/t/p/w1280/backdrop.jpg',
-      overview: null, rating: null, genres: [], releaseYear: 2013, episodeCount: null,
+      overview: 'A war for humanity.', rating: 8.6, genres: ['Action', 'Drama'], releaseYear: 2013, episodeCount: 87,
     });
+  });
+
+  it('keeps usable search metadata when the details response has empty fields', async () => {
+    const provider = createTmdbArtworkProvider(async (url) => {
+      if (new URL(url).pathname === '/3/search/tv') {
+        return Response.json({ results: [{
+          id: 1429, name: 'Attack on Titan', first_air_date: '2013-04-07',
+          poster_path: '/poster.jpg', backdrop_path: '/backdrop.jpg', adult: false,
+          overview: 'Search overview remains available.', vote_average: 8.2,
+        }] });
+      }
+      return Response.json({ overview: '', vote_average: 0, first_air_date: '', genres: [] });
+    }, 'token');
+    const artwork = await provider.lookup({ title: 'Attack on Titan', year: 2013 }, signal);
+    expect(artwork).toMatchObject({ overview: 'Search overview remains available.', rating: 8.2, releaseYear: 2013 });
+  });
+
+  it('retains search metadata when the details request fails', async () => {
+    const paths: string[] = [];
+    const provider = createTmdbArtworkProvider(async (url) => {
+      const path = new URL(url).pathname;
+      paths.push(path);
+      if (path === '/3/search/tv') {
+        return Response.json({ results: [{
+          id: 1429, name: 'Attack on Titan', first_air_date: '2013-04-07',
+          poster_path: '/poster.jpg', backdrop_path: '/backdrop.jpg', adult: false,
+          overview: 'Search summary remains available.', vote_average: 8.2,
+        }] });
+      }
+      throw new Error('Details endpoint unavailable');
+    }, 'token');
+    const artwork = await provider.lookup({ title: 'Attack on Titan', year: 2013 }, signal);
+    expect(paths).toEqual(['/3/search/tv', '/3/tv/1429']);
+    expect(artwork).toMatchObject({ overview: 'Search summary remains available.', rating: 8.2, releaseYear: 2013 });
   });
 
   it('uses the dedicated TV images endpoint when search has no landscape backdrop', async () => {
     const requested: string[] = [];
     const provider = createTmdbArtworkProvider(async (url) => {
       requested.push(url);
-      if (new URL(url).pathname === '/3/search/tv') {
+      const path = new URL(url).pathname;
+      if (path === '/3/search/tv') {
         return Response.json({ results: [{ id: 1429, name: 'Attack on Titan', first_air_date: '2013-04-07', poster_path: '/poster.jpg', backdrop_path: null, adult: false }] });
+      }
+      if (path === '/3/tv/1429') {
+        return Response.json({ first_air_date: '2013-04-07', overview: 'Humanity fights for survival.', vote_average: 8.5, genres: [{ name: 'Action' }] });
       }
       return Response.json({
         posters: [{ file_path: '/alternate-poster.jpg', iso_639_1: 'en', vote_average: 7.2, vote_count: 20, width: 1000, height: 1500 }],
@@ -60,7 +106,14 @@ describe('TMDB artwork provider', () => {
     const requested: string[] = [];
     const provider = createTmdbArtworkProvider(async (url) => {
       requested.push(url);
-      return Response.json({ results: [{ id: 99, title: 'Your Name', original_title: '君の名は。', release_date: '2016-08-26', poster_path: '/movie.jpg', backdrop_path: null, adult: false }] });
+      const path = new URL(url).pathname;
+      if (path === '/3/search/movie') {
+        return Response.json({ results: [{ id: 99, title: 'Your Name', original_title: '君の名は。', release_date: '2016-08-26', poster_path: '/movie.jpg', backdrop_path: null, adult: false }] });
+      }
+      if (path === '/3/movie/99') {
+        return Response.json({ release_date: '2016-08-26', overview: 'Two teenagers swap lives.', vote_average: 8.3, genres: [{ name: 'Animation' }, { name: 'Drama' }] });
+      }
+      return Response.json({ posters: [], backdrops: [] });
     }, 'token');
     const artwork = await provider.lookup({ title: 'Your Name', year: 2016, format: 'movie' }, signal);
     expect(new URL(requested[0]!).pathname).toBe('/3/search/movie');
@@ -69,6 +122,7 @@ describe('TMDB artwork provider', () => {
     expect(new URL(requested[2]!).pathname).toBe('/3/movie/99/images');
     expect(artwork?.posterUrl).toBe('https://image.tmdb.org/t/p/w500/movie.jpg');
     expect(artwork?.bannerUrl).toBeNull();
+    expect(artwork).toMatchObject({ overview: 'Two teenagers swap lives.', rating: 8.3, genres: ['Animation', 'Drama'], releaseYear: 2016, episodeCount: null });
   });
 
   it('loads season-local episode stills for a season-specific anime listing', async () => {

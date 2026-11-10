@@ -54,13 +54,24 @@ async function lookupCached(
 
 function mergeArtwork(title: LiveTitle, artwork: TmdbArtwork | null): LiveTitle {
   if (!artwork) return title;
+  const tmdbEnriched = Boolean(
+    (artwork.posterUrl && artwork.posterUrl !== title.card.posterUrl)
+    || (artwork.bannerUrl && artwork.bannerUrl !== title.card.bannerUrl)
+    || (!title.card.synopsis.trim() && artwork.overview?.trim())
+    || (title.card.rating === null && artwork.rating !== null && artwork.rating !== undefined)
+    || (title.card.genres.length === 0 && (artwork.genres?.length ?? 0) > 0)
+    || (title.card.releaseYear === null && artwork.releaseYear !== null && artwork.releaseYear !== undefined)
+    || (title.card.episodeCount === null && artwork.episodeCount !== null && artwork.episodeCount !== undefined)
+  );
   return {
     ...title,
+    tmdbEnriched: title.tmdbEnriched || tmdbEnriched,
     card: {
       ...title.card,
       posterUrl: artwork.posterUrl ?? title.card.posterUrl,
       bannerUrl: artwork.bannerUrl ?? title.card.bannerUrl,
-      // Preserve catalogue metadata when present; TMDB details fill only missing values.
+      // Keep catalogue values when present; use TMDB only to fill missing metadata.
+      // Explicit null/empty fallbacks satisfy the card contract without blocking the TMDB lookup.
       synopsis: title.card.synopsis.trim() ? title.card.synopsis : artwork.overview?.trim() || title.card.synopsis,
       rating: title.card.rating ?? artwork.rating ?? null,
       genres: title.card.genres.length ? title.card.genres : (artwork.genres ?? []),

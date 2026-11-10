@@ -57,7 +57,7 @@ export function AboutPage() {
           <img src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_long_2-9665a76b1ae401a510ec1e0ca40ddcb3b0cfe45f1d51b77a308fea0845885648.svg" alt="The Movie Database (TMDB)" loading="lazy" />
         </a>
         <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
-        <p>TMDB provides artwork such as posters and landscape backdrops. Kairo's catalogue and episode information are supplied separately.</p>
+        <p>TMDB can provide posters, landscape backdrops and supplementary title details such as a synopsis, rating, genres, release year and episode count when catalogue fields are missing. Kairo's title identity, episode lists and playback sources are supplied separately; TMDB may also provide episode still thumbnails.</p>
         <a className="kc-link" href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">Visit The Movie Database</a>
       </section>
     </>

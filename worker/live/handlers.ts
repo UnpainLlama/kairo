@@ -234,12 +234,12 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
         const src = deps.sources.find((s) => s.id === out.via);
         const providers: { provider: string; state: string }[] = [{ provider: out.via, state: out.cached ? 'cached' : 'ok' }];
         if (out.primary !== out.via || out.stale) providers.push({ provider: out.primary, state: 'failed' });
-        const tmdbArtworkUsed = [title.card.posterUrl, title.card.bannerUrl].some((url) => url?.startsWith('https://image.tmdb.org/'));
+        const tmdbArtworkUsed = Boolean(title.tmdbEnriched) || [title.card.posterUrl, title.card.bannerUrl].some((url) => url?.startsWith('https://image.tmdb.org/'));
         return okBody(req, {
           title: title.card.title, synopsis: title.card.synopsis || null, rating: title.card.rating, episodeCount: title.card.episodeCount,
           genres: title.card.genres, posterUrl: title.card.posterUrl, bannerUrl: title.card.bannerUrl,
           ids: { ...(title.anilistId ? { anilist: String(title.anilistId) } : {}), ...(title.malId ? { mal: String(title.malId) } : {}) },
-          sources: [...(src ? [{ providerId: src.id, displayName: src.attribution.displayName, text: src.attribution.text, url: title.url ?? src.attribution.url, license: src.attribution.license }] : []), ...(tmdbArtworkUsed ? [{ providerId: 'tmdb', displayName: 'TMDB', text: 'Artwork from The Movie Database. This product uses the TMDB API but is not endorsed or certified by TMDB.', url: 'https://www.themoviedb.org', license: null }] : [])],
+          sources: [...(src ? [{ providerId: src.id, displayName: src.attribution.displayName, text: src.attribution.text, url: title.url ?? src.attribution.url, license: src.attribution.license }] : []), ...(tmdbArtworkUsed ? [{ providerId: 'tmdb', displayName: 'TMDB', text: 'Metadata and artwork from The Movie Database. This product uses the TMDB API but is not endorsed or certified by TMDB.', url: 'https://www.themoviedb.org', license: null }] : [])],
           providers: [...providers, ...(tmdbArtworkUsed ? [{ provider: 'tmdb', state: 'ok' }] : [])],
         }, { degraded: out.degraded, basis: 'live', ...sourceMeta(out), ...artworkMeta(deps) });
       } catch (e) { return providerFailure(req, 'live_metadata_failed', e); }

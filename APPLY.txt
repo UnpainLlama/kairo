@@ -1,0 +1,18 @@
+KAIRO — TMDB metadata/artwork fixed files
+
+These are the 12 changed files, with their repository-relative paths preserved.
+From the root of your Kairo repository, extract/merge this archive and overwrite
+files at the same paths.
+
+Key fixes included:
+- TMDB details are fetched before the optional /images fallback.
+- Release year and other usable metadata from the search result are retained
+  when the details response is empty or unavailable.
+- TMDB can fill missing synopsis, rating, genres, year and episode count.
+- Existing catalogue metadata remains preferred.
+- Nullable card values use explicit type-safe fallbacks; this does not bypass
+  or replace the TMDB request.
+- Regression tests cover the details/image request order and metadata fallbacks.
+
+Do not replace your package.json or package-lock.json with this archive; it only
+contains the changed files listed above.

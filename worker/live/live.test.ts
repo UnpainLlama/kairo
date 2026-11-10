@@ -155,6 +155,40 @@ describe('service and handlers', () => {
     });
   });
 
+  it('returns TMDB-only metadata and attribution when the catalogue has gaps', async () => {
+    const artworkProvider: ArtworkProvider = {
+      id: 'tmdb',
+      lookup: async () => ({
+        tmdbId: 1429, mediaType: 'tv', posterUrl: null, bannerUrl: null,
+        overview: 'A scout fights to protect humanity.', rating: 8.6,
+        genres: ['Action', 'Drama'], releaseYear: 2013, episodeCount: 87,
+      }),
+    };
+    const sparseMedia = media(1, {
+      description: '', averageScore: null, episodes: null, seasonYear: null,
+      startDate: { year: null }, genres: [],
+    });
+    const d = deps(async (u) => isAni(u) ? json({ data: { Media: sparseMedia } }) : json({}), { artworkProvider });
+    const response = await call(d, 'metadata', req({}, { id: 'a1' }));
+    expect(response.body).toMatchObject({
+      data: {
+        synopsis: 'A scout fights to protect humanity.', rating: 8.6,
+        genres: ['Action', 'Drama'], episodeCount: 87,
+      },
+    });
+    const payload = response.body as { data?: { sources?: { providerId: string }[]; providers?: { provider: string; state: string }[] } };
+    expect(payload.data?.sources?.some((source) => source.providerId === 'tmdb')).toBe(true);
+    expect(payload.data?.providers?.some((provider) => provider.provider === 'tmdb' && provider.state === 'ok')).toBe(true);
+
+    const cardResponse = await call(d, 'anime', req({}, { id: 'a1' }));
+    expect(cardResponse.body).toMatchObject({
+      data: {
+        synopsis: 'A scout fights to protect humanity.', rating: 8.6,
+        genres: ['Action', 'Drama'], releaseYear: 2013, episodeCount: 87,
+      },
+    });
+  });
+
   it('serves AniList data with the API envelope and caches it', async () => {
     let calls = 0;
     const d = deps(async (u) => { calls++; return isAni(u) ? aniPage([media(1, { bannerImage: 'https://img.test/b.jpg' })]) : json({}, { status: 500 }); });

@@ -23,7 +23,7 @@ export type Card = {
 };
 
 /** Catalogue title plus cross-provider IDs used by the independent episode-discovery service. */
-export type LiveTitle = { card: Card; altTitles: string[]; malId: number | null; anilistId: number | null; url: string | null; provider: SourceId };
+export type LiveTitle = { card: Card; altTitles: string[]; malId: number | null; anilistId: number | null; url: string | null; provider: SourceId; /** True when TMDB supplied at least one displayed field. */ tmdbEnriched?: boolean };
 
 export type Paged = { items: LiveTitle[]; total: number | null; hasNextPage: boolean; limit: number };
 

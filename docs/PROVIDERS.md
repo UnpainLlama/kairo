@@ -2,11 +2,11 @@
 
 KAIRO combines several metadata sources into one unified record. No provider is a permanent dependency: each one is an adapter that can be switched off, replaced or added without touching the frontend or the routes.
 
-**Three separate services.** Metadata (this document), episode discovery (`EpisodeProvider`, contract only) and playback (`worker/providers/playback.ts`) are independent. A metadata provider is never assumed to supply episodes or streams.
+**Separate services.** Catalogue metadata, episode discovery (`EpisodeProvider`) and playback (`worker/providers/playback.ts`) are independent. A metadata or artwork provider is never assumed to supply episode records or playable streams. TMDB's optional episode stills enrich thumbnails only.
 
 ## 1. Provider roles
 
-The catalogue provider supplies title identity and episode discovery metadata. **TMDB is a separate artwork enrichment provider**: it searches the TV or movie catalogue by title/year and returns portrait poster and landscape backdrop URLs. It does not replace HiAnime, Jikan or AniList catalogue IDs, and it does not supply episode or playback data.
+The catalogue providers remain responsible for title identity and catalogue records. **TMDB is a separate artwork and sparse-metadata enrichment service**: after a confident title/year match, it retrieves poster/backdrop images and can fill missing synopsis, rating, genres, release year and total TV episode count. It can also add season-specific episode still thumbnails. TMDB never replaces Kairo catalogue IDs or supplies episode lists or playable streams; existing non-empty catalogue metadata takes precedence.
 
 ## 2. What was verified (2026-11-06)
 
@@ -15,7 +15,7 @@ The catalogue provider supplies title identity and episode discovery metadata. *
 | **AniList** (GraphQL, `graphql.anilist.co`) | Live detail: synopsis, genres, banner, score | None for public reads | 90 requests/min. A burst limiter also exists, and 429 carries `Retry-After`. One docs page warns of a temporary 30/min degraded mode. | Read in full at docs.anilist.co/guide/terms-of-use | **Verified.** Free for non-commercial use; no use as backup or data storage; no hoarding or mass collection; naming guidelines; no competing list/tracker services. |
 | **Kitsu** (JSON:API, `kitsu.io/api/edge`) | Live detail (secondary) | Third-party client docs say public reads need no key | Not published in anything I could read | `kitsu.io/terms` **could not be fetched**; not read | **Unverified.** Adapter is built but `termsVerified = false` and it is OFF by default. |
 | **anime-offline-database** (manami-project) | Catalogue index and cross-provider ID map (dataset, not an API) | None (a file download) | n/a | Recent releases: ODbL-1.0 (attribution and share-alike). Older releases: AGPL-3.0. The file carries its own `license` field. | **Partly verified** from repository pages. The importer refuses any licence that is not ODbL-1.0. Re-check the release you import. |
-| **TMDB** (v3 REST API) | Independent artwork only: posters and landscape backdrops | API Read Access Token (Bearer secret) | Rate limiting applies; KAIRO uses bounded concurrency, caching and fail-open behavior | Developer API is free for non-commercial use with attribution; commercial use requires a separate licence | **Enabled only when `TMDB_ACCESS_TOKEN` is configured.** It does not supply catalogue identity, episodes or playback. |
+| **TMDB** (v3 REST API) | Independent poster/backdrop and episode-still artwork; fills missing synopsis, rating, genres, year and total TV episode count | API Read Access Token (Bearer secret) | Rate limiting applies; KAIRO uses bounded concurrency, caching and fail-open behavior | Developer API is free for non-commercial use with attribution; commercial use requires a separate licence | **Enabled only when `TMDB_ACCESS_TOKEN` is configured in live mode.** It does not supply catalogue identity, episode lists or playback. |
 
 Not verified, and so not used: Kitsu's own terms and rate limits; Kitsu/AniList field names against live responses (see section 7). TMDB API authentication, search and image-path documentation were checked, but KAIRO's live API key and title-match quality still need to be validated after deployment.
 
@@ -49,11 +49,13 @@ route /api/v1/anime/:id/metadata
 3. 0.85 or more is accepted. 0.6 to 0.85 is "ambiguous" and is NOT merged. A tie between candidates is refused.
 4. There is no fuzzy matching on purpose: a wrong merge puts one show's data on another, which is worse than a missed merge.
 
-### Artwork matching
-- TMDB matching is separate from metadata merge and never changes title identity or provider IDs. It searches TV shows for series/OVA/ONA/special titles and movies for films.
-- Candidate titles are compared against the catalogue title and alternate titles, with the release year used as a confidence signal. Low-confidence matches are ignored.
-- Search-result poster/backdrop paths are preferred. If either image is absent, the adapter requests the matching TV/movie images endpoint and selects an appropriate alternate poster or landscape backdrop. Paths are converted to HTTPS `image.tmdb.org` URLs (`w500` poster and `w1280` backdrop).
-- Positive matches are cached for 30 days; no-match results for 7 days. TMDB failures do not fail catalogue requests.
+### TMDB enrichment
+- TMDB matching is independent of the AniList/Kitsu/manami metadata-provider merge and never changes title identity or provider IDs. It searches TV shows for series/OVA/ONA/special titles and movies for films.
+- Candidate titles are compared against the catalogue title and alternate titles, with release year used as a confidence signal. Low-confidence matches are ignored.
+- After a confident match, the adapter requests the TV/movie details endpoint for overview, vote average, genre names, release year and (for TV) total episode count. When a detail field is absent or empty, usable search-result metadata is retained.
+- Non-empty catalogue synopsis, rating, genres, release year and episode count are not overwritten. TMDB fills only missing fields in live catalogue cards and title details. This separate service does not participate in `DEFAULT_PRIORITY` or the provenance conflict resolver above.
+- Search/details poster and backdrop paths are preferred. If an image slot is still missing, the adapter requests the matching TV/movie images endpoint and selects an approved alternate. Paths are converted to HTTPS `image.tmdb.org` URLs (`w500` poster and `w1280` backdrop). Episode rows can receive matching season stills; episode discovery and playback remain with their own providers.
+- Positive matches are cached for 30 days; no-match results for 7 days; provider failures are briefly cached. TMDB errors never make catalogue requests fail. Enrichment runs in live mode; legacy `CATALOG_SOURCE=db` routes do not invoke this service.
 
 ### Conflict resolution
 Static priority per field, highest first: **anilist, kitsu, manami**, with unlisted providers last (alphabetical). Edit `DEFAULT_PRIORITY` in `merge.ts` to change it.
@@ -75,7 +77,7 @@ Static priority per field, highest first: **anilist, kitsu, manami**, with unlis
 - Each title page lists the sources that contributed to it, with the provider's attribution text and link. The footer states that.
 - AniList: the terms do not require an on-page credit; it is shown as a courtesy and says KAIRO is unofficial. Never name anything "AniList" alone.
 - anime-offline-database: ODbL requires attribution, shown. Share-alike applies to a *publicly shared* derived database. KAIRO is a private personal site and does not distribute the database. If that ever changes, review this first.
-- TMDB artwork: hotlinked from TMDB image CDN, never re-hosted. Include the official TMDB logo and the notice “This product uses the TMDB API but is not endorsed or certified by TMDB.” in the app footer/About area. The developer API is for non-commercial use with attribution; contact TMDB for commercial licensing.
+- TMDB artwork and supplementary title metadata: image assets are hotlinked from TMDB's image CDN and never re-hosted. Include the official TMDB logo and the notice “This product uses the TMDB API but is not endorsed or certified by TMDB.” in the app footer/About area. The developer API is for non-commercial use with attribution; contact TMDB for commercial licensing.
 - Other artwork: hotlinked from its source provider, never re-hosted. Rights stay with their owners.
 
 ## 5. Configuration steps (owner)
@@ -84,7 +86,7 @@ Static priority per field, highest first: **anilist, kitsu, manami**, with unlis
 
 **Cache.** The KV namespace and its `METADATA_CACHE` binding are declared per environment in `wrangler.jsonc`; creating it is step 2b of docs/DEPLOYMENT.md. Without it the Worker still runs, using the Cache API (no effect on workers.dev) or per-isolate memory.
 
-AniList and Kitsu public reads need no API key. TMDB requires an API Read Access Token stored as the Worker secret `TMDB_ACCESS_TOKEN`. Set it with `npx wrangler secret put TMDB_ACCESS_TOKEN --env staging`; do not add it to `wrangler.jsonc` or commit it. For local development, put `TMDB_ACCESS_TOKEN="..."` in gitignored `.dev.vars`. Without the token, catalogue artwork remains the fallback.
+AniList and Kitsu public reads need no API key. TMDB requires an API Read Access Token stored as the Worker secret `TMDB_ACCESS_TOKEN`. Set it with `npx wrangler secret put TMDB_ACCESS_TOKEN --env staging`; do not add it to `wrangler.jsonc` or commit it. For local development, put `TMDB_ACCESS_TOKEN="..."` in gitignored `.dev.vars`. Without the token, Kairo keeps the catalogue's existing artwork and metadata.
 
 ## 6. Adding a provider later
 1. Write `worker/metadata/providers/<name>.ts` that returns a `MetadataProvider` (a `fetchById` and a `search` returning `NormalizedMetadata`, plus its `Attribution` and `termsVerified`).
@@ -94,9 +96,9 @@ AniList and Kitsu public reads need no API key. TMDB requires an API Read Access
 
 ## 7. First live check (not done yet)
 The adapters were tested only against **hand-written fixtures** that follow each provider's documented shape (`worker/metadata/providers.test.ts` says so). No real provider response has been captured. After the first deploy:
-1. Open `/api/v1/providers`, then `/api/v1/anime/<slug>/metadata` for a title that exists in the catalogue.
-2. Check `providers[]`: `ok` is good; `failed` with `invalid_response` means the real shape differs from the fixture. Send me that output and I will fix the adapter.
-3. Adapters fail closed: an unexpected shape becomes an `invalid_response` outcome, never wrong data.
+1. Open `/api/v1/providers`, `/api/v1/anime/<slug>` and `/api/v1/anime/<slug>/metadata` for a title that exists in the catalogue.
+2. For TMDB, confirm the card fields are filled only where the catalogue had gaps, and that `sources[]`/`providers[]` include TMDB when it contributed. The full card route exposes `releaseYear`; the metadata route exposes synopsis, rating, episode count, genres and artwork.
+3. Check the other metadata providers' `providers[]`: `ok` is good; `failed` with `invalid_response` means a real response differs from the fixture. Adapters fail closed: an unexpected shape becomes an `invalid_response` outcome, never guessed data.
 
 ## 8. Not built yet
 - The dataset import job (download a release, check its licence, map, load chunked SQL into D1). The mapper and the licence check exist in `providers/manami.ts`; D1's current bulk-load limits still need checking.

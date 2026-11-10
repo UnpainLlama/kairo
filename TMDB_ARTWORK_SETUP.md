@@ -1,6 +1,6 @@
-# KAIRO — TMDB artwork setup
+# KAIRO — TMDB artwork and metadata setup
 
-This update adds TMDB as an independent artwork-enrichment provider. HiAnime remains the catalogue/episode provider selected by `LIVE_PROVIDERS` and `EPISODE_PROVIDERS`; TMDB does not change anime IDs, episode discovery, server discovery, or playback.
+This update adds TMDB as an independent artwork and metadata-enrichment provider. HiAnime remains the catalogue/episode provider selected by `LIVE_PROVIDERS` and `EPISODE_PROVIDERS`; TMDB does not change anime IDs, episode discovery, server discovery, or playback. In live mode, TMDB can fill missing synopsis, rating, genres, release year, and total episode count after a title match. Existing non-empty catalogue metadata takes precedence. The enrichment applies to the live catalogue path; the legacy `CATALOG_SOURCE=db` routes do not use this TMDB artwork service.
 
 ## 1. Create a TMDB API Read Access Token
 
@@ -36,16 +36,19 @@ Open:
 
 - `/api/ready` — `artworkProvider` should report `tmdb` when the secret is present.
 - `/api/v1/providers` — `artworkProvider.enabled` should be `true`.
-- `/api/v1/catalog/featured` — inspect `data.items[].posterUrl` and `data.items[].bannerUrl` for TMDB image CDN URLs.
-- `/api/v1/anime/<slug>/metadata` — inspect the returned poster/backdrop URLs and source attribution.
+- `/api/v1/catalog/featured` — inspect card artwork and missing synopsis, rating, genres, release year and episode count.
+- `/api/v1/anime/<slug>` — inspect the full enriched card, including `releaseYear`.
+- `/api/v1/anime/<slug>/metadata` — inspect `synopsis`, `rating`, `episodeCount`, `genres`, image URLs, and TMDB source/provider attribution.
 
-If the secret is absent, invalid, or TMDB is rate-limiting requests, the catalogue still works and falls back to upstream artwork. The first request for an uncached title may take longer while TMDB is queried; matches are cached for 30 days, misses for 7 days, and errors for 5 minutes.
+If the secret is absent, invalid, or TMDB is rate-limiting requests, the catalogue still works and keeps upstream artwork and metadata. The first request for an uncached title may take longer while TMDB is queried; matches are cached for 30 days, misses for 7 days, and errors for 5 minutes.
 
 ## 5. Artwork behavior
 
 - TMDB TV search is used for series, OVA, ONA and specials; movie search is used for films.
 - Matching considers the title, up to two alternate titles and release year.
 - Search-result poster/backdrop paths are preferred. If either is missing, the corresponding TV/movie image endpoint is queried for an alternate poster or backdrop.
+- After a confident title match, the TV/movie details endpoint is queried for overview, rating, named genres, release year, and (for TV) total episode count. Search-result values remain fallbacks if the details request is unavailable.
+- TMDB fills missing catalogue metadata; existing non-empty synopsis, rating, genres, year, and episode count remain unchanged. A missing value is represented as `null` or an empty genre list in Kairo, but this is a fallback result—not a replacement for the TMDB request.
 - Poster URLs use the `w500` image size; landscape backdrops use `w1280`.
 - Only TMDB's HTTPS image CDN URLs are accepted.
 - A portrait poster is not stretched into a hero backdrop. When there is no landscape artwork, the UI keeps its dark fallback treatment.

@@ -29,6 +29,44 @@ describe('TMDB artwork enrichment service', () => {
     });
   });
 
+  it('fills missing metadata from TMDB even when TMDB has no artwork images', async () => {
+    const metadataOnly = {
+      tmdbId: 1429, mediaType: 'tv' as const, posterUrl: null, bannerUrl: null,
+      overview: 'A scout fights to protect humanity.', rating: 8.6, genres: ['Action', 'Drama'],
+      releaseYear: 2013, episodeCount: 87,
+    };
+    const sparseTitle: LiveTitle = {
+      ...title, card: { ...title.card, synopsis: '', rating: null, genres: [], releaseYear: null, episodeCount: null },
+    };
+    const provider: ArtworkProvider = { id: 'tmdb', lookup: vi.fn(async () => metadataOnly) };
+    const result = await enrichArtwork([sparseTitle], provider, new MemoryCache());
+    expect(result[0]?.card).toMatchObject({
+      synopsis: metadataOnly.overview, rating: 8.6, genres: ['Action', 'Drama'],
+      releaseYear: 2013, episodeCount: 87, posterUrl: sparseTitle.card.posterUrl,
+    });
+    expect(result[0]?.tmdbEnriched).toBe(true);
+  });
+
+  it('does not overwrite populated catalogue metadata with different TMDB values', async () => {
+    const populatedTitle: LiveTitle = {
+      ...title,
+      card: {
+        ...title.card,
+        synopsis: 'Catalogue synopsis.', rating: 7.4, genres: ['Adventure'],
+        releaseYear: 2012, episodeCount: 24,
+      },
+    };
+    const metadataOnly = {
+      tmdbId: 1429, mediaType: 'tv' as const, posterUrl: null, bannerUrl: null,
+      overview: 'TMDB synopsis.', rating: 8.6, genres: ['Action', 'Drama'],
+      releaseYear: 2013, episodeCount: 87,
+    };
+    const provider: ArtworkProvider = { id: 'tmdb', lookup: vi.fn(async () => metadataOnly) };
+    const result = await enrichArtwork([populatedTitle], provider, new MemoryCache());
+    expect(result[0]?.card).toEqual(populatedTitle.card);
+    expect(result[0]?.tmdbEnriched).toBe(false);
+  });
+
   it('caches successful matches and does not repeat TMDB lookup', async () => {
     const cache = new MemoryCache();
     const provider: ArtworkProvider = { id: 'tmdb', lookup: vi.fn(async () => artwork) };
