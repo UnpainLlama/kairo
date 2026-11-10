@@ -25,12 +25,12 @@ function safeHttpsUrl(value: string): URL | null {
 }
 
 function youtubeEmbed(url: URL): string | null {
-  const host = url.hostname.toLowerCase().replace(/^www\\./, '');
+  const host = url.hostname.toLowerCase().replace(/^www\./, '');
   let id = '';
   if (host === 'youtu.be') id = url.pathname.split('/').filter(Boolean)[0] ?? '';
   else if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'youtube-nocookie.com') {
     if (url.pathname === '/watch') id = url.searchParams.get('v') ?? '';
-    else if (/^\\/(embed|shorts|live)\\//.test(url.pathname)) id = url.pathname.split('/')[2] ?? '';
+    else if (/^\/(embed|shorts|live)\//.test(url.pathname)) id = url.pathname.split('/')[2] ?? '';
   }
   return /^[A-Za-z0-9_-]{11}$/.test(id) ? `https://www.youtube-nocookie.com/embed/${id}?enablejsapi=1&playsinline=1&rel=0` : null;
 }
@@ -42,7 +42,7 @@ export default function KairoMediaPlayer({ source, title, progressKey, introEnd,
 
   if (!safeUrl) return <div className="kc-player-message" role="alert"><h2>Unsafe playback source</h2><p>Kairo only loads secure HTTPS media sources.</p></div>;
   if (source.protocol === 'hls') {
-    return <KairoVideoJsPlayer src={safeUrl.href} title={title} progressKey={progressKey} subtitles={source.protocol === 'hls' ? source.subtitles : []} mediaType={source.protocol} introEnd={introEnd} outroStart={outroStart} nextUrl={nextUrl} />;
+    return <KairoVideoJsPlayer src={safeUrl.href} title={title} progressKey={progressKey} subtitles={source.subtitles ?? []} mediaType={source.protocol} introEnd={introEnd} outroStart={outroStart} nextUrl={nextUrl} />;
   }
   if (source.protocol === 'file') {
     return <KairoVideoJsPlayer src={safeUrl.href} title={title} progressKey={progressKey} subtitles={source.subtitles ?? []} mediaType="file" />;
