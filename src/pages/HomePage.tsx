@@ -82,7 +82,6 @@ function Hero({ items }: { items: CatalogCard[] }) {
   const [pageVisible, setPageVisible] = useState(() => document.visibilityState !== 'hidden');
   const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
-  const heroRef = useRef<HTMLElement | null>(null);
   const active = index % count;
 
   const go = useCallback((target: number) => {
@@ -107,31 +106,6 @@ function Hero({ items }: { items: CatalogCard[] }) {
     query.addEventListener('change', preferenceChanged);
     return () => query.removeEventListener('change', preferenceChanged);
   }, []);
-  // Let the hero artwork scroll naturally, fading into the page background as
-  // the featured section passes and the anime lists enter view.
-  useEffect(() => {
-    let frame = 0;
-    const updateFade = () => {
-      if (frame) window.cancelAnimationFrame(frame);
-      frame = window.requestAnimationFrame(() => {
-        const node = heroRef.current;
-        if (!node) return;
-        const bounds = node.getBoundingClientRect();
-        const distance = Math.max(1, bounds.height * 0.88);
-        const progress = Math.min(1, Math.max(0, -bounds.top / distance));
-        node.style.setProperty('--kc-hero-art-opacity', String(1 - progress));
-      });
-    };
-    updateFade();
-    window.addEventListener('scroll', updateFade, { passive: true });
-    window.addEventListener('resize', updateFade);
-    return () => {
-      if (frame) window.cancelAnimationFrame(frame);
-      window.removeEventListener('scroll', updateFade);
-      window.removeEventListener('resize', updateFade);
-    };
-  }, []);
-
   useEffect(() => {
     if (count < 2 || !pageVisible || reducedMotion) return;
     const timer = window.setTimeout(() => go(active + 1), HERO_INTERVAL_MS);
@@ -183,7 +157,6 @@ function Hero({ items }: { items: CatalogCard[] }) {
 
   return (
     <section
-      ref={heroRef}
       className="kc-hero kc-bleed"
       aria-roledescription="carousel"
       aria-label="Featured anime"
