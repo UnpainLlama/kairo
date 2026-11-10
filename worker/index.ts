@@ -297,19 +297,42 @@ app.post('/api/staging/youtube/feed', async (c) => {
     const videosById = new Map<string, Record<string, unknown>>();
     for (let page = 1; page <= maxPages; page += 1) {
       for (const video of feed.videos ?? []) {
-        const videoId = video.video_id ?? video.id;
+        // Feed.videos is a union of several YouTube.js renderer types. Some entries
+        // are not ordinary videos, so inspect the runtime shape instead of assuming
+        // every union member exposes the same properties.
+        const item = video as unknown as Record<string, unknown>;
+        const asRecord = (value: unknown): Record<string, unknown> | null =>
+          value !== null && typeof value === 'object' ? value as Record<string, unknown> : null;
+        const asText = (value: unknown): string => {
+          if (value == null) return '';
+          if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+          const textValue = asRecord(value)?.text;
+          if (typeof textValue === 'string') return textValue;
+          const toString = asRecord(value)?.toString;
+          return typeof toString === 'function' ? String(toString.call(value)) : '';
+        };
+
+        const videoId = typeof item.video_id === 'string'
+          ? item.video_id
+          : typeof item.id === 'string' ? item.id : '';
         if (!videoId) continue;
-        const plain = (value: unknown) => value == null ? '' : String(value);
-        const title = plain(video.title);
+
+        const author = asRecord(item.author);
+        const duration = asRecord(item.duration);
+        const bestThumbnail = asRecord(item.best_thumbnail);
+        const thumbnails = Array.isArray(item.thumbnails) ? item.thumbnails : [];
+        const firstThumbnail = asRecord(thumbnails[0]);
+        const thumbnail = bestThumbnail?.url ?? firstThumbnail?.url;
+
         videosById.set(videoId, {
           videoId,
-          title,
-          channelTitle: plain(video.author?.name),
-          published: plain(video.published),
-          viewCount: plain(video.short_view_count ?? video.view_count),
-          duration: video.duration?.text ?? video.length_text?.toString?.() ?? null,
-          isLive: Boolean(video.is_live),
-          thumbnail: video.best_thumbnail?.url ?? video.thumbnails?.[0]?.url ?? null,
+          title: asText(item.title),
+          channelTitle: asText(author?.name),
+          published: asText(item.published),
+          viewCount: asText(item.short_view_count ?? item.view_count),
+          duration: asText(duration?.text ?? item.length_text) || null,
+          isLive: Boolean(item.is_live),
+          thumbnail: typeof thumbnail === 'string' ? thumbnail : null,
           url: `https://www.youtube.com/watch?v=${videoId}`,
           embedUrl: `https://www.youtube-nocookie.com/embed/${videoId}`,
         });
