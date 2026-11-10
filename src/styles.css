@@ -1,15 +1,15 @@
 /* Kairo UI. Dark, icon-rail layout. Tokens first, then shell, shared components, then pages. */
 :root {
   font-family: 'Kumbh Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --bg: #0f0f11;
-  --surface: #16161a;
-  --surface-2: #1e1e23;
-  --surface-3: #27272d;
-  --line: #26262c;
-  --line-2: #34343b;
+  --bg: #14161c;
+  --surface: #1c1f27;
+  --surface-2: #252a35;
+  --surface-3: #303746;
+  --line: #303746;
+  --line-2: #424b5c;
   --text: #f4f4f5;
-  --muted: #a1a1aa;
-  --dim: #71717a;
+  --muted: #b1b7c4;
+  --dim: #8992a2;
   --accent: #a78bfa;
   --accent-bg: #211d33;
   --gold: #f4c95d;
@@ -548,4 +548,38 @@ img { display: block; }
 }
 @media (max-width: 860px) {
   .kc-mobile-nav { border-top: 0; background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+
+
+/* Automated additions: lighter surfaces, borderless nav, and scroll-linked hero artwork. */
+.kc-rail,
+.kc-mobile-nav {
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.kc-hero-media {
+  opacity: var(--kc-hero-art-opacity, 1);
+  transition: opacity .1s linear;
+}
+
+.kc-hero-media img {
+  filter: brightness(1.2) saturate(1.12) contrast(1.03);
+}
+
+@media (max-width: 860px) {
+  .kc-mobile-nav {
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .kc-hero-media img {
+    filter: brightness(1.18) saturate(1.12);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kc-hero-media {
+    transition: none;
+  }
 }
