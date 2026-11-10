@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ListVideo, Play, Search, RefreshCw, ExternalLink } from 'lucide-react';
 import { ErrorState, LoadingState } from '../components/catalog';
-import KairoVideoPlayer from '../components/KairoVideoPlayer';
+import KairoMediaPlayer, { type KairoPlaybackSource } from '../components/KairoMediaPlayer';
 import { useApi } from '../lib/useApi';
 import { dateLabel, durationLabel, episodeNumberLabel, safeImageUrl, type AnimeDetails, type Episode, type EpisodeServer, type ItemList } from '../lib/catalog';
 
