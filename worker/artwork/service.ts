@@ -53,18 +53,19 @@ async function lookupCached(
 }
 
 function mergeArtwork(title: LiveTitle, artwork: TmdbArtwork | null): LiveTitle {
-  if (!artwork || (!artwork.posterUrl && !artwork.bannerUrl)) return title;
+  if (!artwork) return title;
   return {
     ...title,
     card: {
       ...title.card,
       posterUrl: artwork.posterUrl ?? title.card.posterUrl,
       bannerUrl: artwork.bannerUrl ?? title.card.bannerUrl,
-      synopsis: title.card.synopsis?.trim() ? title.card.synopsis : artwork.overview ?? title.card.synopsis,
-      rating: title.card.rating ?? artwork.rating,
-      genres: title.card.genres.length ? title.card.genres : artwork.genres,
-      releaseYear: title.card.releaseYear ?? artwork.releaseYear,
-      episodeCount: title.card.episodeCount ?? artwork.episodeCount,
+      // Preserve catalogue metadata when present; TMDB details fill only missing values.
+      synopsis: title.card.synopsis.trim() ? title.card.synopsis : artwork.overview?.trim() || title.card.synopsis,
+      rating: title.card.rating ?? artwork.rating ?? null,
+      genres: title.card.genres.length ? title.card.genres : (artwork.genres ?? []),
+      releaseYear: title.card.releaseYear ?? artwork.releaseYear ?? null,
+      episodeCount: title.card.episodeCount ?? artwork.episodeCount ?? null,
     },
   };
 }

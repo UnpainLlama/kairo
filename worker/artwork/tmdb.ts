@@ -12,6 +12,7 @@ export type TmdbArtwork = {
   mediaType: 'tv' | 'movie';
   posterUrl: string | null;
   bannerUrl: string | null;
+  /** Optional detail fields: omitted by older/custom test providers, populated by TMDB lookup. */
   overview?: string | null;
   rating?: number | null;
   genres?: string[];
@@ -40,10 +41,17 @@ type SearchRecord = {
   backdrop_path?: unknown;
   popularity?: unknown;
   vote_count?: unknown;
-  vote_average?: unknown;
+};
+
+type DetailRecord = {
   overview?: unknown;
+  vote_average?: unknown;
   genres?: unknown;
+  first_air_date?: unknown;
+  release_date?: unknown;
   number_of_episodes?: unknown;
+  poster_path?: unknown;
+  backdrop_path?: unknown;
 };
 
 type ImageRecord = {
@@ -272,25 +280,48 @@ export function createTmdbArtworkProvider(fetchImpl: FetchLike, accessToken: str
           // Keep the images already returned by search. The artwork layer must remain optional.
         }
       }
-      let details: SearchRecord = best;
+      // Search endpoints are useful for matching and images, but do not provide the
+      // complete metadata needed by Kairo. Fetch the canonical TV/movie details record.
+      let overview: string | null = null;
+      let rating: number | null = null;
+      let genres: string[] = [];
+      let releaseYear: number | null = null;
+      let episodeCount: number | null = null;
+      const detailsUrl = new URL(`${API}/${type}/${id}`);
+      detailsUrl.searchParams.set('language', 'en-US');
       try {
-        const detailsUrl = new URL(`${API}/${type}/${id}`);
-        detailsUrl.searchParams.set('language', 'en-US');
-        const detailsResponse = await fetchImpl(detailsUrl.toString(), { method: 'GET', headers: { Accept: 'application/json', Authorization: `Bearer ${token}` }, signal });
+        const detailsResponse = await fetchImpl(detailsUrl.toString(), {
+          method: 'GET',
+          headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+          signal,
+        });
         if (detailsResponse.ok) {
-          const body: unknown = await detailsResponse.json();
-          if (typeof body === 'object' && body !== null && !Array.isArray(body)) details = { ...best, ...(body as SearchRecord) };
+          const rawDetails: unknown = await detailsResponse.json();
+          const details: DetailRecord = typeof rawDetails === 'object' && rawDetails !== null && !Array.isArray(rawDetails)
+            ? rawDetails as DetailRecord : {};
+          if (typeof details.overview === 'string' && details.overview.trim()) overview = details.overview.trim();
+          if (typeof details.vote_average === 'number' && Number.isFinite(details.vote_average)
+            && details.vote_average >= 0 && details.vote_average <= 10) rating = details.vote_average;
+          if (Array.isArray(details.genres)) {
+            genres = details.genres
+              .filter((genre): genre is { name: string } => typeof genre === 'object' && genre !== null
+                && !Array.isArray(genre) && typeof (genre as { name?: unknown }).name === 'string')
+              .map((genre) => genre.name.trim())
+              .filter(Boolean);
+          }
+          releaseYear = recordYear(details as SearchRecord);
+          if (type === 'tv' && typeof details.number_of_episodes === 'number'
+            && Number.isInteger(details.number_of_episodes) && details.number_of_episodes >= 0) {
+            episodeCount = details.number_of_episodes;
+          }
+          posterUrl ??= imageUrl(details.poster_path, 'w500');
+          bannerUrl ??= imageUrl(details.backdrop_path, 'w1280');
         }
-      } catch { /* Search-result overview and artwork remain usable when details are unavailable. */ }
-      const rawGenres = Array.isArray(details.genres) ? details.genres : [];
-      const genres = rawGenres.flatMap((genre) => {
-        if (typeof genre === 'object' && genre !== null && 'name' in genre && typeof (genre as { name?: unknown }).name === 'string') return [(genre as { name: string }).name];
-        return [];
-      }).slice(0, 8);
-      const overview = typeof details.overview === 'string' && details.overview.trim() ? details.overview.trim().slice(0, 3000) : null;
-      const rating = typeof details.vote_average === 'number' && Number.isFinite(details.vote_average) && details.vote_average > 0 ? Math.min(10, details.vote_average) : null;
-      const episodeCount = type === 'tv' && typeof details.number_of_episodes === 'number' && Number.isInteger(details.number_of_episodes) && details.number_of_episodes > 0 ? details.number_of_episodes : null;
-      return { tmdbId: id, mediaType: type, posterUrl, bannerUrl, overview, rating, genres, releaseYear: recordYear(details), episodeCount };
+      } catch {
+        // Details are additive: retain any matched artwork if the metadata request fails.
+      }
+
+      return { tmdbId: id, mediaType: type, posterUrl, bannerUrl, overview, rating, genres, releaseYear, episodeCount };
     },
 
     async episodeStills(artwork, input, signal) {
