@@ -1,12 +1,12 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowRight, Search, X } from 'lucide-react';
-import { apiGetWithMeta, isAbort } from '../lib/api';
+import { ApiError, apiGetWithMeta, isAbort } from '../lib/api';
 import { EMPTY_SEARCH, MAX_QUERY, canSearch, parseSearchState, toUrlParams } from '../lib/searchState';
 import { formatLabel, type CatalogCard, type ItemList } from '../lib/catalog';
 import { Poster, animeHref } from './catalog';
 
-type Result = { q: string; status: 'ok'; items: CatalogCard[]; total?: number } | { q: string; status: 'error' };
+type Result = { q: string; status: 'ok'; items: CatalogCard[]; total?: number } | { q: string; status: 'error'; message: string };
 
 /**
  * Header search. It queries /catalog/search as you type and lists matches in a dropdown, so you can open a title
@@ -39,7 +39,7 @@ export default function SearchBar() {
     const timer = window.setTimeout(() => {
       apiGetWithMeta<ItemList<CatalogCard>>(`/catalog/search?q=${encodeURIComponent(query)}&limit=8&sort=relevance`, controller.signal)
         .then(({ data, meta }) => setResult({ q: query, status: 'ok', items: data.items, total: meta.total }))
-        .catch((error: unknown) => { if (!isAbort(error)) setResult({ q: query, status: 'error' }); });
+        .catch((error: unknown) => { if (!isAbort(error)) setResult({ q: query, status: 'error', message: error instanceof ApiError ? error.message : 'Search could not reach Kairo. Check your connection and try again.' }); });
     }, 250);
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [query]);
@@ -126,7 +126,7 @@ export default function SearchBar() {
       {showPanel && (
         <div className="kc-suggest" id={listId} role="listbox" aria-label="Search results">
           {!current && <p className="kc-suggest-note" role="status">Searching…</p>}
-          {current?.status === 'error' && <p className="kc-suggest-note" role="alert">Search is unavailable right now.</p>}
+          {current?.status === 'error' && <p className="kc-suggest-note" role="alert">{current.message}</p>}
           {current?.status === 'ok' && items.length === 0 && <p className="kc-suggest-note" role="status">No results for “{query}”.</p>}
           {items.map((item, index) => (
             <Link
