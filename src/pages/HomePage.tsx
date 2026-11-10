@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, ChevronLeft, ChevronRight, Info, Play, Star } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Info, Play, Plus, Star } from 'lucide-react';
 import { CardGrid, ErrorState, MetaChips, Poster, Section, SkeletonGrid, StatusDot, animeHref } from '../components/catalog';
 import { useApi, type ApiState } from '../lib/useApi';
-import { formatLabel, safeImageUrl, seasonLabel, textList, type CatalogCard, type ItemList } from '../lib/catalog';
+import { formatLabel, safeImageUrl, textList, type CatalogCard, type ItemList } from '../lib/catalog';
 
 type CardsState = ApiState<ItemList<CatalogCard>>;
 const itemsOf = (state: CardsState): CatalogCard[] => (state.status === 'ok' ? state.data.items : []);
@@ -72,14 +72,15 @@ function SidePanel({ title, items }: { title: string; items: CatalogCard[] }) {
   );
 }
 
-const HERO_INTERVAL_MS = 8000;
+const HERO_INTERVAL_MS = 20_000;
 const HERO_FADE_MS = 700;
 
 function Hero({ items }: { items: CatalogCard[] }) {
   const count = items.length;
   const [index, setIndex] = useState(0);
   const [leaving, setLeaving] = useState<number | null>(null);
-  const [paused, setPaused] = useState(false);
+  const [pageVisible, setPageVisible] = useState(() => document.visibilityState !== 'hidden');
+  const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const active = index % count;
 
@@ -90,13 +91,48 @@ function Hero({ items }: { items: CatalogCard[] }) {
     setIndex(next);
   }, [active, count]);
 
-  // Auto-advance. The timer restarts after every change, so a manual click always gets a full interval.
+  // Keep the 20-second cadence from the currently displayed title. Every manual
+  // change starts a fresh interval; a hidden tab never advances behind the user.
   useEffect(() => {
-    if (count < 2 || paused) return;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const visibilityChanged = () => setPageVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', visibilityChanged);
+    return () => document.removeEventListener('visibilitychange', visibilityChanged);
+  }, []);
+
+  useEffect(() => {
+    const query = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    if (!query) return;
+    const preferenceChanged = (event: MediaQueryListEvent) => setReducedMotion(event.matches);
+    query.addEventListener('change', preferenceChanged);
+    return () => query.removeEventListener('change', preferenceChanged);
+  }, []);
+
+  useEffect(() => {
+    if (count < 2 || !pageVisible || reducedMotion) return;
     const timer = window.setTimeout(() => go(active + 1), HERO_INTERVAL_MS);
     return () => window.clearTimeout(timer);
-  }, [active, count, paused, go]);
+  }, [active, count, pageVisible, reducedMotion, go]);
+
+  // Left/right arrows work anywhere on the home page, except while the user is
+  // typing in a field or operating another editable control.
+  useEffect(() => {
+    if (count < 2) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]'))) return;
+
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        go(active + 1);
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        go(active - 1);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [active, count, go]);
 
   // The outgoing slide stays underneath while the new one fades in, then is released.
   useEffect(() => {
@@ -112,10 +148,12 @@ function Hero({ items }: { items: CatalogCard[] }) {
   const onTouchEnd = (e: React.TouchEvent) => {
     const start = touchStart.current;
     touchStart.current = null;
-    if (!start) return;
-    const dx = e.changedTouches[0].clientX - start.x;
-    const dy = e.changedTouches[0].clientY - start.y;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) go(active + (dx < 0 ? 1 : -1));
+    const touch = e.changedTouches[0];
+    if (!start || !touch) return;
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    // Ignore taps and vertical page scrolling; a clear horizontal swipe changes slide.
+    if (Math.abs(dx) >= 48 && Math.abs(dx) > Math.abs(dy) * 1.35) go(active + (dx < 0 ? 1 : -1));
   };
 
   return (
@@ -123,14 +161,18 @@ function Hero({ items }: { items: CatalogCard[] }) {
       className="kc-hero kc-bleed"
       aria-roledescription="carousel"
       aria-label="Featured anime"
-      aria-live={paused ? 'polite' : 'off'}
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onFocus={() => setPaused(true)}
-      onBlur={() => setPaused(false)}
-      onTouchStart={(e) => { touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
+      aria-describedby="kc-hero-keyboard-help"
+      aria-live="off"
+      aria-keyshortcuts="ArrowLeft ArrowRight"
+      onTouchStart={(e) => {
+        touchStart.current = e.touches.length === 1
+          ? { x: e.touches[0].clientX, y: e.touches[0].clientY }
+          : null;
+      }}
       onTouchEnd={onTouchEnd}
+      onTouchCancel={() => { touchStart.current = null; }}
     >
+      <p className="kc-sr" id="kc-hero-keyboard-help">{count > 1 ? 'Use the left and right arrow keys to change featured titles. The featured title also changes automatically every 20 seconds.' : 'Featured anime.'}</p>
       {items.map((item, i) => mounted.has(i) ? (
         <HeroSlide key={item.id} item={item} position={i + 1} total={count} state={i === active ? 'on' : i === leaving ? 'out' : 'idle'} />
       ) : null)}
@@ -139,7 +181,7 @@ function Hero({ items }: { items: CatalogCard[] }) {
           <button type="button" className="kc-hero-arrow prev" aria-label="Previous featured title" onClick={() => go(active - 1)}><ChevronLeft size={20} aria-hidden="true" /></button>
           <button type="button" className="kc-hero-arrow next" aria-label="Next featured title" onClick={() => go(active + 1)}><ChevronRight size={20} aria-hidden="true" /></button>
           <div className="kc-hero-dots">
-            {items.map((entry, i) => <button key={entry.id} type="button" aria-label={`Show featured title ${i + 1}`} aria-current={i === active ? 'true' : undefined} className={i === active ? 'active' : ''} onClick={() => go(i)} />)}
+            {items.map((entry, i) => <button key={entry.id} type="button" aria-label={`Go to ${entry.title}`} aria-current={i === active ? 'true' : undefined} className={i === active ? 'active' : ''} onClick={() => go(i)} />)}
           </div>
         </>
       )}
@@ -150,10 +192,14 @@ function Hero({ items }: { items: CatalogCard[] }) {
 function HeroSlide({ item, position, total, state }: { item: CatalogCard; position: number; total: number; state: 'on' | 'out' | 'idle' }) {
   const [imageFailed, setImageFailed] = useState(false);
   const image = imageFailed ? null : safeImageUrl(item.bannerUrl);
-  // Miruro-style chip row: episodes, year, then genres. The format only shows when it isn't a plain series.
-  const format = item.format && item.format.toLowerCase() !== 'series' ? formatLabel(item.format) : null;
+  // Keep the fact row concise like the reference: episode count, year, then genres.
+  // For titles without episode/year data, show the format rather than an empty row.
   const episodes = item.episodeCount ? `${item.episodeCount} ${item.episodeCount === 1 ? 'Episode' : 'Episodes'}` : null;
-  const chips = [episodes, format, seasonLabel(item.season, item.releaseYear), ...textList(item.genres).slice(0, 3)].filter((v): v is string => Boolean(v));
+  const year = item.releaseYear ? String(item.releaseYear) : null;
+  const format = !episodes && !year && item.format && item.format.toLowerCase() !== 'series'
+    ? formatLabel(item.format)
+    : null;
+  const chips = [episodes, year, format, ...textList(item.genres).slice(0, 3)].filter((v): v is string => Boolean(v));
 
   return (
     <div className={`kc-slide ${state}`} role="group" aria-roledescription="slide" aria-label={`${position} of ${total}`} inert={state !== 'on'}>
@@ -175,6 +221,7 @@ function HeroSlide({ item, position, total, state }: { item: CatalogCard; positi
         <div className="kc-actions">
           <Link className="kc-btn kc-btn-primary" to={`/watch/${encodeURIComponent(item.slug)}/1`}><Play size={15} fill="currentColor" aria-hidden="true" /> Watch Now</Link>
           <Link className="kc-btn kc-btn-dark" to={animeHref(item)}><Info size={15} aria-hidden="true" /> Details</Link>
+          <button type="button" className="kc-icon-btn kc-hero-add" aria-label="Add to list (requires an account)" title="Saving titles will be available when accounts are enabled" disabled><Plus size={19} aria-hidden="true" /></button>
         </div>
       </div>
     </div>

@@ -9,7 +9,8 @@ Extract the archive into the root of your existing Kairo GitHub repository and a
 ## What's included
 
 - `src/App.tsx`: Miruro-inspired fixed icon rail, hover labels, centered top search, profile control, and mobile bottom navigation.
-- `src/pages/HomePage.tsx`: artwork-led hero, featured carousel controls, latest/trending rails, and Top Airing sidebar.
+- `src/pages/HomePage.tsx`: artwork-led hero, featured carousel controls, latest/trending rails, and Top Airing sidebar. The home hero bleeds behind the left rail, advances every 20 seconds, and supports left/right keys, touch swipes, and slide dots. Autoplay pauses while the tab is hidden or reduced motion is requested.
+- The hero's Add to list affordance is shown but disabled until account-backed list saving is available.
 - `src/pages/AnimePage.tsx`: backdrop-led anime details and clickable episode cards.
 - `src/pages/WatchPage.tsx`: new watch layout with a large player state and scrollable episode queue.
 - `src/lib/catalog.ts`: frontend type for episode server labels.

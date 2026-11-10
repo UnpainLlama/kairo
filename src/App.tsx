@@ -39,7 +39,7 @@ export default function App() {
   useEffect(() => { window.scrollTo(0, 0); }, [pathname]);
 
   return (
-    <div className="kc-app">
+    <div className={`kc-app${pathname === '/' ? ' kc-home-view' : ''}`}>
       <a className="kc-skip" href="#main">Skip to content</a>
 
       <aside className="kc-rail" aria-label="Primary">
