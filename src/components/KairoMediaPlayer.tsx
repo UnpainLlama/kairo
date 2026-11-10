@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import KairoVideoPlayer from './KairoVideoPlayer';
+import KairoVideoJsPlayer from './KairoVideoJsPlayer';
 
 type Subtitle = { language: string; label: string; url: string; format: 'vtt' };
 type Variant = { label: string; height?: number };
@@ -8,7 +8,14 @@ export type KairoPlaybackSource =
   | { provider: string; protocol: 'file'; mediaUrl: string; mimeType?: string; subtitles?: Subtitle[] }
   | { provider: string; protocol: 'embed'; embedUrl: string };
 
-type Props = { source: KairoPlaybackSource; title: string; progressKey: string; introEnd?: number | null; outroStart?: number | null; nextUrl?: string | null };
+type Props = {
+  source: KairoPlaybackSource;
+  title: string;
+  progressKey: string;
+  introEnd?: number | null;
+  outroStart?: number | null;
+  nextUrl?: string | null;
+};
 
 function safeHttpsUrl(value: string): URL | null {
   try {
@@ -18,12 +25,12 @@ function safeHttpsUrl(value: string): URL | null {
 }
 
 function youtubeEmbed(url: URL): string | null {
-  const host = url.hostname.toLowerCase().replace(/^www\./, '');
+  const host = url.hostname.toLowerCase().replace(/^www\\./, '');
   let id = '';
   if (host === 'youtu.be') id = url.pathname.split('/').filter(Boolean)[0] ?? '';
   else if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'youtube-nocookie.com') {
     if (url.pathname === '/watch') id = url.searchParams.get('v') ?? '';
-    else if (/^\/(embed|shorts|live)\//.test(url.pathname)) id = url.pathname.split('/')[2] ?? '';
+    else if (/^\\/(embed|shorts|live)\\//.test(url.pathname)) id = url.pathname.split('/')[2] ?? '';
   }
   return /^[A-Za-z0-9_-]{11}$/.test(id) ? `https://www.youtube-nocookie.com/embed/${id}?enablejsapi=1&playsinline=1&rel=0` : null;
 }
@@ -34,12 +41,15 @@ export default function KairoMediaPlayer({ source, title, progressKey, introEnd,
   const youtubeUrl = useMemo(() => safeUrl ? youtubeEmbed(safeUrl) : null, [safeUrl]);
 
   if (!safeUrl) return <div className="kc-player-message" role="alert"><h2>Unsafe playback source</h2><p>Kairo only loads secure HTTPS media sources.</p></div>;
-  if (source.protocol === 'hls' || source.protocol === 'file') {
-    return <KairoVideoPlayer src={safeUrl.href} subtitles={source.subtitles ?? []} variants={source.protocol === 'hls' ? source.variants ?? [] : []} title={title} progressKey={progressKey} introEnd={introEnd} outroStart={outroStart} nextUrl={nextUrl} />;
+  if (source.protocol === 'hls') {
+    return <KairoVideoJsPlayer src={safeUrl.href} title={title} progressKey={progressKey} introEnd={introEnd} outroStart={outroStart} nextUrl={nextUrl} />;
+  }
+  if (source.protocol === 'file') {
+    return <div className="kc-player-message"><h2>Direct file playback</h2><p>This source is secure, but the current provider response does not expose a supported file source.</p></div>;
   }
 
-  // Third-party providers keep their own playback engine. Kairo provides a consistent,
-  // responsive player shell without attempting to inspect or control cross-origin media.
+  // Third-party providers keep their own playback engine. Kairo cannot control
+  // arbitrary cross-origin iframes unless the provider exposes a supported API.
   return <div className="kc-external-player" data-provider={youtubeUrl ? 'youtube' : source.provider.toLowerCase()}>
     <iframe
       className="kc-player-frame"
