@@ -10,7 +10,7 @@ Add YouTube as a first-class provider inside Kairo, reachable from the existing 
 - Resolve a channel's uploads playlist through the channel resource, then page playlistItems.list; this costs 1 quota unit per request. Avoid search.list for routine refreshes because its quota cost is much higher.
 - Use the official YouTube IFrame Player API for playback. The player must remain recognizably YouTube-owned; Kairo may provide its surrounding dark interface but must not hide/alter player functionality, ads or attribution.
 - Production integration must not use InnerTube, undocumented endpoints, scraping, browser cookies, copied session tokens, or collect YouTube login credentials. YouTube's policies explicitly prohibit undocumented API use and scraping, and instruct API clients not to request/store YouTube credentials.
-- An isolated local-only experiment now exists at `experiments/youtube-feed-prototype/`. It tests YouTube.js against the signed-in subscriptions feed solely to evaluate technical feasibility. It is unofficial, may violate YouTube's developer policies, must never be deployed or connected to the public Kairo Worker, and must not store or expose account cookies. A successful prototype does not authorize shipping this approach.
+- An isolated staging-only experiment exists at `experiments/youtube-feed-prototype/` and `public/youtube-feed-lab.html`. It sends a manually supplied YouTube Cookie header to a bearer-token-gated Hono Worker endpoint, uses YouTube.js 18.3.0 for the signed-in subscriptions feed, disables session caching, and returns normalized metadata only. It is unofficial, may violate YouTube's developer policies, must never be enabled in production, and must not persist or log cookies. A successful prototype does not authorize shipping this approach.
 - Public video embeds do not require the viewer to sign in. OAuth is not required for the initial public-channel feed. If later needed, use Google's documented OAuth consent flow only for a clearly defined authorized feature.
 - Respect videos with embedding disabled, private/deleted videos, region restrictions, API errors and player error 153. Always retain a Watch on YouTube fallback.
 - Do not proxy video bytes, extract stream URLs, or try to bypass playback restrictions.
@@ -30,12 +30,12 @@ Add YouTube as a first-class provider inside Kairo, reachable from the existing 
 - Phase 1: provider page + route/menu integration, public channel feed API, embed playback, validation/tests.
 - Phase 2: channel management UI and persistence (D1), refresh schedule/configuration, pagination and caching.
 - Phase 3: optional Google OAuth only if a feature truly needs private/user-owned data. Never ask for or store YouTube passwords/cookies.
-- Experimental gate: evaluate the local YouTube.js prototype separately. Do not promote it into production without resolving policy, security, and operational risks.
+- Experimental gate: evaluate the staging-only YouTube.js prototype separately. Its endpoint is disabled unless APP_ENV=staging and YOUTUBE_STAGING_TOKEN is configured. Do not promote it into production without resolving policy, security, and operational risks.
 
 ## Configuration / blockers
 
 - Add YOUTUBE_API_KEY as a Cloudflare Worker secret (never commit it).
-- Confirm the Cloudflare Worker environment and API quota are configured before expecting live feed data.
+- For the staging experiment only, configure YOUTUBE_STAGING_TOKEN as a Cloudflare Worker secret and keep the staging host restricted. The endpoint is not a production feature.
 - The first implementation should support public channel IDs/handles. Channel discovery by arbitrary text can be a separate, quota-aware search action.
 
 ## Primary references
