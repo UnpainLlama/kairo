@@ -82,6 +82,7 @@ function Hero({ items }: { items: CatalogCard[] }) {
   const [pageVisible, setPageVisible] = useState(() => document.visibilityState !== 'hidden');
   const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const heroRef = useRef<HTMLElement | null>(null);
   const active = index % count;
 
   const go = useCallback((target: number) => {
@@ -106,6 +107,39 @@ function Hero({ items }: { items: CatalogCard[] }) {
     query.addEventListener('change', preferenceChanged);
     return () => query.removeEventListener('change', preferenceChanged);
   }, []);
+  // Hold the hero artwork in the viewport while the copy scrolls away.
+  // The pin distance and fade range are responsive CSS values so desktop and
+  // mobile can use different scroll staging without changing this behaviour.
+  useEffect(() => {
+    let frame = 0;
+    const updateArtwork = () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const node = heroRef.current;
+        if (!node) return;
+        const scrollProgress = Math.max(0, -node.getBoundingClientRect().top);
+        const styles = window.getComputedStyle(node);
+        const pinDistance = Number.parseFloat(styles.getPropertyValue('--kc-hero-art-pin-distance')) || 420;
+        const fadeStart = Number.parseFloat(styles.getPropertyValue('--kc-hero-art-fade-start')) || 140;
+        const fadeEnd = Number.parseFloat(styles.getPropertyValue('--kc-hero-art-fade-end')) || 820;
+        const pinOffset = Math.min(scrollProgress, pinDistance);
+        const fadeProgress = Math.min(1, Math.max(0, (scrollProgress - fadeStart) / Math.max(1, fadeEnd - fadeStart)));
+        // Smoothstep keeps the fade subtle at first and avoids a harsh cutoff.
+        const easedFade = fadeProgress * fadeProgress * (3 - 2 * fadeProgress);
+        node.style.setProperty('--kc-hero-art-offset', `${pinOffset}px`);
+        node.style.setProperty('--kc-hero-art-opacity', String(1 - easedFade));
+      });
+    };
+    updateArtwork();
+    window.addEventListener('scroll', updateArtwork, { passive: true });
+    window.addEventListener('resize', updateArtwork);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener('scroll', updateArtwork);
+      window.removeEventListener('resize', updateArtwork);
+    };
+  }, []);
+
   useEffect(() => {
     if (count < 2 || !pageVisible || reducedMotion) return;
     const timer = window.setTimeout(() => go(active + 1), HERO_INTERVAL_MS);
@@ -157,6 +191,7 @@ function Hero({ items }: { items: CatalogCard[] }) {
 
   return (
     <section
+      ref={heroRef}
       className="kc-hero kc-bleed"
       aria-roledescription="carousel"
       aria-label="Featured anime"

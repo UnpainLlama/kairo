@@ -551,7 +551,7 @@ img { display: block; }
 }
 
 
-/* Automated additions: extended anime artwork, near-black content, and glass surfaces. */
+/* Miruro-style bounded hero stage: pin the artwork, scroll the copy, then fade to black. */
 .kc-rail,
 .kc-mobile-nav {
   border: 0 !important;
@@ -563,6 +563,9 @@ img { display: block; }
 }
 
 .kc-app.kc-home-view .kc-hero {
+  --kc-hero-art-pin-distance: 420;
+  --kc-hero-art-fade-start: 200;
+  --kc-hero-art-fade-end: 800;
   z-index: 0;
   overflow: visible;
   margin-bottom: 18px;
@@ -574,11 +577,15 @@ img { display: block; }
 }
 
 .kc-app.kc-home-view .kc-hero-media {
-  height: calc(100% + 560px);
+  height: 100vh;
+  height: 100svh;
   overflow: hidden;
-  opacity: 1;
+  opacity: var(--kc-hero-art-opacity, 1);
+  transform: translate3d(0, var(--kc-hero-art-offset, 0px), 0);
+  transform-origin: center top;
   transition: none;
   pointer-events: none;
+  will-change: transform, opacity;
 }
 
 .kc-app.kc-home-view .kc-hero-media img {
@@ -589,7 +596,10 @@ img { display: block; }
 
 .kc-app.kc-home-view .kc-hero-shade {
   inset: 0 0 auto;
-  height: calc(100% + 560px);
+  height: 100vh;
+  height: 100svh;
+  transform: translate3d(0, var(--kc-hero-art-offset, 0px), 0);
+  transform-origin: center top;
   pointer-events: none;
   background:
     linear-gradient(180deg, rgba(8, 9, 14, .12) 0%, transparent 22%),
@@ -648,11 +658,15 @@ img { display: block; }
   }
 
   .kc-app.kc-home-view .kc-hero {
+    --kc-hero-art-pin-distance: 360;
+    --kc-hero-art-fade-start: 180;
+    --kc-hero-art-fade-end: 720;
     margin-bottom: 14px;
   }
 
   .kc-app.kc-home-view .kc-hero-media {
-    height: calc(100% + 440px);
+    height: 100vh;
+    height: 100svh;
   }
 
   .kc-app.kc-home-view .kc-hero-media img {
@@ -661,7 +675,8 @@ img { display: block; }
   }
 
   .kc-app.kc-home-view .kc-hero-shade {
-    height: calc(100% + 440px);
+    height: 100vh;
+    height: 100svh;
     background:
       linear-gradient(180deg, rgba(8, 9, 14, .16), transparent 24%),
       linear-gradient(0deg, #090a0d 0%, rgba(9, 10, 13, .9) 16%, rgba(9, 10, 13, .38) 42%, transparent 66%);
