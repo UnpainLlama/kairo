@@ -106,7 +106,6 @@ function Hero({ items }: { items: CatalogCard[] }) {
     query.addEventListener('change', preferenceChanged);
     return () => query.removeEventListener('change', preferenceChanged);
   }, []);
-
   useEffect(() => {
     if (count < 2 || !pageVisible || reducedMotion) return;
     const timer = window.setTimeout(() => go(active + 1), HERO_INTERVAL_MS);
@@ -172,7 +171,7 @@ function Hero({ items }: { items: CatalogCard[] }) {
       onTouchEnd={onTouchEnd}
       onTouchCancel={() => { touchStart.current = null; }}
     >
-      <p className="kc-sr" id="kc-hero-keyboard-help">{count > 1 ? 'Use the left and right arrow keys to change featured titles. The featured title also changes automatically every 20 seconds.' : 'Featured anime.'}</p>
+      <p className="kc-sr" id="kc-hero-keyboard-help">{count > 1 ? 'Use the left and right arrow keys to change featured titles. The featured title also changes automatically every 20 seconds, and the lineup refreshes daily.' : 'Featured anime.'}</p>
       {items.map((item, i) => mounted.has(i) ? (
         <HeroSlide key={item.id} item={item} position={i + 1} total={count} state={i === active ? 'on' : i === leaving ? 'out' : 'idle'} />
       ) : null)}

@@ -52,6 +52,16 @@ async function lookupCached(
   return request;
 }
 
+function needsArtwork(title: LiveTitle): boolean {
+  const card = title.card;
+  const movieHasNoEpisodeCount = card.format?.toLowerCase() === 'movie';
+  return !(
+    card.posterUrl && card.bannerUrl && card.synopsis.trim() && card.rating !== null
+    && card.genres.length > 0 && card.releaseYear !== null
+    && (movieHasNoEpisodeCount || card.episodeCount !== null)
+  );
+}
+
 function mergeArtwork(title: LiveTitle, artwork: TmdbArtwork | null): LiveTitle {
   if (!artwork) return title;
   const tmdbEnriched = Boolean(
@@ -94,6 +104,9 @@ export async function enrichArtwork(
     while (cursor < titles.length) {
       const index = cursor++;
       const item = titles[index]!;
+      // AniList already supplies most card fields. Avoid a TMDB lookup when the card is complete;
+      // this keeps search/listing requests fast and reserves TMDB for missing hero/detail data.
+      if (!needsArtwork(item)) continue;
       const input: ArtworkLookup = {
         title: item.card.title,
         alternateTitles: item.altTitles,
