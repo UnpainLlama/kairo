@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { CalendarDays, Compass, Flame, History, Home, LogIn, Search, Settings, UserRound } from 'lucide-react';
+import { Home, LogIn, Settings } from 'lucide-react';
 import SearchBar from './components/SearchBar';
 import HomePage from './pages/HomePage';
 import SearchPage from './pages/SearchPage';
@@ -11,12 +11,6 @@ import { AboutPage, AccountPage, HistoryPage, NotFoundPage, ProfilePage } from '
 
 const navItems = [
   { to: '/', label: 'Home', icon: Home, end: true },
-  { to: '/browse/trending', label: 'Trending', icon: Flame },
-  { to: '/browse/anime', label: 'Discover', icon: Compass },
-  { to: '/search', label: 'Search', icon: Search },
-  { to: '/browse/seasonal', label: 'Seasonal', icon: CalendarDays },
-  { to: '/history', label: 'History', icon: History },
-  { to: '/profile', label: 'Profile', icon: UserRound },
 ];
 
 const bottomItems: { to: string; label: string; icon: typeof Home; active?: boolean }[] = [
@@ -75,12 +69,10 @@ export default function App() {
         </footer>
       </main>
 
-      <nav className="kc-mobile-nav" aria-label="Mobile navigation">
+      <nav className="kc-mobile-nav" aria-label="Primary navigation">
         <NavLink to="/" end><Home size={19} aria-hidden="true" /><span>Home</span></NavLink>
-        <NavLink to="/browse/anime"><Compass size={19} aria-hidden="true" /><span>Discover</span></NavLink>
-        <NavLink to="/search"><Search size={19} aria-hidden="true" /><span>Search</span></NavLink>
-        <NavLink to="/history"><History size={19} aria-hidden="true" /><span>History</span></NavLink>
-        <NavLink to="/profile"><UserRound size={19} aria-hidden="true" /><span>Profile</span></NavLink>
+        <NavLink to="/settings"><Settings size={19} aria-hidden="true" /><span>Settings</span></NavLink>
+        <NavLink to="/profile"><LogIn size={19} aria-hidden="true" /><span>Sign in</span></NavLink>
       </nav>
     </div>
   );
