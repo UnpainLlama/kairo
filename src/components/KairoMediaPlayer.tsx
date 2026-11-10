@@ -42,10 +42,10 @@ export default function KairoMediaPlayer({ source, title, progressKey, introEnd,
 
   if (!safeUrl) return <div className="kc-player-message" role="alert"><h2>Unsafe playback source</h2><p>Kairo only loads secure HTTPS media sources.</p></div>;
   if (source.protocol === 'hls') {
-    return <KairoVideoJsPlayer src={safeUrl.href} title={title} progressKey={progressKey} introEnd={introEnd} outroStart={outroStart} nextUrl={nextUrl} />;
+    return <KairoVideoJsPlayer src={safeUrl.href} title={title} progressKey={progressKey} subtitles={source.protocol === 'hls' ? source.subtitles : []} mediaType={source.protocol} introEnd={introEnd} outroStart={outroStart} nextUrl={nextUrl} />;
   }
   if (source.protocol === 'file') {
-    return <div className="kc-player-message"><h2>Direct file playback</h2><p>This source is secure, but the current provider response does not expose a supported file source.</p></div>;
+    return <KairoVideoJsPlayer src={safeUrl.href} title={title} progressKey={progressKey} subtitles={source.subtitles ?? []} mediaType="file" />;
   }
 
   // Third-party providers keep their own playback engine. Kairo cannot control
