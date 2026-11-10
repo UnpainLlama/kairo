@@ -887,8 +887,8 @@ img { display: block; }
 }
 
 .kc-topbar-inner {
-  justify-content: flex-end;
-  margin-left: auto;
+  justify-content: center;
+  margin-inline: auto;
 }
 
 .kc-rail,
