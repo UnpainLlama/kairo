@@ -1,5 +1,6 @@
 /// <reference types="@cloudflare/workers-types" />
 import { Hono, type Context, type Next } from 'hono';
+import { Innertube } from 'youtubei.js';
 import { cors } from 'hono/cors';
 import { boundedInt, parseId, parsePagination, parseSearchParams } from './lib/validation';
 import { GENRES_SQL, buildListQuery, buildRelatedQuery, buildSearchQuery } from './repositories/catalog';
@@ -26,6 +27,8 @@ interface Bindings {
   HIANIME_BASE_URL?: string;
   /** TMDB API Read Access Token stored as a Cloudflare Worker secret. */
   TMDB_ACCESS_TOKEN?: string;
+  /** Staging-only bearer secret for the experimental YouTube cookie-feed endpoint. */
+  YOUTUBE_STAGING_TOKEN?: string;
 }
 
 type Variables = { requestId: string };
@@ -255,6 +258,69 @@ app.get('/api/v1/anime/:id/metadata', async (c) => {
   } catch (error) {
     logError(c, 'anime_metadata_failed', error);
     return fail(c, 503, 'CATALOG_UNAVAILABLE', 'Title metadata is temporarily unavailable.');
+  }
+});
+
+
+// Experimental YouTube.js subscriptions-feed probe. Staging only; cookie is request-scoped and never persisted or logged.
+app.post('/api/staging/youtube/feed', async (c) => {
+  if (c.env.APP_ENV !== 'staging') return fail(c, 404, 'RESOURCE_NOT_FOUND', 'The requested API route was not found.');
+  if (!c.env.YOUTUBE_STAGING_TOKEN) return fail(c, 503, 'FEATURE_NOT_CONFIGURED', 'The staging YouTube test is not configured.');
+  const origin = c.req.header('Origin');
+  if (origin && origin !== new URL(c.req.url).origin) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This test can only be used from the Kairo staging site.');
+  const authorization = c.req.header('Authorization') ?? '';
+  const suppliedToken = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+  const expected = c.env.YOUTUBE_STAGING_TOKEN;
+  const encoder = new TextEncoder();
+  const [providedHash, expectedHash] = await Promise.all([
+    crypto.subtle.digest('SHA-256', encoder.encode(suppliedToken)),
+    crypto.subtle.digest('SHA-256', encoder.encode(expected)),
+  ]);
+  const a = new Uint8Array(providedHash);
+  const b = new Uint8Array(expectedHash);
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i += 1) mismatch |= a[i] ^ b[i];
+  if (!suppliedToken || mismatch !== 0) return fail(c, 401, 'STAGING_AUTH_REQUIRED', 'The staging access token is missing or incorrect.');
+
+  let body: { cookie?: unknown; maxPages?: unknown };
+  try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid JSON request.'); }
+  const cookie = typeof body.cookie === 'string' ? body.cookie.trim() : '';
+  if (!cookie || cookie.length > 16000 || /[\r\n]/.test(cookie)) {
+    return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid YouTube Cookie header (maximum 16 KB).');
+  }
+  const maxPages = typeof body.maxPages === 'number' && Number.isFinite(body.maxPages)
+    ? Math.min(3, Math.max(1, Math.floor(body.maxPages))) : 1;
+
+  try {
+    const innertube = await Innertube.create({ cookie, enable_session_cache: false });
+    let feed = await innertube.getSubscriptionsFeed();
+    const videosById = new Map<string, Record<string, unknown>>();
+    for (let page = 1; page <= maxPages; page += 1) {
+      for (const video of feed.videos ?? []) {
+        const videoId = video.video_id ?? video.id;
+        if (!videoId) continue;
+        const plain = (value: unknown) => value == null ? '' : String(value);
+        const title = plain(video.title);
+        videosById.set(videoId, {
+          videoId,
+          title,
+          channelTitle: plain(video.author?.name),
+          published: plain(video.published),
+          viewCount: plain(video.short_view_count ?? video.view_count),
+          duration: video.duration?.text ?? video.length_text?.toString?.() ?? null,
+          isLive: Boolean(video.is_live),
+          thumbnail: video.best_thumbnail?.url ?? video.thumbnails?.[0]?.url ?? null,
+          url: `https://www.youtube.com/watch?v=${videoId}`,
+          embedUrl: `https://www.youtube-nocookie.com/embed/${videoId}`,
+        });
+      }
+      if (page === maxPages || !feed.has_continuation) break;
+      feed = await feed.getContinuation();
+    }
+    return ok(c, { count: videosById.size, videos: [...videosById.values()] }, { pagesRequested: maxPages });
+  } catch {
+    // Do not log request bodies, cookies, upstream response details, or authentication material.
+    return fail(c, 503, 'YOUTUBE_FEED_FAILED', 'YouTube did not return the subscriptions feed. The session may be expired, verification may be required, or the staging server IP may be blocked.');
   }
 });
 
