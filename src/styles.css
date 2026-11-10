@@ -666,7 +666,7 @@ img { display: block; }
 
   .kc-app.kc-home-view .kc-hero-media {
     height: 100vh;
-  height: 100svh;
+    height: 100svh;
   }
 
   .kc-app.kc-home-view .kc-hero-media img {
@@ -676,7 +676,7 @@ img { display: block; }
 
   .kc-app.kc-home-view .kc-hero-shade {
     height: 100vh;
-  height: 100svh;
+    height: 100svh;
     background:
       linear-gradient(180deg, rgba(8, 9, 14, .16), transparent 24%),
       linear-gradient(0deg, #090a0d 0%, rgba(9, 10, 13, .9) 16%, rgba(9, 10, 13, .38) 42%, transparent 66%);
