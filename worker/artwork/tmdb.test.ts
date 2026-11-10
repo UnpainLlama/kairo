@@ -11,10 +11,10 @@ describe('TMDB artwork provider', () => {
   });
 
   it('uses the TV search endpoint and maps poster/backdrop to secure TMDB image URLs', async () => {
-    let requested = '';
+    const requested: string[] = [];
     let authorization = '';
     const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
-      requested = url;
+      requested.push(url);
       authorization = new Headers(init?.headers).get('Authorization') ?? '';
       return Response.json({ results: [{
         id: 1429, name: 'Attack on Titan', original_name: '進撃の巨人', first_air_date: '2013-04-07',
@@ -24,13 +24,14 @@ describe('TMDB artwork provider', () => {
     const provider = createTmdbArtworkProvider(fetcher, 'secret-read-token');
     const artwork = await provider.lookup({ title: 'Attack on Titan', year: 2013, format: 'series' }, signal);
 
-    expect(new URL(requested).pathname).toBe('/3/search/tv');
-    expect(new URL(requested).searchParams.get('query')).toBe('Attack on Titan');
+    expect(new URL(requested[0]!).pathname).toBe('/3/search/tv');
+    expect(new URL(requested[0]!).searchParams.get('query')).toBe('Attack on Titan');
     expect(authorization).toBe('Bearer secret-read-token');
     expect(artwork).toEqual({
       tmdbId: 1429, mediaType: 'tv',
       posterUrl: 'https://image.tmdb.org/t/p/w500/poster.jpg',
       bannerUrl: 'https://image.tmdb.org/t/p/w1280/backdrop.jpg',
+      overview: null, rating: null, genres: [], releaseYear: 2013, episodeCount: null,
     });
   });
 
@@ -48,8 +49,9 @@ describe('TMDB artwork provider', () => {
     }, 'token');
 
     const artwork = await provider.lookup({ title: 'Attack on Titan', year: 2013 }, signal);
-    expect(new URL(requested[1]!).pathname).toBe('/3/tv/1429/images');
-    expect(new URL(requested[1]!).searchParams.get('include_image_language')).toBe('en,null');
+    expect(new URL(requested[1]!).pathname).toBe('/3/tv/1429');
+    expect(new URL(requested[2]!).pathname).toBe('/3/tv/1429/images');
+    expect(new URL(requested[2]!).searchParams.get('include_image_language')).toBe('en,null');
     expect(artwork?.posterUrl).toBe('https://image.tmdb.org/t/p/w500/poster.jpg');
     expect(artwork?.bannerUrl).toBe('https://image.tmdb.org/t/p/w1280/wide-backdrop.jpg');
   });
@@ -63,7 +65,8 @@ describe('TMDB artwork provider', () => {
     const artwork = await provider.lookup({ title: 'Your Name', year: 2016, format: 'movie' }, signal);
     expect(new URL(requested[0]!).pathname).toBe('/3/search/movie');
     // Search has no backdrop, so the provider correctly checks the movie images endpoint too.
-    expect(new URL(requested[1]!).pathname).toBe('/3/movie/99/images');
+    expect(new URL(requested[1]!).pathname).toBe('/3/movie/99');
+    expect(new URL(requested[2]!).pathname).toBe('/3/movie/99/images');
     expect(artwork?.posterUrl).toBe('https://image.tmdb.org/t/p/w500/movie.jpg');
     expect(artwork?.bannerUrl).toBeNull();
   });
@@ -89,7 +92,7 @@ describe('TMDB artwork provider', () => {
     const input = { title: 'Kaiju No. 8 Season 2', year: 2025, format: 'series' };
     const artwork = await provider.lookup(input, signal);
     const stills = await provider.episodeStills?.(artwork!, input, signal);
-    expect(requested).toEqual(['/3/search/tv', '/3/tv/1429', '/3/tv/1429/season/2']);
+    expect(requested).toEqual(['/3/search/tv', '/3/tv/1429', '/3/tv/1429', '/3/tv/1429/season/2']);
     expect(stills).toEqual({
       1: 'https://image.tmdb.org/t/p/w780/kaiju-s2-ep1.jpg',
       2: 'https://image.tmdb.org/t/p/w780/kaiju-s2-ep2.jpg',
