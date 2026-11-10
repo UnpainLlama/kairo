@@ -1,12 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { createElement, useEffect, useRef, useState } from 'react';
+
+type Subtitle = { language: string; label: string; url: string; format: 'vtt' };
 
 type Props = {
   src: string;
   title: string;
   progressKey: string;
+  subtitles?: Subtitle[];
   introEnd?: number | null;
   outroStart?: number | null;
   nextUrl?: string | null;
+  mediaType?: 'hls' | 'file';
 };
 
 type VideoJsMediaElement = HTMLElement & {
@@ -14,16 +18,15 @@ type VideoJsMediaElement = HTMLElement & {
   duration: number;
 };
 
-const stamp = (seconds: number) =>
-  `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
-
 export default function KairoVideoJsPlayer({
   src,
   title,
   progressKey,
+  subtitles = [],
   introEnd,
   outroStart,
   nextUrl,
+  mediaType = 'hls',
 }: Props) {
   const mediaRef = useRef<VideoJsMediaElement | null>(null);
   const [skip, setSkip] = useState<'intro' | 'outro' | null>(null);
@@ -35,7 +38,8 @@ export default function KairoVideoJsPlayer({
 
     const storageKey = `kairo-progress:${progressKey}`;
     const restore = () => {
-      const saved = Number(localStorage.getItem(storageKey) || 0);
+      let saved = 0;
+      try { saved = Number(localStorage.getItem(storageKey) || 0); } catch { /* storage may be unavailable */ }
       if (saved > 0 && Number.isFinite(media.duration) && saved < media.duration - 15) {
         media.currentTime = saved;
       }
@@ -69,19 +73,26 @@ export default function KairoVideoJsPlayer({
     setSkip(null);
   };
 
+  const tracks = subtitles.map((track) => createElement('track', {
+    key: track.url,
+    kind: 'subtitles',
+    src: track.url,
+    srcLang: track.language,
+    label: track.label,
+  }));
+  const media = createElement(mediaType === 'hls' ? 'hlsjs-video' : 'video', {
+    ref: (element: HTMLElement | null) => { mediaRef.current = element as VideoJsMediaElement | null; },
+    className: 'kc-videojs-media',
+    src,
+    playsInline: true,
+    preload: 'metadata',
+  }, ...tracks);
+  const skin = createElement('video-skin', { className: 'kc-videojs-skin' }, media);
+  const player = createElement('video-player', { className: 'kc-videojs-element', title }, skin);
+
   return (
     <div className="kc-videojs-player" aria-label={title}>
-      <video-player class="kc-videojs-element" title={title}>
-        <video-skin class="kc-videojs-skin">
-          <hlsjs-video
-            ref={mediaRef}
-            class="kc-videojs-media"
-            src={src}
-            playsinline=""
-            preload="metadata"
-          />
-        </video-skin>
-      </video-player>
+      {player}
       {skip && (
         <button className="kc-videojs-skip" type="button" onClick={() => seekTo(skip)}>
           Skip {skip}
