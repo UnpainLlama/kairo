@@ -97,11 +97,16 @@ export function createAniListSource(fetchImpl: FetchLike, now: () => string = ()
 
     async list(kind: ListKind, pageNo, limit, signal) {
       if (kind === 'featured') {
-        // Fetch a wider page of trending titles and put the ones with banner art first, because the home hero is a wide banner.
-        const wide = await page([{ name: 'sort', gqlType: '[MediaSort]', value: ['TRENDING_DESC'] }], 1, 30, signal);
+        // Rotate the trending page and starting title by UTC day so the home hero has a fresh daily lineup.
+        const dayIndex = Math.floor(Date.parse(`${now().slice(0, 10)}T00:00:00.000Z`) / 86_400_000);
+        const trendingPage = Number.isFinite(dayIndex) ? (Math.abs(dayIndex) % 7) + 1 : 1;
+        const wide = await page([{ name: 'sort', gqlType: '[MediaSort]', value: ['TRENDING_DESC'] }], trendingPage, 30, signal);
         const withBanner = wide.items.filter((t) => t.card.bannerUrl);
         const rest = wide.items.filter((t) => !t.card.bannerUrl);
-        const items = [...withBanner, ...rest].slice(0, Math.min(limit, 12));
+        const ordered = [...withBanner, ...rest];
+        const offset = ordered.length ? Math.abs(dayIndex) % ordered.length : 0;
+        const rotated = [...ordered.slice(offset), ...ordered.slice(0, offset)];
+        const items = rotated.slice(0, Math.min(limit, 12));
         return { items, total: items.length, hasNextPage: false, limit: items.length };
       }
       if (kind === 'trending') return page([{ name: 'sort', gqlType: '[MediaSort]', value: ['TRENDING_DESC'] }], pageNo, limit, signal);
