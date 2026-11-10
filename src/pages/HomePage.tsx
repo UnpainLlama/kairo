@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { ChevronDown, ChevronLeft, ChevronRight, Info, Play, Star } from 'lucide-react';
 import { CardGrid, ErrorState, MetaChips, Poster, Section, SkeletonGrid, StatusDot, animeHref } from '../components/catalog';
 import { useApi, type ApiState } from '../lib/useApi';
-import { episodeCountLabel, formatLabel, safeImageUrl, seasonLabel, textList, type CatalogCard, type ItemList } from '../lib/catalog';
+import { formatLabel, safeImageUrl, seasonLabel, textList, type CatalogCard, type ItemList } from '../lib/catalog';
 
 type CardsState = ApiState<ItemList<CatalogCard>>;
 const itemsOf = (state: CardsState): CatalogCard[] => (state.status === 'ok' ? state.data.items : []);
@@ -150,7 +150,10 @@ function Hero({ items }: { items: CatalogCard[] }) {
 function HeroSlide({ item, position, total, state }: { item: CatalogCard; position: number; total: number; state: 'on' | 'out' | 'idle' }) {
   const [imageFailed, setImageFailed] = useState(false);
   const image = imageFailed ? null : safeImageUrl(item.bannerUrl);
-  const chips = [episodeCountLabel(item.episodeCount), formatLabel(item.format), seasonLabel(item.season, item.releaseYear), ...textList(item.genres).slice(0, 3)].filter((v): v is string => Boolean(v));
+  // Miruro-style chip row: episodes, year, then genres. The format only shows when it isn't a plain series.
+  const format = item.format && item.format.toLowerCase() !== 'series' ? formatLabel(item.format) : null;
+  const episodes = item.episodeCount ? `${item.episodeCount} ${item.episodeCount === 1 ? 'Episode' : 'Episodes'}` : null;
+  const chips = [episodes, format, seasonLabel(item.season, item.releaseYear), ...textList(item.genres).slice(0, 3)].filter((v): v is string => Boolean(v));
 
   return (
     <div className={`kc-slide ${state}`} role="group" aria-roledescription="slide" aria-label={`${position} of ${total}`} inert={state !== 'on'}>
