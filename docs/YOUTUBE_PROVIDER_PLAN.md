@@ -9,7 +9,8 @@ Add YouTube as a first-class provider inside Kairo, reachable from the existing 
 - Use the official YouTube Data API v3 for public channel/video metadata and uploads playlists.
 - Resolve a channel's uploads playlist through the channel resource, then page playlistItems.list; this costs 1 quota unit per request. Avoid search.list for routine refreshes because its quota cost is much higher.
 - Use the official YouTube IFrame Player API for playback. The player must remain recognizably YouTube-owned; Kairo may provide its surrounding dark interface but must not hide/alter player functionality, ads or attribution.
-- Do not use InnerTube, undocumented endpoints, scraping, browser cookies, copied session tokens, or collect YouTube login credentials. YouTube's policies explicitly prohibit undocumented API use and scraping, and instruct API clients not to request/store YouTube credentials.
+- Production integration must not use InnerTube, undocumented endpoints, scraping, browser cookies, copied session tokens, or collect YouTube login credentials. YouTube's policies explicitly prohibit undocumented API use and scraping, and instruct API clients not to request/store YouTube credentials.
+- An isolated local-only experiment now exists at `experiments/youtube-feed-prototype/`. It tests YouTube.js against the signed-in subscriptions feed solely to evaluate technical feasibility. It is unofficial, may violate YouTube's developer policies, must never be deployed or connected to the public Kairo Worker, and must not store or expose account cookies. A successful prototype does not authorize shipping this approach.
 - Public video embeds do not require the viewer to sign in. OAuth is not required for the initial public-channel feed. If later needed, use Google's documented OAuth consent flow only for a clearly defined authorized feature.
 - Respect videos with embedding disabled, private/deleted videos, region restrictions, API errors and player error 153. Always retain a Watch on YouTube fallback.
 - Do not proxy video bytes, extract stream URLs, or try to bypass playback restrictions.
@@ -29,6 +30,7 @@ Add YouTube as a first-class provider inside Kairo, reachable from the existing 
 - Phase 1: provider page + route/menu integration, public channel feed API, embed playback, validation/tests.
 - Phase 2: channel management UI and persistence (D1), refresh schedule/configuration, pagination and caching.
 - Phase 3: optional Google OAuth only if a feature truly needs private/user-owned data. Never ask for or store YouTube passwords/cookies.
+- Experimental gate: evaluate the local YouTube.js prototype separately. Do not promote it into production without resolving policy, security, and operational risks.
 
 ## Configuration / blockers
 
