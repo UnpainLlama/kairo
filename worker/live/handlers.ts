@@ -79,7 +79,7 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
     try {
       const deps = depsFor(req);
       const out = await svc.getList(deps, kind, paging.value.page, paging.value.limit);
-      const items = cards(await svc.withArtwork(deps, out.value.items));
+      const items = cards(out.value.items);
       return okBody(req, { items }, { ...pagedMeta(out.value, paging.value.page), ...sourceMeta(out), ...artworkMeta(deps) });
     } catch (e) { return providerFailure(req, `live_${kind}_failed`, e); }
   };
@@ -108,7 +108,7 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
       try {
         const deps = depsFor(req);
         const out = await svc.browse(deps, { q, sort, genre, year, format, status, season, page, limit });
-        const items = cards(await svc.withArtwork(deps, out.value.items));
+        const items = cards(out.value.items);
         return okBody(req, { items }, { ...pagedMeta(out.value, page), ...sourceMeta(out), ...artworkMeta(deps) });
       } catch (e) { return providerFailure(req, 'live_search_failed', e); }
     },
@@ -119,7 +119,7 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
       try {
         const deps = depsFor(req);
         const out = await svc.browse(deps, parsed.value);
-        const items = cards(await svc.withArtwork(deps, out.value.items));
+        const items = cards(out.value.items);
         return okBody(req, { items }, { ...pagedMeta(out.value, parsed.value.page), ...sourceMeta(out), ...artworkMeta(deps) });
       } catch (e) { return providerFailure(req, 'live_browse_failed', e); }
     },
@@ -218,8 +218,7 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
       try {
         const deps = depsFor(req);
         const out = await svc.getRelated(deps, t.ref, limit);
-        const titles = await svc.withArtwork(deps, out.value);
-        return okBody(req, { items: titles.map((x) => x.card) }, { basis: out.via === 'anilist' ? 'relations_and_recommendations' : 'recommendations', limit, ...sourceMeta(out), ...artworkMeta(deps) });
+        return okBody(req, { items: cards(out.value) }, { basis: out.via === 'anilist' ? 'relations_and_recommendations' : 'recommendations', limit, ...sourceMeta(out), ...artworkMeta(deps) });
       } catch (e) { return providerFailure(req, 'live_related_failed', e); }
     },
 
