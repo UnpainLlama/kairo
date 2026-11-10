@@ -89,8 +89,9 @@ describe('AniList source', () => {
     expect(out.items.slice(0, 2).every((item) => ['a2', 'a4'].includes(item.card.id))).toBe(true);
     expect(out.items.some((item) => item.card.id === 'a1')).toBe(true);
     const bannered = out.items[0]!.card.id === 'a2' ? out.items[0]! : out.items[1]!;
-    expect(bannered.card).toMatchObject({ rating: 8, posterUrl: expect.stringContaining('2.jpg'), bannerUrl: expect.stringContaining('b') , format: 'series', status: 'airing', season: 'fall' });
-    expect(bannered.malId).toBe(bannered.card.id === 'a2' ? 1002 : 1004);
+    const numericId = bannered.card.id === 'a2' ? 2 : 4;
+    expect(bannered.card).toMatchObject({ rating: 8, posterUrl: `https://img.test/${numericId}.jpg`, bannerUrl: `https://img.test/b${numericId}.jpg`, format: 'series', status: 'airing', season: 'fall' });
+    expect(bannered.malId).toBe(numericId + 1000);
   });
   it('maps filters and sort for browse', async () => {
     let body: { query: string; variables: Record<string, unknown> } | null = null;
