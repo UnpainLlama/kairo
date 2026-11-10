@@ -2,15 +2,12 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ListVideo, Play, Search, RefreshCw, ExternalLink } from 'lucide-react';
 import { ErrorState, LoadingState } from '../components/catalog';
-import KairoVideoPlayer from '../components/KairoVideoPlayer';
+import KairoMediaPlayer, { type KairoPlaybackSource } from '../components/KairoMediaPlayer';
 import { useApi } from '../lib/useApi';
 import { dateLabel, durationLabel, episodeNumberLabel, safeImageUrl, type AnimeDetails, type Episode, type EpisodeServer, type ItemList } from '../lib/catalog';
 
 type ServerList = ItemList<EpisodeServer>;
-type PlaybackSource =
-  | { provider: string; protocol: 'hls'; manifestUrl: string; subtitles?: { language: string; label: string; url: string; format: 'vtt' }[]; variants?: { label: string; height?: number }[] }
-  | { provider: string; protocol: 'embed'; embedUrl: string };
-type PlaybackResponse = { source: PlaybackSource; urlValidated: boolean };
+type PlaybackResponse = { source: KairoPlaybackSource; urlValidated: boolean };
 
 export default function WatchPage() {
   const { slug = '', episodeNumber: rawEpisode = '1' } = useParams();
@@ -61,11 +58,15 @@ export default function WatchPage() {
           <div className="kc-watch-topline"><Link to={`/anime/${key}`} className="kc-back-link"><ArrowLeft size={15} aria-hidden="true" /> Back to anime</Link><span className="kc-watch-breadcrumb">{anime.title} <span>/</span> Episode {episodeNumberLabel(parsedEpisode)}</span></div>
 
           <section className="kc-player" aria-label="Video player" key={`${slug}:${parsedEpisode}:${selectedServer?.id ?? 'none'}`}>
-            {playback.status === 'ok' && playback.data.source.protocol === 'embed' && (
-              <iframe className="kc-player-frame" src={playback.data.source.embedUrl} title={`${anime.title} episode ${parsedEpisode} player`} allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen referrerPolicy="no-referrer" />
-            )}
-            {playback.status === 'ok' && playback.data.source.protocol === 'hls' && (
-              <KairoVideoPlayer src={playback.data.source.manifestUrl} subtitles={playback.data.source.subtitles ?? []} variants={playback.data.source.variants ?? []} title={`${anime.title} · Episode ${parsedEpisode}`} progressKey={`${slug}:${parsedEpisode}:${selectedServer?.id ?? ''}`} introEnd={(current as (Episode & { introEndSeconds?: number | null }) | undefined)?.introEndSeconds} outroStart={(current as (Episode & { outroStartSeconds?: number | null }) | undefined)?.outroStartSeconds} nextUrl={next && autoNext ? `/watch/${key}/${next.episodeNumber}` : null} previousUrl={prev ? `/watch/${key}/${prev.episodeNumber}` : null} />
+            {playback.status === 'ok' && (
+              <KairoMediaPlayer
+                source={playback.data.source}
+                title={`${anime.title} · Episode ${parsedEpisode}`}
+                progressKey={`${slug}:${parsedEpisode}:${selectedServer?.id ?? ''}`}
+                introEnd={(current as (Episode & { introEndSeconds?: number | null }) | undefined)?.introEndSeconds}
+                outroStart={(current as (Episode & { outroStartSeconds?: number | null }) | undefined)?.outroStartSeconds}
+                nextUrl={next && autoNext ? `/watch/${key}/${next.episodeNumber}` : null}
+              />
             )}
             {playback.status !== 'ok' && (
               <div className="kc-player-message">
