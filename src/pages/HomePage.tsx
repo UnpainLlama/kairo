@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown, ChevronLeft, ChevronRight, Info, Play, Star } from 'lucide-react';
 import { CardGrid, ErrorState, MetaChips, Poster, Section, SkeletonGrid, StatusDot, animeHref } from '../components/catalog';
@@ -72,31 +72,100 @@ function SidePanel({ title, items }: { title: string; items: CatalogCard[] }) {
   );
 }
 
-function Hero({ items }: { items: CatalogCard[] }) {
-  const [index, setIndex] = useState(0);
-  const [paused, setPaused] = useState(false);
-  const count = items.length;
+const HERO_INTERVAL_MS = 8000;
+const HERO_FADE_MS = 700;
 
+function Hero({ items }: { items: CatalogCard[] }) {
+  const count = items.length;
+  const [index, setIndex] = useState(0);
+  const [leaving, setLeaving] = useState<number | null>(null);
+  const [paused, setPaused] = useState(false);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const active = index % count;
+
+  const go = useCallback((target: number) => {
+    const next = ((target % count) + count) % count;
+    if (next === active) return;
+    setLeaving(active);
+    setIndex(next);
+  }, [active, count]);
+
+  // Auto-advance. The timer restarts after every change, so a manual click always gets a full interval.
   useEffect(() => {
     if (count < 2 || paused) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const timer = window.setInterval(() => setIndex((i) => (i + 1) % count), 8000);
-    return () => window.clearInterval(timer);
-  }, [count, paused]);
+    const timer = window.setTimeout(() => go(active + 1), HERO_INTERVAL_MS);
+    return () => window.clearTimeout(timer);
+  }, [active, count, paused, go]);
 
-  const active = index % count;
-  const item = items[active];
-  const chips = [episodeCountLabel(item.episodeCount), formatLabel(item.format), seasonLabel(item.season, item.releaseYear), ...textList(item.genres).slice(0, 3)].filter((v): v is string => Boolean(v));
-  const image = safeImageUrl(item.bannerUrl);
-  const step = (delta: number) => setIndex((active + delta + count) % count);
+  // The outgoing slide stays underneath while the new one fades in, then is released.
+  useEffect(() => {
+    if (leaving === null) return;
+    const timer = window.setTimeout(() => setLeaving(null), HERO_FADE_MS);
+    return () => window.clearTimeout(timer);
+  }, [leaving, index]);
+
+  // Only the current, outgoing and neighbouring slides are mounted: neighbours are preloaded so a change never shows an empty frame.
+  const mounted = new Set<number>([active, (active + 1) % count, (active - 1 + count) % count]);
+  if (leaving !== null) mounted.add(leaving % count);
+
+  const onTouchEnd = (e: React.TouchEvent) => {
+    const start = touchStart.current;
+    touchStart.current = null;
+    if (!start) return;
+    const dx = e.changedTouches[0].clientX - start.x;
+    const dy = e.changedTouches[0].clientY - start.y;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) go(active + (dx < 0 ? 1 : -1));
+  };
 
   return (
-    <section className="kc-hero kc-bleed" aria-roledescription="carousel" aria-label="Featured anime" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocus={() => setPaused(true)} onBlur={() => setPaused(false)}>
-      <div className="kc-hero-media" key={item.id} aria-hidden="true">
-        {image ? <img src={image} alt="" referrerPolicy="no-referrer" /> : <div className="kc-hero-art"><Poster item={item} /></div>}
+    <section
+      className="kc-hero kc-bleed"
+      aria-roledescription="carousel"
+      aria-label="Featured anime"
+      aria-live={paused ? 'polite' : 'off'}
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={() => setPaused(false)}
+      onTouchStart={(e) => { touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
+      onTouchEnd={onTouchEnd}
+    >
+      {items.map((item, i) => mounted.has(i) ? (
+        <HeroSlide key={item.id} item={item} position={i + 1} total={count} state={i === active ? 'on' : i === leaving ? 'out' : 'idle'} />
+      ) : null)}
+      {count > 1 && (
+        <>
+          <button type="button" className="kc-hero-arrow prev" aria-label="Previous featured title" onClick={() => go(active - 1)}><ChevronLeft size={20} aria-hidden="true" /></button>
+          <button type="button" className="kc-hero-arrow next" aria-label="Next featured title" onClick={() => go(active + 1)}><ChevronRight size={20} aria-hidden="true" /></button>
+          <div className="kc-hero-dots">
+            {items.map((entry, i) => <button key={entry.id} type="button" aria-label={`Show featured title ${i + 1}`} aria-current={i === active ? 'true' : undefined} className={i === active ? 'active' : ''} onClick={() => go(i)} />)}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function HeroSlide({ item, position, total, state }: { item: CatalogCard; position: number; total: number; state: 'on' | 'out' | 'idle' }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const image = imageFailed ? null : safeImageUrl(item.bannerUrl);
+  const chips = [episodeCountLabel(item.episodeCount), formatLabel(item.format), seasonLabel(item.season, item.releaseYear), ...textList(item.genres).slice(0, 3)].filter((v): v is string => Boolean(v));
+
+  return (
+    <div className={`kc-slide ${state}`} role="group" aria-roledescription="slide" aria-label={`${position} of ${total}`} inert={state !== 'on'}>
+      <div className="kc-hero-media" aria-hidden="true">
+        {image ? (
+          <img src={image} alt="" decoding="async" fetchPriority={state === 'on' ? 'high' : 'auto'} referrerPolicy="no-referrer" onError={() => setImageFailed(true)} />
+        ) : (
+          <div className="kc-hero-fallback">
+            <div className="kc-hero-backdrop"><Poster item={item} /></div>
+            <div className="kc-hero-art"><Poster item={item} /></div>
+          </div>
+        )}
       </div>
       <div className="kc-hero-shade" />
-      <div className="kc-hero-copy" aria-live={paused ? 'polite' : 'off'}>
+      <div className="kc-hero-copy">
         <h1>{item.title}</h1>
         <div className="kc-pills">{chips.slice(0, 5).map((chip) => <span key={chip}>{chip}</span>)}</div>
         {item.synopsis && <p className="kc-hero-synopsis">{item.synopsis}</p>}
@@ -105,15 +174,6 @@ function Hero({ items }: { items: CatalogCard[] }) {
           <Link className="kc-btn kc-btn-dark" to={animeHref(item)}><Info size={15} aria-hidden="true" /> Details</Link>
         </div>
       </div>
-      {count > 1 && (
-        <>
-          <button type="button" className="kc-hero-arrow prev" aria-label="Previous featured title" onClick={() => step(-1)}><ChevronLeft size={20} aria-hidden="true" /></button>
-          <button type="button" className="kc-hero-arrow next" aria-label="Next featured title" onClick={() => step(1)}><ChevronRight size={20} aria-hidden="true" /></button>
-          <div className="kc-hero-dots">
-            {items.map((entry, i) => <button key={entry.id} type="button" aria-label={`Show featured title ${i + 1}`} aria-current={i === active ? 'true' : undefined} className={i === active ? 'active' : ''} onClick={() => setIndex(i)} />)}
-          </div>
-        </>
-      )}
-    </section>
+    </div>
   );
 }
