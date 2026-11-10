@@ -6,7 +6,8 @@ import { EMPTY_SEARCH, MAX_QUERY, canSearch, parseSearchState, toUrlParams } fro
 import { formatLabel, type CatalogCard, type ItemList } from '../lib/catalog';
 import { Poster, animeHref } from './catalog';
 
-type Result = { q: string; status: 'ok'; items: CatalogCard[]; total?: number } | { q: string; status: 'error' };
+type MediaMode = 'anime' | 'movie';
+type Result = { q: string; mode: MediaMode; status: 'ok'; items: CatalogCard[]; total?: number } | { q: string; mode: MediaMode; status: 'error' };
 
 /**
  * Header search. It queries /catalog/search as you type and lists matches in a dropdown, so you can open a title
@@ -23,6 +24,11 @@ export default function SearchBar() {
   const [active, setActive] = useState(-1);
   const [result, setResult] = useState<Result | null>(null);
   const query = text.trim();
+  const mediaMode: MediaMode = location.pathname === '/browse/movies'
+    || (location.pathname === '/search' && new URLSearchParams(location.search).get('format') === 'movie')
+    ? 'movie'
+    : 'anime';
+  const mediaLabel = mediaMode === 'movie' ? 'movies' : 'anime';
 
   // Mirror the URL: on the search page show its query, everywhere else start empty.
   useEffect(() => {
@@ -37,12 +43,14 @@ export default function SearchBar() {
     if (!canSearch(query)) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      apiGetWithMeta<ItemList<CatalogCard>>(`/catalog/search?q=${encodeURIComponent(query)}&limit=8&sort=relevance`, controller.signal)
-        .then(({ data, meta }) => setResult({ q: query, status: 'ok', items: data.items, total: meta.total }))
-        .catch((error: unknown) => { if (!isAbort(error)) setResult({ q: query, status: 'error' }); });
+      const params = new URLSearchParams({ q: query, limit: '8', sort: 'relevance' });
+      if (mediaMode === 'movie') params.set('format', 'movie');
+      apiGetWithMeta<ItemList<CatalogCard>>(`/catalog/search?${params.toString()}`, controller.signal)
+        .then(({ data, meta }) => setResult({ q: query, mode: mediaMode, status: 'ok', items: data.items, total: meta.total }))
+        .catch((error: unknown) => { if (!isAbort(error)) setResult({ q: query, mode: mediaMode, status: 'error' }); });
     }, 250);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [query]);
+  }, [query, mediaMode]);
 
   // Ctrl/Cmd+K, or "/" outside a text field, focuses the bar. Clicking elsewhere closes the dropdown.
   useEffect(() => {
@@ -62,12 +70,13 @@ export default function SearchBar() {
   }, []);
 
   const searching = canSearch(query);
-  const current = searching && result?.q === query ? result : null;
+  const current = searching && result?.q === query && result.mode === mediaMode ? result : null;
   const items = current?.status === 'ok' ? current.items : [];
 
   const resultsHref = (): string => {
     const base = location.pathname === '/search' ? parseSearchState(new URLSearchParams(location.search)) : EMPTY_SEARCH;
-    const qs = toUrlParams({ ...base, q: query, page: 1 }).toString();
+    const format = mediaMode === 'movie' ? 'movie' : (base.format === 'movie' ? '' : base.format);
+    const qs = toUrlParams({ ...base, q: query, format, page: 1 }).toString();
     return `/search${qs ? `?${qs}` : ''}`;
   };
 
@@ -105,7 +114,7 @@ export default function SearchBar() {
           ref={inputRef}
           type="text"
           role="combobox"
-          aria-label="Search anime"
+          aria-label={`Search ${mediaLabel}`}
           aria-expanded={showPanel}
           aria-controls={listId}
           aria-autocomplete="list"
@@ -113,7 +122,7 @@ export default function SearchBar() {
           autoComplete="off"
           spellCheck={false}
           maxLength={MAX_QUERY}
-          placeholder="Search anime..."
+          placeholder={`Search ${mediaLabel}...`}
           value={text}
           onChange={(event) => { setText(event.target.value); setActive(-1); setOpen(true); }}
           onFocus={() => setOpen(true)}
@@ -127,7 +136,7 @@ export default function SearchBar() {
         <div className="kc-suggest" id={listId} role="listbox" aria-label="Search results">
           {!current && <p className="kc-suggest-note" role="status">Searching…</p>}
           {current?.status === 'error' && <p className="kc-suggest-note" role="alert">Search is unavailable right now.</p>}
-          {current?.status === 'ok' && items.length === 0 && <p className="kc-suggest-note" role="status">No results for “{query}”.</p>}
+          {current?.status === 'ok' && items.length === 0 && <p className="kc-suggest-note" role="status">No {mediaLabel} found for “{query}”.</p>}
           {items.map((item, index) => (
             <Link
               key={item.id}
@@ -148,7 +157,7 @@ export default function SearchBar() {
           ))}
           {current?.status === 'ok' && items.length > 0 && (
             <Link className="kc-suggest-all" to={resultsHref()} onClick={() => setOpen(false)}>
-              See all results{typeof current.total === 'number' ? ` (${current.total})` : ''} <ArrowRight size={14} aria-hidden="true" />
+              See all {mediaLabel} results{typeof current.total === 'number' ? ` (${current.total})` : ''} <ArrowRight size={14} aria-hidden="true" />
             </Link>
           )}
         </div>
