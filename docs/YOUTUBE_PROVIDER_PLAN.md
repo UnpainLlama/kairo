@@ -1,47 +1,83 @@
 # YouTube provider — implementation plan
 
-## Product intent
+## Product goal
 
-Add YouTube as a first-class provider inside Kairo, reachable from the existing Media provider menu. Keep Kairo's dark visual theme, but make the YouTube section familiar to YouTube users: compact left navigation, top search, channel/video rows and a familiar video watch layout. This is a provider-specific experience; do not redesign the anime catalogue or global shell.
+Make YouTube a first-class Kairo provider with a public discovery experience available to everyone and an optional, explicitly connected subscriptions experience for signed-in Kairo users. Keep this work isolated from the anime catalogue and existing Google sign-in behavior.
 
-## Research and constraints (checked 2026-11-10)
+## Product and policy boundaries
 
-- Use the official YouTube Data API v3 for public channel/video metadata and uploads playlists.
-- Resolve a channel's uploads playlist through the channel resource, then page playlistItems.list; this costs 1 quota unit per request. Avoid search.list for routine refreshes because its quota cost is much higher.
-- Use the official YouTube IFrame Player API for playback. The player must remain recognizably YouTube-owned; Kairo may provide its surrounding dark interface but must not hide/alter player functionality, ads or attribution.
-- Production integration must not use InnerTube, undocumented endpoints, scraping, browser cookies, copied session tokens, or collect YouTube login credentials. YouTube's policies explicitly prohibit undocumented API use and scraping, and instruct API clients not to request/store YouTube credentials.
-- An isolated staging-only experiment exists at `experiments/youtube-feed-prototype/` and `public/youtube-feed-lab.html`. It sends a manually supplied YouTube Cookie header to a bearer-token-gated Hono Worker endpoint, uses YouTube.js 18.3.0 for the signed-in subscriptions feed, disables session caching, and returns normalized metadata only. It is unofficial, may violate YouTube's developer policies, must never be enabled in production, and must not persist or log cookies. A successful prototype does not authorize shipping this approach.
-- Public video embeds do not require the viewer to sign in. OAuth is not required for the initial public-channel feed. If later needed, use Google's documented OAuth consent flow only for a clearly defined authorized feature.
-- Respect videos with embedding disabled, private/deleted videos, region restrictions, API errors and player error 153. Always retain a Watch on YouTube fallback.
-- Do not proxy video bytes, extract stream URLs, or try to bypass playback restrictions.
-
-## Proposed architecture
-
-1. YouTube is an independent provider route/page, not a replacement for anime metadata or playback providers.
-2. Frontend calls same-origin Kairo API only; no API key in browser bundles.
-3. Worker adapter uses a YOUTUBE_API_KEY secret, validates channel IDs/handles, fetches channel uploads playlist and paginates recent uploads.
-4. Normalize to a small internal YouTubeVideo shape: videoId, title, description, thumbnail, channelId, channelTitle, publishedAt, duration (when available), live status.
-5. Cache public feed metadata only if permitted by current YouTube API policies; track fetchedAt and avoid retaining stale data beyond the applicable policy window. Refresh cadence configurable, default six hours.
-6. Embed selected video using official IFrame Player API with a valid page origin/referrer. Handle errors and provide an external YouTube link.
-7. Initial UX: dark-first YouTube-inspired layout, channel feed list/grid, channel filter, chronological sorting, 30-day default window, explicit loading/empty/error states. No autoplay, infinite recommendation feed, or algorithmic Up next rabbit hole.
+- Use the official YouTube Data API v3 for public channel/video metadata and authorized subscription data.
+- Use Google's documented OAuth authorization-code flow with PKCE for the optional YouTube connection. Request only `https://www.googleapis.com/auth/youtube.readonly`.
+- Kairo Google sign-in remains a separate identity flow and continues to request only `openid email profile`. Connecting YouTube must never silently expand sign-in scopes.
+- Never request or store YouTube passwords, browser cookies, copied session tokens, or undocumented InnerTube endpoints. Do not scrape.
+- Store OAuth access/refresh tokens only in the Worker, encrypted at rest with a dedicated encryption key. Never return tokens to the browser or log them.
+- Bind the YouTube connection to the currently authenticated Kairo user; do not auto-link accounts by matching email addresses.
+- Public discovery must work without OAuth. A user's exact YouTube Home recommendations are not exposed by the public Data API; do not present a public discovery feed as a replica of Home.
+- Use the official YouTube IFrame Player API for playback. Preserve YouTube player branding, ads, controls, and attribution; retain a Watch on YouTube fallback. Do not proxy video bytes, extract stream URLs, or bypass playback restrictions.
+- Respect API quota, pagination, caching/retention rules, embedding restrictions, private/deleted videos, regional restrictions, and player errors.
+- The staging-only YouTube.js/cookie prototype is not part of the production architecture and must not be promoted.
 
 ## Delivery phases
 
-- Phase 1: provider page + route/menu integration, public channel feed API, embed playback, validation/tests.
-- Phase 2: channel management UI and persistence (D1), refresh schedule/configuration, pagination and caching.
-- Phase 3: optional Google OAuth only if a feature truly needs private/user-owned data. Never ask for or store YouTube passwords/cookies.
-- Experimental gate: evaluate the staging-only YouTube.js prototype separately. Its endpoint is disabled unless APP_ENV=staging and YOUTUBE_STAGING_TOKEN is configured. Do not promote it into production without resolving policy, security, and operational risks.
+### Phase 1 — Explicit YouTube connection and secure OAuth foundation
 
-## Configuration / blockers
+- Add a clearly labelled **Connect YouTube** action to signed-in Kairo Settings, separate from Connect Google.
+- Implement a separate Google OAuth authorization-code flow with state, PKCE, short-lived one-time transactions, and session/user binding.
+- Request only the YouTube read-only scope and offline access for refresh capability.
+- Encrypt tokens in the Worker using a dedicated `YOUTUBE_TOKEN_ENCRYPTION_KEY`; persist the connection in the existing `provider_connections` table.
+- Add connection status, safe callback outcomes, reconnect behavior, and disconnect/revoke handling.
+- Add the required D1 migration for one-time OAuth transactions. Document the secret and redirect URI setup. Do not apply remote migrations or deploy as part of code implementation.
+- Acceptance: a signed-in user can explicitly connect and see connected status; a different Kairo user cannot claim the connection; no token reaches the browser; ordinary Google sign-in is unchanged.
 
-- Add YOUTUBE_API_KEY as a Cloudflare Worker secret (never commit it).
-- For the staging experiment only, configure YOUTUBE_STAGING_TOKEN as a Cloudflare Worker secret and keep the staging host restricted. The endpoint is not a production feature.
-- The first implementation should support public channel IDs/handles. Channel discovery by arbitrary text can be a separate, quota-aware search action.
+### Phase 2 — Authorized subscriptions sync
+
+- Use the authorized token to call YouTube Data API `subscriptions.list` with `mine=true`.
+- Implement token refresh, pagination, quota-aware retries/backoff, deduplication, and idempotent persistence of channel IDs and required metadata.
+- Add a manual sync action and useful sync timestamps/status.
+- Handle revoked authorization and refresh failures with a clear reconnect path.
+- Acceptance: a connected user can sync and view their subscribed channels; repeated syncs do not duplicate rows and API failures do not corrupt the last good result.
+
+### Phase 3 — Public discovery and subscriptions feeds
+
+- Build a public discovery feed that works without a connected account.
+- Build a separate subscriptions feed from the user's synchronized channel data.
+- Fetch public channel uploads through the documented API, resolve uploads playlists, and paginate efficiently; avoid routine high-cost search requests.
+- Add channel/video cards, channel details, sorting/filtering, loading/empty/error states, and official embedded playback with an external Watch on YouTube fallback.
+- Acceptance: visitors can use public discovery without OAuth; connected users can switch to their subscriptions feed; all playback respects YouTube's player requirements.
+
+### Phase 4 — Automation, resilience, and account controls
+
+- Add scheduled/background refresh for subscriptions and channel uploads with configurable cadence.
+- Add robust handling for expired/revoked grants, deleted/private channels, quota exhaustion, transient API errors, and partial sync failures.
+- Complete disconnect and data deletion behavior, including token revocation where supported and removal of Kairo-held provider data.
+- Add privacy-conscious operational logging and monitoring; never log credentials or tokens.
+- Acceptance: sync recovers safely from transient failures, users can disconnect cleanly, and stale/invalid connections are clearly identified.
+
+### Phase 5 — Hardening, release readiness, and launch
+
+- Complete responsive UI, accessibility, and user-facing guidance for connecting/reconnecting.
+- Add automated tests for OAuth state/session binding, PKCE, token encryption, token refresh, subscription pagination, persistence, quota/error handling, and feed behavior.
+- Review YouTube API policy compliance, API console configuration, OAuth consent settings, exact redirect URIs, Worker secrets, D1 migration order, and production environment configuration.
+- Run typecheck, tests, and production build; inspect the final diff and resolve all blockers before proposing release.
+- Prepare a staged rollout and rollback procedure. No deployment or remote migration occurs without explicit approval.
+
+## Configuration inventory
+
+- Existing Google OAuth client ID/secret are used by the separate YouTube authorization flow.
+- Add `YOUTUBE_TOKEN_ENCRYPTION_KEY` as a Worker secret; generate a cryptographically random 32-byte key and keep it out of source control. Never paste the secret into chat.
+- The Worker builds its YouTube callback from the configured `APP_BASE_URL` (not the incoming Host header); keep that base URL canonical for each environment.
+- Staging callback URI: `https://kairo-anime-platform-staging.unpainllama.workers.dev/api/v1/auth/youtube/callback`. Keep the separate Google sign-in callback registered too.
+- Register the exact callback URI `/api/v1/auth/youtube/callback` for each configured environment in the Google OAuth client.
+- Enable YouTube Data API v3 in the associated Google Cloud project.
+- Public API access will require a Worker-side `YOUTUBE_API_KEY` secret if/when the public feed adapter is implemented.
+- Apply the new D1 migration to each environment only after review and explicit release approval.
 
 ## Primary references
 
 - YouTube API directory: https://developers.google.com/youtube/apis
-- Data API getting started and quota: https://developers.google.com/youtube/v3/getting-started
+- YouTube Data API getting started and quota: https://developers.google.com/youtube/v3/getting-started
+- Subscriptions list: https://developers.google.com/youtube/v3/docs/subscriptions/list
 - Playlist items list: https://developers.google.com/youtube/v3/docs/playlistItems/list
-- IFrame Player API: https://developers.google.com/youtube/iframe_api_reference
-- Developer policies: https://developers.google.com/youtube/terms/developer-policies
+- YouTube IFrame Player API: https://developers.google.com/youtube/iframe_api_reference
+- Google OAuth 2.0 for web server applications: https://developers.google.com/identity/protocols/oauth2/web-server
+- YouTube developer policies: https://developers.google.com/youtube/terms/developer-policies

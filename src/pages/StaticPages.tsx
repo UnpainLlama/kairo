@@ -112,13 +112,79 @@ export function HistoryPage() {
   </section>;
 }
 export function AccountPage({ title }: { title: string }) {
-  const location=useLocation();const [user,setUser]=useState<AccountUser|null>(null);const [loaded,setLoaded]=useState(false);
-  useEffect(()=>{let active=true;fetch('/api/v1/me',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(p=>{if(active)setUser(p?.data?.user??null)}).catch(()=>{if(active)setUser(null)}).finally(()=>{if(active)setLoaded(true)});return()=>{active=false}},[location.key]);
-  const status=new URLSearchParams(location.search).get('google');
-  const messages:Record<string,string>={connected:'Google has been connected to your Kairo account.',already_linked:'That Google account is already connected to a different Kairo account.',another_account_linked:'A different Google account is already connected here.'};
+  const location=useLocation();
+  const [user,setUser]=useState<AccountUser|null>(null);
+  const [loaded,setLoaded]=useState(false);
+  const [youtubeConnected,setYoutubeConnected]=useState(false);
+  const [youtubeLoaded,setYoutubeLoaded]=useState(false);
+  const [youtubeBusy,setYoutubeBusy]=useState(false);
+  const [youtubeError,setYoutubeError]=useState('');
+  useEffect(()=>{
+    let active=true;
+    fetch('/api/v1/me',{credentials:'same-origin'}).then(r=>r.ok?r.json():null)
+      .then(p=>{if(active)setUser(p?.data?.user??null)})
+      .catch(()=>{if(active)setUser(null)})
+      .finally(()=>{if(active)setLoaded(true)});
+    return()=>{active=false};
+  },[location.key]);
+  useEffect(()=>{
+    let active=true;
+    if(title!=='Settings'||!user){setYoutubeLoaded(true);return()=>{active=false};}
+    fetch('/api/v1/auth/youtube/status',{credentials:'same-origin',headers:{Accept:'application/json'}})
+      .then(r=>r.ok?r.json():null)
+      .then(p=>{if(active&&p?.success)setYoutubeConnected(p.data?.connected===true)})
+      .catch(()=>{if(active)setYoutubeError('Could not load YouTube connection status.')})
+      .finally(()=>{if(active)setYoutubeLoaded(true)});
+    return()=>{active=false};
+  },[title,user?.id,location.key]);
+  const googleStatus=new URLSearchParams(location.search).get('google');
+  const youtubeStatus=new URLSearchParams(location.search).get('youtube');
+  const googleMessages:Record<string,string>={
+    connected:'Google has been connected to your Kairo account.',
+    already_linked:'That Google account is already connected to a different Kairo account.',
+    another_account_linked:'A different Google account is already connected here.'
+  };
+  const youtubeMessages:Record<string,string>={
+    connected:'YouTube is connected. Kairo can now request access to your subscriptions.',
+    cancelled:'You cancelled the YouTube connection.',
+    sign_in_required:'Sign in to Kairo before connecting YouTube.',
+    reauth_required:'Please sign in again, then retry connecting YouTube.',
+    invalid_response:'The YouTube authorization response could not be verified. Please try again.',
+    expired:'The YouTube connection request expired. Please try again.',
+    token_exchange_failed:'Google could not complete the YouTube authorization. Please try again.',
+    invalid_grant:'Google did not grant the required YouTube read-only permission.',
+    refresh_token_missing:'Google did not provide offline access. Please retry the connection.',
+    failed:'YouTube could not be connected. Please try again.'
+  };
+  async function disconnectYouTube(){
+    if(!window.confirm('Disconnect YouTube from this Kairo account?'))return;
+    setYoutubeBusy(true);setYoutubeError('');
+    try{
+      const response=await fetch('/api/v1/auth/youtube/disconnect',{
+        method:'POST',credentials:'same-origin',headers:{Accept:'application/json'}
+      });
+      const payload=await response.json().catch(()=>null);
+      if(!response.ok||!payload?.success)throw new Error(payload?.error?.message??'Could not disconnect YouTube.');
+      setYoutubeConnected(false);
+    }catch(error){setYoutubeError(error instanceof Error?error.message:'Could not disconnect YouTube.')}
+    finally{setYoutubeBusy(false)}
+  }
   return <><header className="kc-page-head"><h1>{title}</h1></header>
-    {title==='Settings'&&loaded&&user?<section className="kc-account-panel"><h2>Account</h2><p>Signed in as <strong>{user.displayName}</strong> · {user.email}</p><h3>Connected sign-in methods</h3><p>Connect Google as an additional way to sign in. You’ll be asked to sign in again first if your current session is older than 15 minutes.</p><a className="kc-auth-google" href="/api/v1/auth/google?intent=link"><span aria-hidden="true">G</span>Connect Google</a>{status&&<p role="status" className="kc-auth-copy">{messages[status]??'Google account linking status updated.'}</p>}</section>
-    :title==='Settings'&&loaded?<EmptyState title="Sign in to manage your account"><Link className="kc-link" to="/login">Sign in</Link> to connect Google and manage your account.</EmptyState>
+    {title==='Settings'&&loaded&&user?<section className="kc-account-panel">
+      <h2>Account</h2><p>Signed in as <strong>{user.displayName}</strong> · {user.email}</p>
+      <h3>Connected sign-in methods</h3>
+      <p>Connect Google as an additional way to sign in. You’ll be asked to sign in again first if your current session is older than 15 minutes.</p>
+      <a className="kc-auth-google" href="/api/v1/auth/google?intent=link"><span aria-hidden="true">G</span>Connect Google</a>
+      {googleStatus&&<p role="status" className="kc-auth-copy">{googleMessages[googleStatus]??'Google account linking status updated.'}</p>}
+      <h3>YouTube</h3>
+      <p>Connect YouTube separately to let Kairo read your subscriptions. This does not change how you sign in to Kairo.</p>
+      {!youtubeLoaded?<p className="kc-auth-copy" role="status">Checking YouTube connection…</p>
+        :youtubeConnected?<div><p className="kc-auth-copy" role="status">YouTube is connected.</p><button className="kc-btn" type="button" onClick={()=>void disconnectYouTube()} disabled={youtubeBusy}>{youtubeBusy?'Disconnecting…':'Disconnect YouTube'}</button></div>
+        :<a className="kc-auth-google" href="/api/v1/auth/youtube"><span aria-hidden="true">▶</span>Connect YouTube</a>}
+      {youtubeStatus&&<p role="status" className="kc-auth-copy">{youtubeMessages[youtubeStatus]??'YouTube connection status updated.'}</p>}
+      {youtubeError&&<p role="alert" className="kc-auth-error">{youtubeError}</p>}
+    </section>
+    :title==='Settings'&&loaded?<EmptyState title="Sign in to manage your account"><Link className="kc-link" to="/login">Sign in</Link> to connect Google or YouTube and manage your account.</EmptyState>
     :<EmptyState title="Not available yet">{title} features are still being built. You can still <Link className="kc-link" to="/search">search</Link> and browse.</EmptyState>}
   </>;
 }
