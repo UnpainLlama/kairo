@@ -245,6 +245,15 @@ describe('service and handlers', () => {
     expect(tmdbCalls).toBe(0);
   });
 
+  it('falls back to Jikan when AniList has no seasonal browse results', async () => {
+    const d = deps(async (u) => isAni(u) ? aniPage([]) : jikanList([jikanAnime(3)]));
+    const response = await call(d, 'browse', req({ season: 'fall', year: '2026', sort: 'popularity', page: '1', limit: '24' }));
+    expect(response).toMatchObject({
+      status: 200,
+      body: { data: { items: [{ id: 'm3' }] }, meta: { source: 'jikan', degraded: true } },
+    });
+  });
+
   it('resolves legacy HiAnime title ids while AniList remains the primary catalogue', async () => {
     const legacyTitle: LiveTitle = {
       card: {
