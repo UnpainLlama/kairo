@@ -379,7 +379,7 @@ app.post('/api/v1/me/history/sync', async (c) => {
   if (!Array.isArray(input) || input.length > 100 || deleted.length > 100 || input.length + deleted.length > 100) {
     return fail(c, 400, 'VALIDATION_ERROR', 'Watch history updates must contain at most 100 entries.');
   }
-  const statements = [];
+  const statements: D1PreparedStatement[] = [];
   if (clear) {
     statements.push(c.env.DB.prepare('DELETE FROM user_watch_history WHERE user_id = ?').bind(user.id));
   }
