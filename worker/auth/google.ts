@@ -5,7 +5,7 @@ type GoogleContext = {
   env: GoogleBindings;
   req: { url: string; header(name: string): string | undefined };
   redirect(url: string, status?: number): Response;
-  header(name: string, value: string): void;
+  header(name: string, value: string, options?: { append?: boolean }): void;
   json(body: unknown, status?: number): Response;
 };
 type GoogleClaims = {
@@ -62,7 +62,7 @@ async function validateIdToken(token: string, clientId: string, expectedNonce: s
   const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
   if (!validSignature ||
     !['https://accounts.google.com', 'accounts.google.com'].includes(claims.iss) ||
-    !audiences.includes(clientId) || (audiences.length > 1 && claims.azp !== clientId) ||
+    !audiences.includes(clientId) || (audiences.length > 1 && claims.azp !== clientId) || (Boolean(claims.azp) && claims.azp !== clientId) ||
     typeof claims.sub !== 'string' || !claims.sub || claims.sub.length > 255 ||
     !Number.isFinite(claims.exp) || claims.exp <= now - 30 ||
     !Number.isFinite(claims.iat) || claims.iat > now + 60 ||
@@ -76,6 +76,9 @@ function displayName(claims: GoogleClaims): string {
   const name = (claims.name?.trim() || claims.email.split('@')[0] || 'Kairo user').slice(0, 40);
   return name.length >= 2 ? name : name.padEnd(2, '_');
 }
+function stateCookie(state: string, secure: boolean): string { return `kairo_oauth_state=${state}; Path=/api/v1/auth/google/callback; Max-Age=600; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`; }
+function clearStateCookie(secure: boolean): string { return `kairo_oauth_state=; Path=/api/v1/auth/google/callback; Max-Age=0; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`; }
+function cookieState(header: string | undefined): string | null { for (const part of (header ?? '').split(';')) { const [name, ...value] = part.trim().split('='); if (name === 'kairo_oauth_state') return value.join('=') || null; } return null; }
 function redirectTo(c: GoogleContext, path: string): Response {
   return c.redirect(new URL(path, new URL(c.req.url).origin).toString(), 302);
 }
@@ -107,6 +110,7 @@ export function registerGoogleAuthRoutes(app: any): void {
       return c.json({ success: false, error: { code: 'GOOGLE_AUTH_UNAVAILABLE', message: 'Could not start Google sign-in. Please try again.' } }, 503);
     }
     const callback = new URL('/api/v1/auth/google/callback', url.origin).toString();
+    c.header('Set-Cookie', stateCookie(state, url.protocol === 'https:'));
     const target = new URL(GOOGLE_AUTH);
     target.search = new URLSearchParams({
       client_id: c.env.GOOGLE_CLIENT_ID, redirect_uri: callback, response_type: 'code',
@@ -120,6 +124,10 @@ export function registerGoogleAuthRoutes(app: any): void {
     const url = new URL(c.req.url);
     const state = url.searchParams.get('state') ?? '';
     const code = url.searchParams.get('code') ?? '';
+    const secure = url.protocol === 'https:';
+    const browserState = cookieState(c.req.header('Cookie'));
+    c.header('Set-Cookie', clearStateCookie(secure), { append: true });
+    if (!state || browserState !== state) return redirectTo(c, '/login?google=invalid_response');
     if (url.searchParams.has('error')) return redirectTo(c, '/login?google=cancelled');
     if (!/^[A-Za-z0-9_-]{40,64}$/.test(state) || !code || code.length > 2048) return redirectTo(c, '/login?google=invalid_response');
     try {

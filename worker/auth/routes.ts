@@ -61,4 +61,5 @@ export function registerAuthRoutes(app:Hono<any>){
    return ok(c,{signedIn:true,expiresAt:session.expiresAt});
   }catch{return fail(c,503,'AUTH_UNAVAILABLE','Sign-in is temporarily unavailable. Please try again.')}
  });
+  registerGoogleAuthRoutes(app);
 }
