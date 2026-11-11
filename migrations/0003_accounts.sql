@@ -1,0 +1,88 @@
+-- Kairo multi-user account foundation. Existing profile/library rows remain intact.
+PRAGMA foreign_keys = ON;
+
+-- user_profiles is the existing Kairo user record referenced by preferences, library and watch history.
+-- identity_subject remains populated for backwards compatibility; new accounts use an internal subject.
+ALTER TABLE user_profiles ADD COLUMN email TEXT;
+ALTER TABLE user_profiles ADD COLUMN email_verified_at TEXT;
+ALTER TABLE user_profiles ADD COLUMN account_status TEXT NOT NULL DEFAULT 'active'
+  CHECK (account_status IN ('active', 'suspended', 'deleted'));
+ALTER TABLE user_profiles ADD COLUMN role TEXT NOT NULL DEFAULT 'user'
+  CHECK (role IN ('user', 'admin'));
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_profiles_email
+  ON user_profiles(email COLLATE NOCASE) WHERE email IS NOT NULL;
+
+-- Authentication methods are separate from the Kairo user profile.
+-- provider_subject is a normalized email for email identities, or Google's stable OIDC sub.
+CREATE TABLE IF NOT EXISTS auth_identities (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL CHECK (provider IN ('email', 'google')),
+  provider_subject TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_used_at TEXT,
+  UNIQUE(provider, provider_subject),
+  UNIQUE(user_id, provider)
+);
+CREATE INDEX IF NOT EXISTS idx_auth_identities_user ON auth_identities(user_id);
+
+-- Password hashes are produced by the application using the selected password-hashing implementation.
+-- Raw passwords are never stored.
+CREATE TABLE IF NOT EXISTS password_credentials (
+  auth_identity_id TEXT PRIMARY KEY REFERENCES auth_identities(id) ON DELETE CASCADE,
+  password_hash TEXT NOT NULL,
+  password_changed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Opaque session tokens are random and only their SHA-256 hashes are stored here.
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_used_at TEXT,
+  user_agent TEXT,
+  ip_prefix TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id, expires_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
+
+-- Single-use, hashed email verification and password-reset tokens.
+CREATE TABLE IF NOT EXISTS email_verification_tokens (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  consumed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_email_verification_user ON email_verification_tokens(user_id, expires_at);
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  consumed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens(user_id, expires_at);
+
+-- Third-party provider credentials belong to an individual Kairo user.
+-- Token values must be authenticated-encrypted by the Worker before being written.
+CREATE TABLE IF NOT EXISTS provider_connections (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  provider_subject TEXT,
+  encrypted_access_token TEXT,
+  encrypted_refresh_token TEXT,
+  token_expires_at INTEGER,
+  scopes_json TEXT NOT NULL DEFAULT '[]',
+  connected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(user_id, provider)
+);
+CREATE INDEX IF NOT EXISTS idx_provider_connections_user ON provider_connections(user_id);
