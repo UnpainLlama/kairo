@@ -30,8 +30,8 @@ export default function WatchPage() {
       for (const item of episodes.data.items) merged.set(item.episodeNumber, item);
       return [...merged.values()].sort((a, b) => a.episodeNumber - b.episodeNumber);
     });
-    if (!episodes.data.items.some((item) => item.episodeNumber === parsedEpisode) && episodes.meta.hasNextPage) {
-      setEpisodePage((page) => Math.min(page + 1, 500));
+    if (!episodes.data.items.some((item) => item.episodeNumber === parsedEpisode) && episodes.meta.hasNextPage && episodePage < 20) {
+      setEpisodePage((page) => Math.min(page + 1, 20));
     }
   }, [episodes.status, episodePage, slug, parsedEpisode]);
   const servers = useApi<ServerList>(validEpisode ? `/anime/${key}/episodes/${parsedEpisode}/servers` : null);
@@ -183,7 +183,8 @@ export default function WatchPage() {
             {visibleEpisodes.length === 0 && <p className="kc-episode-empty">No episodes match your search.</p>}
           </div>
           {episodes.status === 'loading' && episodePages.length > 0 && <p className="kc-hint kc-queue-note">Loading more episodes…</p>}
-          {episodes.status === 'ok' && episodes.meta.hasNextPage && !episodes.data.items.some((item) => item.episodeNumber === parsedEpisode) && <p className="kc-hint kc-queue-note">Checking the next episode page…</p>}
+          {episodes.status === 'ok' && episodes.meta.hasNextPage && current && <p className="kc-hint kc-queue-note">More episodes are available on the anime page.</p>}
+          {episodes.status === 'ok' && episodes.meta.hasNextPage && !current && episodePage === 20 && <p className="kc-hint kc-queue-note">This episode was not found in the first 1,000 episodes.</p>}
         </aside>
       </div>
     </div>
