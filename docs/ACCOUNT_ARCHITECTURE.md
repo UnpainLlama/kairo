@@ -26,7 +26,7 @@
 - YouTube is connected only by a signed-in Kairo user from Settings, after a recent session check. It requests only `https://www.googleapis.com/auth/youtube.readonly`; ordinary Google sign-in remains `openid email profile`.
 - The authorization-code flow uses state, PKCE S256, a ten-minute one-time transaction, and a transaction bound to both the Kairo user and initiating session hash.
 - YouTube access and refresh tokens are encrypted with AES-GCM using the dedicated `YOUTUBE_TOKEN_ENCRYPTION_KEY` Worker secret. Tokens are never returned to the browser or logged. The existing `provider_connections` table stores the encrypted token values and granted scope metadata.
-- The exact callback URI for each environment must be registered in Google Cloud Console: `https://<worker-host>/api/v1/auth/youtube/callback`.
+- The callback URI is built from the configured canonical `APP_BASE_URL`, never the incoming request Host header. Register the exact URI for each environment in Google Cloud Console. Staging: `https://kairo-anime-platform-staging.unpainllama.workers.dev/api/v1/auth/youtube/callback`.
 - The user can view connection status and disconnect; disconnect removes Kairo's stored connection and attempts Google's token revocation. No YouTube account is linked by email address.
 - Migration `0007_youtube_oauth.sql` adds the short-lived OAuth transaction table. Apply it only after the feature branch is reviewed and approved.
 
