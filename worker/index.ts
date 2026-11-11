@@ -372,13 +372,20 @@ app.post('/api/v1/me/history/sync', async (c) => {
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync watch history.');
   let body: unknown;
   try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
-  const input = (body as { items?: unknown } | null)?.items;
-  if (!Array.isArray(input) || input.length > 100) {
-    return fail(c, 400, 'VALIDATION_ERROR', 'Watch history must contain at most 100 entries.');
+  const request = body as { items?: unknown; deleted?: unknown; clear?: unknown } | null;
+  const input = request?.items;
+  const deleted = Array.isArray(request?.deleted) ? request.deleted : [];
+  const clear = request?.clear === true;
+  if (!Array.isArray(input) || input.length > 100 || deleted.length > 100) {
+    return fail(c, 400, 'VALIDATION_ERROR', 'Watch history updates must contain at most 100 entries.');
   }
   const statements = [];
+  if (clear) {
+    statements.push(c.env.DB.prepare('DELETE FROM user_watch_history WHERE user_id = ?').bind(user.id));
+  }
   for (const value of input) {
     if (!value || typeof value !== 'object') continue;
+    if (clear) break;
     const item = value as Record<string, unknown>;
     const slug = typeof item.slug === 'string' ? item.slug.trim() : '';
     const title = typeof item.title === 'string' ? item.title.trim() : '';
@@ -405,6 +412,17 @@ app.post('/api/v1/me/history/sync', async (c) => {
       Number.isFinite(duration) && duration > 0 ? Math.min(86400, Math.floor(duration)) : null,
       Number.isFinite(progress) && progress >= 0 ? Math.min(86400, progress) : 0,
       Math.floor(updatedAt)));
+  }
+  if (!clear) {
+    for (const value of deleted) {
+      if (!value || typeof value !== 'object') continue;
+      const item = value as Record<string, unknown>;
+      const slug = typeof item.slug === 'string' ? item.slug.trim() : '';
+      const episodeNumber = Number(item.episodeNumber);
+      if (slug && slug.length <= 128 && Number.isInteger(episodeNumber) && episodeNumber > 0 && episodeNumber <= 100000) {
+        statements.push(c.env.DB.prepare('DELETE FROM user_watch_history WHERE user_id = ? AND anime_slug = ? AND episode_number = ?').bind(user.id, slug, episodeNumber));
+      }
+    }
   }
   try {
     if (statements.length) await c.env.DB.batch(statements);
