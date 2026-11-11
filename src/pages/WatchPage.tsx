@@ -14,12 +14,26 @@ export default function WatchPage() {
   const key = encodeURIComponent(slug);
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
   const [episodeFilter, setEpisodeFilter] = useState('');
+  const [episodePage, setEpisodePage] = useState(1);
+  const [episodePages, setEpisodePages] = useState<Episode[]>([]);
   const [autoNext, setAutoNext] = useState(() => { try { return localStorage.getItem('kairo-auto-next') !== 'false'; } catch { return true; } });
   useEffect(() => setSelectedServerId(null), [slug, rawEpisode]);
   const parsedEpisode = Number(rawEpisode);
   const validEpisode = Number.isInteger(parsedEpisode) && parsedEpisode >= 1 && parsedEpisode <= 100000;
   const details = useApi<AnimeDetails>(`/anime/${key}`);
-  const episodes = useApi<ItemList<Episode>>(`/anime/${key}/episodes?page=1&limit=50`);
+  const episodes = useApi<ItemList<Episode>>(`/anime/${key}/episodes?page=${episodePage}&limit=50`);
+  useEffect(() => { setEpisodePage(1); setEpisodePages([]); }, [slug]);
+  useEffect(() => {
+    if (episodes.status !== 'ok') return;
+    setEpisodePages((current) => {
+      const merged = new Map(current.map((item) => [item.episodeNumber, item]));
+      for (const item of episodes.data.items) merged.set(item.episodeNumber, item);
+      return [...merged.values()].sort((a, b) => a.episodeNumber - b.episodeNumber);
+    });
+    if (!episodes.data.items.some((item) => item.episodeNumber === parsedEpisode) && episodes.meta.hasNextPage) {
+      setEpisodePage((page) => Math.min(page + 1, 500));
+    }
+  }, [episodes.status, episodePage, slug, parsedEpisode]);
   const servers = useApi<ServerList>(validEpisode ? `/anime/${key}/episodes/${parsedEpisode}/servers` : null);
   const serverItems = servers.status === 'ok' ? servers.data.items : [];
   const selectedServer = serverItems.find((server) => server.id === selectedServerId) ?? serverItems[0] ?? null;
@@ -42,7 +56,8 @@ export default function WatchPage() {
     try {
       if (localStorage.getItem('kairo-history-paused') === 'true') return;
       const anime = details.data;
-      const episode = episodes.data.items.find((item) => item.episodeNumber === parsedEpisode);
+      const episode = episodePages.find((item) => item.episodeNumber === parsedEpisode);
+      if (!episode) return;
       const progressKey = `kairo-progress:${slug}:${parsedEpisode}:${selectedServer?.id ?? ''}`;
       const raw = localStorage.getItem('kairo-watch-history') || '[]';
       const previous = JSON.parse(raw);
@@ -53,19 +68,19 @@ export default function WatchPage() {
       localStorage.setItem('kairo-watch-history', JSON.stringify(next));
       window.dispatchEvent(new Event('kairo:history-change'));
     } catch { /* browser storage may be disabled or full */ }
-  }, [details.status, episodes.status, slug, parsedEpisode, selectedServer?.id, validEpisode]);
+  }, [details.status, episodes.status, episodePages, slug, parsedEpisode, selectedServer?.id, validEpisode]);
 
   if (!validEpisode) return <div className="kc-watch-error"><h1>Invalid episode</h1><p>Choose an episode from the anime page.</p><Link className="kc-btn kc-btn-dark" to={`/anime/${key}`}>Back to anime</Link></div>;
-  if (details.status === 'loading' || episodes.status === 'loading') return <LoadingState label="Loading episode" />;
+  if (details.status === 'loading' || (episodes.status === 'loading' && episodePages.length === 0)) return <LoadingState label="Loading episode" />;
   if (details.status === 'error') return <ErrorState error={details.error} onRetry={details.reload} />;
-  if (episodes.status === 'error') return <ErrorState error={episodes.error} onRetry={episodes.reload} />;
+  if (episodes.status === 'error' && episodePages.length === 0) return <ErrorState error={episodes.error} onRetry={episodes.reload} />;
 
   const anime = details.data;
-  const current = episodes.data.items.find((episode) => episode.episodeNumber === parsedEpisode);
+  const current = episodePages.find((episode) => episode.episodeNumber === parsedEpisode);
   const subServers = serverItems.filter((server) => server.type === 'sub');
   const dubServers = serverItems.filter((server) => server.type === 'dub');
   const currentThumb = safeImageUrl(current?.thumbnailUrl ?? null);
-  const ordered = [...episodes.data.items].sort((a, b) => a.episodeNumber - b.episodeNumber);
+  const ordered = [...episodePages].sort((a, b) => a.episodeNumber - b.episodeNumber);
   const position = ordered.findIndex((episode) => episode.episodeNumber === parsedEpisode);
   const prev = position > 0 ? ordered[position - 1] : null;
   const next = position >= 0 && position < ordered.length - 1 ? ordered[position + 1] : null;
@@ -152,7 +167,7 @@ export default function WatchPage() {
         </div>
 
         <aside className="kc-queue" aria-label="Episodes">
-          <div className="kc-queue-head"><div><span className="kc-section-kicker">UP NEXT</span><h2>Episodes</h2></div><span>{episodes.data.items.length}</span></div>
+          <div className="kc-queue-head"><div><span className="kc-section-kicker">UP NEXT</span><h2>Episodes</h2></div><span>{episodePages.length}{episodes.status === 'loading' && episodePages.length > 0 ? '+' : ''}</span></div>
           <label className="kc-episode-search"><Search size={14}/><input value={episodeFilter} onChange={(event) => setEpisodeFilter(event.target.value)} placeholder="Find an episode…" aria-label="Find an episode"/></label>
           <div className="kc-queue-list">
             {visibleEpisodes.map((episode) => {
@@ -167,7 +182,8 @@ export default function WatchPage() {
             })}
             {visibleEpisodes.length === 0 && <p className="kc-episode-empty">No episodes match your search.</p>}
           </div>
-          {episodes.meta.hasNextPage && <p className="kc-hint kc-queue-note">More episodes are listed on the anime page.</p>}
+          {episodes.status === 'loading' && episodePages.length > 0 && <p className="kc-hint kc-queue-note">Loading more episodes…</p>}
+          {episodes.status === 'ok' && episodes.meta.hasNextPage && !episodes.data.items.some((item) => item.episodeNumber === parsedEpisode) && <p className="kc-hint kc-queue-note">Checking the next episode page…</p>}
         </aside>
       </div>
     </div>
