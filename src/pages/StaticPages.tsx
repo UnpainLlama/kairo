@@ -27,7 +27,7 @@ async function signOut() {
   window.dispatchEvent(new Event('kairo:auth-change'));
 }
 
-async function syncWatchHistory(): Promise<WatchEntry[] | null> {
+async function syncWatchHistory(options: { deleted?: Array<{ slug: string; episodeNumber: number }>; clear?: boolean } = {}): Promise<WatchEntry[] | null> {
   const localItems = readHistory().slice(0, 100).map((item) => {
     let progressSeconds = 0;
     try { progressSeconds = Number(localStorage.getItem(item.progressKey) || 0); } catch { /* storage may be unavailable */ }
@@ -38,7 +38,7 @@ async function syncWatchHistory(): Promise<WatchEntry[] | null> {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ items: localItems }),
+      body: JSON.stringify({ items: localItems, deleted: options.deleted ?? [], clear: options.clear === true }),
     });
     if (!response.ok) return null;
     const payload = await response.json();
@@ -99,8 +99,8 @@ export function HistoryPage() {
   const filtered=useMemo(()=>items.filter(x=>`${x.title} ${x.episodeTitle}`.toLowerCase().includes(query.toLowerCase())).sort((a,b)=>sort==='title'?a.title.localeCompare(b.title):sort==='progress'?progressOf(b)-progressOf(a):b.updatedAt-a.updatedAt),[items,query,sort]);
   function refresh(){setItems(readHistory())}
   function togglePaused(){const next=!paused;setPaused(next);try{localStorage.setItem(PAUSED_KEY,String(next))}catch{}}
-  function clearHistory(){try{localStorage.removeItem(HISTORY_KEY)}catch{}setItems([]);setConfirmClear(false);window.dispatchEvent(new Event('kairo:history-change'))}
-  function removeItem(item:WatchEntry){const next=items.filter(x=>x.slug!==item.slug||x.episodeNumber!==item.episodeNumber);try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next))}catch{}setItems(next);window.dispatchEvent(new Event('kairo:history-change'))}
+  function clearHistory(){try{localStorage.removeItem(HISTORY_KEY)}catch{}setItems([]);setConfirmClear(false);window.dispatchEvent(new Event('kairo:history-change'));void syncWatchHistory({clear:true})}
+  function removeItem(item:WatchEntry){const next=items.filter(x=>x.slug!==item.slug||x.episodeNumber!==item.episodeNumber);try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next))}catch{}setItems(next);window.dispatchEvent(new Event('kairo:history-change'));void syncWatchHistory({deleted:[{slug:item.slug,episodeNumber:item.episodeNumber}]})}
   useEffect(()=>{window.addEventListener('storage',refresh);window.addEventListener('kairo:history-change',refresh);return()=>{window.removeEventListener('storage',refresh);window.removeEventListener('kairo:history-change',refresh)}},[]);
   useEffect(()=>{let active=true;syncWatchHistory().then(items=>{if(active&&items)setItems(items)});return()=>{active=false}},[]);
   return <section className="kc-history-page">
