@@ -116,9 +116,9 @@ export default function App() {
             </button>
             {menuOpen && (
               <section className="kc-menu-popover" id="kc-navigation-menu" aria-label="Kairo navigation menu">
-                <Link to="/login" className="kc-menu-profile" onClick={closeMenu}>
+                <Link to={currentUser?"/profile":"/login"} className="kc-menu-profile" onClick={closeMenu}>
                   <span className="kc-menu-avatar"><UserRound size={19} aria-hidden="true" /></span>
-                  <span><b>Profile</b><small>Guest account</small></span>
+                  <span><b>{currentUser?.displayName??'Profile'}</b><small>{currentUser?.email??'Guest account'}</small></span>
                   <ChevronRight size={15} aria-hidden="true" />
                 </Link>
 
