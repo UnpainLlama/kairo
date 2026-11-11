@@ -26,11 +26,52 @@ async function signOut() {
   if(!response.ok||!payload?.success) throw new Error(payload?.error?.message??'Could not sign out. Please try again.');
   window.dispatchEvent(new Event('kairo:auth-change'));
 }
+
+async function syncWatchHistory(): Promise<WatchEntry[] | null> {
+  const localItems = readHistory().slice(0, 100).map((item) => {
+    let progressSeconds = 0;
+    try { progressSeconds = Number(localStorage.getItem(item.progressKey) || 0); } catch { /* storage may be unavailable */ }
+    return { ...item, progressSeconds: Number.isFinite(progressSeconds) ? Math.max(0, progressSeconds) : 0 };
+  });
+  try {
+    const response = await fetch('/api/v1/me/history/sync', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ items: localItems }),
+    });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const rows = payload?.data?.items;
+    if (!payload?.success || !Array.isArray(rows)) return null;
+    const synced: WatchEntry[] = rows.filter((row: any) =>
+      row && typeof row.slug === 'string' && typeof row.title === 'string' &&
+      Number.isInteger(Number(row.episodeNumber))
+    ).map((row: any) => {
+      const previous = localItems.find((item) => item.slug === row.slug && item.episodeNumber === Number(row.episodeNumber));
+      const progressKey = previous?.progressKey ?? `kairo-progress:${row.slug}:${row.episodeNumber}:sync`;
+      const seconds = Number(row.progressSeconds);
+      try { localStorage.setItem(progressKey, String(Number.isFinite(seconds) ? Math.max(0, seconds) : 0)); } catch { /* storage may be unavailable */ }
+      return {
+        slug: row.slug, title: row.title, posterUrl: typeof row.posterUrl === 'string' ? row.posterUrl : null,
+        episodeNumber: Number(row.episodeNumber), episodeTitle: typeof row.episodeTitle === 'string' ? row.episodeTitle : '',
+        progressKey, durationSeconds: Number.isFinite(Number(row.durationSeconds)) ? Number(row.durationSeconds) : null,
+        updatedAt: Number(row.updatedAt) || Date.now(),
+      };
+    });
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(synced)); } catch { /* storage may be unavailable */ }
+    window.dispatchEvent(new Event('kairo:history-change'));
+    return synced;
+  } catch {
+    return null;
+  }
+}
 export function ProfilePage() {
   const {user,loaded}=useCurrentUser(); const navigate=useNavigate();
   const [history,setHistory]=useState<WatchEntry[]>(()=>readHistory()); const [libraryCount,setLibraryCount]=useState<number|null>(null);
   const [error,setError]=useState(''); const [busy,setBusy]=useState(false);
   useEffect(()=>{let active=true;fetch('/api/v1/me/library',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(p=>{if(active)setLibraryCount(Array.isArray(p?.data?.items)?p.data.items.length:0)}).catch(()=>{if(active)setLibraryCount(null)});return()=>{active=false}},[user?.id]);
+  useEffect(()=>{let active=true;if(user?.id)syncWatchHistory().then(items=>{if(active&&items)setHistory(items)});return()=>{active=false}},[user?.id]);
   useEffect(()=>{const refresh=()=>setHistory(readHistory());window.addEventListener('storage',refresh);window.addEventListener('kairo:history-change',refresh);return()=>{window.removeEventListener('storage',refresh);window.removeEventListener('kairo:history-change',refresh)}},[]);
   const watched=history.length; const completed=history.filter(x=>progressOf(x)>=95).length;
   async function logout(){setBusy(true);setError('');try{await signOut();navigate('/login',{replace:true})}catch(e){setError(e instanceof Error?e.message:'Sign out failed.')}finally{setBusy(false)}}
@@ -61,8 +102,9 @@ export function HistoryPage() {
   function clearHistory(){try{localStorage.removeItem(HISTORY_KEY)}catch{}setItems([]);setConfirmClear(false);window.dispatchEvent(new Event('kairo:history-change'))}
   function removeItem(item:WatchEntry){const next=items.filter(x=>x.slug!==item.slug||x.episodeNumber!==item.episodeNumber);try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next))}catch{}setItems(next);window.dispatchEvent(new Event('kairo:history-change'))}
   useEffect(()=>{window.addEventListener('storage',refresh);window.addEventListener('kairo:history-change',refresh);return()=>{window.removeEventListener('storage',refresh);window.removeEventListener('kairo:history-change',refresh)}},[]);
+  useEffect(()=>{let active=true;syncWatchHistory().then(items=>{if(active&&items)setItems(items)});return()=>{active=false}},[]);
   return <section className="kc-history-page">
-    <header className="kc-page-head"><span className="kc-section-kicker">YOUR ACTIVITY</span><h1>Watch history</h1><p>Pick up where you left off. History is stored in this browser on this device.</p></header>
+    <header className="kc-page-head"><span className="kc-section-kicker">YOUR ACTIVITY</span><h1>Watch history</h1><p>Pick up where you left off. Sign in to sync history across your devices.</p></header>
     <div className="kc-history-toolbar"><label className="kc-history-search"><Search size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search your history…" aria-label="Search watch history"/></label><label className="kc-history-sort"><ArrowUpDown size={15}/><select value={sort} onChange={e=>setSort(e.target.value)} aria-label="Sort history"><option value="recent">Last watched</option><option value="title">A–Z</option><option value="progress">Progress</option></select></label><button className={`kc-btn ${paused?'kc-btn-primary':''}`} onClick={togglePaused} type="button">{paused?<Play size={14}/>:<Pause size={14}/>} {paused?'Resume history':'Pause history'}</button><button className="kc-btn kc-btn-danger" type="button" onClick={()=>setConfirmClear(true)} disabled={!items.length}><Trash2 size={14}/> Clear</button></div>
     {paused&&<p className="kc-history-paused" role="status">History recording is paused. New episodes won’t be added until you resume.</p>}
     {confirmClear&&<div className="kc-history-confirm" role="alert"><span>Clear all watch history from this browser?</span><button className="kc-btn kc-btn-danger" onClick={clearHistory}>Clear history</button><button className="kc-btn" onClick={()=>setConfirmClear(false)}>Cancel</button></div>}
