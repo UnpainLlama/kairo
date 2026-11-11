@@ -36,6 +36,12 @@ Local development and staging use `LIVE_PROVIDERS=anilist,hianime,jikan`. AniLis
 
 Bind a KV namespace as `METADATA_CACHE` on workers.dev; without it the cache does not persist between requests and you will hit rate limits quickly. KV's free tier allows 1,000 writes a day, and each cache miss is one write.
 
+## Live spot-check log
+
+- **2026-11-11 — Jikan anime detail:** a direct request to `GET https://api.jikan.moe/v4/anime/1` returned the expected v4 `data` object. The observed fields used by `mapJikanAnime` included `mal_id`, `url`, `images.jpg.large_image_url`, `title`, `title_english`, `title_japanese`, `title_synonyms`, `type`, `episodes`, `status`, `aired.prop.from.year`, `score`, `synopsis`, `rating`, `season`, `year`, and `genres[].name`. This is a spot-check of one detail response, not validation of every endpoint or every nullable field.
+- The list/search, genre, seasonal archive, recommendations, and episode-list routes still need live checks against representative responses. Hand-written Vitest fixtures remain contract tests, not captured production payloads.
+- Jikan's and MyAnimeList's applicable terms/licensing obligations have **not** been approved for KAIRO. Keep Jikan marked as an unverified fallback until the owner reviews those terms; do not treat its open-source software license as a license for MyAnimeList data.
+
 ## Owner actions before launch
 - **First live check.** The adapters and tests use hand-written fixtures that follow the documented shapes. Call each route against the real APIs once and compare. In particular check Jikan's field names, the 25-item page limit, and the episodes page size.
 - **Read Jikan's terms of use policy.** It has not been read yet. Jikan scrapes MyAnimeList, which may carry its own restrictions.
