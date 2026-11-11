@@ -4,6 +4,7 @@ import { Innertube } from 'youtubei.js';
 import { cors } from 'hono/cors';
 import { boundedInt, parseId, parsePagination, parseSearchParams } from './lib/validation';
 import { clearSessionCookie, findSessionUser, revokeSession } from './auth/session';
+import { registerAuthRoutes } from './auth/routes';
 import { GENRES_SQL, buildListQuery, buildRelatedQuery, buildSearchQuery } from './repositories/catalog';
 import { BASE_RECORD_SQL, INSERT_PROVIDER_ID_SQL, PROVIDER_IDS_SQL } from './repositories/providerIds';
 import { buildRegistry, createCache, resolveUnified, sharedBreaker, toBaseRecord, type BaseRow } from './metadata/service';
@@ -64,6 +65,8 @@ function ok<T>(c: Context<{ Bindings: Bindings; Variables: Variables }>, data: T
 function fail(c: Context<{ Bindings: Bindings; Variables: Variables }>, status: 400 | 401 | 403 | 404 | 429 | 500 | 503, code: string, message: string) {
   return c.json({ success: false, error: { code, message }, meta: { requestId: c.get('requestId') } }, status);
 }
+
+registerAuthRoutes(app);
 
 app.get('/api/health', (c) => ok(c, { status: 'ok', service: 'kairo-api', environment: c.env.APP_ENV ?? 'unknown' }));
 
