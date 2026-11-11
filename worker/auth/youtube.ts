@@ -5,6 +5,7 @@ type YouTubeBindings = {
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   YOUTUBE_TOKEN_ENCRYPTION_KEY?: string;
+  APP_BASE_URL?: string;
 };
 type YouTubeContext = {
   env: YouTubeBindings;
@@ -73,6 +74,16 @@ async function decryptToken(value: string, encodedKey: string): Promise<string> 
   );
   return new TextDecoder().decode(plaintext);
 }
+function callbackUrl(c: YouTubeContext): string | null {
+  const configured = c.env.APP_BASE_URL;
+  if (!configured) return null;
+  try {
+    const base = new URL(configured);
+    if (!['https:', 'http:'].includes(base.protocol) || base.username || base.password || base.pathname !== '/' || base.search || base.hash) return null;
+    if (base.protocol === 'http:' && base.hostname !== 'localhost' && base.hostname !== '127.0.0.1') return null;
+    return new URL('/api/v1/auth/youtube/callback', base.origin).toString();
+  } catch { return null; }
+}
 function unavailable(c: YouTubeContext): Response {
   return c.json({ success: false, error: { code: 'YOUTUBE_CONNECT_UNAVAILABLE', message: 'YouTube connection is not configured yet.' } }, 503);
 }
@@ -104,7 +115,8 @@ export function registerYouTubeAuthRoutes(app: any): void {
       return c.json({ success: false, error: { code: 'YOUTUBE_CONNECT_UNAVAILABLE', message: 'Could not start YouTube connection. Please try again.' } }, 503);
     }
     const url = new URL(c.req.url);
-    const callback = new URL('/api/v1/auth/youtube/callback', url.origin).toString();
+    const callback = callbackUrl(c);
+    if (!callback) return unavailable(c);
     c.header('Set-Cookie', stateCookie(state, url.protocol === 'https:'));
     const target = new URL(AUTH_URL);
     target.search = new URLSearchParams({
@@ -156,7 +168,8 @@ export function registerYouTubeAuthRoutes(app: any): void {
       const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
       const key = c.env.YOUTUBE_TOKEN_ENCRYPTION_KEY;
       if (!clientId || !clientSecret || !key) return unavailable(c);
-      const callback = new URL('/api/v1/auth/youtube/callback', url.origin).toString();
+      const callback = callbackUrl(c);
+      if (!callback) return unavailable(c);
       const response = await fetch(TOKEN_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
@@ -172,18 +185,21 @@ export function registerYouTubeAuthRoutes(app: any): void {
       };
       const scopes = typeof tokens.scope === 'string' ? tokens.scope.split(/\s+/).filter(Boolean) : [];
       if (!tokens.access_token || tokens.access_token.length > 8192 || tokens.token_type?.toLowerCase() !== 'bearer' ||
-          !scopes.includes(SCOPE) || !Number.isFinite(Number(tokens.expires_in)) || Number(tokens.expires_in) <= 0) {
+          scopes.length !== 1 || scopes[0] !== SCOPE || !Number.isFinite(Number(tokens.expires_in)) || Number(tokens.expires_in) <= 0 || Number(tokens.expires_in) > 86400) {
         return redirectTo(c, '/settings?youtube=invalid_grant');
       }
       const existing = await c.env.DB.prepare(
         "SELECT encrypted_refresh_token FROM provider_connections WHERE user_id=? AND provider='youtube'"
       ).bind(user.id).first<{ encrypted_refresh_token: string | null }>();
-      const refreshToken = tokens.refresh_token ?? (existing?.encrypted_refresh_token
-        ? await decryptToken(existing.encrypted_refresh_token, key) : null);
-      if (!refreshToken || refreshToken.length > 8192) return redirectTo(c, '/settings?youtube=refresh_token_missing');
+      if (tokens.refresh_token && (tokens.refresh_token.length === 0 || tokens.refresh_token.length > 8192)) {
+        return redirectTo(c, '/settings?youtube=invalid_grant');
+      }
+      const encryptedRefresh = tokens.refresh_token
+        ? await encryptToken(tokens.refresh_token, key)
+        : existing?.encrypted_refresh_token;
+      if (!encryptedRefresh) return redirectTo(c, '/settings?youtube=refresh_token_missing');
 
       const encryptedAccess = await encryptToken(tokens.access_token, key);
-      const encryptedRefresh = tokens.refresh_token ? await encryptToken(tokens.refresh_token, key) : existing!.encrypted_refresh_token!;
       await c.env.DB.prepare(`
         INSERT INTO provider_connections
           (id,user_id,provider,provider_subject,encrypted_access_token,encrypted_refresh_token,token_expires_at,scopes_json)
@@ -219,7 +235,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
 
   app.post('/api/v1/auth/youtube/disconnect', async (c: YouTubeContext) => {
     const origin = c.req.header('Origin');
-    if (origin && origin !== new URL(c.req.url).origin) {
+    if (!origin || origin !== new URL(c.req.url).origin) {
       return c.json({ success: false, error: { code: 'ORIGIN_FORBIDDEN', message: 'This request origin is not allowed.' } }, 403);
     }
     const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
