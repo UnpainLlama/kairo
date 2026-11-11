@@ -158,7 +158,6 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<AuthPage mode="login" />} />
           <Route path="/register" element={<AuthPage mode="register" />} />
-          <Route path="/verify-email" element={<AuthPage mode="register" />} />
           <Route path="/" element={<HomePage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/browse" element={<Navigate to="/browse/anime" replace />} />
