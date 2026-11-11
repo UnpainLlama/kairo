@@ -50,6 +50,20 @@ describe('HiAnime episode provider', () => {
     expect(provider.termsVerified).toBe(true);
   });
 
+  it('matches a known alternate title returned by the first search response', async () => {
+    const urls: string[] = [];
+    const provider = createHiAnimeEpisodeProvider(async (input) => {
+      urls.push(input);
+      if (input.includes('/search?')) {
+        return new Response('<div class="flw-item"><a class="film-name" href="/watch/death-note-8" title="Death Note: Rebirth">Death Note: Rebirth</a></div>', { status: 200 });
+      }
+      return json({ status: true, html: '<a class="ep-item" data-id="2001" data-number="1" title="Rebirth">Episode 1</a>' });
+    }, 'https://hianime.at');
+    const page = await provider.listEpisodes({ ...lookup, alternateTitles: ['DN', 'デスノート', 'Death Note: Rebirth'], providerUrl: null }, 1, signal);
+    expect(urls).toHaveLength(2);
+    expect(page.items[0]).toMatchObject({ episodeNumber: 1, providerEpisodeId: '2001' });
+  });
+
   it('discovers sub/dub servers without resolving media sources', async () => {
     const urls: string[] = [];
     const provider = createHiAnimeEpisodeProvider(async (input) => {
