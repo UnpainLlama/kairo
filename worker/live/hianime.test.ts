@@ -18,6 +18,12 @@ describe('HiAnime catalogue source', () => {
     expect(page.items[0]?.url).toBe('https://hianime.at/watch/death-note-8');
   });
 
+  it('does not return titles with unknown season metadata for a seasonal filter', async () => {
+    const source = createHiAnimeSource(async () => response(searchHtml), 'https://hianime.at');
+    const page = await source.browse({ sort: 'popularity', season: 'winter', year: 2006, page: 1, limit: 24 }, signal);
+    expect(page.items).toEqual([]);
+  });
+
   it('resolves a detail route by its slug and parses synopsis, genres and score', async () => {
     const calls: string[] = [];
     const source = createHiAnimeSource(async (url) => { calls.push(url); return response(detailHtml); }, 'https://hianime.at');
