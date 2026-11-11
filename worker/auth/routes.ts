@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { hashPassword, verifyPassword } from './password';
 import { createSession, sessionCookie } from './session';
+import { registerGoogleAuthRoutes } from './google';
 
 const WINDOW = 900000;
 const enc = new TextEncoder();
@@ -17,6 +18,8 @@ async function permit(db:D1Database,action:string,ip:string,identity:string,limi
  window_started_at=CASE WHEN window_started_at<=? THEN ? ELSE window_started_at END RETURNING attempts`)
  .bind(key,now,now-WINDOW,now-WINDOW,now).first<{attempts:number}>();
  return Number(row?.attempts??limit+1)<=limit;
+  registerGoogleAuthRoutes(app);
+  registerGoogleAuthRoutes(app);
 }
 const ip=(c:any)=>c.req.header('CF-Connecting-IP')??'unknown';
 

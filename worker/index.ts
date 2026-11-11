@@ -16,6 +16,8 @@ interface Bindings {
   APP_ENV?: string;
   APP_BASE_URL?: string;
   RESEND_API_KEY?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
   AUTH_EMAIL_FROM?: string;
   ALLOWED_ORIGIN?: string;
   /** Comma-separated metadata provider ids to enable, e.g. "anilist". Empty = none. */

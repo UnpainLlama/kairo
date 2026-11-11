@@ -109,3 +109,14 @@ function toBase64Url(bytes: Uint8Array): string {
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
 }
+
+
+/** Require a recently created session before linking a new external identity. */
+export async function hasRecentSession(db: D1Database, cookieHeader: string | null): Promise<boolean> {
+  const token = readSessionCookie(cookieHeader);
+  if (!token) return false;
+  const row = await db.prepare(
+    "SELECT id FROM sessions WHERE token_hash = ? AND expires_at > ? AND created_at >= datetime('now', '-15 minutes') LIMIT 1"
+  ).bind(await hashToken(token), Date.now()).first<{ id: string }>();
+  return Boolean(row);
+}
