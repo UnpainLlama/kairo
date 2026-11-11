@@ -142,6 +142,16 @@ describe('Jikan source', () => {
     expect((await src.browse({ sort: 'popularity', status: 'hiatus', page: 1, limit: 24 }, signal)).items).toEqual([]);
     expect((await src.browse({ sort: 'popularity', genre: 'Nope', page: 1, limit: 24 }, signal)).items).toEqual([]);
   });
+  it('uses Jikan’s native seasonal archive for season-only browse and maps format filters', async () => {
+    let url = '';
+    const src = createJikanSource(async (u) => { url = u; return jikanList([jikanAnime(1)]); }, { pacer: instant, now: () => NOW });
+    const out = await src.browse({ sort: 'popularity', season: 'winter', year: 2026, format: 'series', page: 2, limit: 24 }, signal);
+    const parsed = new URL(url);
+    expect(parsed.pathname).toBe('/v4/seasons/2026/winter');
+    expect(Object.fromEntries(parsed.searchParams)).toMatchObject({ filter: 'tv', sfw: 'true', page: '2', limit: '24' });
+    expect(parsed.searchParams.has('start_date')).toBe(false);
+    expect(out.items.map((item) => item.card.id)).toEqual(['m1']);
+  });
   it('maps provider errors for missing and unavailable catalogue titles', async () => {
     await expect(createJikanSource(async () => json({}, { status: 404 }), { pacer: instant }).byRef({ kind: 'm', id: 1 }, signal)).rejects.toMatchObject({ kind: 'not_found' });
     await expect(createJikanSource(async () => json({}, { status: 504 }), { pacer: instant }).byRef({ kind: 'm', id: 1 }, signal)).rejects.toMatchObject({ kind: 'unavailable' });
