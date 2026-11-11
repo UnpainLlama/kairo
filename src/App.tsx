@@ -26,11 +26,6 @@ const navItems: NavItem[] = [
   { to: '/profile', label: 'Profile', icon: UserRound },
 ];
 
-const bottomItems: NavItem[] = [
-  { to: '/settings', label: 'Settings', icon: Settings },
-  { to: '/login', label: 'Login', icon: LogIn, active: false },
-];
-
 const menuItems: NavItem[] = [
   { to: '/', label: 'Home', icon: Home, end: true },
   { to: '/browse/trending', label: 'Trending', icon: Flame },
@@ -112,7 +107,8 @@ export default function App() {
           {navItems.map((item) => <RailLink key={item.label} {...item} />)}
         </nav>
         <div className="kc-rail-bottom">
-          {bottomItems.map((item) => <RailLink key={item.label} {...item} />)}
+          <RailLink to="/settings" label="Settings" icon={Settings} />
+          <RailLink to={currentUser?"/profile":"/login"} label={currentUser?"Account":"Login"} icon={currentUser?UserRound:LogIn} active={false} />
         </div>
       </aside>
 
