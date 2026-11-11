@@ -19,11 +19,13 @@ Nothing is written to D1. Cache entries all expire (fresh 10 min to 24 h, stale 
 | Route | AniList (primary) | HiAnime (catalogue fallback / legacy IDs) | Jikan (catalogue + episode fallback) |
 |---|---|---|---|
 | featured / trending / latest | trending, trending, airing newest-first. Featured prefers banner art and rotates its page/order daily | popular, top-airing, recently-updated | top airing, this season, airing newest-first |
-| search and `/catalog/browse` | all filters | title search and category browsing; filters applied when upstream fields are present | q, type, status, genre (id looked up), date range; no "hiatus" |
+| search and `/catalog/browse` | all filters, including AniList trending-score sorting and season/year combinations | title search and category browsing; filters applied when upstream fields are present | q, type, status, genre (id looked up), date range; no "hiatus" |
 | genres | `GenreCollection` (no counts) | parses website genre links | `/genres/anime` (with counts) |
 | detail | yes, includes banner | yes, including old `h…` identifiers | yes, no banner |
 | related | relations + recommendations | related titles from the show page | recommendations |
 | episodes | no | independent episode provider can discover by title / provider URL | independent episode provider can use the MyAnimeList id |
+
+Trending and Seasonal are distinct views: Trending filters by season/year and sorts by AniList trending score; Seasonal uses the same filters sorted by popularity. Search also exposes a season filter.
 
 Adult content is excluded everywhere: `isAdult: false` on AniList, `sfw=true` plus a drop of `Rx` ratings on Jikan, and Hentai/Erotica removed from genre lists.
 
