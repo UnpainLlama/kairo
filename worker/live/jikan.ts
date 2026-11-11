@@ -195,6 +195,14 @@ export function createJikanSource(fetchImpl: FetchLike, opts: { pacer?: Pacer; n
         if (!g) return empty(n);
         params.genres = g.id;
       }
+      if (q.season && !text && !q.genre && !q.status && ['popularity', 'trending', 'relevance'].includes(q.sort)) {
+        // Use Jikan's native seasonal archive rather than approximating a season with calendar dates.
+        // The endpoint supports a format filter but not search, genre, status, or arbitrary sort filters;
+        // those combinations intentionally retain the /anime date-range path below.
+        const year = q.year ?? new Date(clock()).getUTCFullYear();
+        const filter = q.format ? TYPES[q.format] : undefined;
+        return toPaged(await get(`/seasons/${year}/${q.season}`, { filter, sfw: true, page: q.page, limit: n }, signal), n);
+      }
       if (q.season || q.year !== undefined) {
         const year = q.year ?? new Date(clock()).getUTCFullYear();
         const [from, to] = q.season ? SEASON_RANGE[q.season] : (['01-01', '12-31'] as const);
