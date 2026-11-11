@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { hashPassword, verifyPassword } from './password';
 import { createSession, sessionCookie } from './session';
 import { registerGoogleAuthRoutes } from './google';
+import { registerYouTubeAuthRoutes } from './youtube';
 
 const WINDOW = 900000;
 const enc = new TextEncoder();
@@ -60,4 +61,5 @@ export function registerAuthRoutes(app:Hono<any>){
   }catch{return fail(c,503,'AUTH_UNAVAILABLE','Sign-in is temporarily unavailable. Please try again.')}
  });
   registerGoogleAuthRoutes(app);
+  registerYouTubeAuthRoutes(app);
 }
