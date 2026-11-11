@@ -201,7 +201,7 @@ export function createJikanSource(fetchImpl: FetchLike, opts: { pacer?: Pacer; n
         params.start_date = `${year}-${from}`;
         params.end_date = `${year}-${to}`;
       }
-      if (q.sort === 'popularity' || (q.sort === 'relevance' && !text)) { params.order_by = 'popularity'; params.sort = 'asc'; }
+      if (q.sort === 'popularity' || q.sort === 'trending' || (q.sort === 'relevance' && !text)) { params.order_by = 'popularity'; params.sort = 'asc'; }
       else if (q.sort === 'latest') { params.order_by = 'start_date'; params.sort = 'desc'; }
       else if (q.sort === 'rating') { params.order_by = 'score'; params.sort = 'desc'; }
       return toPaged(await get('/anime', params, signal), n);
