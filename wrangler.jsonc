@@ -81,7 +81,6 @@
 
       "vars": {
         "APP_ENV": "production",
-        "APP_BASE_URL": "https://kairo.example.com",
         "METADATA_PROVIDERS": "anilist",
         "CATALOG_SOURCE": "live",
         "LIVE_PROVIDERS": "anilist,jikan"
