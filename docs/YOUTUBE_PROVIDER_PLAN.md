@@ -65,6 +65,8 @@ Make YouTube a first-class Kairo provider with a public discovery experience ava
 
 - Existing Google OAuth client ID/secret are used by the separate YouTube authorization flow.
 - Add `YOUTUBE_TOKEN_ENCRYPTION_KEY` as a Worker secret; generate a cryptographically random 32-byte key and keep it out of source control. Never paste the secret into chat.
+- The Worker builds its YouTube callback from the configured `APP_BASE_URL` (not the incoming Host header); keep that base URL canonical for each environment.
+- Staging callback URI: `https://kairo-anime-platform-staging.unpainllama.workers.dev/api/v1/auth/youtube/callback`. Keep the separate Google sign-in callback registered too.
 - Register the exact callback URI `/api/v1/auth/youtube/callback` for each configured environment in the Google OAuth client.
 - Enable YouTube Data API v3 in the associated Google Cloud project.
 - Public API access will require a Worker-side `YOUTUBE_API_KEY` secret if/when the public feed adapter is implemented.
