@@ -59,7 +59,7 @@ export function HistoryPage() {
   function refresh(){setItems(readHistory())}
   function togglePaused(){const next=!paused;setPaused(next);try{localStorage.setItem(PAUSED_KEY,String(next))}catch{}}
   function clearHistory(){try{localStorage.removeItem(HISTORY_KEY)}catch{}setItems([]);setConfirmClear(false);window.dispatchEvent(new Event('kairo:history-change'))}
-  function removeItem(item:WatchEntry){const next=items.filter(x=>x.progressKey!==item.progressKey);try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next))}catch{}setItems(next);window.dispatchEvent(new Event('kairo:history-change'))}
+  function removeItem(item:WatchEntry){const next=items.filter(x=>x.slug!==item.slug||x.episodeNumber!==item.episodeNumber);try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next))}catch{}setItems(next);window.dispatchEvent(new Event('kairo:history-change'))}
   useEffect(()=>{window.addEventListener('storage',refresh);window.addEventListener('kairo:history-change',refresh);return()=>{window.removeEventListener('storage',refresh);window.removeEventListener('kairo:history-change',refresh)}},[]);
   return <section className="kc-history-page">
     <header className="kc-page-head"><span className="kc-section-kicker">YOUR ACTIVITY</span><h1>Watch history</h1><p>Pick up where you left off. History is stored in this browser on this device.</p></header>
