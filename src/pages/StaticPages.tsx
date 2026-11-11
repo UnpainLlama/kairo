@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Clock, Heart, LogIn, LogOut, Search, Settings, Star, Trash2, UserRound, Pause, Play, ArrowUpDown } from 'lucide-react';
+import { Clock, Heart, LogIn, LogOut, Search, Settings, Trash2, UserRound, Pause, Play, ArrowUpDown } from 'lucide-react';
 import { EmptyState, LoadingState } from '../components/catalog';
 
 type AccountUser = { id: string; displayName: string; email: string | null; emailVerifiedAt?: string | null };
