@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { clearSessionCookie, createOpaqueToken, hashToken, readSessionCookie, sessionCookie } from './session';
 
 describe('session primitives', () => {
-  it('creates high-entropy URL-safe opaque tokens', () => {
+  it('creates 256-bit URL-safe opaque tokens', () => {
     const token = createOpaqueToken();
     expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(createOpaqueToken()).not.toBe(token);
   });
 
-  it('hashes tokens deterministically without returning the raw token', async () => {
+  it('hashes tokens deterministically', async () => {
     const hash = await hashToken('example-session-token');
     expect(hash).toMatch(/^[a-f0-9]{64}$/);
     expect(hash).not.toContain('example-session-token');
@@ -23,7 +23,7 @@ describe('session primitives', () => {
     expect(readSessionCookie('kairo_session=bad.value')).toBeNull();
   });
 
-  it('sets secure, HTTP-only, same-site cookies and clears them', () => {
+  it('sets secure HTTP-only same-site cookies and clears them', () => {
     const token = createOpaqueToken();
     const cookie = sessionCookie(token);
     expect(cookie).toContain('HttpOnly');

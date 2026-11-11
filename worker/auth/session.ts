@@ -1,5 +1,6 @@
 const SESSION_COOKIE = 'kairo_session';
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
+export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
+const SESSION_TTL_MS = SESSION_TTL_SECONDS * 1000;
 
 export type SessionUser = {
   id: string;
@@ -10,7 +11,6 @@ export type SessionUser = {
 };
 
 type SessionRow = {
-  id: string;
   userId: string;
   displayName: string;
   email: string | null;
@@ -19,8 +19,7 @@ type SessionRow = {
 };
 
 export function createOpaqueToken(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return toBase64Url(bytes);
+  return toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
 }
 
 export async function hashToken(token: string): Promise<string> {
@@ -35,7 +34,7 @@ export function readSessionCookie(cookieHeader: string | null): string | null {
     if (separator < 0) continue;
     if (part.slice(0, separator).trim() !== SESSION_COOKIE) continue;
     const value = part.slice(separator + 1).trim();
-    return /^[A-Za-z0-9_-]{40,64}$/.test(value) ? value : null;
+    return /^[A-Za-z0-9_-]{43}$/.test(value) ? value : null;
   }
   return null;
 }
@@ -53,25 +52,48 @@ export function sessionCookie(token: string, secure = true): string {
 }
 
 export function clearSessionCookie(secure = true): string {
-  const flags = [`${SESSION_COOKIE}=`, 'Path=/', 'Max-Age=0', 'HttpOnly', 'SameSite=Lax'];
+  const flags = [`${SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`];
   if (secure) flags.push('Secure');
   return flags.join('; ');
 }
 
+export async function createSession(
+  db: D1Database,
+  userId: string,
+  metadata: { userAgent?: string; ipPrefix?: string } = {},
+  now = Date.now(),
+): Promise<{ id: string; token: string; expiresAt: number }> {
+  const id = crypto.randomUUID();
+  const token = createOpaqueToken();
+  const expiresAt = now + SESSION_TTL_MS;
+  await db.prepare(
+    `INSERT INTO sessions (id, user_id, token_hash, expires_at, user_agent, ip_prefix)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).bind(id, userId, await hashToken(token), expiresAt,
+    metadata.userAgent?.slice(0, 512) ?? null,
+    metadata.ipPrefix?.slice(0, 64) ?? null).run();
+  return { id, token, expiresAt };
+}
+
+export async function revokeSession(db: D1Database, cookieHeader: string | null): Promise<void> {
+  const token = readSessionCookie(cookieHeader);
+  if (!token) return;
+  await db.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(await hashToken(token)).run();
+}
+
 /** Resolve the current Kairo identity exclusively from the server-side session cookie. */
-export async function findSessionUser(db: D1Database, cookieHeader: string | null): Promise<SessionUser | null> {
+export async function findSessionUser(db: D1Database, cookieHeader: string | null, now = Date.now()): Promise<SessionUser | null> {
   const token = readSessionCookie(cookieHeader);
   if (!token) return null;
-  const tokenHash = await hashToken(token);
   const row = await db.prepare(
-    `SELECT s.id, s.user_id AS userId, p.display_name AS displayName,
+    `SELECT s.user_id AS userId, p.display_name AS displayName,
             p.email, p.email_verified_at AS emailVerifiedAt, p.role
      FROM sessions s
      INNER JOIN user_profiles p ON p.id = s.user_id
      WHERE s.token_hash = ? AND s.expires_at > ?
        AND p.account_status = 'active'
      LIMIT 1`
-  ).bind(tokenHash, Date.now()).first<SessionRow>();
+  ).bind(await hashToken(token), now).first<SessionRow>();
   if (!row) return null;
   return {
     id: row.userId,
@@ -85,5 +107,5 @@ export async function findSessionUser(db: D1Database, cookieHeader: string | nul
 function toBase64Url(bytes: Uint8Array): string {
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  return btoa(binary).replace(/=/g, '').replace(/\\+/g, '-').replace(/\\//g, '_');
 }

@@ -3,6 +3,7 @@ import { Hono, type Context, type Next } from 'hono';
 import { Innertube } from 'youtubei.js';
 import { cors } from 'hono/cors';
 import { boundedInt, parseId, parsePagination, parseSearchParams } from './lib/validation';
+import { clearSessionCookie, findSessionUser, revokeSession } from './auth/session';
 import { GENRES_SQL, buildListQuery, buildRelatedQuery, buildSearchQuery } from './repositories/catalog';
 import { BASE_RECORD_SQL, INSERT_PROVIDER_ID_SQL, PROVIDER_IDS_SQL } from './repositories/providerIds';
 import { buildRegistry, createCache, resolveUnified, sharedBreaker, toBaseRecord, type BaseRow } from './metadata/service';
@@ -347,8 +348,49 @@ app.post('/api/staging/youtube/feed', async (c) => {
   }
 });
 
-app.get('/api/v1/me', (c) => fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your profile.'));
-app.get('/api/v1/me/library', (c) => fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your library.'));
+// Session-backed account endpoints. User IDs always come from the validated session cookie.
+app.get('/api/v1/me', async (c) => {
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your profile.');
+  return ok(c, { user });
+});
+
+app.get('/api/v1/me/library', async (c) => {
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your library.');
+  try {
+    const result = await c.env.DB.prepare(
+      `SELECT l.anime_id AS animeId, l.status, l.is_favorite AS isFavorite,
+              l.added_at AS addedAt, l.updated_at AS updatedAt,
+              a.slug, a.title, a.poster_url AS posterUrl, a.banner_url AS bannerUrl,
+              a.format, a.release_year AS releaseYear, a.rating, a.episode_count AS episodeCount
+       FROM user_library l
+       INNER JOIN anime a ON a.id = l.anime_id
+       WHERE l.user_id = ?
+       ORDER BY l.updated_at DESC
+       LIMIT 200`
+    ).bind(user.id).all();
+    return ok(c, { items: result.results ?? [] }, { count: result.results?.length ?? 0 });
+  } catch (error) {
+    logError(c, 'user_library_failed', error);
+    return fail(c, 503, 'LIBRARY_UNAVAILABLE', 'Your library is temporarily unavailable.');
+  }
+});
+
+app.post('/api/v1/auth/logout', async (c) => {
+  const origin = c.req.header('Origin');
+  if (origin && origin !== new URL(c.req.url).origin) {
+    return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
+  }
+  try {
+    await revokeSession(c.env.DB, c.req.header('Cookie') ?? null);
+    c.header('Set-Cookie', clearSessionCookie(new URL(c.req.url).protocol === 'https:'));
+    return ok(c, { signedOut: true });
+  } catch (error) {
+    logError(c, 'auth_logout_failed', error);
+    return fail(c, 503, 'AUTH_UNAVAILABLE', 'Could not sign out. Please try again.');
+  }
+});
 app.get('/api/v1/anime/:id/episodes/:episodeNumber/servers/:serverId/playback', (c) => fail(c, 503, 'SOURCE_UNAVAILABLE', 'Live playback is not enabled for this catalogue configuration.'));
 
 app.notFound((c) => fail(c, 404, 'RESOURCE_NOT_FOUND', 'The requested API route was not found.'));
