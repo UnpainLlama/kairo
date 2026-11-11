@@ -88,7 +88,9 @@ function unavailable(c: GoogleContext): Response {
 
 export function registerGoogleAuthRoutes(app: any): void {
   app.get('/api/v1/auth/google', async (c: GoogleContext) => {
-    if (!c.env.GOOGLE_CLIENT_ID || !c.env.GOOGLE_CLIENT_SECRET) return unavailable(c);
+    const clientId = c.env.GOOGLE_CLIENT_ID;
+    const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
+    if (!clientId || !clientSecret) return unavailable(c);
     const url = new URL(c.req.url);
     const intent = url.searchParams.get('intent');
     if (intent !== null && intent !== 'link') return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid Google sign-in intent.' } }, 400);
@@ -113,7 +115,7 @@ export function registerGoogleAuthRoutes(app: any): void {
     c.header('Set-Cookie', stateCookie(state, url.protocol === 'https:'));
     const target = new URL(GOOGLE_AUTH);
     target.search = new URLSearchParams({
-      client_id: c.env.GOOGLE_CLIENT_ID, redirect_uri: callback, response_type: 'code',
+      client_id: clientId, redirect_uri: callback, response_type: 'code',
       scope: 'openid email profile', state, nonce, code_challenge: challenge,
       code_challenge_method: 'S256', prompt: 'select_account'
     }).toString();
@@ -140,19 +142,21 @@ export function registerGoogleAuthRoutes(app: any): void {
         'UPDATE google_oauth_states SET consumed_at=? WHERE state_hash=? AND consumed_at IS NULL AND expires_at>?'
       ).bind(Date.now(), stateHash, Date.now()).run();
       if (Number(consumed.meta?.changes ?? 0) !== 1) return redirectTo(c, '/login?google=expired');
-      if (!c.env.GOOGLE_CLIENT_ID || !c.env.GOOGLE_CLIENT_SECRET) return unavailable(c);
+      const clientId = c.env.GOOGLE_CLIENT_ID;
+      const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
+      if (!clientId || !clientSecret) return unavailable(c);
       const callback = new URL('/api/v1/auth/google/callback', url.origin).toString();
       const tokenResponse = await fetch(GOOGLE_TOKEN, {
         method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
         body: new URLSearchParams({
-          code, client_id: c.env.GOOGLE_CLIENT_ID, client_secret: c.env.GOOGLE_CLIENT_SECRET,
+          code, client_id: clientId, client_secret: clientSecret,
           redirect_uri: callback, grant_type: 'authorization_code', code_verifier: transaction.code_verifier
         })
       });
       if (!tokenResponse.ok) return redirectTo(c, '/login?google=token_exchange_failed');
       const tokens = await tokenResponse.json() as { id_token?: string };
       if (!tokens.id_token) return redirectTo(c, '/login?google=missing_identity');
-      const claims = await validateIdToken(tokens.id_token, c.env.GOOGLE_CLIENT_ID, transaction.nonce);
+      const claims = await validateIdToken(tokens.id_token, clientId, transaction.nonce);
       const linkedIdentity = await c.env.DB.prepare(
         "SELECT i.user_id AS userId,p.account_status AS accountStatus FROM auth_identities i JOIN user_profiles p ON p.id=i.user_id WHERE i.provider='google' AND i.provider_subject=?"
       ).bind(claims.sub).first<{ userId: string; accountStatus: string }>();
