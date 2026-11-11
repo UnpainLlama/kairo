@@ -19,7 +19,7 @@ const googleMessages:Record<string,string>={
 export default function AuthPage({mode}:{mode:Mode}){
  const navigate=useNavigate();const [params]=useSearchParams();const [displayName,setName]=useState('');const [email,setEmail]=useState('');const [password,setPassword]=useState('');
  const [error,setError]=useState('');const [busy,setBusy]=useState(false);
- async function submit(e:FormEvent){e.preventDefault();setBusy(true);setError('');try{await post(mode,mode==='register'?{displayName,email,password}:{email,password});navigate('/',{replace:true});}catch(e){setError(e instanceof Error?e.message:'Request failed.')}finally{setBusy(false)}}
+ async function submit(e:FormEvent){e.preventDefault();setBusy(true);setError('');try{await post(mode,mode==='register'?{displayName,email,password}:{email,password});window.dispatchEvent(new Event('kairo:auth-change'));navigate('/profile',{replace:true});}catch(e){setError(e instanceof Error?e.message:'Request failed.')}finally{setBusy(false)}}
  const googleMessage=params.get('google');
  return <section className="kc-auth"><div className="kc-auth-card"><Link to="/" className="kc-auth-brand"><img src="/kairo-k.svg" alt="" width="24" height="28"/>Kairo</Link>
  <h1>{mode==='register'?'Create your account':'Welcome back'}</h1><p className="kc-auth-copy">{mode==='register'?'Create a Kairo account to keep your anime library in sync.':'Sign in to continue to your Kairo account.'}</p>
