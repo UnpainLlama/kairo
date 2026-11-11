@@ -18,8 +18,6 @@ async function permit(db:D1Database,action:string,ip:string,identity:string,limi
  window_started_at=CASE WHEN window_started_at<=? THEN ? ELSE window_started_at END RETURNING attempts`)
  .bind(key,now,now-WINDOW,now-WINDOW,now).first<{attempts:number}>();
  return Number(row?.attempts??limit+1)<=limit;
-  registerGoogleAuthRoutes(app);
-  registerGoogleAuthRoutes(app);
 }
 const ip=(c:any)=>c.req.header('CF-Connecting-IP')??'unknown';
 
@@ -53,7 +51,7 @@ export function registerAuthRoutes(app:Hono<any>){
    const row=await c.env.DB.prepare(`SELECT p.id userId,p.account_status accountStatus,i.id identityId,pc.password_hash passwordHash
     FROM user_profiles p JOIN auth_identities i ON i.user_id=p.id AND i.provider='email'
     JOIN password_credentials pc ON pc.auth_identity_id=i.id WHERE p.email=? COLLATE NOCASE LIMIT 1`).bind(email)
-    .first<{userId:string;accountStatus:string;identityId:string;passwordHash:string}>();
+    .first() as {userId:string;accountStatus:string;identityId:string;passwordHash:string}|null;
    if(!row||row.accountStatus!=='active'||!await verifyPassword(b.password,row.passwordHash))return fail(c,401,'INVALID_CREDENTIALS','Email or password is incorrect.');
    const session=await createSession(c.env.DB,row.userId,{userAgent:c.req.header('User-Agent')??undefined,ipPrefix:ip(c)});
    c.header('Set-Cookie',sessionCookie(session.token,new URL(c.req.url).protocol==='https:'));

@@ -36,12 +36,13 @@ function decodeJsonPart(value: string): any {
   const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
   return JSON.parse(atob(normalized + '='.repeat((4 - normalized.length % 4) % 4)));
 }
-let jwksCache: { keys: JsonWebKey[]; expiresAt: number } | null = null;
-async function googleKeys(): Promise<JsonWebKey[]> {
+type GoogleJwk = JsonWebKey & { kid?: string };
+let jwksCache: { keys: GoogleJwk[]; expiresAt: number } | null = null;
+async function googleKeys(): Promise<GoogleJwk[]> {
   if (jwksCache && jwksCache.expiresAt > Date.now()) return jwksCache.keys;
   const response = await fetch(GOOGLE_JWKS, { headers: { Accept: 'application/json' } });
   if (!response.ok) throw new Error('Google signing keys unavailable');
-  const data = await response.json() as { keys?: JsonWebKey[] };
+  const data = await response.json() as { keys?: GoogleJwk[] };
   if (!Array.isArray(data.keys)) throw new Error('Invalid Google signing keys');
   jwksCache = { keys: data.keys, expiresAt: Date.now() + 3600000 };
   return data.keys;
