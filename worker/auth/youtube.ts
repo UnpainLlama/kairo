@@ -14,13 +14,6 @@ type YouTubeContext = {
   json(body: unknown, status?: number): Response;
 };
 type OAuthTransaction = { user_id: string; session_hash: string; code_verifier: string; expires_at: number; consumed_at: number | null };
-type ProviderConnection = {
-  encrypted_refresh_token: string | null;
-  encrypted_access_token: string | null;
-  connected_at: string;
-  updated_at: string;
-  scopes_json: string;
-};
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
@@ -179,7 +172,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
       };
       const scopes = typeof tokens.scope === 'string' ? tokens.scope.split(/\s+/).filter(Boolean) : [];
       if (!tokens.access_token || tokens.access_token.length > 8192 || tokens.token_type?.toLowerCase() !== 'bearer' ||
-          !scopes.includes(SCOPE) || !Number.isFinite(tokens.expires_in) || Number(tokens.expires_in) <= 0) {
+          !scopes.includes(SCOPE) || !Number.isFinite(Number(tokens.expires_in)) || Number(tokens.expires_in) <= 0) {
         return redirectTo(c, '/settings?youtube=invalid_grant');
       }
       const existing = await c.env.DB.prepare(
