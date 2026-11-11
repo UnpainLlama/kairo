@@ -55,6 +55,7 @@ function redirectTo(c: YouTubeContext, path: string): Response {
   return c.redirect(new URL(path, new URL(c.req.url).origin).toString(), 302);
 }
 function encryptionKey(encoded: string): Promise<CryptoKey> {
+  if (!/^[A-Za-z0-9_-]{43}$/.test(encoded)) throw new Error('YOUTUBE_TOKEN_ENCRYPTION_KEY must be unpadded base64url');
   const bytes = decodeBase64Url(encoded);
   if (bytes.length !== 32) throw new Error('YOUTUBE_TOKEN_ENCRYPTION_KEY must decode to exactly 32 bytes');
   return crypto.subtle.importKey('raw', bytes, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
