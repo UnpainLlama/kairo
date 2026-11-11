@@ -152,6 +152,11 @@ describe('Jikan source', () => {
     expect(Object.fromEntries(parsed.searchParams)).toMatchObject({ filter: 'tv', sfw: 'true', page: '2', limit: '24' });
     expect(parsed.searchParams.has('start_date')).toBe(false);
     expect(out.items.map((item) => item.card.id)).toEqual(['m1']);
+    expect(out.items[0]?.card).toMatchObject({
+      synopsis: 'Hello.', rating: 7.8, episodeCount: 24, format: 'series',
+      releaseYear: 2026, season: 'fall', status: 'airing', genres: ['Comedy'],
+      posterUrl: 'https://cdn.test/1.jpg',
+    });
   });
   it('maps provider errors for missing and unavailable catalogue titles', async () => {
     await expect(createJikanSource(async () => json({}, { status: 404 }), { pacer: instant }).byRef({ kind: 'm', id: 1 }, signal)).rejects.toMatchObject({ kind: 'not_found' });
