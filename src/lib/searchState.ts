@@ -2,7 +2,8 @@
 // Both endpoints validate every value, so the client mirrors those rules.
 export const SEARCH_FORMATS = ['series', 'movie', 'ova', 'ona', 'special'] as const;
 export const SEARCH_STATUSES = ['airing', 'finished', 'upcoming', 'hiatus'] as const;
-export const SEARCH_SORTS = ['relevance', 'popularity', 'latest', 'rating'] as const;
+export const SEARCH_SORTS = ['relevance', 'popularity', 'trending', 'latest', 'rating'] as const;
+export const SEARCH_SEASONS = ['winter', 'spring', 'summer', 'fall'] as const;
 export const MIN_QUERY = 2;
 export const MAX_QUERY = 100;
 export const MIN_YEAR = 1900;
@@ -16,17 +17,19 @@ export type SearchState = {
   format: '' | (typeof SEARCH_FORMATS)[number];
   status: '' | (typeof SEARCH_STATUSES)[number];
   year: number | null;
+  season: '' | (typeof SEARCH_SEASONS)[number];
   /** '' means "default": relevance when there is a title query, popularity otherwise. */
   sort: '' | SortKey;
   page: number;
 };
 
-export const EMPTY_SEARCH: SearchState = { q: '', genre: '', format: '', status: '', year: null, sort: '', page: 1 };
+export const EMPTY_SEARCH: SearchState = { q: '', genre: '', format: '', status: '', year: null, season: '', sort: '', page: 1 };
 
 export function parseSearchState(params: URLSearchParams): SearchState {
   const format = (params.get('format') ?? '').toLowerCase();
   const status = (params.get('status') ?? '').toLowerCase();
   const sort = params.get('sort') ?? '';
+  const season = (params.get('season') ?? '').toLowerCase();
   const page = Number(params.get('page') ?? '1');
   const year = Number(params.get('year') ?? '');
   return {
@@ -35,6 +38,7 @@ export function parseSearchState(params: URLSearchParams): SearchState {
     format: (SEARCH_FORMATS as readonly string[]).includes(format) ? (format as SearchState['format']) : '',
     status: (SEARCH_STATUSES as readonly string[]).includes(status) ? (status as SearchState['status']) : '',
     year: Number.isInteger(year) && year >= MIN_YEAR && year <= MAX_YEAR ? year : null,
+    season: (SEARCH_SEASONS as readonly string[]).includes(season) ? season as SearchState['season'] : '',
     sort: (SEARCH_SORTS as readonly string[]).includes(sort) ? (sort as SortKey) : '',
     page: Number.isInteger(page) && page >= 1 && page <= 500 ? page : 1,
   };
@@ -48,6 +52,7 @@ export function toUrlParams(state: SearchState): URLSearchParams {
   if (state.format) p.set('format', state.format);
   if (state.status) p.set('status', state.status);
   if (state.year !== null) p.set('year', String(state.year));
+  if (state.season) p.set('season', state.season);
   if (state.sort) p.set('sort', state.sort);
   if (state.page > 1) p.set('page', String(state.page));
   return p;
@@ -57,7 +62,7 @@ export const canSearch = (q: string): boolean => q.trim().length >= MIN_QUERY;
 
 /** True when any filter (not the title text) is set. */
 export const hasFilters = (state: SearchState): boolean =>
-  Boolean(state.genre || state.format || state.status || state.year !== null || state.sort);
+  Boolean(state.genre || state.format || state.status || state.year !== null || state.season || state.sort);
 
 /**
  * API path for the current state. A title query of 2+ characters uses /catalog/search; otherwise the same
@@ -76,5 +81,6 @@ export function toApiPath(state: SearchState, limit = 24): string {
   if (state.format) p.set('format', state.format);
   if (state.status) p.set('status', state.status);
   if (state.year !== null) p.set('year', String(state.year));
+  if (state.season) p.set('season', state.season);
   return `${searching ? '/catalog/search' : '/catalog/browse'}?${p.toString()}`;
 }
