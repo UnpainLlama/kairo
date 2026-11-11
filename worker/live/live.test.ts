@@ -127,7 +127,8 @@ describe('Jikan source', () => {
     let url = '';
     const src = createJikanSource(async (u) => { url = u; return jikanList([jikanAnime(1), jikanAnime(2, { rating: 'Rx - Hentai' })]); }, { pacer: instant, now: () => NOW });
     const out = await src.list('trending', 2, 50, signal);
-    expect(url).toContain('/seasons/now');
+    expect(url).toContain('/top/anime');
+    expect(url).toContain('filter=bypopularity');
     expect(url).toContain('sfw=true');
     expect(url).toContain('limit=25');
     expect(out).toMatchObject({ total: 99, hasNextPage: true, limit: 25 });
