@@ -143,14 +143,19 @@ export function createHiAnimeSource(fetchImpl: FetchLike, baseUrl?: string): Cat
           : q.sort === 'rating' ? '/most-favorite' : '/most-popular';
         result = await cardsForPath(path, q.page, n, signal);
       }
-      // Never let missing provider metadata bypass a requested filter. AniList is primary;
-      // this fallback may return fewer results, but must not leak unrelated titles into a season.
+      // A category endpoint is authoritative for the one category it was asked to serve.
+      // Any additional filter still requires matching metadata; unknown values never bypass it.
+      const categoryFilterApplied = {
+        genre: !q.q?.trim() && Boolean(q.genre),
+        format: !q.q?.trim() && !q.genre && (q.format === 'movie' || q.format === 'series'),
+        status: !q.q?.trim() && !q.genre && !q.format && Boolean(q.status),
+      };
       const filtered = result.items.filter((item) => {
         const c = item.card;
-        if (q.genre && !c.genres.some((g) => g.toLowerCase() === q.genre!.toLowerCase())) return false;
+        if (q.genre && !categoryFilterApplied.genre && !c.genres.some((g) => g.toLowerCase() === q.genre!.toLowerCase())) return false;
         if (q.year !== undefined && c.releaseYear !== q.year) return false;
-        if (q.format && c.format !== q.format) return false;
-        if (q.status && c.status !== q.status) return false;
+        if (q.format && !categoryFilterApplied.format && c.format !== q.format) return false;
+        if (q.status && !categoryFilterApplied.status && c.status !== q.status) return false;
         if (q.season && c.season !== q.season) return false;
         return true;
       });
