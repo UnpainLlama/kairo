@@ -326,6 +326,32 @@ describe('service and handlers', () => {
     expect(urls.some((u) => u.includes('/anime/1007/episodes?page=2'))).toBe(true);
     expect(r.body).toMatchObject({ data: { items: [{ id: 'a7-e1', episodeNumber: 1, title: 'One' }, { episodeNumber: 2 }] }, meta: { page: 2, hasNextPage: true, source: 'jikan' } });
   });
+  it('enriches seasonal browse cards with missing TMDB metadata and artwork', async () => {
+    const artworkProvider: ArtworkProvider = {
+      id: 'tmdb',
+      lookup: async () => ({
+        tmdbId: 1429, mediaType: 'tv',
+        posterUrl: 'https://image.tmdb.org/t/p/w500/poster.jpg',
+        bannerUrl: 'https://image.tmdb.org/t/p/w1280/backdrop.jpg',
+        overview: 'A seasonal story.',
+        rating: 8.1, genres: ['Fantasy'], releaseYear: 2026, episodeCount: 12,
+      }),
+    };
+    const d = deps(async () => aniPage([media(77, {
+      description: '', episodes: null, averageScore: null, genres: [],
+      coverImage: { extraLarge: null, large: null }, startDate: { year: null },
+    })]), { artworkProvider });
+    const response = await call(d, 'browse', req({ season: 'fall', year: '2026', sort: 'popularity' }));
+    expect(response.body).toMatchObject({
+      data: { items: [{
+        posterUrl: 'https://image.tmdb.org/t/p/w500/poster.jpg',
+        bannerUrl: 'https://image.tmdb.org/t/p/w1280/backdrop.jpg',
+        synopsis: 'A seasonal story.', rating: 8.1, genres: ['Fantasy'],
+        releaseYear: 2026, episodeCount: 12,
+      }] },
+    });
+  });
+
   it('returns TMDB episode stills on the live episode route when artwork enrichment is enabled', async () => {
     const episodeProvider = {
       id: 'test-episodes', displayName: 'Test episodes', termsVerified: true,
