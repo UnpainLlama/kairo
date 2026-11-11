@@ -38,7 +38,7 @@ export default function WatchPage() {
       const items = Array.isArray(previous) ? previous : [];
       const entry = { slug, title: anime.title, posterUrl: anime.posterUrl, episodeNumber: parsedEpisode,
         episodeTitle: episode?.title || '', progressKey, durationSeconds: episode?.durationSeconds ?? null, updatedAt: Date.now() };
-      const next = [entry, ...items.filter((item: { progressKey?: string }) => item?.progressKey !== progressKey)].slice(0, 100);
+      const next = [entry, ...items.filter((item: { slug?: string; episodeNumber?: number }) => item?.slug !== slug || item?.episodeNumber !== parsedEpisode)].slice(0, 100);
       localStorage.setItem('kairo-watch-history', JSON.stringify(next));
       window.dispatchEvent(new Event('kairo:history-change'));
     } catch { /* browser storage may be disabled or full */ }
