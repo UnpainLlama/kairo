@@ -23,6 +23,17 @@ export default function WatchPage() {
   const servers = useApi<ServerList>(validEpisode ? `/anime/${key}/episodes/${parsedEpisode}/servers` : null);
   const serverItems = servers.status === 'ok' ? servers.data.items : [];
   const selectedServer = serverItems.find((server) => server.id === selectedServerId) ?? serverItems[0] ?? null;
+  useEffect(() => {
+    if (!selectedServer) return;
+    const syncedKey = `kairo-progress:${slug}:${parsedEpisode}:sync`;
+    const serverKey = `kairo-progress:${slug}:${parsedEpisode}:${selectedServer.id}`;
+    try {
+      if (!localStorage.getItem(serverKey)) {
+        const saved = localStorage.getItem(syncedKey);
+        if (saved) localStorage.setItem(serverKey, saved);
+      }
+    } catch { /* browser storage may be unavailable */ }
+  }, [slug, parsedEpisode, selectedServer?.id]);
   const playbackPath = selectedServer ? `/anime/${key}/episodes/${parsedEpisode}/servers/${encodeURIComponent(selectedServer.id)}/playback` : null;
   const playback = useApi<PlaybackResponse>(playbackPath);
 
