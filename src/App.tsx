@@ -63,10 +63,26 @@ function MenuLink({ to, label, icon: Icon, end, onNavigate }: NavItem & { onNavi
 
 export default function App() {
   const { pathname } = useLocation();
-  const [menuOpen, setMenuOpen] = useState(false);\n  const [currentUser, setCurrentUser] = useState<{displayName:string;email:string|null}|null>(null);\n  const [authBusy, setAuthBusy] = useState(false);\n  const navigate = useNavigate();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState<{displayName:string;email:string|null}|null>(null);
+  const [authBusy, setAuthBusy] = useState(false);
+  const navigate = useNavigate();
   const menuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { window.scrollTo(0, 0); }, [pathname]);\n\n  useEffect(() => {\n    let active=true;\n    const refresh=()=>{fetch('/api/v1/me',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(p=>{if(active)setCurrentUser(p?.data?.user??null)}).catch(()=>{if(active)setCurrentUser(null)})};\n    refresh(); window.addEventListener('kairo:auth-change',refresh);\n    return()=>{active=false;window.removeEventListener('kairo:auth-change',refresh)};\n  }, [pathname]);\n\n  const logout = async () => {\n    setAuthBusy(true);\n    try { const response=await fetch('/api/v1/auth/logout',{method:'POST',credentials:'same-origin',headers:{Accept:'application/json'}}); const payload=await response.json().catch(()=>null); if(!response.ok||!payload?.success) throw new Error(payload?.error?.message??'Could not sign out.'); setCurrentUser(null); window.dispatchEvent(new Event('kairo:auth-change')); setMenuOpen(false); navigate('/login'); }\n    catch(error) { window.alert(error instanceof Error?error.message:'Could not sign out.'); } finally { setAuthBusy(false); }\n  };
+  useEffect(() => { window.scrollTo(0, 0); }, [pathname]);
+
+  useEffect(() => {
+    let active=true;
+    const refresh=()=>{fetch('/api/v1/me',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(p=>{if(active)setCurrentUser(p?.data?.user??null)}).catch(()=>{if(active)setCurrentUser(null)})};
+    refresh(); window.addEventListener('kairo:auth-change',refresh);
+    return()=>{active=false;window.removeEventListener('kairo:auth-change',refresh)};
+  }, [pathname]);
+
+  const logout = async () => {
+    setAuthBusy(true);
+    try { const response=await fetch('/api/v1/auth/logout',{method:'POST',credentials:'same-origin',headers:{Accept:'application/json'}}); const payload=await response.json().catch(()=>null); if(!response.ok||!payload?.success) throw new Error(payload?.error?.message??'Could not sign out.'); setCurrentUser(null); window.dispatchEvent(new Event('kairo:auth-change')); setMenuOpen(false); navigate('/login'); }
+    catch(error) { window.alert(error instanceof Error?error.message:'Could not sign out.'); } finally { setAuthBusy(false); }
+  };
 
   useEffect(() => {
     if (!menuOpen) return;
