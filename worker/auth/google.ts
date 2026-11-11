@@ -194,7 +194,7 @@ export function registerGoogleAuthRoutes(app: any): void {
         }
       }
       const session = await createSession(c.env.DB, userId, { userAgent: c.req.header('User-Agent') ?? undefined });
-      c.header('Set-Cookie', sessionCookie(session.token, url.protocol === 'https:'));
+      c.header('Set-Cookie', sessionCookie(session.token, url.protocol === 'https:'), { append: true });
       await c.env.DB.prepare("UPDATE auth_identities SET last_used_at=CURRENT_TIMESTAMP WHERE provider='google' AND provider_subject=?")
         .bind(claims.sub).run();
       return transaction.link_user_id ? redirectTo(c, '/settings?google=connected') : redirectTo(c, '/');
