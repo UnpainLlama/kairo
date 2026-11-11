@@ -177,7 +177,9 @@ export function createJikanSource(fetchImpl: FetchLike, opts: { pacer?: Pacer; n
     async list(kind: ListKind, page, limit, signal) {
       const n = Math.min(Math.max(limit, 1), MAX_LIMIT);
       if (kind === 'featured') return toPaged(await get('/top/anime', { filter: 'airing', sfw: true, page: 1, limit: Math.min(n, 12) }, signal), Math.min(n, 12));
-      if (kind === 'trending') return toPaged(await get('/seasons/now', { sfw: true, page, limit: n }, signal), n);
+      // Jikan has no live-trending feed. Use MAL's popularity ranking as the honest fallback,
+      // rather than returning the current season and presenting it as trending.
+      if (kind === 'trending') return toPaged(await get('/top/anime', { filter: 'bypopularity', sfw: true, page, limit: n }, signal), n);
       return toPaged(await get('/anime', { status: 'airing', order_by: 'start_date', sort: 'desc', sfw: true, page, limit: n }, signal), n);
     },
 
