@@ -11,6 +11,7 @@ import SearchPage from './pages/SearchPage';
 import BrowsePage from './pages/BrowsePage';
 import AnimePage from './pages/AnimePage';
 import WatchPage from './pages/WatchPage';
+import AuthPage from './pages/AuthPage';
 import { AboutPage, AccountPage, HistoryPage, NotFoundPage, ProfilePage } from './pages/StaticPages';
 
 type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean; active?: boolean };
@@ -27,7 +28,7 @@ const navItems: NavItem[] = [
 
 const bottomItems: NavItem[] = [
   { to: '/settings', label: 'Settings', icon: Settings },
-  { to: '/profile', label: 'Login', icon: LogIn, active: false },
+  { to: '/login', label: 'Login', icon: LogIn, active: false },
 ];
 
 const menuItems: NavItem[] = [
@@ -115,7 +116,7 @@ export default function App() {
             </button>
             {menuOpen && (
               <section className="kc-menu-popover" id="kc-navigation-menu" aria-label="Kairo navigation menu">
-                <Link to="/profile" className="kc-menu-profile" onClick={closeMenu}>
+                <Link to="/login" className="kc-menu-profile" onClick={closeMenu}>
                   <span className="kc-menu-avatar"><UserRound size={19} aria-hidden="true" /></span>
                   <span><b>Profile</b><small>Guest account</small></span>
                   <ChevronRight size={15} aria-hidden="true" />
@@ -145,7 +146,7 @@ export default function App() {
 
                 <div className="kc-menu-footer">
                   <Link to="/settings" onClick={closeMenu}><Settings size={15} aria-hidden="true" />Settings</Link>
-                  <Link to="/profile" onClick={closeMenu}><LogIn size={15} aria-hidden="true" />Login</Link>
+                  <Link to="/login" onClick={closeMenu}><LogIn size={15} aria-hidden="true" />Login</Link>
                 </div>
               </section>
             )}
@@ -155,6 +156,9 @@ export default function App() {
 
       <main id="main" className="kc-main" tabIndex={-1}>
         <Routes>
+          <Route path="/login" element={<AuthPage mode="login" />} />
+          <Route path="/register" element={<AuthPage mode="register" />} />
+          <Route path="/verify-email" element={<AuthPage mode="register" />} />
           <Route path="/" element={<HomePage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/browse" element={<Navigate to="/browse/anime" replace />} />

@@ -13,6 +13,9 @@ import type { LiveRequest, LiveResult } from './live/types';
 interface Bindings {
   DB: D1Database;
   APP_ENV?: string;
+  APP_BASE_URL?: string;
+  RESEND_API_KEY?: string;
+  AUTH_EMAIL_FROM?: string;
   ALLOWED_ORIGIN?: string;
   /** Comma-separated metadata provider ids to enable, e.g. "anilist". Empty = none. */
   METADATA_PROVIDERS?: string;

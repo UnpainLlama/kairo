@@ -21,6 +21,7 @@
 
   "vars": {
     "APP_ENV": "development",
+    "APP_BASE_URL": "http://localhost:5173",
     "METADATA_PROVIDERS": "anilist",
     "CATALOG_SOURCE": "live",
     "LIVE_PROVIDERS": "anilist,hianime,jikan",
@@ -50,6 +51,7 @@
 
       "vars": {
         "APP_ENV": "staging",
+        "APP_BASE_URL": "https://kairo-anime-platform-staging.unpainllama.workers.dev",
         "METADATA_PROVIDERS": "anilist",
         "CATALOG_SOURCE": "live",
         "LIVE_PROVIDERS": "anilist,hianime,jikan",
@@ -79,6 +81,7 @@
 
       "vars": {
         "APP_ENV": "production",
+        "APP_BASE_URL": "https://kairo.example.com",
         "METADATA_PROVIDERS": "anilist",
         "CATALOG_SOURCE": "live",
         "LIVE_PROVIDERS": "anilist,jikan"
