@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
-import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
   Bell, CalendarDays, ChevronRight, Compass, Film, Flame, History,
   Home, LogIn, Menu, Search, Settings, Tv, UserRound, Youtube,
@@ -63,10 +63,10 @@ function MenuLink({ to, label, icon: Icon, end, onNavigate }: NavItem & { onNavi
 
 export default function App() {
   const { pathname } = useLocation();
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);\n  const [currentUser, setCurrentUser] = useState<{displayName:string;email:string|null}|null>(null);\n  const [authBusy, setAuthBusy] = useState(false);\n  const navigate = useNavigate();
   const menuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { window.scrollTo(0, 0); }, [pathname]);
+  useEffect(() => { window.scrollTo(0, 0); }, [pathname]);\n\n  useEffect(() => {\n    let active=true;\n    const refresh=()=>{fetch('/api/v1/me',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(p=>{if(active)setCurrentUser(p?.data?.user??null)}).catch(()=>{if(active)setCurrentUser(null)})};\n    refresh(); window.addEventListener('kairo:auth-change',refresh);\n    return()=>{active=false;window.removeEventListener('kairo:auth-change',refresh)};\n  }, [pathname]);\n\n  const logout = async () => {\n    setAuthBusy(true);\n    try { const response=await fetch('/api/v1/auth/logout',{method:'POST',credentials:'same-origin',headers:{Accept:'application/json'}}); const payload=await response.json().catch(()=>null); if(!response.ok||!payload?.success) throw new Error(payload?.error?.message??'Could not sign out.'); setCurrentUser(null); window.dispatchEvent(new Event('kairo:auth-change')); setMenuOpen(false); navigate('/login'); }\n    catch(error) { window.alert(error instanceof Error?error.message:'Could not sign out.'); } finally { setAuthBusy(false); }\n  };
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -146,7 +146,7 @@ export default function App() {
 
                 <div className="kc-menu-footer">
                   <Link to="/settings" onClick={closeMenu}><Settings size={15} aria-hidden="true" />Settings</Link>
-                  <Link to="/login" onClick={closeMenu}><LogIn size={15} aria-hidden="true" />Login</Link>
+                  {currentUser ? <button type="button" onClick={()=>void logout()} disabled={authBusy}><LogIn size={15} aria-hidden="true" />{authBusy?'Signing out…':'Sign out'}</button> : <Link to="/login" onClick={closeMenu}><LogIn size={15} aria-hidden="true" />Login</Link>}
                 </div>
               </section>
             )}
