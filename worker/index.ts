@@ -363,6 +363,62 @@ app.get('/api/v1/me', async (c) => {
   return ok(c, { user });
 });
 
+app.post('/api/v1/me/history/sync', async (c) => {
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync watch history.');
+  let body: unknown;
+  try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
+  const input = (body as { items?: unknown } | null)?.items;
+  if (!Array.isArray(input) || input.length > 100) {
+    return fail(c, 400, 'VALIDATION_ERROR', 'Watch history must contain at most 100 entries.');
+  }
+  const statements = [];
+  for (const value of input) {
+    if (!value || typeof value !== 'object') continue;
+    const item = value as Record<string, unknown>;
+    const slug = typeof item.slug === 'string' ? item.slug.trim() : '';
+    const title = typeof item.title === 'string' ? item.title.trim() : '';
+    const episodeNumber = Number(item.episodeNumber);
+    const updatedAt = Number(item.updatedAt);
+    if (!slug || slug.length > 128 || !title || title.length > 300 ||
+        !Number.isInteger(episodeNumber) || episodeNumber < 1 || episodeNumber > 100000 ||
+        !Number.isFinite(updatedAt) || updatedAt < 0) continue;
+    const posterUrl = typeof item.posterUrl === 'string' && item.posterUrl.length <= 2048 ? item.posterUrl : null;
+    const episodeTitle = typeof item.episodeTitle === 'string' ? item.episodeTitle.slice(0, 300) : '';
+    const duration = Number(item.durationSeconds);
+    const progress = Number(item.progressSeconds);
+    statements.push(c.env.DB.prepare(`
+      INSERT INTO user_watch_history
+        (user_id, anime_slug, episode_number, title, poster_url, episode_title,
+         duration_seconds, progress_seconds, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, anime_slug, episode_number) DO UPDATE SET
+        title=excluded.title, poster_url=excluded.poster_url,
+        episode_title=excluded.episode_title, duration_seconds=excluded.duration_seconds,
+        progress_seconds=excluded.progress_seconds, updated_at=excluded.updated_at
+      WHERE excluded.updated_at > user_watch_history.updated_at
+    `).bind(user.id, slug, episodeNumber, title, posterUrl, episodeTitle,
+      Number.isFinite(duration) && duration > 0 ? Math.min(86400, Math.floor(duration)) : null,
+      Number.isFinite(progress) && progress >= 0 ? Math.min(86400, progress) : 0,
+      Math.floor(updatedAt)));
+  }
+  try {
+    if (statements.length) await c.env.DB.batch(statements);
+    const result = await c.env.DB.prepare(`
+      SELECT anime_slug AS slug, title, poster_url AS posterUrl,
+             episode_number AS episodeNumber, episode_title AS episodeTitle,
+             duration_seconds AS durationSeconds, progress_seconds AS progressSeconds,
+             updated_at AS updatedAt
+      FROM user_watch_history WHERE user_id = ?
+      ORDER BY updated_at DESC LIMIT 100
+    `).bind(user.id).all();
+    return ok(c, { items: result.results ?? [] }, { count: result.results?.length ?? 0 });
+  } catch (error) {
+    logError(c, 'watch_history_sync_failed', error);
+    return fail(c, 503, 'HISTORY_UNAVAILABLE', 'Watch history sync is temporarily unavailable.');
+  }
+});
+
 app.get('/api/v1/me/library', async (c) => {
   const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your library.');
