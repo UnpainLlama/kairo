@@ -364,6 +364,10 @@ app.get('/api/v1/me', async (c) => {
 });
 
 app.post('/api/v1/me/history/sync', async (c) => {
+  const origin = c.req.header('Origin');
+  if (origin && origin !== new URL(c.req.url).origin) {
+    return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
+  }
   const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync watch history.');
   let body: unknown;
