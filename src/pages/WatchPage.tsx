@@ -26,6 +26,24 @@ export default function WatchPage() {
   const playbackPath = selectedServer ? `/anime/${key}/episodes/${parsedEpisode}/servers/${encodeURIComponent(selectedServer.id)}/playback` : null;
   const playback = useApi<PlaybackResponse>(playbackPath);
 
+  useEffect(() => {
+    if (details.status !== 'ok' || episodes.status !== 'ok' || !validEpisode) return;
+    try {
+      if (localStorage.getItem('kairo-history-paused') === 'true') return;
+      const anime = details.data;
+      const episode = episodes.data.items.find((item) => item.episodeNumber === parsedEpisode);
+      const progressKey = `kairo-progress:${slug}:${parsedEpisode}:${selectedServer?.id ?? ''}`;
+      const raw = localStorage.getItem('kairo-watch-history') || '[]';
+      const previous = JSON.parse(raw);
+      const items = Array.isArray(previous) ? previous : [];
+      const entry = { slug, title: anime.title, posterUrl: anime.posterUrl, episodeNumber: parsedEpisode,
+        episodeTitle: episode?.title || '', progressKey, durationSeconds: episode?.durationSeconds ?? null, updatedAt: Date.now() };
+      const next = [entry, ...items.filter((item: { progressKey?: string }) => item?.progressKey !== progressKey)].slice(0, 100);
+      localStorage.setItem('kairo-watch-history', JSON.stringify(next));
+      window.dispatchEvent(new Event('kairo:history-change'));
+    } catch { /* browser storage may be disabled or full */ }
+  }, [details.status, episodes.status, slug, parsedEpisode, selectedServer?.id, validEpisode]);
+
   if (!validEpisode) return <div className="kc-watch-error"><h1>Invalid episode</h1><p>Choose an episode from the anime page.</p><Link className="kc-btn kc-btn-dark" to={`/anime/${key}`}>Back to anime</Link></div>;
   if (details.status === 'loading' || episodes.status === 'loading') return <LoadingState label="Loading episode" />;
   if (details.status === 'error') return <ErrorState error={details.error} onRetry={details.reload} />;
