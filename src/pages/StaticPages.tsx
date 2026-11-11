@@ -28,7 +28,7 @@ async function signOut() {
 }
 
 async function syncWatchHistory(options: { deleted?: Array<{ slug: string; episodeNumber: number }>; clear?: boolean } = {}): Promise<WatchEntry[] | null> {
-  const localItems = readHistory().slice(0, 100).map((item) => {
+  const localItems = readHistory().slice(0, options.deleted?.length ? 99 : 100).map((item) => {
     let progressSeconds = 0;
     try { progressSeconds = Number(localStorage.getItem(item.progressKey) || 0); } catch { /* storage may be unavailable */ }
     return { ...item, progressSeconds: Number.isFinite(progressSeconds) ? Math.max(0, progressSeconds) : 0 };
