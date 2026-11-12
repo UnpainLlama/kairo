@@ -190,7 +190,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
     c.header('Set-Cookie', stateCookie(state, new URL(callback).protocol === 'https:'));
     const target = new URL(AUTH_URL);
     target.search = new URLSearchParams({
-      client_id: clientId,
+      client_id: clientId!,
       redirect_uri: callback,
       response_type: 'code',
       scope: SCOPE,
@@ -245,9 +245,13 @@ export function registerYouTubeAuthRoutes(app: any): void {
       const transaction = await c.env.DB.prepare(
         'SELECT user_id,session_hash,code_verifier,expires_at,consumed_at FROM youtube_oauth_states WHERE state_hash=?'
       ).bind(stateHash).first<OAuthTransaction>();
-      const transactionReason = !transaction ? 'not_found'
-        : transaction.user_id !== user.id ? 'user_mismatch'
-        : transaction.session_hash !== await hashToken(sessionToken) ? 'session_mismatch'
+      if (!transaction) {
+        logYouTubeDiagnostic(c, 'youtube_callback_transaction_invalid', { reason: 'not_found' });
+        return redirectTo(c, '/settings?youtube=expired');
+      }
+      const sessionHash = await hashToken(sessionToken);
+      const transactionReason = transaction.user_id !== user.id ? 'user_mismatch'
+        : transaction.session_hash !== sessionHash ? 'session_mismatch'
         : transaction.consumed_at !== null ? 'already_consumed'
         : transaction.expires_at <= Date.now() ? 'expired'
         : null;
@@ -292,7 +296,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
         body: new URLSearchParams({
-          code, client_id: clientId, client_secret: clientSecret,
+          code, client_id: clientId!, client_secret: clientSecret!,
           redirect_uri: canonicalCallback, grant_type: 'authorization_code',
           code_verifier: transaction.code_verifier,
         }),
