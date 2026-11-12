@@ -1,6 +1,6 @@
 import { createOpaqueToken, createSession, findSessionUser, hasRecentSession, hashToken, sessionCookie } from './session';
 
-type GoogleBindings = { DB: D1Database; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string };
+type GoogleBindings = { DB: D1Database; APP_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string };
 type GoogleContext = {
   env: GoogleBindings;
   req: { url: string; header(name: string): string | undefined };
@@ -80,8 +80,22 @@ function displayName(claims: GoogleClaims): string {
 function stateCookie(state: string, secure: boolean): string { return `kairo_oauth_state=${state}; Path=/api/v1/auth/google/callback; Max-Age=600; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`; }
 function clearStateCookie(secure: boolean): string { return `kairo_oauth_state=; Path=/api/v1/auth/google/callback; Max-Age=0; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`; }
 function cookieState(header: string | undefined): string | null { for (const part of (header ?? '').split(';')) { const [name, ...value] = part.trim().split('='); if (name === 'kairo_oauth_state') return value.join('=') || null; } return null; }
+function appBaseUrl(c: GoogleContext): URL | null {
+  if (!c.env.APP_BASE_URL) return null;
+  try {
+    const base = new URL(c.env.APP_BASE_URL);
+    if (!['https:', 'http:'].includes(base.protocol) || base.username || base.password || base.pathname !== '/' || base.search || base.hash) return null;
+    if (base.protocol === 'http:' && base.hostname !== 'localhost' && base.hostname !== '127.0.0.1') return null;
+    return base;
+  } catch { return null; }
+}
+function callbackUrl(c: GoogleContext): string | null {
+  const base = appBaseUrl(c);
+  return base ? new URL('/api/v1/auth/google/callback', base.origin).toString() : null;
+}
 function redirectTo(c: GoogleContext, path: string): Response {
-  return c.redirect(new URL(path, new URL(c.req.url).origin).toString(), 302);
+  const origin = appBaseUrl(c)?.origin ?? new URL(c.req.url).origin;
+  return c.redirect(new URL(path, origin).toString(), 302);
 }
 function unavailable(c: GoogleContext): Response {
   return c.json({ success: false, error: { code: 'GOOGLE_AUTH_UNAVAILABLE', message: 'Google sign-in is not configured yet.' } }, 503);
@@ -92,6 +106,8 @@ export function registerGoogleAuthRoutes(app: any): void {
     const clientId = c.env.GOOGLE_CLIENT_ID;
     const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
     if (!clientId || !clientSecret) return unavailable(c);
+    const callback = callbackUrl(c);
+    if (!callback) return unavailable(c);
     const url = new URL(c.req.url);
     const intent = url.searchParams.get('intent');
     if (intent !== null && intent !== 'link') return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid Google sign-in intent.' } }, 400);
@@ -112,8 +128,7 @@ export function registerGoogleAuthRoutes(app: any): void {
     } catch {
       return c.json({ success: false, error: { code: 'GOOGLE_AUTH_UNAVAILABLE', message: 'Could not start Google sign-in. Please try again.' } }, 503);
     }
-    const callback = new URL('/api/v1/auth/google/callback', url.origin).toString();
-    c.header('Set-Cookie', stateCookie(state, url.protocol === 'https:'));
+    c.header('Set-Cookie', stateCookie(state, new URL(callback).protocol === 'https:'));
     const target = new URL(GOOGLE_AUTH);
     target.search = new URLSearchParams({
       client_id: clientId, redirect_uri: callback, response_type: 'code',
@@ -125,11 +140,13 @@ export function registerGoogleAuthRoutes(app: any): void {
 
   app.get('/api/v1/auth/google/callback', async (c: GoogleContext) => {
     const url = new URL(c.req.url);
+    const callback = callbackUrl(c);
     const state = url.searchParams.get('state') ?? '';
     const code = url.searchParams.get('code') ?? '';
-    const secure = url.protocol === 'https:';
+    const secure = callback ? new URL(callback).protocol === 'https:' : url.protocol === 'https:';
     const browserState = cookieState(c.req.header('Cookie'));
     c.header('Set-Cookie', clearStateCookie(secure), { append: true });
+    if (!callback) return unavailable(c);
     if (!state || browserState !== state) return redirectTo(c, '/login?google=invalid_response');
     if (url.searchParams.has('error')) return redirectTo(c, '/login?google=cancelled');
     if (!/^[A-Za-z0-9_-]{40,64}$/.test(state) || !code || code.length > 2048) return redirectTo(c, '/login?google=invalid_response');
@@ -146,7 +163,6 @@ export function registerGoogleAuthRoutes(app: any): void {
       const clientId = c.env.GOOGLE_CLIENT_ID;
       const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
       if (!clientId || !clientSecret) return unavailable(c);
-      const callback = new URL('/api/v1/auth/google/callback', url.origin).toString();
       const tokenResponse = await fetch(GOOGLE_TOKEN, {
         method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
         body: new URLSearchParams({
