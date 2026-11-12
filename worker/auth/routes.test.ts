@@ -92,7 +92,7 @@ describe('email account registration', () => {
     const response = await handler(context({
       displayName: 'Kairo tester',
       email: 'tester@example.com',
-      password: 'eight888',
+      password: 'elevenchars',
     }, store.db));
 
     expect(response.status).toBe(400);
