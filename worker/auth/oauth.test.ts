@@ -30,6 +30,7 @@ function makeContext(options: {
     req: {
       url: options.url,
       header: (name: string) => name.toLowerCase() === 'cookie' ? options.cookie : undefined,
+      query: (name: string) => new URL(options.url).searchParams.get(name) ?? undefined,
     },
     redirect: (url: string, status = 302) => {
       redirectedTo = url;
@@ -372,6 +373,46 @@ describe('YouTube OAuth configuration diagnostics', () => {
       expect(logged).toContain('test-request-id');
     } finally {
       diagnostic.mockRestore();
+    }
+  });
+});
+
+
+describe('YouTube subscriptions feed access controls', () => {
+  it('requires an authenticated Kairo session', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/subscriptions/feed');
+    const ctx = makeContext({
+      url: `${canonicalOrigin}/api/v1/youtube/subscriptions/feed`,
+      cookie: `kairo_session=${'a'.repeat(43)}`,
+      env: { DB: mockDb({ authenticated: false }), YOUTUBE_TOKEN_ENCRYPTION_KEY: 'A'.repeat(43) },
+    });
+    const response = await handler(ctx.context);
+    expect(response.status).toBe(401);
+    expect(ctx.jsonBody).toMatchObject({ error: { code: 'AUTH_REQUIRED' } });
+    expect(ctx.headers.get('cache-control')).toEqual(['no-store']);
+  });
+
+  it('requires a YouTube connection without calling the provider API', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/subscriptions/feed');
+    const providerFetch = vi.fn();
+    vi.stubGlobal('fetch', providerFetch);
+    try {
+      const ctx = makeContext({
+        url: `${canonicalOrigin}/api/v1/youtube/subscriptions/feed`,
+        cookie: `kairo_session=${'a'.repeat(43)}`,
+        env: {
+          DB: mockDb(),
+          GOOGLE_CLIENT_ID: 'google-client-id',
+          GOOGLE_CLIENT_SECRET: 'google-client-secret',
+          YOUTUBE_TOKEN_ENCRYPTION_KEY: 'A'.repeat(43),
+        },
+      });
+      const response = await handler(ctx.context);
+      expect(response.status).toBe(403);
+      expect(ctx.jsonBody).toMatchObject({ error: { code: 'YOUTUBE_NOT_CONNECTED' } });
+      expect(providerFetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 });
