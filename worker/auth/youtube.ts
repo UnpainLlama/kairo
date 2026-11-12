@@ -13,6 +13,7 @@ type YouTubeContext = {
   redirect(url: string, status?: number): Response;
   header(name: string, value: string, options?: { append?: boolean }): void;
   json(body: unknown, status?: number): Response;
+  get?(name: string): unknown;
 };
 type OAuthTransaction = { user_id: string; session_hash: string; code_verifier: string; expires_at: number; consumed_at: number | null };
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
@@ -20,6 +21,37 @@ const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
 const SCOPE = 'https://www.googleapis.com/auth/youtube.readonly';
 const enc = new TextEncoder();
+
+function requestId(c: YouTubeContext): string | undefined {
+  const value = c.get?.('requestId');
+  return typeof value === 'string' ? value : undefined;
+}
+function logYouTubeDiagnostic(c: YouTubeContext, event: string, details: Record<string, unknown> = {}): void {
+  console.error(JSON.stringify({ event, ...(requestId(c) ? { requestId: requestId(c) } : {}), ...details }));
+}
+function safeErrorName(error: unknown): string {
+  return error instanceof Error ? error.name.slice(0, 80) : 'unknown';
+}
+function safeErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : 'unknown';
+  return message.replace(/[\\r\\n\\t]/g, ' ').slice(0, 180);
+}
+function safeGoogleErrorCode(value: unknown): string {
+  return typeof value === 'string' && /^[A-Za-z0-9_.-]{1,80}$/.test(value) ? value : 'unclassified';
+}
+function encryptionKeyProblem(encoded: string | undefined): string | null {
+  if (!encoded) return 'missing';
+  if (encoded.length !== 43) return 'length_not_43';
+  if (encoded.includes('=')) return 'padding_present';
+  if (/[+/]/.test(encoded)) return 'standard_base64_alphabet';
+  if (!/^[A-Za-z0-9_-]{43}$/.test(encoded)) return 'invalid_base64url_characters';
+  try {
+    if (decodeBase64Url(encoded).length !== 32) return 'decoded_length_not_32';
+  } catch {
+    return 'invalid_base64url_encoding';
+  }
+  return null;
+}
 
 function random(size = 32): string {
   const bytes = crypto.getRandomValues(new Uint8Array(size));
@@ -51,24 +83,30 @@ function stateCookie(state: string, secure: boolean): string {
 function clearStateCookie(secure: boolean): string {
   return `kairo_youtube_state=; Path=/api/v1/auth/youtube/callback; Max-Age=0; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
 }
-function appBaseUrl(c: YouTubeContext): URL | null {
+function appBaseUrlProblem(c: YouTubeContext): string | null {
   const configured = c.env.APP_BASE_URL;
-  if (!configured) return null;
+  if (!configured) return 'missing';
   try {
     const base = new URL(configured);
-    if (!['https:', 'http:'].includes(base.protocol) || base.username || base.password || base.pathname !== '/' || base.search || base.hash) return null;
-    if (base.protocol === 'http:' && base.hostname !== 'localhost' && base.hostname !== '127.0.0.1') return null;
-    return base;
-  } catch { return null; }
+    if (!['https:', 'http:'].includes(base.protocol)) return 'unsupported_protocol';
+    if (base.username || base.password) return 'credentials_not_allowed';
+    if (base.pathname !== '/' || base.search || base.hash) return 'must_be_origin_only';
+    if (base.protocol === 'http:' && base.hostname !== 'localhost' && base.hostname !== '127.0.0.1') return 'https_required';
+    return null;
+  } catch { return 'invalid_url'; }
+}
+function appBaseUrl(c: YouTubeContext): URL | null {
+  if (appBaseUrlProblem(c)) return null;
+  return new URL(c.env.APP_BASE_URL!);
 }
 function redirectTo(c: YouTubeContext, path: string): Response {
   const origin = appBaseUrl(c)?.origin ?? new URL(c.req.url).origin;
   return c.redirect(new URL(path, origin).toString(), 302);
 }
 function encryptionKey(encoded: string): Promise<CryptoKey> {
-  if (!/^[A-Za-z0-9_-]{43}$/.test(encoded)) throw new Error('YOUTUBE_TOKEN_ENCRYPTION_KEY must be unpadded base64url');
+  const problem = encryptionKeyProblem(encoded);
+  if (problem) throw new Error(`Invalid YouTube encryption key: ${problem}`);
   const bytes = decodeBase64Url(encoded);
-  if (bytes.length !== 32) throw new Error('YOUTUBE_TOKEN_ENCRYPTION_KEY must decode to exactly 32 bytes');
   return crypto.subtle.importKey('raw', bytes, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
 }
 async function encryptToken(token: string, encodedKey: string): Promise<string> {
@@ -91,7 +129,7 @@ function callbackUrl(c: YouTubeContext): string | null {
   return base ? new URL('/api/v1/auth/youtube/callback', base.origin).toString() : null;
 }
 function unavailable(c: YouTubeContext): Response {
-  return c.json({ success: false, error: { code: 'YOUTUBE_CONNECT_UNAVAILABLE', message: 'YouTube connection is not configured yet.' } }, 503);
+  return c.json({ success: false, error: { code: 'YOUTUBE_CONNECT_UNAVAILABLE', message: 'YouTube connection is not configured yet.' }, meta: { requestId: requestId(c) } }, 503);
 }
 
 export function registerYouTubeAuthRoutes(app: any): void {
@@ -99,15 +137,41 @@ export function registerYouTubeAuthRoutes(app: any): void {
     const clientId = c.env.GOOGLE_CLIENT_ID;
     const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
     const key = c.env.YOUTUBE_TOKEN_ENCRYPTION_KEY;
-    if (!clientId || !clientSecret || !key) return unavailable(c);
-    try { await encryptionKey(key); } catch { return unavailable(c); }
+    const missingBindings = [
+      ...(!clientId ? ['GOOGLE_CLIENT_ID'] : []),
+      ...(!clientSecret ? ['GOOGLE_CLIENT_SECRET'] : []),
+      ...(!key ? ['YOUTUBE_TOKEN_ENCRYPTION_KEY'] : []),
+    ];
+    if (missingBindings.length) {
+      logYouTubeDiagnostic(c, 'youtube_configuration_unavailable', { reason: 'missing_bindings', missingBindings });
+      return unavailable(c);
+    }
+    const keyProblem = encryptionKeyProblem(key);
+    if (keyProblem) {
+      logYouTubeDiagnostic(c, 'youtube_configuration_unavailable', { component: 'YOUTUBE_TOKEN_ENCRYPTION_KEY', reason: keyProblem });
+      return unavailable(c);
+    }
+    try {
+      await encryptionKey(key!);
+    } catch (error) {
+      logYouTubeDiagnostic(c, 'youtube_configuration_unavailable', { component: 'YOUTUBE_TOKEN_ENCRYPTION_KEY', reason: 'crypto_key_import_failed', errorName: safeErrorName(error) });
+      return unavailable(c);
+    }
     const cookie = c.req.header('Cookie') ?? null;
     const user = await findSessionUser(c.env.DB, cookie);
     if (!user) return redirectTo(c, '/login?youtube=sign_in_required');
     if (!await hasRecentSession(c.env.DB, cookie)) return redirectTo(c, '/login?youtube=reauth_required');
 
+    const baseUrlProblem = appBaseUrlProblem(c);
+    if (baseUrlProblem) {
+      logYouTubeDiagnostic(c, 'youtube_configuration_unavailable', { component: 'APP_BASE_URL', reason: baseUrlProblem });
+      return unavailable(c);
+    }
     const callback = callbackUrl(c);
-    if (!callback) return unavailable(c);
+    if (!callback) {
+      logYouTubeDiagnostic(c, 'youtube_configuration_unavailable', { component: 'APP_BASE_URL', reason: 'callback_url_construction_failed' });
+      return unavailable(c);
+    }
     const state = random(32);
     const verifier = random(48);
     const challenge = base64Url(new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(verifier))));
@@ -119,8 +183,9 @@ export function registerYouTubeAuthRoutes(app: any): void {
       await c.env.DB.prepare(
         'INSERT INTO youtube_oauth_states(state_hash,user_id,session_hash,code_verifier,expires_at) VALUES(?,?,?,?,?)'
       ).bind(await shaHex(state), user.id, await hashToken(sessionToken), verifier, now + 600000).run();
-    } catch {
-      return c.json({ success: false, error: { code: 'YOUTUBE_CONNECT_UNAVAILABLE', message: 'Could not start YouTube connection. Please try again.' } }, 503);
+    } catch (error) {
+      logYouTubeDiagnostic(c, 'youtube_oauth_state_store_failed', { errorName: safeErrorName(error), message: safeErrorMessage(error) });
+      return c.json({ success: false, error: { code: 'YOUTUBE_CONNECT_UNAVAILABLE', message: 'Could not start YouTube connection. Please try again.' }, meta: { requestId: requestId(c) } }, 503);
     }
     c.header('Set-Cookie', stateCookie(state, new URL(callback).protocol === 'https:'));
     const target = new URL(AUTH_URL);
@@ -147,7 +212,10 @@ export function registerYouTubeAuthRoutes(app: any): void {
     const code = url.searchParams.get('code') ?? '';
     const browserState = cookieValue(c.req.header('Cookie'), 'kairo_youtube_state');
     c.header('Set-Cookie', clearStateCookie(secure), { append: true });
-    if (!canonicalCallback) return unavailable(c);
+    if (!canonicalCallback) {
+      logYouTubeDiagnostic(c, 'youtube_callback_configuration_unavailable', { component: 'APP_BASE_URL', reason: appBaseUrlProblem(c) ?? 'callback_url_construction_failed' });
+      return unavailable(c);
+    }
     if (url.searchParams.has('error')) return redirectTo(c, '/settings?youtube=cancelled');
     if (!state || browserState !== state || !/^[A-Za-z0-9_-]{40,64}$/.test(state) || !code || code.length > 2048) {
       return redirectTo(c, '/settings?youtube=invalid_response');
