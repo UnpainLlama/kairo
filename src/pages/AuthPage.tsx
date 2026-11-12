@@ -10,14 +10,13 @@ const googleMessages:Record<string,string>={
  link_required:'A Kairo account already uses this Google email. Sign in with your existing email and password, then connect Google from Settings. We never merge accounts automatically.',
  reauth_required:'Please sign in again to protect your account. Kairo will resume connecting Google after you sign in.',
  sign_in_required:'Sign in to Kairo first. Kairo will resume connecting Google after you sign in.',
- cancelled:'Google sign-in was cancelled.',
+ cancelled:'Google sign-in was cancelled. You can try again.',
  expired:'That Google sign-in request expired. Please try again.',
  not_configured:'Google sign-in has not been configured on this environment yet.',
  failed:'Google sign-in could not be completed. Please try again.',
  account_unavailable:'This Kairo account is currently unavailable.',
- cancelled:'Google sign-in was cancelled. You can try again from Settings.',
- expired:'That Google request expired. Start the connection again from Settings.',
- token_exchange_failed:'Google could not complete account linking. Please try again from Settings.'
+ token_exchange_failed:'Google could not complete account linking. Please try again from Settings.',
+ missing_identity:'Google did not return an account identity. Please try again.'
 };
 const youtubeMessages:Record<string,string>={
  sign_in_required:'Sign in to Kairo first. Kairo will resume connecting YouTube after you sign in.',
