@@ -112,7 +112,7 @@ export default function YouTubeFeedPage() {
         <div><span className="yt-eyebrow">YOUR VIDEO SPACE</span><h1>Home</h1><p>A feed built from the channels you choose.</p></div>
         <div className="yt-heading-actions">
           <Link to="/youtube/search" className="yt-button yt-button-primary"><Plus size={15} /> Add channels</Link>
-          <button className="yt-button yt-button-quiet" type="button" onClick={() => setRefreshKey(value => value + 1)} disabled={loading}><RefreshCw size={15} /> Refresh</button>
+          <button className="yt-button yt-button-quiet" type="button" onClick={() => setRefreshKey(value => value + 1)} disabled={loading || loadingMore}><RefreshCw size={15} /> Refresh</button>
         </div>
       </header>
 
@@ -121,7 +121,7 @@ export default function YouTubeFeedPage() {
           {needsLogin && <p><Link to="/login">Sign in</Link> to create your channel feed.</p>}
           {needsConnection && <p><a href="/api/v1/auth/youtube">Connect YouTube</a> to search channels and fetch their latest uploads.</p>}
           {needsReconnect && <p><a href="/api/v1/auth/youtube">Reconnect YouTube</a> to continue.</p>}
-          {!needsLogin && !needsConnection && !needsReconnect && <p><button type="button" className="yt-inline-action" onClick={() => nextCursor ? void loadMore() : setRefreshKey(value => value + 1)}>Try again</button></p>}
+          {!needsLogin && !needsConnection && !needsReconnect && <p><button type="button" className="yt-inline-action" onClick={() => error?.code === 'YOUTUBE_FEED_CURSOR_EXPIRED' || !nextCursor ? setRefreshKey(value => value + 1) : void loadMore()}>Try again</button></p>}
         </div>
       </div>}
 
