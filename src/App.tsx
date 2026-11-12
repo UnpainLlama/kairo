@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
   Bell, CalendarDays, ChevronRight, Compass, Film, Flame, History, ListVideo,
-  LogIn, Menu, PlayCircle, Search, Settings, Tv, UserRound, Users, Youtube,
+  LogIn, Menu, PlayCircle, Search, Settings, Tv, UserRound, Youtube,
   type LucideIcon,
 } from 'lucide-react';
 import SearchBar from './components/SearchBar';
