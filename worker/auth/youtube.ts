@@ -34,10 +34,7 @@ function safeErrorName(error: unknown): string {
 }
 function safeErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : 'unknown';
-  return message.replace(/[\\r\\n\\t]/g, ' ').slice(0, 180);
-}
-function safeGoogleErrorCode(value: unknown): string {
-  return typeof value === 'string' && /^[A-Za-z0-9_.-]{1,80}$/.test(value) ? value : 'unclassified';
+  return message.replace(/[\r\n\t]/g, ' ').slice(0, 180);
 }
 function encryptionKeyProblem(encoded: string | undefined): string | null {
   if (!encoded) return 'missing';
