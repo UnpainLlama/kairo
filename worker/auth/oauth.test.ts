@@ -131,6 +131,49 @@ describe('Google OAuth canonical callback', () => {
     });
   });
 
+  it('returns Google account-link token-exchange failures to Settings', async () => {
+    const handler = routeFor(registerGoogleAuthRoutes, '/api/v1/auth/google/callback');
+    const state = 'S'.repeat(43);
+    const db = {
+      prepare: (sql: string) => ({
+        bind: (..._values: unknown[]) => ({
+          run: async () => ({ success: true, meta: { changes: 1 } }),
+          first: async () => {
+            if (sql.includes('FROM google_oauth_states')) {
+              return { nonce: 'test-nonce', code_verifier: 'test-verifier', link_user_id: 'user-123', expires_at: Date.now() + 60_000, consumed_at: null };
+            }
+            if (sql.includes('FROM sessions s') && sql.includes('INNER JOIN user_profiles')) {
+              return { userId: 'user-123', displayName: 'Kairo tester', email: 'tester@example.com', emailVerifiedAt: null, role: 'user' };
+            }
+            if (sql.includes('SELECT id FROM sessions')) return { id: 'session-123' };
+            return null;
+          },
+        }),
+      }),
+    } as unknown as D1Database;
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 400 })));
+    try {
+      const ctx = makeContext({
+        url: `${canonicalOrigin}/api/v1/auth/google/callback?state=${state}&code=test-code`,
+        cookie: `kairo_oauth_state=${state}; kairo_session=${'a'.repeat(43)}`,
+        env: {
+          DB: db,
+          APP_BASE_URL: canonicalOrigin,
+          GOOGLE_CLIENT_ID: 'google-client-id',
+          GOOGLE_CLIENT_SECRET: 'google-client-secret',
+        },
+      });
+
+      const response = await handler(ctx.context);
+      const location = new URL(ctx.redirectedTo!);
+      expect(response.status).toBe(302);
+      expect(location.pathname).toBe('/settings');
+      expect(location.searchParams.get('google')).toBe('token_exchange_failed');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('preserves the Google-link action when a recent sign-in is required', async () => {
     const handler = routeFor(registerGoogleAuthRoutes, '/api/v1/auth/google');
     const ctx = makeContext({
