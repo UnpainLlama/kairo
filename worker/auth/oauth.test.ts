@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { registerGoogleAuthRoutes } from './google';
 import { registerYouTubeAuthRoutes } from './youtube';
 
@@ -26,6 +26,7 @@ function makeContext(options: {
 
   const context = {
     env: options.env,
+    get: (name: string) => name === 'requestId' ? 'test-request-id' : undefined,
     req: {
       url: options.url,
       header: (name: string) => name.toLowerCase() === 'cookie' ? options.cookie : undefined,
@@ -53,12 +54,17 @@ function makeContext(options: {
   };
 }
 
-function mockDb(options: { authenticated?: boolean } = {}): D1Database {
+function mockDb(options: { authenticated?: boolean; failYoutubeStateInsert?: boolean } = {}): D1Database {
   const authenticated = options.authenticated ?? true;
   const db = {
     prepare: (sql: string) => ({
       bind: (..._values: unknown[]) => ({
-        run: async () => ({ success: true, meta: { changes: 1 } }),
+        run: async () => {
+          if (options.failYoutubeStateInsert && sql.includes('INSERT INTO youtube_oauth_states')) {
+            throw new Error('D1_ERROR: no such table: youtube_oauth_states');
+          }
+          return { success: true, meta: { changes: 1 } };
+        },
         first: async () => {
           if (sql.includes('FROM sessions s') && sql.includes('INNER JOIN user_profiles')) {
             return authenticated ? {
@@ -171,5 +177,115 @@ describe('YouTube OAuth canonical callback', () => {
     expect(response.status).toBe(302);
     expect(new URL(ctx.redirectedTo!).origin).toBe(canonicalOrigin);
     expect(new URL(ctx.redirectedTo!).pathname).toBe('/login');
+  });
+});
+
+
+describe('YouTube OAuth configuration diagnostics', () => {
+  it('reports an invalid encryption-key format without logging the key', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/auth/youtube');
+    const exposedValue = 'x'.repeat(44);
+    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const ctx = makeContext({
+        url: `${canonicalOrigin}/api/v1/auth/youtube`,
+        env: {
+          DB: mockDb(),
+          APP_BASE_URL: canonicalOrigin,
+          GOOGLE_CLIENT_ID: 'google-client-id',
+          GOOGLE_CLIENT_SECRET: 'google-client-secret',
+          YOUTUBE_TOKEN_ENCRYPTION_KEY: exposedValue,
+        },
+      });
+      const response = await handler(ctx.context);
+      expect(response.status).toBe(503);
+      expect(await response.json()).toMatchObject({
+        error: { code: 'YOUTUBE_CONNECT_UNAVAILABLE' },
+        meta: { requestId: 'test-request-id' },
+      });
+      const logged = diagnostic.mock.calls.map(([value]) => String(value)).join('\n');
+      expect(logged).toContain('youtube_configuration_unavailable');
+      expect(logged).toContain('YOUTUBE_TOKEN_ENCRYPTION_KEY');
+      expect(logged).toContain('length_not_43');
+      expect(logged).toContain('test-request-id');
+      expect(logged).not.toContain(exposedValue);
+    } finally {
+      diagnostic.mockRestore();
+    }
+  });
+
+  it('identifies missing Cloudflare bindings by name only', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/auth/youtube');
+    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const ctx = makeContext({
+        url: `${canonicalOrigin}/api/v1/auth/youtube`,
+        env: {
+          DB: mockDb(),
+          APP_BASE_URL: canonicalOrigin,
+          GOOGLE_CLIENT_ID: 'google-client-id',
+          YOUTUBE_TOKEN_ENCRYPTION_KEY: 'A'.repeat(43),
+        },
+      });
+      const response = await handler(ctx.context);
+      expect(response.status).toBe(503);
+      const logged = diagnostic.mock.calls.map(([value]) => String(value)).join('\n');
+      expect(logged).toContain('missing_bindings');
+      expect(logged).toContain('GOOGLE_CLIENT_SECRET');
+      expect(logged).not.toContain('google-client-id');
+    } finally {
+      diagnostic.mockRestore();
+    }
+  });
+
+  it('identifies a non-origin APP_BASE_URL', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/auth/youtube');
+    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const ctx = makeContext({
+        url: `${canonicalOrigin}/api/v1/auth/youtube`,
+        cookie: `kairo_session=${'a'.repeat(43)}`,
+        env: {
+          DB: mockDb(),
+          APP_BASE_URL: `${canonicalOrigin}/unexpected-path`,
+          GOOGLE_CLIENT_ID: 'google-client-id',
+          GOOGLE_CLIENT_SECRET: 'google-client-secret',
+          YOUTUBE_TOKEN_ENCRYPTION_KEY: 'A'.repeat(43),
+        },
+      });
+      const response = await handler(ctx.context);
+      expect(response.status).toBe(503);
+      const logged = diagnostic.mock.calls.map(([value]) => String(value)).join('\n');
+      expect(logged).toContain('"component":"APP_BASE_URL"');
+      expect(logged).toContain('must_be_origin_only');
+    } finally {
+      diagnostic.mockRestore();
+    }
+  });
+
+  it('logs the D1 state-table failure without exposing OAuth state or verifier values', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/auth/youtube');
+    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const ctx = makeContext({
+        url: `${canonicalOrigin}/api/v1/auth/youtube`,
+        cookie: `kairo_session=${'a'.repeat(43)}`,
+        env: {
+          DB: mockDb({ failYoutubeStateInsert: true }),
+          APP_BASE_URL: canonicalOrigin,
+          GOOGLE_CLIENT_ID: 'google-client-id',
+          GOOGLE_CLIENT_SECRET: 'google-client-secret',
+          YOUTUBE_TOKEN_ENCRYPTION_KEY: 'A'.repeat(43),
+        },
+      });
+      const response = await handler(ctx.context);
+      expect(response.status).toBe(503);
+      const logged = diagnostic.mock.calls.map(([value]) => String(value)).join('\n');
+      expect(logged).toContain('youtube_oauth_state_store_failed');
+      expect(logged).toContain('no such table: youtube_oauth_states');
+      expect(logged).toContain('test-request-id');
+    } finally {
+      diagnostic.mockRestore();
+    }
   });
 });

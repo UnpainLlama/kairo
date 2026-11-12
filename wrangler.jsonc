@@ -33,6 +33,20 @@
   "env": {
     // Staging
     "staging": {
+      "observability": {
+        "logs": {
+          "enabled": true,
+          "invocation_logs": true,
+          "head_sampling_rate": 1,
+          "persist": true
+        },
+        "traces": {
+          "enabled": false
+        },
+        "issues": {
+          "enabled": false
+        }
+      },
       "d1_databases": [
         {
           "binding": "DB",
