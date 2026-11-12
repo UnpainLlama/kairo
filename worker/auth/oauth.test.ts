@@ -54,7 +54,7 @@ function makeContext(options: {
   };
 }
 
-function mockDb(options: { authenticated?: boolean; failYoutubeStateInsert?: boolean } = {}): D1Database {
+function mockDb(options: { authenticated?: boolean; recentSession?: boolean; failYoutubeStateInsert?: boolean } = {}): D1Database {
   const authenticated = options.authenticated ?? true;
   const db = {
     prepare: (sql: string) => ({
@@ -75,7 +75,7 @@ function mockDb(options: { authenticated?: boolean; failYoutubeStateInsert?: boo
               role: 'user',
             } : null;
           }
-          if (sql.includes('SELECT id FROM sessions')) return authenticated ? { id: 'session-123' } : null;
+          if (sql.includes('SELECT id FROM sessions')) return authenticated && options.recentSession !== false ? { id: 'session-123' } : null;
           return null;
         },
         all: async () => ({ results: [] }),
@@ -130,6 +130,27 @@ describe('Google OAuth canonical callback', () => {
       error: { code: 'GOOGLE_AUTH_UNAVAILABLE' },
     });
   });
+
+  it('preserves the Google-link action when a recent sign-in is required', async () => {
+    const handler = routeFor(registerGoogleAuthRoutes, '/api/v1/auth/google');
+    const ctx = makeContext({
+      url: `${canonicalOrigin}/api/v1/auth/google?intent=link`,
+      cookie: `kairo_session=${'a'.repeat(43)}`,
+      env: {
+        DB: mockDb({ recentSession: false }),
+        APP_BASE_URL: canonicalOrigin,
+        GOOGLE_CLIENT_ID: 'google-client-id',
+        GOOGLE_CLIENT_SECRET: 'google-client-secret',
+      },
+    });
+
+    const response = await handler(ctx.context);
+    const location = new URL(ctx.redirectedTo!);
+    expect(response.status).toBe(302);
+    expect(location.pathname).toBe('/login');
+    expect(location.searchParams.get('google')).toBe('reauth_required');
+    expect(location.searchParams.get('continue')).toBe('google-link');
+  });
 });
 
 describe('YouTube OAuth canonical callback', () => {
@@ -177,6 +198,28 @@ describe('YouTube OAuth canonical callback', () => {
     expect(response.status).toBe(302);
     expect(new URL(ctx.redirectedTo!).origin).toBe(canonicalOrigin);
     expect(new URL(ctx.redirectedTo!).pathname).toBe('/login');
+  });
+
+  it('preserves the YouTube connection action when a recent sign-in is required', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/auth/youtube');
+    const ctx = makeContext({
+      url: `${canonicalOrigin}/api/v1/auth/youtube`,
+      cookie: `kairo_session=${'a'.repeat(43)}`,
+      env: {
+        DB: mockDb({ recentSession: false }),
+        APP_BASE_URL: canonicalOrigin,
+        GOOGLE_CLIENT_ID: 'google-client-id',
+        GOOGLE_CLIENT_SECRET: 'google-client-secret',
+        YOUTUBE_TOKEN_ENCRYPTION_KEY: 'A'.repeat(43),
+      },
+    });
+
+    const response = await handler(ctx.context);
+    const location = new URL(ctx.redirectedTo!);
+    expect(response.status).toBe(302);
+    expect(location.pathname).toBe('/login');
+    expect(location.searchParams.get('youtube')).toBe('reauth_required');
+    expect(location.searchParams.get('continue')).toBe('youtube-connect');
   });
 });
 
