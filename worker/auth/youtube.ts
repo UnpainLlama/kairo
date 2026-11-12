@@ -32,6 +32,9 @@ function logYouTubeDiagnostic(c: YouTubeContext, event: string, details: Record<
 function safeErrorName(error: unknown): string {
   return error instanceof Error ? error.name.slice(0, 80) : 'unknown';
 }
+function safeGoogleErrorCode(value: unknown): string {
+  return typeof value === 'string' && /^[A-Za-z0-9_.-]{1,80}$/.test(value) ? value : 'unclassified';
+}
 function safeErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : 'unknown';
   return message.replace(/[\r\n\t]/g, ' ').slice(0, 180);
@@ -213,33 +216,78 @@ export function registerYouTubeAuthRoutes(app: any): void {
       logYouTubeDiagnostic(c, 'youtube_callback_configuration_unavailable', { component: 'APP_BASE_URL', reason: appBaseUrlProblem(c) ?? 'callback_url_construction_failed' });
       return unavailable(c);
     }
-    if (url.searchParams.has('error')) return redirectTo(c, '/settings?youtube=cancelled');
-    if (!state || browserState !== state || !/^[A-Za-z0-9_-]{40,64}$/.test(state) || !code || code.length > 2048) {
+    if (url.searchParams.has('error')) {
+      logYouTubeDiagnostic(c, 'youtube_google_authorization_denied', { googleError: safeGoogleErrorCode(url.searchParams.get('error')) });
+      return redirectTo(c, '/settings?youtube=cancelled');
+    }
+    const stateFormatValid = /^[A-Za-z0-9_-]{40,64}$/.test(state);
+    if (!state || browserState !== state || !stateFormatValid || !code || code.length > 2048) {
+      logYouTubeDiagnostic(c, 'youtube_callback_invalid_response', {
+        statePresent: Boolean(state),
+        stateCookieMatched: Boolean(state && browserState === state),
+        stateFormatValid,
+        codePresent: Boolean(code),
+        codeLengthValid: Boolean(code && code.length <= 2048),
+      });
       return redirectTo(c, '/settings?youtube=invalid_response');
     }
     const cookie = c.req.header('Cookie') ?? null;
     const sessionToken = readSessionCookie(cookie);
     const user = await findSessionUser(c.env.DB, cookie);
-    if (!sessionToken || !user) return redirectTo(c, '/login?youtube=sign_in_required');
+    if (!sessionToken || !user) {
+      logYouTubeDiagnostic(c, 'youtube_callback_session_missing');
+      return redirectTo(c, '/login?youtube=sign_in_required');
+    }
 
+    let callbackStage = 'state_lookup';
     try {
       const stateHash = await shaHex(state);
       const transaction = await c.env.DB.prepare(
         'SELECT user_id,session_hash,code_verifier,expires_at,consumed_at FROM youtube_oauth_states WHERE state_hash=?'
       ).bind(stateHash).first<OAuthTransaction>();
-      if (!transaction || transaction.user_id !== user.id || transaction.session_hash !== await hashToken(sessionToken) ||
-          transaction.consumed_at !== null || transaction.expires_at <= Date.now()) {
+      const transactionReason = !transaction ? 'not_found'
+        : transaction.user_id !== user.id ? 'user_mismatch'
+        : transaction.session_hash !== await hashToken(sessionToken) ? 'session_mismatch'
+        : transaction.consumed_at !== null ? 'already_consumed'
+        : transaction.expires_at <= Date.now() ? 'expired'
+        : null;
+      if (transactionReason) {
+        logYouTubeDiagnostic(c, 'youtube_callback_transaction_invalid', { reason: transactionReason });
         return redirectTo(c, '/settings?youtube=expired');
       }
+      callbackStage = 'state_consume';
       const consumed = await c.env.DB.prepare(
         'UPDATE youtube_oauth_states SET consumed_at=? WHERE state_hash=? AND consumed_at IS NULL AND expires_at>?'
       ).bind(Date.now(), stateHash, Date.now()).run();
-      if (Number(consumed.meta?.changes ?? 0) !== 1) return redirectTo(c, '/settings?youtube=expired');
+      if (Number(consumed.meta?.changes ?? 0) !== 1) {
+        logYouTubeDiagnostic(c, 'youtube_callback_transaction_consume_failed');
+        return redirectTo(c, '/settings?youtube=expired');
+      }
 
       const clientId = c.env.GOOGLE_CLIENT_ID;
       const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
       const key = c.env.YOUTUBE_TOKEN_ENCRYPTION_KEY;
-      if (!clientId || !clientSecret || !key) return unavailable(c);
+      const missingBindings = [
+        ...(!clientId ? ['GOOGLE_CLIENT_ID'] : []),
+        ...(!clientSecret ? ['GOOGLE_CLIENT_SECRET'] : []),
+        ...(!key ? ['YOUTUBE_TOKEN_ENCRYPTION_KEY'] : []),
+      ];
+      if (missingBindings.length) {
+        logYouTubeDiagnostic(c, 'youtube_callback_configuration_unavailable', { reason: 'missing_bindings', missingBindings });
+        return unavailable(c);
+      }
+      const keyProblem = encryptionKeyProblem(key);
+      if (keyProblem) {
+        logYouTubeDiagnostic(c, 'youtube_callback_configuration_unavailable', { component: 'YOUTUBE_TOKEN_ENCRYPTION_KEY', reason: keyProblem });
+        return unavailable(c);
+      }
+      try {
+        await encryptionKey(key!);
+      } catch (error) {
+        logYouTubeDiagnostic(c, 'youtube_callback_configuration_unavailable', { component: 'YOUTUBE_TOKEN_ENCRYPTION_KEY', reason: 'crypto_key_import_failed', errorName: safeErrorName(error) });
+        return unavailable(c);
+      }
+      callbackStage = 'google_token_exchange';
       const response = await fetch(TOKEN_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
@@ -249,27 +297,50 @@ export function registerYouTubeAuthRoutes(app: any): void {
           code_verifier: transaction.code_verifier,
         }),
       });
-      if (!response.ok) return redirectTo(c, '/settings?youtube=token_exchange_failed');
+      if (!response.ok) {
+        const upstream = await response.clone().json().catch(() => null) as { error?: unknown } | null;
+        logYouTubeDiagnostic(c, 'youtube_google_token_exchange_failed', {
+          httpStatus: response.status,
+          googleError: safeGoogleErrorCode(upstream?.error),
+        });
+        return redirectTo(c, '/settings?youtube=token_exchange_failed');
+      }
+      callbackStage = 'google_token_response_validation';
       const tokens = await response.json() as {
         access_token?: string; refresh_token?: string; expires_in?: number; scope?: string; token_type?: string;
       };
       const scopes = typeof tokens.scope === 'string' ? tokens.scope.split(/\s+/).filter(Boolean) : [];
-      if (!tokens.access_token || tokens.access_token.length > 8192 || tokens.token_type?.toLowerCase() !== 'bearer' ||
-          scopes.length !== 1 || scopes[0] !== SCOPE || !Number.isFinite(Number(tokens.expires_in)) || Number(tokens.expires_in) <= 0 || Number(tokens.expires_in) > 86400) {
+      const tokenIssues = [
+        ...(!tokens.access_token ? ['access_token_missing'] : []),
+        ...(tokens.access_token && tokens.access_token.length > 8192 ? ['access_token_too_long'] : []),
+        ...(tokens.token_type?.toLowerCase() !== 'bearer' ? ['token_type_not_bearer'] : []),
+        ...(scopes.length !== 1 || scopes[0] !== SCOPE ? ['required_scope_mismatch'] : []),
+        ...(!Number.isFinite(Number(tokens.expires_in)) || Number(tokens.expires_in) <= 0 || Number(tokens.expires_in) > 86400 ? ['invalid_expiry'] : []),
+      ];
+      if (tokenIssues.length) {
+        logYouTubeDiagnostic(c, 'youtube_google_token_response_invalid', { reasons: tokenIssues, receivedScopeCount: scopes.length, refreshTokenPresent: Boolean(tokens.refresh_token) });
         return redirectTo(c, '/settings?youtube=invalid_grant');
       }
+      callbackStage = 'existing_connection_lookup';
       const existing = await c.env.DB.prepare(
         "SELECT encrypted_refresh_token FROM provider_connections WHERE user_id=? AND provider='youtube'"
       ).bind(user.id).first<{ encrypted_refresh_token: string | null }>();
       if (tokens.refresh_token && (tokens.refresh_token.length === 0 || tokens.refresh_token.length > 8192)) {
+        logYouTubeDiagnostic(c, 'youtube_google_token_response_invalid', { reasons: ['refresh_token_length_invalid'] });
         return redirectTo(c, '/settings?youtube=invalid_grant');
       }
+      callbackStage = 'refresh_token_encryption';
       const encryptedRefresh = tokens.refresh_token
-        ? await encryptToken(tokens.refresh_token, key)
+        ? await encryptToken(tokens.refresh_token, key!)
         : existing?.encrypted_refresh_token;
-      if (!encryptedRefresh) return redirectTo(c, '/settings?youtube=refresh_token_missing');
+      if (!encryptedRefresh) {
+        logYouTubeDiagnostic(c, 'youtube_refresh_token_missing', { newRefreshTokenPresent: false, existingRefreshTokenPresent: Boolean(existing?.encrypted_refresh_token) });
+        return redirectTo(c, '/settings?youtube=refresh_token_missing');
+      }
 
-      const encryptedAccess = await encryptToken(tokens.access_token, key);
+      callbackStage = 'access_token_encryption';
+      const encryptedAccess = await encryptToken(tokens.access_token!, key!);
+      callbackStage = 'connection_persist';
       await c.env.DB.prepare(`
         INSERT INTO provider_connections
           (id,user_id,provider,provider_subject,encrypted_access_token,encrypted_refresh_token,token_expires_at,scopes_json)
@@ -282,8 +353,9 @@ export function registerYouTubeAuthRoutes(app: any): void {
           updated_at=CURRENT_TIMESTAMP
       `).bind(crypto.randomUUID(), user.id, encryptedAccess, encryptedRefresh, Date.now() + Number(tokens.expires_in) * 1000, JSON.stringify(scopes)).run();
       return redirectTo(c, '/settings?youtube=connected');
-    } catch {
-      // OAuth tokens and upstream payloads are deliberately excluded from logs.
+    } catch (error) {
+      // Log only the failing stage and exception class; never log codes, tokens, cookies, or payloads.
+      logYouTubeDiagnostic(c, 'youtube_callback_failed', { stage: callbackStage, errorName: safeErrorName(error) });
       return redirectTo(c, '/settings?youtube=failed');
     }
   });
