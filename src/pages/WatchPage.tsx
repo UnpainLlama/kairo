@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ListVideo, Play, Search, RefreshCw, ExternalLink } from 'lucide-react';
 import { ErrorState, LoadingState } from '../components/catalog';
 import KairoMediaPlayer, { type KairoPlaybackSource } from '../components/KairoMediaPlayer';
 import { useApi } from '../lib/useApi';
 import { accountPreferenceStorageKey, historyPausedStorageKey, readWatchHistory, watchProgressIdentity, watchProgressStorageKey, writeWatchHistory } from '../lib/accountStorage';
+import { shouldSyncPlaybackProgress, type PlaybackSaveReason } from '../lib/playbackSync';
 import { dateLabel, durationLabel, episodeNumberLabel, safeImageUrl, type AnimeDetails, type Episode, type EpisodeServer, type ItemList } from '../lib/catalog';
 
 type ServerList = ItemList<EpisodeServer>;
@@ -75,6 +76,82 @@ export default function WatchPage() {
   }, [accountId, slug, parsedEpisode, selectedServer?.id]);
   const playbackPath = selectedServer ? `/anime/${key}/episodes/${parsedEpisode}/servers/${encodeURIComponent(selectedServer.id)}/playback` : null;
   const playback = useApi<PlaybackResponse>(playbackPath);
+  const lastProgressSyncAt = useRef(0);
+  const lastProgressSyncSeconds = useRef(-1);
+  const animeForProgress = details.status === 'ok' ? details.data : null;
+  const episodeForProgress = episodePages.find((episode) => episode.episodeNumber === parsedEpisode) ?? null;
+
+  useEffect(() => {
+    lastProgressSyncAt.current = 0;
+    lastProgressSyncSeconds.current = -1;
+  }, [accountId, slug, parsedEpisode, selectedServer?.id]);
+
+  const persistPlaybackProgress = useCallback((seconds: number, reason: PlaybackSaveReason) => {
+    if (!accountResolved || !animeForProgress || !episodeForProgress || !Number.isFinite(seconds)) return;
+    const duration = Number(episodeForProgress.durationSeconds);
+    const position = Math.max(0, Math.min(
+      Number.isFinite(duration) && duration > 0 ? duration : 86400,
+      seconds,
+    ));
+    if (position <= 0 && reason !== 'play') return;
+
+    const now = Date.now();
+    if (!shouldSyncPlaybackProgress(
+      reason,
+      lastProgressSyncAt.current,
+      lastProgressSyncSeconds.current,
+      position,
+      now,
+    )) return;
+
+    lastProgressSyncAt.current = now;
+    lastProgressSyncSeconds.current = position;
+
+    const progressKey = watchProgressStorageKey(accountId, slug, parsedEpisode, selectedServer?.id ?? '');
+    const item = {
+      slug,
+      title: animeForProgress.title,
+      posterUrl: animeForProgress.posterUrl,
+      episodeNumber: parsedEpisode,
+      episodeTitle: episodeForProgress.title ?? '',
+      durationSeconds: Number.isFinite(duration) && duration > 0 ? duration : null,
+      progressSeconds: position,
+      updatedAt: now,
+      progressKey,
+    };
+
+    try { localStorage.setItem(progressKey, String(position)); } catch { /* local storage may be unavailable */ }
+    const previousItems = readWatchHistory<{ slug?: string; episodeNumber?: number } & Record<string, unknown>>(accountId);
+    const nextItems = [item, ...previousItems.filter((entry) =>
+      entry?.slug !== slug || Number(entry?.episodeNumber) !== parsedEpisode
+    )].slice(0, 100);
+    writeWatchHistory(accountId, nextItems);
+    window.dispatchEvent(new Event('kairo:history-change'));
+
+    // Guests retain local progress. Signed-in viewers sync to their own D1 row.
+    if (!accountId) return;
+    void fetch('/api/v1/me/history/sync', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        items: [{
+          slug: item.slug,
+          title: item.title,
+          posterUrl: item.posterUrl,
+          episodeNumber: item.episodeNumber,
+          episodeTitle: item.episodeTitle,
+          durationSeconds: item.durationSeconds,
+          progressSeconds: item.progressSeconds,
+          updatedAt: item.updatedAt,
+        }],
+        deleted: [],
+      }),
+      keepalive: reason === 'pagehide',
+    }).catch(() => {
+      // Keep local progress; the next periodic, pause or page-exit event retries.
+    });
+  }, [accountResolved, accountId, animeForProgress, episodeForProgress, parsedEpisode, selectedServer?.id, slug]);
 
   useEffect(() => {
     if (!accountResolved || details.status !== 'ok' || episodes.status !== 'ok' || !validEpisode) return;
@@ -134,6 +211,7 @@ export default function WatchPage() {
                 introEnd={(current as (Episode & { introEndSeconds?: number | null }) | undefined)?.introEndSeconds}
                 outroStart={(current as (Episode & { outroStartSeconds?: number | null }) | undefined)?.outroStartSeconds}
                 nextUrl={next && autoNext ? `/watch/${key}/${next.episodeNumber}` : null}
+                onProgress={persistPlaybackProgress}
               />
             )}
             {accountResolved && playback.status !== 'ok' && (
