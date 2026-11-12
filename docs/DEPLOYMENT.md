@@ -62,11 +62,11 @@ Open these in a browser (replace the host with your staging URL):
 | URL | Expect |
 |---|---|
 | `/api/health` | JSON, `"success":true`, `"environment":"staging"` |
-| `/api/ready` | `"database":"ok"`, `"schema":"ok"`, `"cache":"kv"`, `"providers":["anilist"]` |
-| `/api/v1/providers` | AniList enabled, Kitsu disabled and `termsVerified:false` |
-| `/` | The site loads. The catalogue is **empty** until Phase 2, so you see the "catalogue is empty" notice. That is correct. |
+| `/api/ready` | `"database":"ok"`, `"schema":"ok"`, and `"cache":"kv"`. In live catalogue mode this still verifies D1 because account, library and watch-history routes depend on it. |
+| `/api/v1/providers` | The configured live catalogue providers, independent episode providers, attribution details and artwork provider. Do not assume the legacy DB-mode AniList/Kitsu response. |
+| `/` | The site loads and displays results from the configured live catalogue providers. The catalogue is not expected to be empty in live mode. |
 
-`/api/ready` returns 503 with "Apply migrations" if the database is reachable but unmigrated, and 503 if D1 is unreachable.
+`/api/ready` returns 503 if D1 is unreachable, if any required migration table is missing, or if the extended `user_profiles` account columns are unavailable. It does not call external catalogue providers, so the readiness probe does not consume their rate limits.
 
 ## 4. Environment variables and bindings
 
@@ -107,9 +107,17 @@ Authentication is already implemented. Set `GOOGLE_CLIENT_SECRET` and `YOUTUBE_T
 - Database: migrations are additive-only and the previous Worker version works against the newer schema, so a code rollback needs no database rollback.
 
 ## 7. Verified vs assumed
-**Verified in a sandbox:** the generated staging config (Worker name, D1, KV, vars); a Wrangler dry-run deploy; migrations 0001 and 0002 applied by Wrangler to a local D1, twice (second run: nothing to apply); the built Worker running in the Workers runtime locally, serving `/api/health`, `/api/ready` (200 when migrated, 503 when not), JSON API routes, and the SPA fallback; typecheck, 73 tests, build.
+**Verified on 2026-11-12:**
+- GitHub Actions typecheck, all 18 test files (159 tests at the last verified commit), and worker/client production builds passed on the `youtube` promotion PR. The deploy job was skipped for the pull request.
+- A read-only remote Wrangler migration listing against staging reported `0007_youtube_oauth.sql` as the only migration to be applied. This indicates migrations 0001–0006 are already recorded as applied on the staging D1 journal; no migration was applied by the inspection command.
+- A staging Worker deployment was performed from the older `main` snapshot before this promotion PR was merged. It returned healthy `/api/health` and `/api/ready` responses, but that old live-mode readiness handler reported `database: "not used"`. Wrangler also warned that the old `main` config omitted the canonical `APP_BASE_URL` and `GOOGLE_CLIENT_ID` variables present on `youtube`.
 
-**Not verified (needs your Cloudflare account):** the real remote deploy, remote migrations, KV reads/writes, the token's exact permission set, and the workflow's deploy job. The first staging run is the test; its health check will say whether it worked.
+**Still to verify before enabling account features on staging:**
+- Merge/review the current `youtube` promotion PR, then deploy the promoted commit to staging. The final `/api/ready` should report both `database: "ok"` and `schema: "ok"`.
+- Confirm the staging Worker secrets `GOOGLE_CLIENT_SECRET` and `YOUTUBE_TOKEN_ENCRYPTION_KEY` exist. Cloudflare does not expose secret values for read-back; verify by running a controlled sign-in / YouTube connection test after deployment.
+- Confirm the exact YouTube and Google callback URLs are registered in the Google OAuth client.
+- Validate provider endpoints and Jikan/MyAnimeList terms as described in `docs/LIVE_CATALOGUE.md`. The staging deploy's `cache: "kv"` proves the binding is present, not that every KV read/write path has been exercised.
+- Migration `0007_youtube_oauth.sql` remains pending on staging until a reviewed staging deployment applies it. Production remains blocked and untouched.
 
 ## 8. Production (blocked)
 Production deploys are blocked by design until you approve. They need all of: a separate D1 database and KV namespace, their IDs in the `production` block, a separate token in the `production` environment, the variable `PRODUCTION_DEPLOY_APPROVED=true`, a run from `main`, and your approval as required reviewer. Do none of this until staging is proven with a real catalogue.
