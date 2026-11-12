@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  accountPreferenceStorageKey,
   historyPausedStorageKey,
   readWatchHistory,
   watchHistoryStorageKey,
@@ -28,6 +29,7 @@ describe('account-scoped browser storage', () => {
 
     expect(watchHistoryStorageKey('user-a')).not.toBe(watchHistoryStorageKey('user-b'));
     expect(historyPausedStorageKey('user-a')).not.toBe(historyPausedStorageKey('user-b'));
+    expect(accountPreferenceStorageKey('user-a', 'auto-next')).not.toBe(accountPreferenceStorageKey('user-b', 'auto-next'));
     expect(watchProgressStorageKey('user-a', 'alpha', 1, 'sub')).not.toBe(
       watchProgressStorageKey('user-b', 'alpha', 1, 'sub'),
     );
