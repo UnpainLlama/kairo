@@ -13,7 +13,8 @@ type Result = { q: string; mode: MediaMode; status: 'ok'; items: CatalogCard[]; 
  * Header search. It queries /catalog/search as you type and lists matches in a dropdown, so you can open a title
  * without leaving the page. Enter opens the highlighted title, or the full results page when nothing is highlighted.
  */
-export default function SearchBar() {
+export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtube' }) {
+  const isYouTube = mode === 'youtube';
   const navigate = useNavigate();
   const location = useLocation();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -28,19 +29,19 @@ export default function SearchBar() {
     || (location.pathname === '/search' && new URLSearchParams(location.search).get('format') === 'movie')
     ? 'movie'
     : 'anime';
-  const mediaLabel = mediaMode === 'movie' ? 'movies' : 'anime';
+  const mediaLabel = isYouTube ? 'YouTube channels' : mediaMode === 'movie' ? 'movies' : 'anime';
 
   // Mirror the URL: on the search page show its query, everywhere else start empty.
   useEffect(() => {
-    const onSearchPage = location.pathname === '/search';
+    const onSearchPage = location.pathname === (isYouTube ? '/youtube/search' : '/search');
     setText(onSearchPage ? (new URLSearchParams(location.search).get('q') ?? '').slice(0, MAX_QUERY) : '');
     setOpen(false);
     setActive(-1);
-  }, [location.pathname, location.search]);
+  }, [isYouTube, location.pathname, location.search]);
 
   // Debounced lookup. Older requests are aborted, and a result is only shown for the query it was fetched for.
   useEffect(() => {
-    if (!canSearch(query) || !open || location.pathname === '/search') return;
+    if (isYouTube || !canSearch(query) || !open || location.pathname === '/search') return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams({ q: query, limit: '8', sort: 'relevance' });
@@ -50,7 +51,7 @@ export default function SearchBar() {
         .catch((error: unknown) => { if (!isAbort(error)) setResult({ q: query, mode: mediaMode, status: 'error' }); });
     }, 250);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [query, mediaMode, open, location.pathname]);
+  }, [isYouTube, query, mediaMode, open, location.pathname]);
 
   // Ctrl/Cmd+K, or "/" outside a text field, focuses the bar. Clicking elsewhere closes the dropdown.
   useEffect(() => {
@@ -74,6 +75,7 @@ export default function SearchBar() {
   const items = current?.status === 'ok' ? current.items : [];
 
   const resultsHref = (): string => {
+    if (isYouTube) return `/youtube/search?q=${encodeURIComponent(query)}`;
     const base = location.pathname === '/search' ? parseSearchState(new URLSearchParams(location.search)) : EMPTY_SEARCH;
     const format = mediaMode === 'movie' ? 'movie' : (base.format === 'movie' ? '' : base.format);
     const qs = toUrlParams({ ...base, q: query, format, page: 1 }).toString();
@@ -99,13 +101,17 @@ export default function SearchBar() {
       inputRef.current?.blur();
     } else if (event.key === 'Enter') {
       event.preventDefault();
-      const item = items[active];
-      if (item) go(animeHref(item));
-      else if (searching) go(resultsHref());
+      if (isYouTube) {
+        if (searching) go(resultsHref());
+      } else {
+        const item = items[active];
+        if (item) go(animeHref(item));
+        else if (searching) go(resultsHref());
+      }
     }
   };
 
-  const showPanel = open && searching;
+  const showPanel = !isYouTube && open && searching;
 
   return (
     <div className="kc-search-wrap" ref={rootRef} role="search">
