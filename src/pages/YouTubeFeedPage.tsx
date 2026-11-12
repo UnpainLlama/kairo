@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowUpRight, Plus, RefreshCw, Search, Youtube } from 'lucide-react';
+import { ArrowUpRight, Plus, RefreshCw, Youtube } from 'lucide-react';
 
 type SavedChannel = { channelId: string; title: string; description: string; thumbnailUrl: string | null; addedAt?: string };
 type FeedVideo = {
