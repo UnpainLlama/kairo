@@ -5,16 +5,17 @@ describe('password hashing', () => {
   it('uses versioned PBKDF2-SHA256 hashes with unique salts', async () => {
     const first = await hashPassword('correct horse battery staple');
     const second = await hashPassword('correct horse battery staple');
-    expect(first).toMatch(/^pbkdf2-sha256\$v=1\$i=600000\$[A-Za-z0-9_-]{22}\$[A-Za-z0-9_-]{43}$/);
+    expect(first).toMatch(/^pbkdf2-sha256\$v=1\$i=100000\$[A-Za-z0-9_-]{22}\$[A-Za-z0-9_-]{43}$/);
     expect(second).not.toBe(first);
-    expect(PASSWORD_HASH_ITERATIONS).toBe(600_000);
+    expect(PASSWORD_HASH_ITERATIONS).toBe(100_000);
+    expect(PASSWORD_HASH_ITERATIONS).toBeLessThanOrEqual(100_000);
     expect(await verifyPassword('correct horse battery staple', first)).toBe(true);
     expect(await verifyPassword('different password', first)).toBe(false);
   });
 
   it('rejects malformed, unsupported and attacker-selected work factors', async () => {
     expect(await verifyPassword('password', 'not-a-hash')).toBe(false);
-    expect(await verifyPassword('password', 'pbkdf2-sha256$v=2$i=600000$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')).toBe(false);
+    expect(await verifyPassword('password', 'pbkdf2-sha256$v=2$i=100000$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')).toBe(false);
     expect(await verifyPassword('password', 'pbkdf2-sha256$v=1$i=999999999$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')).toBe(false);
   });
 

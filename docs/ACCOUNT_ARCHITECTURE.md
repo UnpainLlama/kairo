@@ -8,8 +8,9 @@
 - An email/password account can connect Google only from an authenticated, recently created session. If a Google sign-in email matches an existing account, the user must sign in to that account and explicitly connect Google in Settings.
 
 ## Passwords and sessions
-- PBKDF2-HMAC-SHA-256, 600,000 iterations, 16-byte random salt and 256-bit output via Workers Web Crypto.
+- PBKDF2-HMAC-SHA-256, currently 100,000 iterations (the Cloudflare workerd WebCrypto per-operation ceiling), a 16-byte random salt and 256-bit output. This is below OWASP's 600,000-iteration PBKDF2-HMAC-SHA-256 recommendation; it is a documented platform/security trade-off, not an ideal final target. Revisit the password-hashing architecture before launch (for example, a memory-hard KDF that is benchmarked on the actual Workers plan or a dedicated authentication service).
 - Passwords require at least 12 Unicode code points and are capped at 1,024 UTF-8 bytes.
+- Browser playback progress is stored locally under the account ID and synced to D1 every 15 seconds while playing, plus immediately on play, pause, seek, end, and page exit. Guest progress stays local. Cross-origin embed players cannot report exact playhead time unless their provider exposes a supported player API.
 - Session cookies are HttpOnly, Secure on HTTPS, SameSite=Lax; D1 stores only a SHA-256 hash of the opaque token.
 - Registration creates an active account and signs the user in immediately.
 - Login verifies the password and creates a session. Suspended accounts cannot sign in.
