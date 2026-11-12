@@ -18,7 +18,8 @@ This plan describes the full provider roadmap. The current account-foundation wo
 - Resolve a channel's uploads playlist through the channel resource, then page `playlistItems.list`. Avoid routine `search.list` calls because their quota cost is substantially higher.
 - Use Google's documented OAuth authorization-code flow with PKCE for optional YouTube access. Request only `https://www.googleapis.com/auth/youtube.readonly` for the initial connection.
 - Kairo Google sign-in is a separate identity flow and must continue to request only `openid email profile`. Connecting YouTube must never silently expand sign-in scopes.
-- Never request or store YouTube passwords, browser cookies, copied session tokens, or undocumented InnerTube endpoints. Do not scrape.
+- **Production product boundary:** never request or store YouTube passwords, browser cookies, or copied session tokens; never depend on undocumented InnerTube endpoints or scrape YouTube. Use the official YouTube Data API and supported OAuth flows.
+- The existing manual-cookie/YouTube.js prototype is a separate, explicitly temporary staging-only experiment, not part of the production architecture. It must remain gated to staging, use a separate test account, never be used with personal/production sessions, never persist or log cookies, and must be removed before public launch.
 - Store OAuth access/refresh tokens only on the Worker side, encrypted at rest with a dedicated key. Never return tokens to the browser or write them to logs.
 - Bind a YouTube connection to the authenticated Kairo user. Do not auto-link accounts by matching email addresses.
 - Public video embeds do not require the viewer to sign in. Public discovery must remain usable when YouTube is disconnected. Clearly distinguish Kairo discovery from a user's subscriptions and from YouTube Home.
