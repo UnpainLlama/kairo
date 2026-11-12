@@ -51,8 +51,19 @@ function stateCookie(state: string, secure: boolean): string {
 function clearStateCookie(secure: boolean): string {
   return `kairo_youtube_state=; Path=/api/v1/auth/youtube/callback; Max-Age=0; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
 }
+function appBaseUrl(c: YouTubeContext): URL | null {
+  const configured = c.env.APP_BASE_URL;
+  if (!configured) return null;
+  try {
+    const base = new URL(configured);
+    if (!['https:', 'http:'].includes(base.protocol) || base.username || base.password || base.pathname !== '/' || base.search || base.hash) return null;
+    if (base.protocol === 'http:' && base.hostname !== 'localhost' && base.hostname !== '127.0.0.1') return null;
+    return base;
+  } catch { return null; }
+}
 function redirectTo(c: YouTubeContext, path: string): Response {
-  return c.redirect(new URL(path, new URL(c.req.url).origin).toString(), 302);
+  const origin = appBaseUrl(c)?.origin ?? new URL(c.req.url).origin;
+  return c.redirect(new URL(path, origin).toString(), 302);
 }
 function encryptionKey(encoded: string): Promise<CryptoKey> {
   if (!/^[A-Za-z0-9_-]{43}$/.test(encoded)) throw new Error('YOUTUBE_TOKEN_ENCRYPTION_KEY must be unpadded base64url');
@@ -76,14 +87,8 @@ async function decryptToken(value: string, encodedKey: string): Promise<string> 
   return new TextDecoder().decode(plaintext);
 }
 function callbackUrl(c: YouTubeContext): string | null {
-  const configured = c.env.APP_BASE_URL;
-  if (!configured) return null;
-  try {
-    const base = new URL(configured);
-    if (!['https:', 'http:'].includes(base.protocol) || base.username || base.password || base.pathname !== '/' || base.search || base.hash) return null;
-    if (base.protocol === 'http:' && base.hostname !== 'localhost' && base.hostname !== '127.0.0.1') return null;
-    return new URL('/api/v1/auth/youtube/callback', base.origin).toString();
-  } catch { return null; }
+  const base = appBaseUrl(c);
+  return base ? new URL('/api/v1/auth/youtube/callback', base.origin).toString() : null;
 }
 function unavailable(c: YouTubeContext): Response {
   return c.json({ success: false, error: { code: 'YOUTUBE_CONNECT_UNAVAILABLE', message: 'YouTube connection is not configured yet.' } }, 503);
@@ -101,6 +106,8 @@ export function registerYouTubeAuthRoutes(app: any): void {
     if (!user) return redirectTo(c, '/login?youtube=sign_in_required');
     if (!await hasRecentSession(c.env.DB, cookie)) return redirectTo(c, '/login?youtube=reauth_required');
 
+    const callback = callbackUrl(c);
+    if (!callback) return unavailable(c);
     const state = random(32);
     const verifier = random(48);
     const challenge = base64Url(new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(verifier))));
@@ -115,10 +122,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
     } catch {
       return c.json({ success: false, error: { code: 'YOUTUBE_CONNECT_UNAVAILABLE', message: 'Could not start YouTube connection. Please try again.' } }, 503);
     }
-    const url = new URL(c.req.url);
-    const callback = callbackUrl(c);
-    if (!callback) return unavailable(c);
-    c.header('Set-Cookie', stateCookie(state, url.protocol === 'https:'));
+    c.header('Set-Cookie', stateCookie(state, new URL(callback).protocol === 'https:'));
     const target = new URL(AUTH_URL);
     target.search = new URLSearchParams({
       client_id: clientId,
@@ -137,11 +141,13 @@ export function registerYouTubeAuthRoutes(app: any): void {
 
   app.get('/api/v1/auth/youtube/callback', async (c: YouTubeContext) => {
     const url = new URL(c.req.url);
-    const secure = url.protocol === 'https:';
+    const canonicalCallback = callbackUrl(c);
+    const secure = canonicalCallback ? new URL(canonicalCallback).protocol === 'https:' : url.protocol === 'https:';
     const state = url.searchParams.get('state') ?? '';
     const code = url.searchParams.get('code') ?? '';
     const browserState = cookieValue(c.req.header('Cookie'), 'kairo_youtube_state');
     c.header('Set-Cookie', clearStateCookie(secure), { append: true });
+    if (!canonicalCallback) return unavailable(c);
     if (url.searchParams.has('error')) return redirectTo(c, '/settings?youtube=cancelled');
     if (!state || browserState !== state || !/^[A-Za-z0-9_-]{40,64}$/.test(state) || !code || code.length > 2048) {
       return redirectTo(c, '/settings?youtube=invalid_response');
@@ -169,14 +175,12 @@ export function registerYouTubeAuthRoutes(app: any): void {
       const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
       const key = c.env.YOUTUBE_TOKEN_ENCRYPTION_KEY;
       if (!clientId || !clientSecret || !key) return unavailable(c);
-      const callback = callbackUrl(c);
-      if (!callback) return unavailable(c);
       const response = await fetch(TOKEN_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
         body: new URLSearchParams({
           code, client_id: clientId, client_secret: clientSecret,
-          redirect_uri: callback, grant_type: 'authorization_code',
+          redirect_uri: canonicalCallback, grant_type: 'authorization_code',
           code_verifier: transaction.code_verifier,
         }),
       });
