@@ -1140,3 +1140,32 @@ img { display: block; }
 .kc-menu-footer button{display:inline-flex;align-items:center;justify-content:center;gap:7px;flex:1;min-height:36px;border:0;border-radius:8px;background:transparent;color:var(--muted);font:inherit;font-size:11.5px;font-weight:650;cursor:pointer}
 .kc-menu-footer button:hover{background:rgba(255,255,255,.07);color:#fff}
 @media(max-width:650px){.kc-profile-hero{align-items:flex-start;flex-wrap:wrap;padding:18px}.kc-profile-hero>.kc-btn{width:100%;justify-content:center}.kc-profile-stats{gap:7px}.kc-profile-stats article{padding:12px}.kc-profile-stats b{font-size:21px}.kc-profile-history{grid-template-columns:1fr}.kc-history-toolbar>*{flex:1}.kc-history-search{flex-basis:100%}.kc-history-item{grid-template-columns:78px minmax(0,1fr) 30px;gap:10px}.kc-history-poster{height:100px}.kc-history-copy h2{font-size:14px}.kc-history-confirm span{flex-basis:100%}}
+
+
+/* YouTube subscriptions feed */
+.kc-youtube-page{max-width:1180px;margin:0 auto;padding:clamp(18px,3vw,36px) var(--pad) 56px}
+.kc-youtube-head{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:24px}
+.kc-youtube-head h1{display:flex;align-items:center;gap:10px;margin:5px 0;font-size:clamp(27px,4vw,36px)}
+.kc-youtube-head h1 svg{color:#f87171}
+.kc-youtube-head p{margin:6px 0 0;color:var(--muted)}
+.kc-youtube-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.kc-youtube-card{min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.kc-youtube-thumb{position:relative;display:block;aspect-ratio:16/9;background:#09090b;overflow:hidden}
+.kc-youtube-thumb img{width:100%;height:100%;object-fit:cover;transition:transform .2s ease}
+.kc-youtube-thumb:hover img{transform:scale(1.025)}
+.kc-youtube-thumb>span{display:grid;place-items:center;width:100%;height:100%;color:var(--muted)}
+.kc-youtube-thumb i{position:absolute;right:9px;bottom:9px;display:flex;align-items:center;gap:5px;padding:6px 9px;border-radius:6px;background:#09090be8;color:#fff;font-size:11px;font-style:normal}
+.kc-youtube-copy{padding:12px 13px 14px}
+.kc-youtube-copy h2{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;min-height:2.7em;margin:0 0 8px;font-size:14px;line-height:1.35}
+.kc-youtube-copy a{color:var(--text);text-decoration:none}
+.kc-youtube-copy a:hover{color:var(--accent)}
+.kc-youtube-copy p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0 0 5px;color:var(--muted);font-size:12px}
+.kc-youtube-copy small{color:var(--muted-2,var(--muted));font-size:11px}
+.kc-youtube-notice{display:flex;gap:11px;padding:14px;margin-bottom:18px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:13px;line-height:1.5}
+.kc-youtube-notice>svg{flex:none;color:var(--accent)}
+.kc-youtube-notice p{margin:7px 0 0;color:var(--muted)}
+.kc-youtube-notice .kc-link{color:var(--accent)}
+.kc-link-button{padding:0;border:0;background:none;color:var(--accent);font:inherit;text-decoration:underline;cursor:pointer}
+.kc-youtube-more{display:flex;justify-content:center;margin:24px 0}
+@media(max-width:900px){.kc-youtube-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.kc-youtube-head{align-items:flex-start}.kc-youtube-grid{grid-template-columns:1fr;gap:13px}.kc-youtube-card{display:grid;grid-template-columns:42% minmax(0,1fr)}.kc-youtube-copy{align-self:center}.kc-youtube-copy h2{font-size:13px}.kc-youtube-head .kc-btn{padding-inline:10px}}
