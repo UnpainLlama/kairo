@@ -26,7 +26,7 @@ interface Bindings {
   METADATA_PROVIDERS?: string;
   /** Optional Workers KV namespace used as the provider-response cache (recommended on workers.dev). */
   METADATA_CACHE?: KVNamespace;
-  /** "live" (default): serve the catalogue from configured live providers, no database. "db": the original D1 routes. */
+  /** "live" (default): serve the public catalogue from live providers; account, library and history routes still use D1. "db": use the original D1 catalogue routes. */
   CATALOG_SOURCE?: string;
   /** Catalogue-provider priority, comma-separated. */
   LIVE_PROVIDERS?: string;
