@@ -467,7 +467,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
       };
 
       const requestedToken = c.req.query('pageToken') ?? '';
-      if (requestedToken.length > 1024 || /[^A-Za-z0-9_=-]/.test(requestedToken)) {
+      if (requestedToken.length > 1024 || /[\\u0000-\\u001F\\u007F]/.test(requestedToken)) {
         return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'The feed page token is invalid.' } }, 400);
       }
       const subscriptions = await apiGet('subscriptions', {
