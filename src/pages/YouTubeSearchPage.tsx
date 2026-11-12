@@ -1,11 +1,12 @@
-import { useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { ArrowUpRight, Check, Plus, Search, Youtube } from 'lucide-react';
 
 type ChannelResult = { channelId: string; title: string; description: string; thumbnailUrl: string | null; url: string; isAdded: boolean };
 type SearchError = { code: string; message: string };
 
 export default function YouTubeSearchPage() {
+  const location = useLocation();
   const [query, setQuery] = useState('');
   const [channels, setChannels] = useState<ChannelResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -14,9 +15,7 @@ export default function YouTubeSearchPage() {
   const [adding, setAdding] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const search = async (event?: FormEvent) => {
-    event?.preventDefault();
-    const term = query.trim();
+  const searchFor = useCallback(async (term: string) => {
     if (term.length < 2 || term.length > 80) return;
     setLoading(true);
     setError(null);
@@ -34,7 +33,19 @@ export default function YouTubeSearchPage() {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const search = (event?: FormEvent) => {
+    event?.preventDefault();
+    void searchFor(query.trim());
   };
+
+  useEffect(() => {
+    const term = (new URLSearchParams(location.search).get('q') ?? '').trim().slice(0, 80);
+    if (term.length < 2) return;
+    setQuery(term);
+    void searchFor(term);
+  }, [location.search, searchFor]);
 
   const addChannel = async (channel: ChannelResult) => {
     setAdding(channel.channelId);
