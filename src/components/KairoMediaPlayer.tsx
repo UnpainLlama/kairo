@@ -47,7 +47,7 @@ export default function KairoMediaPlayer({ source, title, progressKey, introEnd,
     return <KairoVideoJsPlayer src={safeUrl.href} title={title} progressKey={progressKey} subtitles={source.subtitles ?? []} mediaType={source.protocol} introEnd={introEnd} outroStart={outroStart} nextUrl={nextUrl} onProgress={onProgress} />;
   }
   if (source.protocol === 'file') {
-    return <KairoVideoJsPlayer src={safeUrl.href} title={title} progressKey={progressKey} subtitles={source.subtitles ?? []} mediaType="file" />;
+    return <KairoVideoJsPlayer src={safeUrl.href} title={title} progressKey={progressKey} subtitles={source.subtitles ?? []} mediaType="file" onProgress={onProgress} />;
   }
 
   // Third-party providers keep their own playback engine. Kairo cannot control
