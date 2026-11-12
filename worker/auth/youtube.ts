@@ -257,6 +257,39 @@ function youtubeThumbnail(thumbnails: any): string | null {
   return typeof value === 'string' && value.startsWith('https://') ? value : null;
 }
 
+export function isMarkedYouTubeShort(title: unknown, description: unknown): boolean {
+  const metadata = [title, description].filter((value): value is string => typeof value === 'string').join(' ');
+  return /(?:^|\\s)#(?:youtube)?shorts?\\b/i.test(metadata);
+}
+
+type YouTubeFeedCursorState = {
+  channelIds: string[];
+  offset: number;
+  pageTokens: Record<string, string>;
+};
+
+const YOUTUBE_FEED_CHANNEL_BATCH_SIZE = 20;
+const YOUTUBE_FEED_ITEMS_PER_CHANNEL = 4;
+const YOUTUBE_FEED_CURSOR_TTL_MS = 60 * 60 * 1000;
+
+function parseYouTubeFeedCursorState(raw: string): YouTubeFeedCursorState | null {
+  try {
+    const value = JSON.parse(raw) as Partial<YouTubeFeedCursorState>;
+    if (!Array.isArray(value.channelIds) || value.channelIds.length > 20_000) return null;
+    if (!value.channelIds.every((id) => typeof id === 'string' && /^[A-Za-z0-9_-]{6,64}$/.test(id))) return null;
+    if (!Number.isInteger(value.offset) || Number(value.offset) < 0 || Number(value.offset) > value.channelIds.length) return null;
+    if (!value.pageTokens || typeof value.pageTokens !== 'object' || Array.isArray(value.pageTokens)) return null;
+    const pageTokens: Record<string, string> = {};
+    for (const [channelId, token] of Object.entries(value.pageTokens)) {
+      if (!value.channelIds.includes(channelId) || typeof token !== 'string' || token.length > 512) return null;
+      pageTokens[channelId] = token;
+    }
+    return { channelIds: value.channelIds, offset: Number(value.offset), pageTokens };
+  } catch {
+    return null;
+  }
+}
+
 export function registerYouTubeAuthRoutes(app: any): void {
   app.get('/api/v1/auth/youtube', async (c: YouTubeContext) => {
     const clientId = c.env.GOOGLE_CLIENT_ID;
@@ -601,11 +634,6 @@ export function registerYouTubeAuthRoutes(app: any): void {
       const existing = await c.env.DB.prepare('SELECT channel_id FROM youtube_feed_channels WHERE user_id=? AND channel_id=? LIMIT 1')
         .bind(user.id, channelId).first() as { channel_id: string } | null;
       if (existing) return c.json({ success: true, data: { added: false, channelId } });
-      const count = await c.env.DB.prepare('SELECT COUNT(*) AS total FROM youtube_feed_channels WHERE user_id=?')
-        .bind(user.id).first() as { total: number } | null;
-      if (Number(count?.total ?? 0) >= 20) {
-        return c.json({ success: false, error: { code: 'YOUTUBE_CHANNEL_LIMIT', message: 'You can add up to 20 channels to your Kairo feed.' } }, 409);
-      }
       if (!await allowYouTubeRequest(c, user.id, 'channel-add', 10, { bucket: 'data-api-daily', limit: YOUTUBE_DATA_DAILY_LIMIT, windowMs: YOUTUBE_DAILY_WINDOW_MS })) {
         return c.json({ success: false, error: { code: 'RATE_LIMITED', message: 'YouTube API usage is temporarily limited. Please try again later.' } }, 429);
       }
@@ -652,39 +680,98 @@ export function registerYouTubeAuthRoutes(app: any): void {
     c.header('Cache-Control', 'no-store');
     const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
     if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to view your Kairo feed.' } }, 401);
-    if (!await allowYouTubeRequest(c, user.id, 'feed-refresh', 10)) {
-      return c.json({ success: false, error: { code: 'RATE_LIMITED', message: 'Your feed was refreshed too often. Please try again in 15 minutes.' } }, 429);
+    if (!await allowYouTubeRequest(c, user.id, 'feed-page', 30)) {
+      return c.json({ success: false, error: { code: 'RATE_LIMITED', message: 'Your feed is loading too quickly. Please try again in 15 minutes.' } }, 429);
     }
+
+    const requestedCursor = new URL(c.req.url).searchParams.get('cursor');
+    if (requestedCursor && !/^[A-Za-z0-9_-]{32}$/.test(requestedCursor)) {
+      return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'The feed cursor is invalid. Refresh your feed and try again.' } }, 400);
+    }
+
     try {
       const saved = await c.env.DB.prepare(
-        'SELECT channel_id AS channelId, channel_title AS title, thumbnail_url AS thumbnailUrl FROM youtube_feed_channels WHERE user_id=? ORDER BY channel_title COLLATE NOCASE LIMIT 20'
+        'SELECT channel_id AS channelId, channel_title AS title, thumbnail_url AS thumbnailUrl FROM youtube_feed_channels WHERE user_id=? ORDER BY added_at DESC, channel_title COLLATE NOCASE'
       ).bind(user.id).all<{ channelId: string; title: string; thumbnailUrl: string | null }>();
       const channels = saved.results ?? [];
-      if (!channels.length) return c.json({ success: true, data: { videos: [], channels: [], channelsChecked: 0 }, meta: { requestId: requestId(c) } });
-      if (!await bumpYouTubeRateBucket(c, 'data-api-daily', YOUTUBE_DATA_DAILY_LIMIT, YOUTUBE_DAILY_WINDOW_MS, channels.length + 1)) {
+      if (!channels.length) {
+        if (requestedCursor) await c.env.DB.prepare('DELETE FROM youtube_feed_cursors WHERE id=? AND user_id=?').bind(requestedCursor, user.id).run();
+        return c.json({ success: true, data: { videos: [], channels: [], channelsChecked: 0, nextCursor: null }, meta: { requestId: requestId(c) } });
+      }
+
+      await c.env.DB.prepare('DELETE FROM youtube_feed_cursors WHERE expires_at<=?').bind(Date.now()).run();
+      let cursorId = requestedCursor;
+      let state: YouTubeFeedCursorState = {
+        channelIds: channels.map((channel) => channel.channelId),
+        offset: 0,
+        pageTokens: {},
+      };
+      if (requestedCursor) {
+        const stored = await c.env.DB.prepare(
+          'SELECT state_json AS stateJson FROM youtube_feed_cursors WHERE id=? AND user_id=? AND expires_at>? LIMIT 1'
+        ).bind(requestedCursor, user.id, Date.now()).first<{ stateJson: string }>();
+        const parsed = stored?.stateJson ? parseYouTubeFeedCursorState(stored.stateJson) : null;
+        if (!parsed) {
+          return c.json({ success: false, error: { code: 'YOUTUBE_FEED_CURSOR_EXPIRED', message: 'This feed page has expired. Refresh your feed to continue.' } }, 410);
+        }
+        const currentIds = channels.map((channel) => channel.channelId);
+        if (parsed.channelIds.length === currentIds.length && parsed.channelIds.every((id, index) => id === currentIds[index])) {
+          state = parsed;
+        }
+        // When the channel selection changes, restart from the newest uploads using the same cursor.
+      }
+
+      const batchChannelIds = state.channelIds.slice(state.offset, state.offset + YOUTUBE_FEED_CHANNEL_BATCH_SIZE);
+      if (!batchChannelIds.length) {
+        state.offset = 0;
+        batchChannelIds.push(...state.channelIds.slice(0, YOUTUBE_FEED_CHANNEL_BATCH_SIZE));
+      }
+      const batchChannels = batchChannelIds.map((id) => channels.find((channel) => channel.channelId === id)).filter((channel): channel is NonNullable<typeof channel> => Boolean(channel));
+      if (!batchChannels.length) {
+        return c.json({ success: true, data: { videos: [], channels, channelsChecked: 0, nextCursor: null }, meta: { requestId: requestId(c) } });
+      }
+
+      const estimatedUnits = batchChannels.length + 1;
+      if (!await bumpYouTubeRateBucket(c, 'data-api-daily', YOUTUBE_DATA_DAILY_LIMIT, YOUTUBE_DAILY_WINDOW_MS, estimatedUnits)) {
         return c.json({ success: false, error: { code: 'RATE_LIMITED', message: 'YouTube API usage is temporarily limited. Please try again later.' } }, 429);
       }
+
       const accessToken = await getYouTubeAccessToken(c, user.id);
       const channelData = await youtubeApiGet(accessToken, 'channels', {
-        part: 'contentDetails', id: channels.map((item) => item.channelId).join(','), maxResults: String(channels.length),
+        part: 'contentDetails',
+        id: batchChannelIds.join(','),
+        maxResults: String(batchChannelIds.length),
       });
       const uploads = (channelData.items ?? []).map((channel: any) => ({
         id: channel.id,
         playlistId: channel?.contentDetails?.relatedPlaylists?.uploads,
-      })).filter((item: any) => typeof item.id === 'string' && typeof item.playlistId === 'string');
+      })).filter((item: any) => batchChannelIds.includes(item.id) && typeof item.playlistId === 'string');
+
       const batches = await Promise.all(uploads.map(async (channel: any) => {
+        const pageToken = state.pageTokens[channel.id];
         const result = await youtubeApiGet(accessToken, 'playlistItems', {
-          part: 'snippet,contentDetails', playlistId: channel.playlistId, maxResults: '4',
+          part: 'snippet,contentDetails',
+          playlistId: channel.playlistId,
+          maxResults: String(YOUTUBE_FEED_ITEMS_PER_CHANNEL),
+          ...(pageToken ? { pageToken } : {}),
         });
+        if (typeof result.nextPageToken === 'string' && result.nextPageToken.length <= 512) {
+          state.pageTokens[channel.id] = result.nextPageToken;
+        } else {
+          delete state.pageTokens[channel.id];
+        }
         return (result.items ?? []).map((item: any) => {
           const snippet = item?.snippet ?? {};
           const videoId = snippet?.resourceId?.videoId;
           if (typeof videoId !== 'string' || !/^[A-Za-z0-9_-]{6,20}$/.test(videoId)) return null;
+          const title = typeof snippet.title === 'string' ? snippet.title : 'Untitled video';
+          const description = typeof snippet.description === 'string' ? snippet.description : '';
+          if (isMarkedYouTubeShort(title, description)) return null;
           const publishedAt = item?.contentDetails?.videoPublishedAt ?? snippet.publishedAt ?? null;
           return {
             videoId,
-            title: typeof snippet.title === 'string' ? snippet.title : 'Untitled video',
-            description: typeof snippet.description === 'string' ? snippet.description : '',
+            title,
+            description,
             thumbnail: youtubeThumbnail(snippet.thumbnails),
             channelId: channel.id,
             channelTitle: typeof snippet.channelTitle === 'string' ? snippet.channelTitle : '',
@@ -693,8 +780,34 @@ export function registerYouTubeAuthRoutes(app: any): void {
           };
         }).filter(Boolean);
       }));
-      const videos = batches.flat().sort((a: any, b: any) => Date.parse(b.publishedAt ?? '') - Date.parse(a.publishedAt ?? '')).slice(0, 32);
-      return c.json({ success: true, data: { videos, channels, channelsChecked: uploads.length }, meta: { requestId: requestId(c) } });
+
+      const videos = batches.flat().sort((a: any, b: any) => Date.parse(b.publishedAt ?? '') - Date.parse(a.publishedAt ?? ''));
+      const nextOffset = state.offset + batchChannels.length < state.channelIds.length ? state.offset + batchChannels.length : 0;
+      const hasMoreChannelBatches = nextOffset > state.offset;
+      const hasOlderUploads = Object.keys(state.pageTokens).length > 0;
+      const hasMore = hasMoreChannelBatches || hasOlderUploads;
+      state.offset = nextOffset;
+
+      if (hasMore) {
+        cursorId = cursorId ?? random(24);
+        await c.env.DB.prepare(`
+          INSERT INTO youtube_feed_cursors (id,user_id,state_json,expires_at)
+          VALUES (?,?,?,?)
+          ON CONFLICT(id) DO UPDATE SET
+            state_json=excluded.state_json,
+            expires_at=excluded.expires_at,
+            updated_at=CURRENT_TIMESTAMP
+        `).bind(cursorId, user.id, JSON.stringify(state), Date.now() + YOUTUBE_FEED_CURSOR_TTL_MS).run();
+      } else if (cursorId) {
+        await c.env.DB.prepare('DELETE FROM youtube_feed_cursors WHERE id=? AND user_id=?').bind(cursorId, user.id).run();
+        cursorId = null;
+      }
+
+      return c.json({
+        success: true,
+        data: { videos, channels: batchChannels, channelsChecked: uploads.length, nextCursor: hasMore ? cursorId : null },
+        meta: { requestId: requestId(c) },
+      });
     } catch (error) {
       return youtubeRouteError(c, 'youtube_feed_failed', error);
     }
