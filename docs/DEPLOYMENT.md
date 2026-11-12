@@ -15,7 +15,7 @@ Each environment has its own database and cache, so staging can never touch prod
 
 The deploy workflow (`.github/workflows/deploy.yml`) runs: typecheck, tests and build, then (only when requested) the guards, D1 migrations, build, deploy, and a health check that fails the run if `/api/health` or `/api/ready` is unhealthy.
 
-IDs for D1 and KV are identifiers, not credentials, so they may be committed to the public repo. **The API token is the only secret. Never paste it into chat, a file, or the repo.**
+IDs for D1 and KV are identifiers, not credentials, so they may be committed to the public repo. Cloudflare API tokens, OAuth client secrets, and encryption keys are credentials: keep them only in the appropriate GitHub or Cloudflare secret stores. Never paste a secret into chat, a file, or the repo.
 
 ## 2. Set up staging (you do this once; about 20 minutes)
 
@@ -72,17 +72,23 @@ Open these in a browser (replace the host with your staging URL):
 
 | Name | Kind | Where set | Purpose |
 |---|---|---|---|
-| `DB` | D1 binding | `wrangler.jsonc` per environment | Catalogue and, later, user data |
+| `DB` | D1 binding | `wrangler.jsonc` per environment | Catalogue (DB mode) and account, library, session and watch-history data (all modes) |
 | `METADATA_CACHE` | KV binding | `wrangler.jsonc` per environment | Short-lived provider response cache (needed on workers.dev) |
 | `APP_ENV` | var | `wrangler.jsonc` | `development`, `staging`, `production` |
+| `APP_BASE_URL` | Worker variable | `wrangler.jsonc` per environment | Canonical public origin used to construct OAuth callback and return URLs |
+| `GOOGLE_CLIENT_ID` | Worker variable | `wrangler.jsonc` per environment | Google OpenID Connect and explicit YouTube authorization client |
 | `METADATA_PROVIDERS` | var | `wrangler.jsonc` | Enabled metadata providers. `anilist` now; add `kitsu` only after its terms are verified |
 | `ALLOWED_ORIGIN` | var, optional | not set | Only for cross-origin API use |
+| `GOOGLE_CLIENT_SECRET` | Worker secret | Cloudflare Worker environment | Required for Google sign-in and account linking |
+| `YOUTUBE_TOKEN_ENCRYPTION_KEY` | Worker secret | Cloudflare Worker environment | Required for YouTube token encryption; 32 random bytes, unpadded base64url |
+| `TMDB_ACCESS_TOKEN` | Worker secret, optional | Cloudflare Worker environment | Optional TMDB artwork enrichment |
+| `YOUTUBE_STAGING_TOKEN` | Worker secret, optional | Cloudflare staging environment only | Staging-only YouTube feed experiment; not a production feature |
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | GitHub environment **secrets** | GitHub only | Deploying. Never in the repo or the Worker |
 | `STAGING_DEPLOY_ENABLED` | GitHub variable | GitHub | Auto-deploy staging on merge to main |
 | `STAGING_URL` | GitHub variable, optional | GitHub | Fallback if the deploy log URL cannot be read |
 | `PRODUCTION_DEPLOY_APPROVED` | GitHub variable | GitHub | Must be `true` for any production deploy. **Do not set.** |
 
-The Worker needs **no secrets today** (public AniList reads need no key). Authentication in Phase 4 will add some, set with `wrangler secret put` or the dashboard, never in the repo.
+Authentication is already implemented. Set `GOOGLE_CLIENT_SECRET` and `YOUTUBE_TOKEN_ENCRYPTION_KEY` in Cloudflare's staging Worker **Secrets** before testing Google sign-in or YouTube connection. Keep `APP_BASE_URL` and `GOOGLE_CLIENT_ID` in the staging Worker variables. Generate the YouTube encryption key from 32 cryptographically random bytes and encode it as unpadded base64url. Do not put Worker secrets in GitHub Actions logs or source control.
 
 ## 5. Troubleshooting
 
