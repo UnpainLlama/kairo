@@ -6,7 +6,10 @@ type RouteHandler = (context: any) => Promise<Response>;
 
 function routeFor(register: (app: any) => void, path: string): RouteHandler {
   const routes = new Map<string, RouteHandler>();
-  register({ get: (route: string, handler: RouteHandler) => routes.set(route, handler) });
+  register({
+    get: (route: string, handler: RouteHandler) => routes.set(route, handler),
+    post: () => {},
+  });
   const handler = routes.get(path);
   if (!handler) throw new Error(`Route not registered: ${path}`);
   return handler;
