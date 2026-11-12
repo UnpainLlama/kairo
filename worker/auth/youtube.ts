@@ -418,7 +418,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
     try {
       const connection = await c.env.DB.prepare(
         "SELECT encrypted_access_token, encrypted_refresh_token, token_expires_at FROM provider_connections WHERE user_id=? AND provider='youtube' LIMIT 1"
-      ).bind(user.id).first<{ encrypted_access_token: string | null; encrypted_refresh_token: string | null; token_expires_at: number | null }>();
+      ).bind(user.id).first() as { encrypted_access_token: string | null; encrypted_refresh_token: string | null; token_expires_at: number | null } | null;
       if (!connection?.encrypted_refresh_token) {
         return c.json({ success: false, error: { code: 'YOUTUBE_NOT_CONNECTED', message: 'Connect YouTube in Settings to view your subscriptions.' } }, 403);
       }
