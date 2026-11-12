@@ -556,10 +556,10 @@ export function registerYouTubeAuthRoutes(app: any): void {
     }
     try {
       const existing = await c.env.DB.prepare('SELECT channel_id FROM youtube_feed_channels WHERE user_id=? AND channel_id=? LIMIT 1')
-        .bind(user.id, channelId).first<{ channel_id: string }>();
+        .bind(user.id, channelId).first() as { channel_id: string } | null;
       if (existing) return c.json({ success: true, data: { added: false, channelId } });
       const count = await c.env.DB.prepare('SELECT COUNT(*) AS total FROM youtube_feed_channels WHERE user_id=?')
-        .bind(user.id).first<{ total: number }>();
+        .bind(user.id).first() as { total: number } | null;
       if (Number(count?.total ?? 0) >= 20) {
         return c.json({ success: false, error: { code: 'YOUTUBE_CHANNEL_LIMIT', message: 'You can add up to 20 channels to your Kairo feed.' } }, 409);
       }
