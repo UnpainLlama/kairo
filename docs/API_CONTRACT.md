@@ -107,18 +107,22 @@ Progress request example:
 
 Validate finite non-negative numbers, enforce sensible duration/position bounds, and derive the subject ID from the authenticated context. Never accept `userId` from the request body.
 
-## 3a. YouTube subscriptions feed
+## 3a. Kairo-curated YouTube feed
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/v1/youtube/subscriptions/feed?pageToken=...` | Fetch recent public uploads from a bounded page of the signed-in user's YouTube subscriptions. |
+| GET | `/api/v1/youtube/channels/search?q=...` | Search public YouTube channels using the connected account. |
+| GET | `/api/v1/youtube/channels` | List the user's channels saved in Kairo. |
+| POST | `/api/v1/youtube/channels` | Add a public channel to the user's Kairo feed. |
+| DELETE | `/api/v1/youtube/channels/:channelId` | Remove a channel from the user's Kairo feed. |
+| GET | `/api/v1/youtube/feed` | Fetch recent public uploads from the user's saved Kairo channels. |
 
-- Requires a valid Kairo session and an explicitly connected YouTube account.
+- Channel search, adding channels, and loading uploads require a valid Kairo session and a connected YouTube account. Listing or removing saved Kairo channels requires only a valid Kairo session.
+- Kairo's channel list is stored separately in `youtube_feed_channels`; adding a channel does not subscribe the user to it on YouTube and does not change their YouTube subscriptions.
 - Uses the official YouTube Data API with the server-held, encrypted OAuth refresh token. Access tokens are refreshed server-side and never returned to the browser.
-- Returns up to 24 normalized video cards and an optional YouTube subscription `nextPageToken`. Each request inspects at most 12 subscribed channels and up to four recent uploads per channel to bound quota use.
-- Feed responses use `Cache-Control: no-store`; this first version does not persist YouTube API resource data.
-- Errors include `AUTH_REQUIRED`, `YOUTUBE_NOT_CONNECTED`, `YOUTUBE_REAUTH_REQUIRED`, `YOUTUBE_QUOTA_EXCEEDED`, and `YOUTUBE_PROVIDER_UNAVAILABLE`.
-- Video playback remains on YouTube through the official watch URL; Kairo does not proxy video streams.
+- The initial implementation allows up to 20 saved channels and fetches up to four recent uploads per channel per feed request. Feed responses use `Cache-Control: no-store`; individual YouTube videos continue to open on YouTube.
+- Errors include `AUTH_REQUIRED`, `YOUTUBE_NOT_CONNECTED`, `YOUTUBE_REAUTH_REQUIRED`, `YOUTUBE_QUOTA_EXCEEDED`, `YOUTUBE_CHANNEL_LIMIT`, and `YOUTUBE_PROVIDER_UNAVAILABLE`.
+- YouTube playback remains on YouTube through the official watch URL; Kairo does not proxy video streams.
 
 ## 4. Playback routes
 

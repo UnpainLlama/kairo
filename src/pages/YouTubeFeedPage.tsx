@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, ExternalLink, RefreshCw, Youtube } from 'lucide-react';
-import { EmptyState, LoadingState } from '../components/catalog';
+import { ArrowUpRight, Plus, RefreshCw, Youtube } from 'lucide-react';
 
+type SavedChannel = { channelId: string; title: string; description: string; thumbnailUrl: string | null; addedAt?: string };
 type FeedVideo = {
   videoId: string;
   title: string;
@@ -13,79 +13,98 @@ type FeedVideo = {
   publishedAt: string | null;
   url: string;
 };
-type FeedPayload = { videos: FeedVideo[]; nextPageToken: string | null; channelsChecked: number };
+type FeedError = { code: string; message: string };
 
 export default function YouTubeFeedPage() {
+  const [channels, setChannels] = useState<SavedChannel[]>([]);
   const [videos, setVideos] = useState<FeedVideo[]>([]);
-  const [nextPageToken, setNextPageToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<{ code: string; message: string } | null>(null);
+  const [error, setError] = useState<FeedError | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const load = useCallback(async (pageToken: string | null, append: boolean) => {
-    if (append) setLoadingMore(true);
-    else setLoading(true);
+  const load = useCallback(async () => {
+    setLoading(true);
     setError(null);
     try {
-      const query = pageToken ? '?pageToken=' + encodeURIComponent(pageToken) : '';
-      const response = await fetch('/api/v1/youtube/subscriptions/feed' + query, {
-        credentials: 'same-origin', headers: { Accept: 'application/json' },
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok || !payload?.success) {
-        throw { code: payload?.error?.code ?? 'FEED_UNAVAILABLE', message: payload?.error?.message ?? 'Could not load your subscriptions.' };
+      const [channelsResponse, feedResponse] = await Promise.all([
+        fetch('/api/v1/youtube/channels', { credentials: 'same-origin', headers: { Accept: 'application/json' } }),
+        fetch('/api/v1/youtube/feed', { credentials: 'same-origin', headers: { Accept: 'application/json' } }),
+      ]);
+      const channelsPayload = await channelsResponse.json().catch(() => null);
+      if (!channelsResponse.ok || !channelsPayload?.success) {
+        throw { code: channelsPayload?.error?.code ?? 'YOUTUBE_CHANNELS_UNAVAILABLE', message: channelsPayload?.error?.message ?? 'Could not load your channels.' };
       }
-      const data = payload.data as FeedPayload;
-      setVideos(current => append ? [...current, ...(data.videos ?? [])] : (data.videos ?? []));
-      setNextPageToken(data.nextPageToken ?? null);
+      setChannels(channelsPayload.data?.channels ?? []);
+      const feedPayload = await feedResponse.json().catch(() => null);
+      if (!feedResponse.ok || !feedPayload?.success) {
+        throw { code: feedPayload?.error?.code ?? 'YOUTUBE_FEED_UNAVAILABLE', message: feedPayload?.error?.message ?? 'Could not load your feed.' };
+      }
+      setVideos(feedPayload.data?.videos ?? []);
     } catch (caught) {
       const issue = caught as { code?: string; message?: string };
-      setError({ code: issue.code ?? 'FEED_UNAVAILABLE', message: issue.message ?? 'Could not load your subscriptions.' });
+      setError({ code: issue.code ?? 'YOUTUBE_FEED_UNAVAILABLE', message: issue.message ?? 'Could not load your YouTube feed.' });
+      setVideos([]);
     } finally {
       setLoading(false);
-      setLoadingMore(false);
     }
   }, []);
 
-  useEffect(() => { void load(null, false); }, [load, refreshKey]);
+  useEffect(() => { void load(); }, [load, refreshKey]);
 
   const needsLogin = error?.code === 'AUTH_REQUIRED';
   const needsConnection = error?.code === 'YOUTUBE_NOT_CONNECTED';
   const needsReconnect = error?.code === 'YOUTUBE_REAUTH_REQUIRED';
 
-  if (loading && videos.length === 0) return <LoadingState label="Loading YouTube subscriptions" />;
+  return (
+    <section className="yt-page">
+      <header className="yt-page-heading">
+        <div><span className="yt-eyebrow">YOUR VIDEO SPACE</span><h1>Home</h1><p>A feed built from the channels you choose.</p></div>
+        <button className="yt-button yt-button-quiet" type="button" onClick={() => setRefreshKey(value => value + 1)} disabled={loading}><RefreshCw size={15} /> Refresh</button>
+      </header>
 
-  return <section className="kc-youtube-page">
-    <header className="kc-youtube-head">
-      <div><span className="kc-section-kicker">YOUR MEDIA</span><h1><Youtube size={28} aria-hidden="true" /> YouTube</h1>
-        <p>Recent uploads from channels you subscribe to.</p></div>
-      <button className="kc-btn" type="button" onClick={() => setRefreshKey(value => value + 1)} disabled={loading}><RefreshCw size={15} /> Refresh</button>
-    </header>
-
-    {error && <div className="kc-youtube-notice" role="alert"><AlertCircle size={18} /><div><b>{error.message}</b>
-      {needsLogin && <p><Link className="kc-link" to="/login">Sign in</Link> to view your subscriptions.</p>}
-      {needsConnection && <p><Link className="kc-link" to="/settings">Connect YouTube in Settings</Link> to get started.</p>}
-      {needsReconnect && <p><Link className="kc-link" to="/settings">Reconnect YouTube in Settings</Link> to continue.</p>}
-      {!needsLogin && !needsConnection && !needsReconnect && <p><button className="kc-link-button" type="button" onClick={() => setRefreshKey(value => value + 1)}>Try again</button></p>}
-    </div></div>}
-
-    {!error && videos.length === 0 && !loading && <EmptyState title="No recent uploads found">We couldn't find recent public uploads from the first channels in your subscriptions.</EmptyState>}
-
-    <div className="kc-youtube-grid">
-      {videos.map(video => <article className="kc-youtube-card" key={video.videoId}>
-        <a className="kc-youtube-thumb" href={video.url} target="_blank" rel="noopener noreferrer" aria-label={'Watch ' + video.title + ' on YouTube'}>
-          {video.thumbnail ? <img src={video.thumbnail} alt="" loading="lazy" /> : <span><Youtube size={28} /></span>}
-          <i><ExternalLink size={13} /> Watch</i>
-        </a>
-        <div className="kc-youtube-copy">
-          <a href={video.url} target="_blank" rel="noopener noreferrer"><h2>{video.title}</h2></a>
-          <p>{video.channelTitle}</p>
-          <small>{video.publishedAt ? new Date(video.publishedAt).toLocaleDateString() : 'Recently uploaded'}</small>
+      {error && <div className="yt-notice" role="alert">
+        <div><b>{error.message}</b>
+          {needsLogin && <p><Link to="/login">Sign in</Link> to create your channel feed.</p>}
+          {needsConnection && <p><a href="/api/v1/auth/youtube">Connect YouTube</a> to search channels and fetch their latest uploads.</p>}
+          {needsReconnect && <p><a href="/api/v1/auth/youtube">Reconnect YouTube</a> to continue.</p>}
+          {!needsLogin && !needsConnection && !needsReconnect && <p><button type="button" className="yt-inline-action" onClick={() => setRefreshKey(value => value + 1)}>Try again</button></p>}
         </div>
-      </article>)}
-    </div>
+      </div>}
 
-    {nextPageToken && <div className="kc-youtube-more"><button className="kc-btn" type="button" disabled={loadingMore} onClick={() => void load(nextPageToken, true)}>{loadingMore ? 'Loading…' : 'Load more subscriptions'} </button></div>}
-  </section>;
+      <section className="yt-channel-shelf" aria-label="Your selected channels">
+        <div className="yt-section-heading"><div><h2>Your channels</h2><p>{channels.length} of 20 selected</p></div><Link to="/youtube/channels">Manage <ArrowUpRight size={14} /></Link></div>
+        {channels.length > 0 ? (
+          <div className="yt-channel-bubbles">
+            {channels.slice(0, 12).map(channel => <Link to="/youtube/channels" className="yt-channel-bubble" key={channel.channelId} title={channel.title}>
+              {channel.thumbnailUrl ? <img src={channel.thumbnailUrl} alt="" loading="lazy" /> : <span>{channel.title.slice(0, 1).toUpperCase()}</span>}
+              <small>{channel.title}</small>
+            </Link>)}
+            <Link to="/youtube/search" className="yt-channel-add"><Plus size={19} /><span>Add</span></Link>
+          </div>
+        ) : (
+          <div className="yt-channel-empty"><span className="yt-plus-orb"><Plus size={21} /></span><div><b>Your feed starts with a few good channels.</b><p>Find creators you like and add them to your Kairo feed.</p></div><Link to="/youtube/search" className="yt-button yt-button-primary">Find channels <ArrowUpRight size={15} /></Link></div>
+        )}
+      </section>
+
+      <section className="yt-feed-section">
+        <div className="yt-section-heading"><div><h2>Latest videos</h2><p>{channels.length ? 'Recent uploads from your selected channels' : 'Your videos will show up here'}</p></div></div>
+        {loading && <div className="yt-loading" role="status">Loading your feed…</div>}
+        {!loading && !error && channels.length > 0 && videos.length === 0 && <div className="yt-empty"><Youtube size={28} /><h3>No recent uploads yet</h3><p>When your selected channels publish new videos, they’ll appear here.</p></div>}
+        {!loading && !error && channels.length === 0 && <div className="yt-empty"><Youtube size={28} /><h3>Nothing in your feed yet</h3><p>Add channels to turn this page into your own video feed.</p><Link to="/youtube/search" className="yt-button yt-button-primary">Search YouTube <ArrowUpRight size={15} /></Link></div>}
+        {!loading && !error && videos.length > 0 && <div className="yt-video-grid">
+          {videos.map(video => <article className="yt-video-card" key={video.videoId}>
+            <a className="yt-video-thumb" href={video.url} target="_blank" rel="noopener noreferrer" aria-label={'Watch ' + video.title + ' on YouTube'}>
+              {video.thumbnail ? <img src={video.thumbnail} alt="" loading="lazy" /> : <span><Youtube size={30} /></span>}
+              <i>Watch <ArrowUpRight size={13} /></i>
+            </a>
+            <div className="yt-video-copy">
+              <h3><a href={video.url} target="_blank" rel="noopener noreferrer">{video.title}</a></h3>
+              <p>{video.channelTitle}</p>
+              <small>{video.publishedAt ? new Date(video.publishedAt).toLocaleDateString() : 'Recently uploaded'}</small>
+            </div>
+          </article>)}
+        </div>}
+      </section>
+    </section>
+  );
 }

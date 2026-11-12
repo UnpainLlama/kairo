@@ -9,6 +9,7 @@ function routeFor(register: (app: any) => void, path: string): RouteHandler {
   register({
     get: (route: string, handler: RouteHandler) => routes.set(route, handler),
     post: () => {},
+    delete: () => {},
   });
   const handler = routes.get(path);
   if (!handler) throw new Error(`Route not registered: ${path}`);
@@ -378,11 +379,11 @@ describe('YouTube OAuth configuration diagnostics', () => {
 });
 
 
-describe('YouTube subscriptions feed access controls', () => {
+describe('Kairo-curated YouTube channel access controls', () => {
   it('requires an authenticated Kairo session', async () => {
-    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/subscriptions/feed');
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/channels/search');
     const ctx = makeContext({
-      url: `${canonicalOrigin}/api/v1/youtube/subscriptions/feed`,
+      url: `${canonicalOrigin}/api/v1/youtube/channels/search?q=creator`,
       cookie: `kairo_session=${'a'.repeat(43)}`,
       env: { DB: mockDb({ authenticated: false }), YOUTUBE_TOKEN_ENCRYPTION_KEY: 'A'.repeat(43) },
     });
@@ -393,12 +394,12 @@ describe('YouTube subscriptions feed access controls', () => {
   });
 
   it('requires a YouTube connection without calling the provider API', async () => {
-    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/subscriptions/feed');
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/channels/search');
     const providerFetch = vi.fn();
     vi.stubGlobal('fetch', providerFetch);
     try {
       const ctx = makeContext({
-        url: `${canonicalOrigin}/api/v1/youtube/subscriptions/feed`,
+        url: `${canonicalOrigin}/api/v1/youtube/channels/search?q=creator`,
         cookie: `kairo_session=${'a'.repeat(43)}`,
         env: {
           DB: mockDb(),
