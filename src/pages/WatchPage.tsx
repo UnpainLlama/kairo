@@ -4,7 +4,7 @@ import { ArrowLeft, ListVideo, Play, Search, RefreshCw, ExternalLink } from 'luc
 import { ErrorState, LoadingState } from '../components/catalog';
 import KairoMediaPlayer, { type KairoPlaybackSource } from '../components/KairoMediaPlayer';
 import { useApi } from '../lib/useApi';
-import { readWatchHistory, watchProgressIdentity, watchProgressStorageKey, writeWatchHistory } from '../lib/accountStorage';
+import { historyPausedStorageKey, readWatchHistory, watchProgressIdentity, watchProgressStorageKey, writeWatchHistory } from '../lib/accountStorage';
 import { dateLabel, durationLabel, episodeNumberLabel, safeImageUrl, type AnimeDetails, type Episode, type EpisodeServer, type ItemList } from '../lib/catalog';
 
 type ServerList = ItemList<EpisodeServer>;
@@ -75,11 +75,10 @@ export default function WatchPage() {
   useEffect(() => {
     if (!accountResolved || details.status !== 'ok' || episodes.status !== 'ok' || !validEpisode) return;
     try {
-      if (localStorage.getItem('kairo-history-paused') === 'true') return;
+      if (localStorage.getItem(historyPausedStorageKey(accountId)) === 'true') return;
       const anime = details.data;
       const episode = episodePages.find((item) => item.episodeNumber === parsedEpisode);
       if (!episode) return;
-      const progressKey = `kairo-progress:${slug}:${parsedEpisode}:${selectedServer?.id ?? ''}`;
       const items = readWatchHistory<{ slug?: string; episodeNumber?: number } & Record<string, unknown>>(accountId);
       const entry = { slug, title: anime.title, posterUrl: anime.posterUrl, episodeNumber: parsedEpisode,
         episodeTitle: episode?.title || '', progressKey: watchProgressStorageKey(accountId, slug, parsedEpisode, selectedServer?.id ?? ''), durationSeconds: episode?.durationSeconds ?? null, updatedAt: Date.now() };
