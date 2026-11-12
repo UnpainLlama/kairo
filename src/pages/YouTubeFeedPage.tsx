@@ -28,6 +28,8 @@ export default function YouTubeFeedPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    loadingMoreRef.current = false;
+    setLoadingMore(false);
     setError(null);
     setVideos([]);
     setNextCursor(null);
@@ -76,7 +78,8 @@ export default function YouTubeFeedPage() {
       const pageVideos = (payload.data?.videos ?? []) as FeedVideo[];
       setVideos(current => {
         const seen = new Set(current.map(video => video.videoId));
-        return [...current, ...pageVideos.filter(video => !seen.has(video.videoId))];
+        return [...current, ...pageVideos.filter(video => !seen.has(video.videoId))]
+          .sort((a, b) => Date.parse(b.publishedAt ?? '') - Date.parse(a.publishedAt ?? ''));
       });
       setNextCursor(payload.data?.nextCursor ?? null);
     } catch (caught) {
