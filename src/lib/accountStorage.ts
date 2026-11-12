@@ -6,9 +6,11 @@ export type AccountScope = string | null;
 
 const HISTORY_PREFIX = 'kairo-watch-history:';
 const PAUSED_PREFIX = 'kairo-history-paused:';
+const PREFERENCE_PREFIX = 'kairo-preference:';
 const PROGRESS_PREFIX = 'kairo-progress:';
 const LEGACY_HISTORY_KEY = 'kairo-watch-history';
 const LEGACY_PAUSED_KEY = 'kairo-history-paused';
+const LEGACY_AUTO_NEXT_KEY = 'kairo-auto-next';
 const MIGRATION_FLAG = 'kairo-account-storage-v2-migrated';
 
 export function accountStorageScope(userId: AccountScope): string {
@@ -23,6 +25,11 @@ export function watchHistoryStorageKey(userId: AccountScope): string {
 export function historyPausedStorageKey(userId: AccountScope): string {
   migrateLegacyGuestState();
   return `${PAUSED_PREFIX}${accountStorageScope(userId)}`;
+}
+
+export function accountPreferenceStorageKey(userId: AccountScope, preference: string): string {
+  migrateLegacyGuestState();
+  return `${PREFERENCE_PREFIX}${accountStorageScope(userId)}:${preference}`;
 }
 
 /** Full localStorage key used by watch-history cards and progress sync. */
@@ -99,6 +106,10 @@ function migrateLegacyGuestState(): void {
     const oldPaused = localStorage.getItem(LEGACY_PAUSED_KEY);
     if (oldPaused !== null && localStorage.getItem(`${PAUSED_PREFIX}guest`) === null) {
       localStorage.setItem(`${PAUSED_PREFIX}guest`, oldPaused);
+    }
+    const oldAutoNext = localStorage.getItem(LEGACY_AUTO_NEXT_KEY);
+    if (oldAutoNext !== null && localStorage.getItem(`${PREFERENCE_PREFIX}guest:auto-next`) === null) {
+      localStorage.setItem(`${PREFERENCE_PREFIX}guest:auto-next`, oldAutoNext);
     }
     localStorage.setItem(MIGRATION_FLAG, 'true');
   } catch {
