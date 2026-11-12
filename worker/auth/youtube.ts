@@ -265,6 +265,7 @@ export function isMarkedYouTubeShort(title: unknown, description: unknown): bool
 type YouTubeFeedCursorState = {
   channelIds: string[];
   offset: number;
+  olderOffset: number;
   pageTokens: Record<string, string>;
 };
 
@@ -278,13 +279,14 @@ function parseYouTubeFeedCursorState(raw: string): YouTubeFeedCursorState | null
     if (!Array.isArray(value.channelIds) || value.channelIds.length > 20_000) return null;
     if (!value.channelIds.every((id) => typeof id === 'string' && /^[A-Za-z0-9_-]{6,64}$/.test(id))) return null;
     if (!Number.isInteger(value.offset) || Number(value.offset) < 0 || Number(value.offset) > value.channelIds.length) return null;
+    if (!Number.isInteger(value.olderOffset) || Number(value.olderOffset) < 0 || Number(value.olderOffset) > value.channelIds.length) return null;
     if (!value.pageTokens || typeof value.pageTokens !== 'object' || Array.isArray(value.pageTokens)) return null;
     const pageTokens: Record<string, string> = {};
     for (const [channelId, token] of Object.entries(value.pageTokens)) {
       if (!value.channelIds.includes(channelId) || typeof token !== 'string' || token.length > 512) return null;
       pageTokens[channelId] = token;
     }
-    return { channelIds: value.channelIds, offset: Number(value.offset), pageTokens };
+    return { channelIds: value.channelIds, offset: Number(value.offset), olderOffset: Number(value.olderOffset), pageTokens };
   } catch {
     return null;
   }
@@ -704,6 +706,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
       let state: YouTubeFeedCursorState = {
         channelIds: channels.map((channel) => channel.channelId),
         offset: 0,
+        olderOffset: 0,
         pageTokens: {},
       };
       if (requestedCursor) {
@@ -721,10 +724,19 @@ export function registerYouTubeAuthRoutes(app: any): void {
         // When the channel selection changes, restart from the newest uploads using the same cursor.
       }
 
-      const batchChannelIds = state.channelIds.slice(state.offset, state.offset + YOUTUBE_FEED_CHANNEL_BATCH_SIZE);
-      if (!batchChannelIds.length) {
-        state.offset = 0;
-        batchChannelIds.push(...state.channelIds.slice(0, YOUTUBE_FEED_CHANNEL_BATCH_SIZE));
+      const loadingOlderUploads = state.offset >= state.channelIds.length;
+      let batchChannelIds: string[];
+      if (!loadingOlderUploads) {
+        batchChannelIds = state.channelIds.slice(state.offset, state.offset + YOUTUBE_FEED_CHANNEL_BATCH_SIZE);
+      } else {
+        const activeChannelIds = state.channelIds.filter((id) => Boolean(state.pageTokens[id]));
+        if (!activeChannelIds.length) {
+          if (cursorId) await c.env.DB.prepare('DELETE FROM youtube_feed_cursors WHERE id=? AND user_id=?').bind(cursorId, user.id).run();
+          return c.json({ success: true, data: { videos: [], channels: [], channelsChecked: 0, nextCursor: null }, meta: { requestId: requestId(c) } });
+        }
+        const startAt = activeChannelIds.findIndex((id) => state.channelIds.indexOf(id) >= state.olderOffset);
+        const rotation = startAt >= 0 ? startAt : 0;
+        batchChannelIds = [...activeChannelIds.slice(rotation), ...activeChannelIds.slice(0, rotation)].slice(0, YOUTUBE_FEED_CHANNEL_BATCH_SIZE);
       }
       const batchChannels = batchChannelIds.map((id) => channels.find((channel) => channel.channelId === id)).filter((channel): channel is NonNullable<typeof channel> => Boolean(channel));
       if (!batchChannels.length) {
@@ -748,7 +760,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
       })).filter((item: any) => batchChannelIds.includes(item.id) && typeof item.playlistId === 'string');
 
       const batches = await Promise.all(uploads.map(async (channel: any) => {
-        const pageToken = state.pageTokens[channel.id];
+        const pageToken = loadingOlderUploads ? state.pageTokens[channel.id] : undefined;
         const result = await youtubeApiGet(accessToken, 'playlistItems', {
           part: 'snippet,contentDetails',
           playlistId: channel.playlistId,
@@ -782,11 +794,16 @@ export function registerYouTubeAuthRoutes(app: any): void {
       }));
 
       const videos = batches.flat().sort((a: any, b: any) => Date.parse(b.publishedAt ?? '') - Date.parse(a.publishedAt ?? ''));
-      const nextOffset = state.offset + batchChannels.length < state.channelIds.length ? state.offset + batchChannels.length : 0;
-      const hasMoreChannelBatches = nextOffset > state.offset;
+      if (loadingOlderUploads) {
+        const lastChannelIndex = state.channelIds.indexOf(batchChannelIds[batchChannelIds.length - 1]);
+        state.olderOffset = state.channelIds.length ? (lastChannelIndex + 1) % state.channelIds.length : 0;
+      } else {
+        state.offset = Math.min(state.channelIds.length, state.offset + batchChannels.length);
+        state.olderOffset = 0;
+      }
+      const hasMoreChannelBatches = state.offset < state.channelIds.length;
       const hasOlderUploads = Object.keys(state.pageTokens).length > 0;
       const hasMore = hasMoreChannelBatches || hasOlderUploads;
-      state.offset = nextOffset;
 
       if (hasMore) {
         cursorId = cursorId ?? random(24);
