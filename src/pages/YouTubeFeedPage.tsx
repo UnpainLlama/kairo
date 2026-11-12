@@ -89,7 +89,7 @@ export default function YouTubeFeedPage() {
   }, [nextCursor]);
 
   useEffect(() => {
-    if (!nextCursor || loading || loadingMore) return;
+    if (!nextCursor || loading || loadingMore || error) return;
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
     const observer = new IntersectionObserver((entries) => {
@@ -97,7 +97,7 @@ export default function YouTubeFeedPage() {
     }, { rootMargin: '700px 0px' });
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [loadMore, loading, loadingMore, nextCursor, videos.length]);
+  }, [error, loadMore, loading, loadingMore, nextCursor, videos.length]);
 
   const needsLogin = error?.code === 'AUTH_REQUIRED';
   const needsConnection = error?.code === 'YOUTUBE_NOT_CONNECTED';
@@ -140,7 +140,7 @@ export default function YouTubeFeedPage() {
       <section className="yt-feed-section">
         <div className="yt-section-heading"><div><h2>Latest videos</h2><p>{channels.length ? 'Recent uploads from your selected channels' : 'Your videos will show up here'}</p></div></div>
         {loading && <div className="yt-loading" role="status">Loading your feed…</div>}
-        {!loading && !error && channels.length > 0 && videos.length === 0 && <div className="yt-empty"><Youtube size={28} /><h3>No recent uploads yet</h3><p>When your selected channels publish new videos, they’ll appear here.</p></div>}
+        {!loading && !error && channels.length > 0 && videos.length === 0 && !nextCursor && <div className="yt-empty"><Youtube size={28} /><h3>No recent uploads yet</h3><p>When your selected channels publish new videos, they’ll appear here.</p></div>}
         {!loading && videos.length > 0 && <>
           <div className="yt-video-grid">
             {videos.map(video => <article className="yt-video-card" key={video.videoId}>
@@ -155,10 +155,11 @@ export default function YouTubeFeedPage() {
               </div>
             </article>)}
           </div>
-          <div className="yt-scroll-sentinel" ref={sentinelRef}>
-            {loadingMore ? <div className="yt-loading" role="status">Loading more videos…</div> : nextCursor ? <button type="button" className="yt-button yt-button-quiet" onClick={() => void loadMore()}>Load more</button> : <p>You’re all caught up.</p>}
-          </div>
+
         </>}
+        {!loading && (videos.length > 0 || nextCursor) && <div className="yt-scroll-sentinel" ref={sentinelRef}>
+          {loadingMore ? <div className="yt-loading" role="status">Loading more videos…</div> : nextCursor ? <button type="button" className="yt-button yt-button-quiet" onClick={() => void loadMore()}>Load more</button> : <p>You’re all caught up.</p>}
+        </div>}
       </section>
     </section>
   );
