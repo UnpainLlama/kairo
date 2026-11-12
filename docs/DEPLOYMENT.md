@@ -108,7 +108,7 @@ Authentication is already implemented. Set `GOOGLE_CLIENT_SECRET` and `YOUTUBE_T
 
 ## 7. Verified vs assumed
 **Verified on 2026-11-12:**
-- GitHub Actions typecheck, all 18 test files (159 tests at the last verified commit), and worker/client production builds passed on the `youtube` promotion PR. The deploy job was skipped for the pull request.
+- GitHub Actions typecheck, all 19 test files (163 tests at the latest verified commit), and worker/client production builds passed on the `youtube` promotion PR. The deploy job was skipped for the pull request.
 - A read-only remote Wrangler migration listing against staging reported `0007_youtube_oauth.sql` as the only migration to be applied. This indicates migrations 0001–0006 are already recorded as applied on the staging D1 journal; no migration was applied by the inspection command.
 - A staging Worker deployment was performed from the older `main` snapshot before this promotion PR was merged. It returned healthy `/api/health` and `/api/ready` responses, but that old live-mode readiness handler reported `database: "not used"`. Wrangler also warned that the old `main` config omitted the canonical `APP_BASE_URL` and `GOOGLE_CLIENT_ID` variables present on `youtube`.
 
