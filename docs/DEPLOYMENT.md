@@ -90,6 +90,8 @@ Open these in a browser (replace the host with your staging URL):
 
 Authentication is already implemented. Set `GOOGLE_CLIENT_SECRET` and `YOUTUBE_TOKEN_ENCRYPTION_KEY` in Cloudflare's staging Worker **Secrets** before testing Google sign-in or YouTube connection. Keep `APP_BASE_URL` and `GOOGLE_CLIENT_ID` in the staging Worker variables. Generate the YouTube encryption key from 32 cryptographically random bytes and encode it as unpadded base64url. Do not put Worker secrets in GitHub Actions logs or source control.
 
+The password verifier uses PBKDF2-HMAC-SHA-256 at 100,000 iterations because the current Cloudflare workerd WebCrypto implementation rejects a single PBKDF2 operation above that ceiling. This is lower than OWASP's 600,000-iteration recommendation and is a security compromise. Cloudflare Free Workers have a 10 ms CPU budget per request, while Paid Workers default to 30 seconds; after staging rollout, test registration and login and inspect Workers **Metrics → Errors → Invocation Statuses** for CPU-limit failures. Do not treat CI's Node-based password tests as proof that the Worker runtime has enough CPU. Before public launch, evaluate a memory-hard KDF or dedicated authentication runtime with target-plan benchmarking.
+
 ## 5. Troubleshooting
 
 | Symptom | Likely cause and fix |
