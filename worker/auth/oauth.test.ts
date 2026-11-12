@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { registerGoogleAuthRoutes } from './google';
-import { registerYouTubeAuthRoutes } from './youtube';
+import { isMarkedYouTubeShort, registerYouTubeAuthRoutes } from './youtube';
 
 type RouteHandler = (context: any) => Promise<Response>;
 
@@ -424,6 +424,14 @@ describe('Kairo-curated YouTube channel access controls', () => {
 });
 
 
+describe('YouTube Shorts label filtering', () => {
+  it('filters explicit Shorts hashtags but keeps ordinary short-form titles', () => {
+    expect(isMarkedYouTubeShort('#Shorts quick clip', '')).toBe(true);
+    expect(isMarkedYouTubeShort('A creator update', 'Watch more #YouTubeShorts here')).toBe(true);
+    expect(isMarkedYouTubeShort('A short tutorial', 'This video explains the short story format.')).toBe(false);
+  });
+});
+
 describe('Kairo-curated YouTube API quota protection', () => {
   it('throttles repeated channel searches before calling YouTube', async () => {
     const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/channels/search');
@@ -449,12 +457,12 @@ describe('Kairo-curated YouTube API quota protection', () => {
     }
   });
 
-  it('throttles repeated feed refreshes', async () => {
+  it('throttles excessive feed page requests', async () => {
     const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/feed');
     const ctx = makeContext({
       url: `${canonicalOrigin}/api/v1/youtube/feed`,
       cookie: `kairo_session=${'a'.repeat(43)}`,
-      env: { DB: mockDb({ youtubeRateLimitAttempts: 11 }) },
+      env: { DB: mockDb({ youtubeRateLimitAttempts: 31 }) },
     });
     const response = await handler(ctx.context);
     expect(response.status).toBe(429);

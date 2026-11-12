@@ -48,7 +48,7 @@ export default function YouTubeChannelsPage() {
         <div><span className="yt-eyebrow">YOUR COLLECTION</span><h1>Your channels</h1><p>These are the creators that shape your Kairo video feed.</p></div>
         <Link to="/youtube/search" className="yt-button yt-button-primary"><Plus size={16} /> Add channels</Link>
       </header>
-      <div className="yt-channel-count"><b>{channels.length}</b> / 20 channels selected</div>
+      <div className="yt-channel-count"><b>{channels.length}</b> channels selected</div>
       {error && <div className="yt-notice" role="alert">{error}</div>}
       {loading && <div className="yt-loading" role="status">Loading your channels…</div>}
       {!loading && channels.length === 0 && <div className="yt-empty"><Youtube size={28} /><h3>Your channel list is empty</h3><p>Search for creators and add them to your feed. You can change this list whenever you like.</p><Link to="/youtube/search" className="yt-button yt-button-primary">Find channels <Plus size={15} /></Link></div>}
