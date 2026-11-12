@@ -56,7 +56,7 @@ function makeContext(options: {
   };
 }
 
-function mockDb(options: { authenticated?: boolean; recentSession?: boolean; failYoutubeStateInsert?: boolean } = {}): D1Database {
+function mockDb(options: { authenticated?: boolean; recentSession?: boolean; failYoutubeStateInsert?: boolean; youtubeRateLimitAttempts?: number } = {}): D1Database {
   const authenticated = options.authenticated ?? true;
   const db = {
     prepare: (sql: string) => ({
@@ -68,6 +68,7 @@ function mockDb(options: { authenticated?: boolean; recentSession?: boolean; fai
           return { success: true, meta: { changes: 1 } };
         },
         first: async () => {
+          if (sql.includes('INSERT INTO auth_rate_limits')) return { attempts: options.youtubeRateLimitAttempts ?? 1 };
           if (sql.includes('FROM sessions s') && sql.includes('INNER JOIN user_profiles')) {
             return authenticated ? {
               userId: 'user-123',
@@ -415,5 +416,44 @@ describe('Kairo-curated YouTube channel access controls', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+
+describe('Kairo-curated YouTube API quota protection', () => {
+  it('throttles repeated channel searches before calling YouTube', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/channels/search');
+    const providerFetch = vi.fn();
+    vi.stubGlobal('fetch', providerFetch);
+    try {
+      const ctx = makeContext({
+        url: `${canonicalOrigin}/api/v1/youtube/channels/search?q=creators`,
+        cookie: `kairo_session=${'a'.repeat(43)}`,
+        env: {
+          DB: mockDb({ youtubeRateLimitAttempts: 6 }),
+          GOOGLE_CLIENT_ID: 'google-client-id',
+          GOOGLE_CLIENT_SECRET: 'google-client-secret',
+          YOUTUBE_TOKEN_ENCRYPTION_KEY: 'A'.repeat(43),
+        },
+      });
+      const response = await handler(ctx.context);
+      expect(response.status).toBe(429);
+      expect(ctx.jsonBody).toMatchObject({ error: { code: 'RATE_LIMITED' } });
+      expect(providerFetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('throttles repeated feed refreshes', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/feed');
+    const ctx = makeContext({
+      url: `${canonicalOrigin}/api/v1/youtube/feed`,
+      cookie: `kairo_session=${'a'.repeat(43)}`,
+      env: { DB: mockDb({ youtubeRateLimitAttempts: 11 }) },
+    });
+    const response = await handler(ctx.context);
+    expect(response.status).toBe(429);
+    expect(ctx.jsonBody).toMatchObject({ error: { code: 'RATE_LIMITED' } });
   });
 });
