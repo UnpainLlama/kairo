@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Clock, Heart, LogIn, LogOut, Search, Settings, Trash2, UserRound, Pause, Play, ArrowUpDown } from 'lucide-react';
 import { EmptyState, LoadingState } from '../components/catalog';
@@ -120,6 +120,8 @@ export function AccountPage({ title }: { title: string }) {
   const [youtubeLoaded,setYoutubeLoaded]=useState(false);
   const [youtubeBusy,setYoutubeBusy]=useState(false);
   const [youtubeError,setYoutubeError]=useState('');
+  const pendingConnect=new URLSearchParams(location.search).get('connect');
+  const pendingConnectStarted=useRef<string|null>(null);
   useEffect(()=>{
     let active=true;
     fetch('/api/v1/me',{credentials:'same-origin'}).then(r=>r.ok?r.json():null)
@@ -128,6 +130,12 @@ export function AccountPage({ title }: { title: string }) {
       .finally(()=>{if(active)setLoaded(true)});
     return()=>{active=false};
   },[location.key]);
+  useEffect(()=>{
+    if(title!=='Settings'||!user||(pendingConnect!=='google'&&pendingConnect!=='youtube'))return;
+    if(pendingConnectStarted.current===pendingConnect)return;
+    pendingConnectStarted.current=pendingConnect;
+    window.location.assign(pendingConnect==='google'?'/api/v1/auth/google?intent=link':'/api/v1/auth/youtube');
+  },[title,user?.id,pendingConnect]);
   useEffect(()=>{
     let active=true;
     if(title!=='Settings'||!user){setYoutubeLoaded(true);return()=>{active=false};}
@@ -143,7 +151,12 @@ export function AccountPage({ title }: { title: string }) {
   const googleMessages:Record<string,string>={
     connected:'Google has been connected to your Kairo account.',
     already_linked:'That Google account is already connected to a different Kairo account.',
-    another_account_linked:'A different Google account is already connected here.'
+    another_account_linked:'A different Google account is already connected here.',
+    cancelled:'Google sign-in was cancelled. You can try again.',
+    expired:'That Google request expired. Please try again.',
+    token_exchange_failed:'Google could not complete account linking. Please try again.',
+    missing_identity:'Google did not return an account identity. Please try again.',
+    failed:'Google account linking could not be completed. Please try again.'
   };
   const youtubeMessages:Record<string,string>={
     connected:'YouTube is connected. Kairo can now request access to your subscriptions.',
