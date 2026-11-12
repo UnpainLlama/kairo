@@ -31,5 +31,10 @@
 - Migration `0007_youtube_oauth.sql` adds the short-lived OAuth transaction table. Apply it only after the feature branch is reviewed and approved.
 
 ## Deployment requirements
-Apply migrations `0003_accounts.sql`, `0004_auth_rate_limits.sql`, and `0005_google_oauth.sql` before deploying. Configure Google OAuth credentials in each Worker environment.
-Google YouTube API authorization, password reset, and optional email verification remain separate future work.
+- Apply migrations in order. The account foundation requires `0003_accounts.sql`, `0004_auth_rate_limits.sql`, `0005_google_oauth.sql`, and `0006_watch_history.sql`. The explicit YouTube connection also requires `0007_youtube_oauth.sql`.
+- Configure `APP_BASE_URL` as the canonical Worker origin and `GOOGLE_CLIENT_ID` as Worker variables. Configure `GOOGLE_CLIENT_SECRET` and `YOUTUBE_TOKEN_ENCRYPTION_KEY` as Worker secrets in each environment.
+- Generate `YOUTUBE_TOKEN_ENCRYPTION_KEY` from 32 cryptographically random bytes and encode it as unpadded base64url (43 characters). Never commit or log it.
+- Register the exact Google sign-in callback and the separate YouTube callback in Google Cloud Console. Staging callbacks use the canonical `kairo-anime-platform-staging.unpainllama.workers.dev` origin.
+- Live catalogue mode still depends on D1 for account, library, session, and watch-history routes. `/api/ready` must report both `database: "ok"` and `schema: "ok"` before the account features are considered ready.
+
+Password reset and optional email verification remain future work; Google YouTube API authorization is implemented as a separate, explicit connection flow.
