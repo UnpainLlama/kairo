@@ -8,6 +8,7 @@ function getHandler(method: string, path: string): Handler {
   registerAuthRoutes({
     get: (route: string, handler: Handler) => routes.set(`GET ${route}`, handler),
     post: (route: string, handler: Handler) => routes.set(`POST ${route}`, handler),
+    delete: (route: string, handler: Handler) => routes.set(`DELETE ${route}`, handler),
   } as any);
   const handler = routes.get(`${method} ${path}`);
   if (!handler) throw new Error(`Route not registered: ${method} ${path}`);
