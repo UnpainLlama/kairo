@@ -40,7 +40,7 @@ export default function SearchBar() {
 
   // Debounced lookup. Older requests are aborted, and a result is only shown for the query it was fetched for.
   useEffect(() => {
-    if (!canSearch(query)) return;
+    if (!canSearch(query) || !open || location.pathname === '/search') return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams({ q: query, limit: '8', sort: 'relevance' });
@@ -50,7 +50,7 @@ export default function SearchBar() {
         .catch((error: unknown) => { if (!isAbort(error)) setResult({ q: query, mode: mediaMode, status: 'error' }); });
     }, 250);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [query, mediaMode]);
+  }, [query, mediaMode, open, location.pathname]);
 
   // Ctrl/Cmd+K, or "/" outside a text field, focuses the bar. Clicking elsewhere closes the dropdown.
   useEffect(() => {

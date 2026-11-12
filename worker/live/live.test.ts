@@ -127,7 +127,8 @@ describe('Jikan source', () => {
     let url = '';
     const src = createJikanSource(async (u) => { url = u; return jikanList([jikanAnime(1), jikanAnime(2, { rating: 'Rx - Hentai' })]); }, { pacer: instant, now: () => NOW });
     const out = await src.list('trending', 2, 50, signal);
-    expect(url).toContain('/seasons/now');
+    expect(url).toContain('/top/anime');
+    expect(url).toContain('filter=bypopularity');
     expect(url).toContain('sfw=true');
     expect(url).toContain('limit=25');
     expect(out).toMatchObject({ total: 99, hasNextPage: true, limit: 25 });
@@ -141,6 +142,21 @@ describe('Jikan source', () => {
     expect(Object.fromEntries(u.searchParams)).toMatchObject({ q: 'x', genres: '4', type: 'movie', status: 'complete', start_date: '2026-10-01', end_date: '2026-12-31', order_by: 'score', sort: 'desc', sfw: 'true' });
     expect((await src.browse({ sort: 'popularity', status: 'hiatus', page: 1, limit: 24 }, signal)).items).toEqual([]);
     expect((await src.browse({ sort: 'popularity', genre: 'Nope', page: 1, limit: 24 }, signal)).items).toEqual([]);
+  });
+  it('uses Jikan’s native seasonal archive for season-only browse and maps format filters', async () => {
+    let url = '';
+    const src = createJikanSource(async (u) => { url = u; return jikanList([jikanAnime(1)]); }, { pacer: instant, now: () => NOW });
+    const out = await src.browse({ sort: 'popularity', season: 'winter', year: 2026, format: 'series', page: 2, limit: 24 }, signal);
+    const parsed = new URL(url);
+    expect(parsed.pathname).toBe('/v4/seasons/2026/winter');
+    expect(Object.fromEntries(parsed.searchParams)).toMatchObject({ filter: 'tv', sfw: 'true', page: '2', limit: '24' });
+    expect(parsed.searchParams.has('start_date')).toBe(false);
+    expect(out.items.map((item) => item.card.id)).toEqual(['m1']);
+    expect(out.items[0]?.card).toMatchObject({
+      synopsis: 'Hello.', rating: 7.8, episodeCount: 24, format: 'series',
+      releaseYear: 2026, season: 'fall', status: 'airing', genres: ['Comedy'],
+      posterUrl: 'https://cdn.test/1.jpg',
+    });
   });
   it('maps provider errors for missing and unavailable catalogue titles', async () => {
     await expect(createJikanSource(async () => json({}, { status: 404 }), { pacer: instant }).byRef({ kind: 'm', id: 1 }, signal)).rejects.toMatchObject({ kind: 'not_found' });
@@ -229,6 +245,15 @@ describe('service and handlers', () => {
     expect(tmdbCalls).toBe(0);
   });
 
+  it('falls back to Jikan when AniList has no seasonal browse results', async () => {
+    const d = deps(async (u) => isAni(u) ? aniPage([]) : jikanList([jikanAnime(3)]));
+    const response = await call(d, 'browse', req({ season: 'fall', year: '2026', sort: 'popularity', page: '1', limit: '24' }));
+    expect(response).toMatchObject({
+      status: 200,
+      body: { data: { items: [{ id: 'm3' }] }, meta: { source: 'jikan', degraded: true } },
+    });
+  });
+
   it('resolves legacy HiAnime title ids while AniList remains the primary catalogue', async () => {
     const legacyTitle: LiveTitle = {
       card: {
@@ -315,6 +340,32 @@ describe('service and handlers', () => {
     expect(urls.some((u) => u.includes('/anime/1007/episodes?page=2'))).toBe(true);
     expect(r.body).toMatchObject({ data: { items: [{ id: 'a7-e1', episodeNumber: 1, title: 'One' }, { episodeNumber: 2 }] }, meta: { page: 2, hasNextPage: true, source: 'jikan' } });
   });
+  it('enriches seasonal browse cards with missing TMDB metadata and artwork', async () => {
+    const artworkProvider: ArtworkProvider = {
+      id: 'tmdb',
+      lookup: async () => ({
+        tmdbId: 1429, mediaType: 'tv',
+        posterUrl: 'https://image.tmdb.org/t/p/w500/poster.jpg',
+        bannerUrl: 'https://image.tmdb.org/t/p/w1280/backdrop.jpg',
+        overview: 'A seasonal story.',
+        rating: 8.1, genres: ['Fantasy'], releaseYear: 2026, episodeCount: 12,
+      }),
+    };
+    const d = deps(async () => aniPage([media(77, {
+      description: '', episodes: null, averageScore: null, genres: [],
+      coverImage: { extraLarge: null, large: null }, startDate: { year: null },
+    })]), { artworkProvider });
+    const response = await call(d, 'browse', req({ season: 'fall', year: '2026', sort: 'popularity' }));
+    expect(response.body).toMatchObject({
+      data: { items: [{
+        posterUrl: 'https://image.tmdb.org/t/p/w500/poster.jpg',
+        bannerUrl: 'https://image.tmdb.org/t/p/w1280/backdrop.jpg',
+        synopsis: 'A seasonal story.', rating: 8.1, genres: ['Fantasy'],
+        releaseYear: 2026, episodeCount: 12,
+      }] },
+    });
+  });
+
   it('returns TMDB episode stills on the live episode route when artwork enrichment is enabled', async () => {
     const episodeProvider = {
       id: 'test-episodes', displayName: 'Test episodes', termsVerified: true,

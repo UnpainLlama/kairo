@@ -37,7 +37,7 @@ export default function HomePage() {
           {trendingItems.length > 0 && <Section title="Trending now" to="/browse/trending"><CardGrid items={trendingItems} /></Section>}
         </div>
         <aside className="kc-home-side" aria-label="Lists">
-          <SidePanel title="Top airing" items={itemsOf(airing).length ? itemsOf(airing) : trendingItems.slice(0, 6)} />
+          <SidePanel title="Top airing" items={itemsOf(airing)} />
           <SidePanel title="Upcoming" items={itemsOf(upcoming)} />
         </aside>
       </div>

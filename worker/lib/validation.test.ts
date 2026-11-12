@@ -41,7 +41,8 @@ describe('parseSearchParams', () => {
   });
   it('rejects unknown sort keys instead of passing them toward SQL', () => {
     expect(parseSearchParams({ q: 'moon', sort: 'title; DROP TABLE anime' }).ok).toBe(false);
-    expect(Object.keys(SORT_ORDER_BY).sort()).toEqual(['latest', 'popularity', 'rating', 'relevance']);
+    expect(Object.keys(SORT_ORDER_BY).sort()).toEqual(['latest', 'popularity', 'rating', 'relevance', 'trending']);
+    expect(parseSearchParams({ q: 'moon', sort: 'trending' }).ok).toBe(true);
   });
   it('normalises valid filters and rejects invalid ones', () => {
     const r = parseSearchParams({ q: 'moon', format: 'MOVIE', season: 'Fall', year: '2026', genre: 'Sci-Fi', status: 'airing' });

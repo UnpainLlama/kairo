@@ -21,6 +21,7 @@
 
   "vars": {
     "APP_ENV": "development",
+    "APP_BASE_URL": "http://localhost:5173",
     "METADATA_PROVIDERS": "anilist",
     "CATALOG_SOURCE": "live",
     "LIVE_PROVIDERS": "anilist,hianime,jikan",
@@ -50,12 +51,14 @@
 
       "vars": {
         "APP_ENV": "staging",
-        "METADATA_PROVIDERS": "anilist",
+        "APP_BASE_URL": "https://kairo-anime-platform-staging.unpainllama.workers.dev",
         "CATALOG_SOURCE": "live",
-        "LIVE_PROVIDERS": "anilist,hianime,jikan",
         "EPISODE_PROVIDERS": "hianime,jikan",
+        "GOOGLE_CLIENT_ID": "805356560035-p3ooq75mvr5cn02s0u98dv7k3vspt49k.apps.googleusercontent.com",
         "HIANIME_BASE_URL": "https://hianime.at",
-        "HIANIME_PLAYBACK_ALLOWED_HOSTS": "zokoanime.video,megaplay.buzz,hls.dramahot.top,hls1.drama1.cfd,mysubsplay.com,emeralddrift.world,hianime.at,hls1drama1.cfd,mysubplay.com,emeralddrift.com"
+        "HIANIME_PLAYBACK_ALLOWED_HOSTS": "zokoanime.video,megaplay.buzz,hls.dramahot.top,hls1.drama1.cfd,mysubsplay.com,emeralddrift.world,hianime.at,hls1drama1.cfd,mysubplay.com,emeralddrift.com",
+        "LIVE_PROVIDERS": "anilist,hianime,jikan",
+        "METADATA_PROVIDERS": "anilist"
       }
     },
 

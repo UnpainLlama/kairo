@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
-import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
   Bell, CalendarDays, ChevronRight, Compass, Film, Flame, History,
   Home, LogIn, Menu, Search, Settings, Tv, UserRound, Youtube,
@@ -11,6 +11,7 @@ import SearchPage from './pages/SearchPage';
 import BrowsePage from './pages/BrowsePage';
 import AnimePage from './pages/AnimePage';
 import WatchPage from './pages/WatchPage';
+import AuthPage from './pages/AuthPage';
 import { AboutPage, AccountPage, HistoryPage, NotFoundPage, ProfilePage } from './pages/StaticPages';
 
 type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean; active?: boolean };
@@ -23,11 +24,6 @@ const navItems: NavItem[] = [
   { to: '/browse/seasonal', label: 'Seasonal', icon: CalendarDays },
   { to: '/history', label: 'History', icon: History },
   { to: '/profile', label: 'Profile', icon: UserRound },
-];
-
-const bottomItems: NavItem[] = [
-  { to: '/settings', label: 'Settings', icon: Settings },
-  { to: '/profile', label: 'Login', icon: LogIn, active: false },
 ];
 
 const menuItems: NavItem[] = [
@@ -63,9 +59,25 @@ function MenuLink({ to, label, icon: Icon, end, onNavigate }: NavItem & { onNavi
 export default function App() {
   const { pathname } = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState<{displayName:string;email:string|null}|null>(null);
+  const [authBusy, setAuthBusy] = useState(false);
+  const navigate = useNavigate();
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { window.scrollTo(0, 0); }, [pathname]);
+
+  useEffect(() => {
+    let active=true;
+    const refresh=()=>{fetch('/api/v1/me',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(p=>{if(active)setCurrentUser(p?.data?.user??null)}).catch(()=>{if(active)setCurrentUser(null)})};
+    refresh(); window.addEventListener('kairo:auth-change',refresh);
+    return()=>{active=false;window.removeEventListener('kairo:auth-change',refresh)};
+  }, [pathname]);
+
+  const logout = async () => {
+    setAuthBusy(true);
+    try { const response=await fetch('/api/v1/auth/logout',{method:'POST',credentials:'same-origin',headers:{Accept:'application/json'}}); const payload=await response.json().catch(()=>null); if(!response.ok||!payload?.success) throw new Error(payload?.error?.message??'Could not sign out.'); setCurrentUser(null); window.dispatchEvent(new Event('kairo:auth-change')); setMenuOpen(false); navigate('/login'); }
+    catch(error) { window.alert(error instanceof Error?error.message:'Could not sign out.'); } finally { setAuthBusy(false); }
+  };
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -95,7 +107,8 @@ export default function App() {
           {navItems.map((item) => <RailLink key={item.label} {...item} />)}
         </nav>
         <div className="kc-rail-bottom">
-          {bottomItems.map((item) => <RailLink key={item.label} {...item} />)}
+          <RailLink to="/settings" label="Settings" icon={Settings} />
+          <RailLink to={currentUser?"/profile":"/login"} label={currentUser?"Account":"Login"} icon={currentUser?UserRound:LogIn} active={false} />
         </div>
       </aside>
 
@@ -115,9 +128,9 @@ export default function App() {
             </button>
             {menuOpen && (
               <section className="kc-menu-popover" id="kc-navigation-menu" aria-label="Kairo navigation menu">
-                <Link to="/profile" className="kc-menu-profile" onClick={closeMenu}>
+                <Link to={currentUser?"/profile":"/login"} className="kc-menu-profile" onClick={closeMenu}>
                   <span className="kc-menu-avatar"><UserRound size={19} aria-hidden="true" /></span>
-                  <span><b>Profile</b><small>Guest account</small></span>
+                  <span><b>{currentUser?.displayName??'Profile'}</b><small>{currentUser?.email??'Guest account'}</small></span>
                   <ChevronRight size={15} aria-hidden="true" />
                 </Link>
 
@@ -145,7 +158,7 @@ export default function App() {
 
                 <div className="kc-menu-footer">
                   <Link to="/settings" onClick={closeMenu}><Settings size={15} aria-hidden="true" />Settings</Link>
-                  <Link to="/profile" onClick={closeMenu}><LogIn size={15} aria-hidden="true" />Login</Link>
+                  {currentUser ? <button type="button" onClick={()=>void logout()} disabled={authBusy}><LogIn size={15} aria-hidden="true" />{authBusy?'Signing out…':'Sign out'}</button> : <Link to="/login" onClick={closeMenu}><LogIn size={15} aria-hidden="true" />Login</Link>}
                 </div>
               </section>
             )}
@@ -155,6 +168,9 @@ export default function App() {
 
       <main id="main" className="kc-main" tabIndex={-1}>
         <Routes>
+          <Route path="/login" element={<AuthPage mode="login" />} />
+          <Route path="/register" element={<AuthPage mode="register" />} />
+          <Route path="/verify-email" element={<AuthPage mode="register" />} />
           <Route path="/" element={<HomePage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/browse" element={<Navigate to="/browse/anime" replace />} />

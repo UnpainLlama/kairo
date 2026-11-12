@@ -5,7 +5,7 @@ import Select, { type SelectOption } from '../components/Select';
 import { useApi } from '../lib/useApi';
 import { formatLabel, statusLabel, type CatalogCard, type GenreCount, type ItemList } from '../lib/catalog';
 import {
-  EMPTY_SEARCH, MAX_YEAR, MIN_YEAR, SEARCH_FORMATS, SEARCH_STATUSES, canSearch, hasFilters, parseSearchState, toApiPath, toUrlParams,
+  EMPTY_SEARCH, MAX_YEAR, MIN_YEAR, SEARCH_FORMATS, SEARCH_SEASONS, SEARCH_STATUSES, canSearch, hasFilters, parseSearchState, toApiPath, toUrlParams,
   type SearchState,
 } from '../lib/searchState';
 
@@ -35,9 +35,11 @@ export default function SearchPage() {
 
   const formatOptions: SelectOption<SearchState['format']>[] = [{ value: ANY, label: 'Any format' }, ...SEARCH_FORMATS.map((f) => ({ value: f, label: formatLabel(f) ?? f }))];
   const statusOptions: SelectOption<SearchState['status']>[] = [{ value: ANY, label: 'Any status' }, ...SEARCH_STATUSES.map((s) => ({ value: s, label: statusLabel(s) ?? s }))];
+  const seasonOptions: SelectOption<SearchState['season']>[] = [{ value: ANY, label: 'Any season' }, ...SEARCH_SEASONS.map((s) => ({ value: s, label: s.charAt(0).toUpperCase() + s.slice(1) }))];
   const sortOptions: SelectOption<SearchState['sort']>[] = [
     { value: ANY, label: searching ? 'Best match' : 'Most popular' },
     ...(searching ? [{ value: 'popularity' as const, label: 'Most popular' }] : []),
+    { value: 'trending', label: 'Trending' },
     { value: 'latest', label: 'Recently updated' },
     { value: 'rating', label: 'Top rated' },
   ];
@@ -56,6 +58,7 @@ export default function SearchPage() {
         <Select label="Format" value={state.format} options={formatOptions} onChange={(format) => update({ format })} />
         <Select label="Status" value={state.status} options={statusOptions} onChange={(status) => update({ status })} />
         <Select label="Year" value={state.year === null ? '' : String(state.year)} options={yearOptions()} icon={<CalendarDays size={15} aria-hidden="true" />} onChange={(year) => update({ year: year === '' ? null : Number(year) })} />
+        <Select label="Season" value={state.season} options={seasonOptions} onChange={(season) => update({ season })} />
         <Select label="Sort" value={state.sort} placeholder={sortOptions[0].label} options={sortOptions} onChange={(sort) => update({ sort })} />
         <button type="button" className="kc-icon-btn" onClick={reset} disabled={!hasFilters(state)} aria-label="Reset filters" title="Reset filters"><RotateCcw size={16} aria-hidden="true" /></button>
       </div>

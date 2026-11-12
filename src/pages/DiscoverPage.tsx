@@ -16,7 +16,7 @@ export default function DiscoverPage() {
   const [picked, setPicked] = useState<{ path: string; index: number }>({ path: '', index: 0 });
 
   const collections = genres.status === 'ok'
-    ? [...genres.data.items].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)).slice(0, 14).map((g) => g.name)
+    ? [...genres.data.items].sort((a, b) => a.name.localeCompare(b.name)).slice(0, 14).map((g) => g.name)
     : [];
   if (genre && !collections.includes(genre)) collections.unshift(genre);
 

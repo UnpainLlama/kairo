@@ -10,7 +10,7 @@ describe('searchState', () => {
     expect(toUrlParams({ ...EMPTY_SEARCH, q: 'abc' }).toString()).toBe('q=abc');
   });
   it('round-trips non-default values', () => {
-    const state = { q: 'one piece', genre: 'Action', format: 'series' as const, status: 'airing' as const, year: 2024, sort: 'rating' as const, page: 3 };
+    const state = { q: 'one piece', genre: 'Action', format: 'series' as const, status: 'airing' as const, year: 2024, season: 'winter' as const, sort: 'rating' as const, page: 3 };
     expect(parseSearchState(toUrlParams(state))).toEqual(state);
   });
   it('uses browse, without q, when the title text is under 2 characters', () => {
@@ -21,8 +21,8 @@ describe('searchState', () => {
     expect(toApiPath({ ...EMPTY_SEARCH, q: 'naruto' })).toBe('/catalog/search?q=naruto&page=1&limit=24&sort=relevance');
   });
   it('builds an encoded API path with every filter', () => {
-    const path = toApiPath({ q: 'a&b', genre: 'Sci-Fi', format: 'ova', status: 'finished', year: 2019, sort: 'latest', page: 2 });
-    expect(path).toBe('/catalog/search?q=a%26b&page=2&limit=24&sort=latest&genre=Sci-Fi&format=ova&status=finished&year=2019');
+    const path = toApiPath({ q: 'a&b', genre: 'Sci-Fi', format: 'ova', status: 'finished', year: 2019, season: 'fall', sort: 'latest', page: 2 });
+    expect(path).toBe('/catalog/search?q=a%26b&page=2&limit=24&sort=latest&genre=Sci-Fi&format=ova&status=finished&year=2019&season=fall');
   });
   it('browses by filters alone', () => {
     expect(toApiPath({ ...EMPTY_SEARCH, genre: 'Comedy', status: 'airing' })).toBe('/catalog/browse?page=1&limit=24&sort=popularity&genre=Comedy&status=airing');

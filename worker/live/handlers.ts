@@ -119,7 +119,8 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
       try {
         const deps = depsFor(req);
         const out = await svc.browse(deps, parsed.value);
-        const items = cards(out.value.items);
+        const enriched = await svc.withArtwork(deps, out.value.items);
+        const items = cards(enriched);
         return okBody(req, { items }, { ...pagedMeta(out.value, parsed.value.page), ...sourceMeta(out), ...artworkMeta(deps) });
       } catch (e) { return providerFailure(req, 'live_browse_failed', e); }
     },

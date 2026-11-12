@@ -177,7 +177,9 @@ export function createJikanSource(fetchImpl: FetchLike, opts: { pacer?: Pacer; n
     async list(kind: ListKind, page, limit, signal) {
       const n = Math.min(Math.max(limit, 1), MAX_LIMIT);
       if (kind === 'featured') return toPaged(await get('/top/anime', { filter: 'airing', sfw: true, page: 1, limit: Math.min(n, 12) }, signal), Math.min(n, 12));
-      if (kind === 'trending') return toPaged(await get('/seasons/now', { sfw: true, page, limit: n }, signal), n);
+      // Jikan has no live-trending feed. Use MAL's popularity ranking as the honest fallback,
+      // rather than returning the current season and presenting it as trending.
+      if (kind === 'trending') return toPaged(await get('/top/anime', { filter: 'bypopularity', sfw: true, page, limit: n }, signal), n);
       return toPaged(await get('/anime', { status: 'airing', order_by: 'start_date', sort: 'desc', sfw: true, page, limit: n }, signal), n);
     },
 
@@ -195,13 +197,21 @@ export function createJikanSource(fetchImpl: FetchLike, opts: { pacer?: Pacer; n
         if (!g) return empty(n);
         params.genres = g.id;
       }
+      if (q.season && !text && !q.genre && !q.status && ['popularity', 'trending', 'relevance'].includes(q.sort)) {
+        // Use Jikan's native seasonal archive rather than approximating a season with calendar dates.
+        // The endpoint supports a format filter but not search, genre, status, or arbitrary sort filters;
+        // those combinations intentionally retain the /anime date-range path below.
+        const year = q.year ?? new Date(clock()).getUTCFullYear();
+        const filter = q.format ? TYPES[q.format] : undefined;
+        return toPaged(await get(`/seasons/${year}/${q.season}`, { filter, sfw: true, page: q.page, limit: n }, signal), n);
+      }
       if (q.season || q.year !== undefined) {
         const year = q.year ?? new Date(clock()).getUTCFullYear();
         const [from, to] = q.season ? SEASON_RANGE[q.season] : (['01-01', '12-31'] as const);
         params.start_date = `${year}-${from}`;
         params.end_date = `${year}-${to}`;
       }
-      if (q.sort === 'popularity' || (q.sort === 'relevance' && !text)) { params.order_by = 'popularity'; params.sort = 'asc'; }
+      if (q.sort === 'popularity' || q.sort === 'trending' || (q.sort === 'relevance' && !text)) { params.order_by = 'popularity'; params.sort = 'asc'; }
       else if (q.sort === 'latest') { params.order_by = 'start_date'; params.sort = 'desc'; }
       else if (q.sort === 'rating') { params.order_by = 'score'; params.sort = 'desc'; }
       return toPaged(await get('/anime', params, signal), n);
