@@ -259,7 +259,7 @@ function youtubeThumbnail(thumbnails: any): string | null {
 
 export function isMarkedYouTubeShort(title: unknown, description: unknown): boolean {
   const metadata = [title, description].filter((value): value is string => typeof value === 'string').join(' ');
-  return /(?:^|\\s)#(?:youtube)?shorts?\\b/i.test(metadata);
+  return /(?:^|\s)#(?:youtube)?shorts?\b/i.test(metadata);
 }
 
 type YouTubeFeedCursorState = {
