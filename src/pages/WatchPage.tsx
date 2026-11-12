@@ -108,6 +108,7 @@ export default function WatchPage() {
   const next = position >= 0 && position < ordered.length - 1 ? ordered[position + 1] : null;
   const visibleEpisodes = ordered.filter((episode) => `${episode.title ?? ''} ${episode.episodeNumber}`.toLowerCase().includes(episodeFilter.toLowerCase()));
   const progressFor = (episodeNumber: number) => {
+    if (!accountResolved) return 0;
     try {
       const raw = localStorage.getItem(watchProgressStorageKey(accountId, slug, episodeNumber, selectedServer?.id ?? ''));
       const seconds = raw ? Number(raw) : 0;
@@ -124,7 +125,8 @@ export default function WatchPage() {
           <div className="kc-watch-topline"><Link to={`/anime/${key}`} className="kc-back-link"><ArrowLeft size={15} aria-hidden="true" /> Back to anime</Link><span className="kc-watch-breadcrumb">{anime.title} <span>/</span> Episode {episodeNumberLabel(parsedEpisode)}</span></div>
 
           <section className="kc-player" aria-label="Video player" key={`${slug}:${parsedEpisode}:${selectedServer?.id ?? 'none'}`}>
-            {playback.status === 'ok' && (
+            {!accountResolved && <div className="kc-player-message"><h2>Loading your playback state…</h2><p>Keeping this activity separate from other accounts on this browser.</p></div>}
+            {accountResolved && playback.status === 'ok' && (
               <KairoMediaPlayer
                 source={playback.data.source}
                 title={`${anime.title} · Episode ${parsedEpisode}`}
@@ -134,7 +136,7 @@ export default function WatchPage() {
                 nextUrl={next && autoNext ? `/watch/${key}/${next.episodeNumber}` : null}
               />
             )}
-            {playback.status !== 'ok' && (
+            {accountResolved && playback.status !== 'ok' && (
               <div className="kc-player-message">
                 <span className="kc-player-icon"><Play size={24} fill="currentColor" aria-hidden="true" /></span>
                 <h2>{playback.status === 'loading' && selectedServer ? 'Resolving stream…' : playback.status === 'error' ? 'Stream unavailable' : 'Choose a server'}</h2>
