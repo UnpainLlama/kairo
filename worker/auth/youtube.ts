@@ -181,20 +181,43 @@ async function getYouTubeAccessToken(c: YouTubeContext, userId: string): Promise
 }
 
 const YOUTUBE_RATE_WINDOW_MS = 15 * 60 * 1000;
+const YOUTUBE_DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
+const YOUTUBE_SEARCH_DAILY_LIMIT = 80; // Reserve 20 of the default 100 search.list calls for operational headroom.
+const YOUTUBE_DATA_DAILY_LIMIT = 8000; // Leave 2,000 units for other application usage.
 
-async function allowYouTubeRequest(c: YouTubeContext, userId: string, action: string, limit: number): Promise<boolean> {
-  const ip = c.req.header('CF-Connecting-IP') ?? 'unknown';
-  const bucketKey = await shaHex(`youtube:${action}:${ip}:${userId}`);
+async function bumpYouTubeRateBucket(
+  c: YouTubeContext,
+  bucket: string,
+  limit: number,
+  windowMs: number,
+  cost = 1,
+): Promise<boolean> {
+  const bucketKey = await shaHex(`youtube:quota:${bucket}`);
   const now = Date.now();
   const row = await c.env.DB.prepare(`
     INSERT INTO auth_rate_limits (bucket_key, window_started_at, attempts)
-    VALUES (?, ?, 1)
+    VALUES (?, ?, ?)
     ON CONFLICT(bucket_key) DO UPDATE SET
-      attempts = CASE WHEN window_started_at <= ? THEN 1 ELSE attempts + 1 END,
+      attempts = CASE WHEN window_started_at <= ? THEN ? ELSE attempts + ? END,
       window_started_at = CASE WHEN window_started_at <= ? THEN ? ELSE window_started_at END
     RETURNING attempts
-  `).bind(bucketKey, now, now - YOUTUBE_RATE_WINDOW_MS, now - YOUTUBE_RATE_WINDOW_MS, now).first<{ attempts: number }>();
+  `).bind(bucketKey, now, cost, now - windowMs, cost, cost, now - windowMs, now).first<{ attempts: number }>();
   return Number(row?.attempts ?? limit + 1) <= limit;
+}
+
+async function allowYouTubeRequest(
+  c: YouTubeContext,
+  userId: string,
+  action: string,
+  limit: number,
+  budget?: { bucket: string; limit: number; windowMs: number; cost?: number },
+): Promise<boolean> {
+  const ip = c.req.header('CF-Connecting-IP') ?? 'unknown';
+  const userBucket = await shaHex(`youtube:user:${action}:${ip}:${userId}`);
+  if (!await bumpYouTubeRateBucket(c, userBucket, limit, YOUTUBE_RATE_WINDOW_MS)) return false;
+  return budget
+    ? bumpYouTubeRateBucket(c, budget.bucket, budget.limit, budget.windowMs, budget.cost ?? 1)
+    : true;
 }
 
 async function youtubeApiGet(accessToken: string, resource: string, params: Record<string, string>): Promise<any> {
@@ -531,7 +554,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
     if (term.length < 2 || term.length > 80 || /[\u0000-\u001F\u007F]/.test(term)) {
       return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Enter a channel name or topic between 2 and 80 characters.' } }, 400);
     }
-    if (!await allowYouTubeRequest(c, user.id, 'channel-search', 5)) {
+    if (!await allowYouTubeRequest(c, user.id, 'channel-search', 5, { bucket: 'search-list-daily', limit: YOUTUBE_SEARCH_DAILY_LIMIT, windowMs: YOUTUBE_DAILY_WINDOW_MS })) {
       return c.json({ success: false, error: { code: 'RATE_LIMITED', message: 'Too many channel searches. Please try again in 15 minutes.' } }, 429);
     }
     try {
@@ -582,6 +605,9 @@ export function registerYouTubeAuthRoutes(app: any): void {
         .bind(user.id).first() as { total: number } | null;
       if (Number(count?.total ?? 0) >= 20) {
         return c.json({ success: false, error: { code: 'YOUTUBE_CHANNEL_LIMIT', message: 'You can add up to 20 channels to your Kairo feed.' } }, 409);
+      }
+      if (!await allowYouTubeRequest(c, user.id, 'channel-add', 10, { bucket: 'data-api-daily', limit: YOUTUBE_DATA_DAILY_LIMIT, windowMs: YOUTUBE_DAILY_WINDOW_MS })) {
+        return c.json({ success: false, error: { code: 'RATE_LIMITED', message: 'YouTube API usage is temporarily limited. Please try again later.' } }, 429);
       }
       const accessToken = await getYouTubeAccessToken(c, user.id);
       const result = await youtubeApiGet(accessToken, 'channels', { part: 'snippet', id: channelId, maxResults: '1' });
@@ -635,6 +661,9 @@ export function registerYouTubeAuthRoutes(app: any): void {
       ).bind(user.id).all<{ channelId: string; title: string; thumbnailUrl: string | null }>();
       const channels = saved.results ?? [];
       if (!channels.length) return c.json({ success: true, data: { videos: [], channels: [], channelsChecked: 0 }, meta: { requestId: requestId(c) } });
+      if (!await bumpYouTubeRateBucket(c, 'data-api-daily', YOUTUBE_DATA_DAILY_LIMIT, YOUTUBE_DAILY_WINDOW_MS, channels.length + 1)) {
+        return c.json({ success: false, error: { code: 'RATE_LIMITED', message: 'YouTube API usage is temporarily limited. Please try again later.' } }, 429);
+      }
       const accessToken = await getYouTubeAccessToken(c, user.id);
       const channelData = await youtubeApiGet(accessToken, 'channels', {
         part: 'contentDetails', id: channels.map((item) => item.channelId).join(','), maxResults: String(channels.length),
