@@ -180,6 +180,23 @@ async function getYouTubeAccessToken(c: YouTubeContext, userId: string): Promise
   return accessToken;
 }
 
+const YOUTUBE_RATE_WINDOW_MS = 15 * 60 * 1000;
+
+async function allowYouTubeRequest(c: YouTubeContext, userId: string, action: string, limit: number): Promise<boolean> {
+  const ip = c.req.header('CF-Connecting-IP') ?? 'unknown';
+  const bucketKey = await shaHex(`youtube:${action}:${ip}:${userId}`);
+  const now = Date.now();
+  const row = await c.env.DB.prepare(`
+    INSERT INTO auth_rate_limits (bucket_key, window_started_at, attempts)
+    VALUES (?, ?, 1)
+    ON CONFLICT(bucket_key) DO UPDATE SET
+      attempts = CASE WHEN window_started_at <= ? THEN 1 ELSE attempts + 1 END,
+      window_started_at = CASE WHEN window_started_at <= ? THEN ? ELSE window_started_at END
+    RETURNING attempts
+  `).bind(bucketKey, now, now - YOUTUBE_RATE_WINDOW_MS, now - YOUTUBE_RATE_WINDOW_MS, now).first<{ attempts: number }>();
+  return Number(row?.attempts ?? limit + 1) <= limit;
+}
+
 async function youtubeApiGet(accessToken: string, resource: string, params: Record<string, string>): Promise<any> {
   const url = new URL('https://www.googleapis.com/youtube/v3/' + resource);
   for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);
@@ -514,6 +531,9 @@ export function registerYouTubeAuthRoutes(app: any): void {
     if (term.length < 2 || term.length > 80 || /[\u0000-\u001F\u007F]/.test(term)) {
       return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Enter a channel name or topic between 2 and 80 characters.' } }, 400);
     }
+    if (!await allowYouTubeRequest(c, user.id, 'channel-search', 5)) {
+      return c.json({ success: false, error: { code: 'RATE_LIMITED', message: 'Too many channel searches. Please try again in 15 minutes.' } }, 429);
+    }
     try {
       const accessToken = await getYouTubeAccessToken(c, user.id);
       const [result, saved] = await Promise.all([
@@ -606,6 +626,9 @@ export function registerYouTubeAuthRoutes(app: any): void {
     c.header('Cache-Control', 'no-store');
     const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
     if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to view your Kairo feed.' } }, 401);
+    if (!await allowYouTubeRequest(c, user.id, 'feed-refresh', 10)) {
+      return c.json({ success: false, error: { code: 'RATE_LIMITED', message: 'Your feed was refreshed too often. Please try again in 15 minutes.' } }, 429);
+    }
     try {
       const saved = await c.env.DB.prepare(
         'SELECT channel_id AS channelId, channel_title AS title, thumbnail_url AS thumbnailUrl FROM youtube_feed_channels WHERE user_id=? ORDER BY channel_title COLLATE NOCASE LIMIT 20'
