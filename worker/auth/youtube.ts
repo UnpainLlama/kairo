@@ -159,8 +159,8 @@ export function registerYouTubeAuthRoutes(app: any): void {
     }
     const cookie = c.req.header('Cookie') ?? null;
     const user = await findSessionUser(c.env.DB, cookie);
-    if (!user) return redirectTo(c, '/login?youtube=sign_in_required');
-    if (!await hasRecentSession(c.env.DB, cookie)) return redirectTo(c, '/login?youtube=reauth_required');
+    if (!user) return redirectTo(c, '/login?youtube=sign_in_required&continue=youtube-connect');
+    if (!await hasRecentSession(c.env.DB, cookie)) return redirectTo(c, '/login?youtube=reauth_required&continue=youtube-connect');
 
     const baseUrlProblem = appBaseUrlProblem(c);
     if (baseUrlProblem) {
@@ -176,7 +176,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
     const verifier = random(48);
     const challenge = base64Url(new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(verifier))));
     const sessionToken = readSessionCookie(cookie);
-    if (!sessionToken) return redirectTo(c, '/login?youtube=sign_in_required');
+    if (!sessionToken) return redirectTo(c, '/login?youtube=sign_in_required&continue=youtube-connect');
     const now = Date.now();
     try {
       await c.env.DB.prepare('DELETE FROM youtube_oauth_states WHERE expires_at < ? OR consumed_at IS NOT NULL').bind(now).run();
@@ -236,7 +236,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
     const user = await findSessionUser(c.env.DB, cookie);
     if (!sessionToken || !user) {
       logYouTubeDiagnostic(c, 'youtube_callback_session_missing');
-      return redirectTo(c, '/login?youtube=sign_in_required');
+      return redirectTo(c, '/login?youtube=sign_in_required&continue=youtube-connect');
     }
 
     let callbackStage = 'state_lookup';
