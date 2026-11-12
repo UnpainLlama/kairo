@@ -107,6 +107,19 @@ Progress request example:
 
 Validate finite non-negative numbers, enforce sensible duration/position bounds, and derive the subject ID from the authenticated context. Never accept `userId` from the request body.
 
+## 3a. YouTube subscriptions feed
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/youtube/subscriptions/feed?pageToken=...` | Fetch recent public uploads from a bounded page of the signed-in user's YouTube subscriptions. |
+
+- Requires a valid Kairo session and an explicitly connected YouTube account.
+- Uses the official YouTube Data API with the server-held, encrypted OAuth refresh token. Access tokens are refreshed server-side and never returned to the browser.
+- Returns up to 24 normalized video cards and an optional YouTube subscription `nextPageToken`. Each request inspects at most 12 subscribed channels and up to four recent uploads per channel to bound quota use.
+- Feed responses use `Cache-Control: no-store`; this first version does not persist YouTube API resource data.
+- Errors include `AUTH_REQUIRED`, `YOUTUBE_NOT_CONNECTED`, `YOUTUBE_REAUTH_REQUIRED`, `YOUTUBE_QUOTA_EXCEEDED`, and `YOUTUBE_PROVIDER_UNAVAILABLE`.
+- Video playback remains on YouTube through the official watch URL; Kairo does not proxy video streams.
+
 ## 4. Playback routes
 
 | Method | Path | Purpose |
