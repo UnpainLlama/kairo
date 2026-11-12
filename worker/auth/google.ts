@@ -114,8 +114,8 @@ export function registerGoogleAuthRoutes(app: any): void {
     let linkUserId: string | null = null;
     if (intent === 'link') {
       const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
-      if (!user) return redirectTo(c, '/login?google=sign_in_required');
-      if (!await hasRecentSession(c.env.DB, c.req.header('Cookie') ?? null)) return redirectTo(c, '/login?google=reauth_required');
+      if (!user) return redirectTo(c, '/login?google=sign_in_required&continue=google-link');
+      if (!await hasRecentSession(c.env.DB, c.req.header('Cookie') ?? null)) return redirectTo(c, '/login?google=reauth_required&continue=google-link');
       linkUserId = user.id;
     }
     const state = random(32), nonce = random(32), verifier = random(48);
@@ -147,19 +147,27 @@ export function registerGoogleAuthRoutes(app: any): void {
     const browserState = cookieState(c.req.header('Cookie'));
     c.header('Set-Cookie', clearStateCookie(secure), { append: true });
     if (!callback) return unavailable(c);
-    if (!state || browserState !== state) return redirectTo(c, '/login?google=invalid_response');
-    if (url.searchParams.has('error')) return redirectTo(c, '/login?google=cancelled');
-    if (!/^[A-Za-z0-9_-]{40,64}$/.test(state) || !code || code.length > 2048) return redirectTo(c, '/login?google=invalid_response');
+    let linkFlow = false;
+    const redirectFailure = (reason: string) =>
+      redirectTo(c, `${linkFlow ? '/settings' : '/login'}?google=${reason}`);
+    if (!state || browserState !== state || !/^[A-Za-z0-9_-]{40,64}$/.test(state)) {
+      return redirectFailure('invalid_response');
+    }
     try {
       const stateHash = await shaHex(state);
       const transaction = await c.env.DB.prepare(
         'SELECT nonce,code_verifier,link_user_id,expires_at,consumed_at FROM google_oauth_states WHERE state_hash=?'
       ).bind(stateHash).first<OAuthState>();
-      if (!transaction || transaction.consumed_at !== null || transaction.expires_at <= Date.now()) return redirectTo(c, '/login?google=expired');
+      linkFlow = Boolean(transaction?.link_user_id);
+      if (!transaction || transaction.consumed_at !== null || transaction.expires_at <= Date.now()) {
+        return redirectFailure('expired');
+      }
       const consumed = await c.env.DB.prepare(
         'UPDATE google_oauth_states SET consumed_at=? WHERE state_hash=? AND consumed_at IS NULL AND expires_at>?'
       ).bind(Date.now(), stateHash, Date.now()).run();
-      if (Number(consumed.meta?.changes ?? 0) !== 1) return redirectTo(c, '/login?google=expired');
+      if (Number(consumed.meta?.changes ?? 0) !== 1) return redirectFailure('expired');
+      if (url.searchParams.has('error')) return redirectFailure('cancelled');
+      if (!code || code.length > 2048) return redirectFailure('invalid_response');
       const clientId = c.env.GOOGLE_CLIENT_ID;
       const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
       if (!clientId || !clientSecret) return unavailable(c);
@@ -170,9 +178,9 @@ export function registerGoogleAuthRoutes(app: any): void {
           redirect_uri: callback, grant_type: 'authorization_code', code_verifier: transaction.code_verifier
         })
       });
-      if (!tokenResponse.ok) return redirectTo(c, '/login?google=token_exchange_failed');
+      if (!tokenResponse.ok) return redirectFailure('token_exchange_failed');
       const tokens = await tokenResponse.json() as { id_token?: string };
-      if (!tokens.id_token) return redirectTo(c, '/login?google=missing_identity');
+      if (!tokens.id_token) return redirectFailure('missing_identity');
       const claims = await validateIdToken(tokens.id_token, clientId, transaction.nonce);
       const linkedIdentity = await c.env.DB.prepare(
         "SELECT i.user_id AS userId,p.account_status AS accountStatus FROM auth_identities i JOIN user_profiles p ON p.id=i.user_id WHERE i.provider='google' AND i.provider_subject=?"
@@ -180,7 +188,9 @@ export function registerGoogleAuthRoutes(app: any): void {
       let userId: string;
       if (transaction.link_user_id) {
         const current = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
-        if (!current || current.id !== transaction.link_user_id || !await hasRecentSession(c.env.DB, c.req.header('Cookie') ?? null)) return redirectTo(c, '/login?google=reauth_required');
+        if (!current || current.id !== transaction.link_user_id || !await hasRecentSession(c.env.DB, c.req.header('Cookie') ?? null)) {
+          return redirectTo(c, '/login?google=reauth_required&continue=google-link');
+        }
         if (linkedIdentity && linkedIdentity.userId !== current.id) return redirectTo(c, '/settings?google=already_linked');
         const currentGoogleIdentity = await c.env.DB.prepare(
           "SELECT provider_subject FROM auth_identities WHERE provider='google' AND user_id=?"
@@ -221,7 +231,7 @@ export function registerGoogleAuthRoutes(app: any): void {
       return transaction.link_user_id ? redirectTo(c, '/settings?google=connected') : redirectTo(c, '/');
     } catch (error) {
       console.error(JSON.stringify({ event: 'google_auth_callback_failed', message: error instanceof Error ? error.message : 'unknown' }));
-      return redirectTo(c, '/login?google=failed');
+      return redirectFailure('failed');
     }
   });
 }
