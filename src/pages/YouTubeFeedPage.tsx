@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowUpRight, Plus, RefreshCw, Youtube } from 'lucide-react';
+import { ArrowUpRight, Plus, RefreshCw, Search, Youtube } from 'lucide-react';
 
 type SavedChannel = { channelId: string; title: string; description: string; thumbnailUrl: string | null; addedAt?: string };
 type FeedVideo = {
@@ -59,7 +59,10 @@ export default function YouTubeFeedPage() {
     <section className="yt-page">
       <header className="yt-page-heading">
         <div><span className="yt-eyebrow">YOUR VIDEO SPACE</span><h1>Home</h1><p>A feed built from the channels you choose.</p></div>
-        <button className="yt-button yt-button-quiet" type="button" onClick={() => setRefreshKey(value => value + 1)} disabled={loading}><RefreshCw size={15} /> Refresh</button>
+        <div className="yt-heading-actions">
+          <Link to="/youtube/search" className="yt-button yt-button-primary"><Plus size={15} /> Add channels</Link>
+          <button className="yt-button yt-button-quiet" type="button" onClick={() => setRefreshKey(value => value + 1)} disabled={loading}><RefreshCw size={15} /> Refresh</button>
+        </div>
       </header>
 
       {error && <div className="yt-notice" role="alert">
@@ -90,7 +93,6 @@ export default function YouTubeFeedPage() {
         <div className="yt-section-heading"><div><h2>Latest videos</h2><p>{channels.length ? 'Recent uploads from your selected channels' : 'Your videos will show up here'}</p></div></div>
         {loading && <div className="yt-loading" role="status">Loading your feed…</div>}
         {!loading && !error && channels.length > 0 && videos.length === 0 && <div className="yt-empty"><Youtube size={28} /><h3>No recent uploads yet</h3><p>When your selected channels publish new videos, they’ll appear here.</p></div>}
-        {!loading && !error && channels.length === 0 && <div className="yt-empty"><Youtube size={28} /><h3>Nothing in your feed yet</h3><p>Add channels to turn this page into your own video feed.</p><Link to="/youtube/search" className="yt-button yt-button-primary">Search YouTube <ArrowUpRight size={15} /></Link></div>}
         {!loading && !error && videos.length > 0 && <div className="yt-video-grid">
           {videos.map(video => <article className="yt-video-card" key={video.videoId}>
             <a className="yt-video-thumb" href={video.url} target="_blank" rel="noopener noreferrer" aria-label={'Watch ' + video.title + ' on YouTube'}>

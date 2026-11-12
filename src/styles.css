@@ -1336,3 +1336,5 @@ img { display: block; }
   .yt-page-heading { gap: 10px; }
   .yt-page-heading .yt-button { padding: 0 10px; font-size: 11px; }
 }
+
+.yt-heading-actions { display: flex; align-items: center; gap: 9px; }
