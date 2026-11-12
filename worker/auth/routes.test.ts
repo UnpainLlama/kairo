@@ -43,16 +43,17 @@ function mockDb(options: { existingEmail?: boolean } = {}) {
 
 function context(body: unknown, db: D1Database) {
   const headers = new Map<string, string>();
+  const requestHeaders: Record<string, string> = {
+    origin: 'https://kairo-anime-platform-staging.unpainllama.workers.dev',
+    'user-agent': 'Kairo auth tests',
+    'cf-connecting-ip': '192.0.2.10',
+  };
   return {
     env: { DB: db },
     req: {
       url: 'https://kairo-anime-platform-staging.unpainllama.workers.dev/api/v1/auth/register',
       json: async () => body,
-      header: (name: string) => ({
-        origin: 'https://kairo-anime-platform-staging.unpainllama.workers.dev',
-        'user-agent': 'Kairo auth tests',
-        'cf-connecting-ip': '192.0.2.10',
-      }[name.toLowerCase()]),
+      header: (name: string) => requestHeaders[name.toLowerCase()],
     },
     header: (name: string, value: string) => headers.set(name.toLowerCase(), value),
     json: (payload: unknown, status = 200) => new Response(JSON.stringify(payload), {
