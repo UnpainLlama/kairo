@@ -4,7 +4,7 @@ import { ArrowLeft, ListVideo, Play, Search, RefreshCw, ExternalLink } from 'luc
 import { ErrorState, LoadingState } from '../components/catalog';
 import KairoMediaPlayer, { type KairoPlaybackSource } from '../components/KairoMediaPlayer';
 import { useApi } from '../lib/useApi';
-import { historyPausedStorageKey, readWatchHistory, watchProgressIdentity, watchProgressStorageKey, writeWatchHistory } from '../lib/accountStorage';
+import { accountPreferenceStorageKey, historyPausedStorageKey, readWatchHistory, watchProgressIdentity, watchProgressStorageKey, writeWatchHistory } from '../lib/accountStorage';
 import { dateLabel, durationLabel, episodeNumberLabel, safeImageUrl, type AnimeDetails, type Episode, type EpisodeServer, type ItemList } from '../lib/catalog';
 
 type ServerList = ItemList<EpisodeServer>;
@@ -19,8 +19,12 @@ export default function WatchPage() {
   const [episodeFilter, setEpisodeFilter] = useState('');
   const [episodePage, setEpisodePage] = useState(1);
   const [episodePages, setEpisodePages] = useState<Episode[]>([]);
-  const [autoNext, setAutoNext] = useState(() => { try { return localStorage.getItem('kairo-auto-next') !== 'false'; } catch { return true; } });
+  const [autoNext, setAutoNext] = useState(true);
   useEffect(() => setSelectedServerId(null), [slug, rawEpisode]);
+  useEffect(() => {
+    try { setAutoNext(localStorage.getItem(accountPreferenceStorageKey(accountId, 'auto-next')) !== 'false'); }
+    catch { setAutoNext(true); }
+  }, [accountId]);
   useEffect(() => {
     let active = true;
     const refreshAccount = async () => {
@@ -111,7 +115,7 @@ export default function WatchPage() {
       return duration > 0 && Number.isFinite(seconds) ? Math.max(0, Math.min(100, seconds / duration * 100)) : 0;
     } catch { return 0; }
   };
-  const toggleAutoNext = () => setAutoNext((value) => { const nextValue = !value; try { localStorage.setItem('kairo-auto-next', String(nextValue)); } catch { /* storage may be unavailable */ } return nextValue; });
+  const toggleAutoNext = () => setAutoNext((value) => { const nextValue = !value; try { localStorage.setItem(accountPreferenceStorageKey(accountId, 'auto-next'), String(nextValue)); } catch { /* storage may be unavailable */ } return nextValue; });
 
   return (
     <div className="kc-watch">
