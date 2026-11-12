@@ -4,6 +4,7 @@ import { ArrowLeft, ListVideo, Play, Search, RefreshCw, ExternalLink } from 'luc
 import { ErrorState, LoadingState } from '../components/catalog';
 import KairoMediaPlayer, { type KairoPlaybackSource } from '../components/KairoMediaPlayer';
 import { useApi } from '../lib/useApi';
+import { readWatchHistory, watchProgressIdentity, watchProgressStorageKey, writeWatchHistory } from '../lib/accountStorage';
 import { dateLabel, durationLabel, episodeNumberLabel, safeImageUrl, type AnimeDetails, type Episode, type EpisodeServer, type ItemList } from '../lib/catalog';
 
 type ServerList = ItemList<EpisodeServer>;
@@ -12,12 +13,32 @@ type PlaybackResponse = { source: KairoPlaybackSource; urlValidated: boolean };
 export default function WatchPage() {
   const { slug = '', episodeNumber: rawEpisode = '1' } = useParams();
   const key = encodeURIComponent(slug);
+  const [accountId, setAccountId] = useState<string | null>(null);
+  const [accountResolved, setAccountResolved] = useState(false);
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
   const [episodeFilter, setEpisodeFilter] = useState('');
   const [episodePage, setEpisodePage] = useState(1);
   const [episodePages, setEpisodePages] = useState<Episode[]>([]);
   const [autoNext, setAutoNext] = useState(() => { try { return localStorage.getItem('kairo-auto-next') !== 'false'; } catch { return true; } });
   useEffect(() => setSelectedServerId(null), [slug, rawEpisode]);
+  useEffect(() => {
+    let active = true;
+    const refreshAccount = async () => {
+      setAccountResolved(false);
+      try {
+        const response = await fetch('/api/v1/me', { credentials: 'same-origin' });
+        const payload = response.ok ? await response.json() : null;
+        if (active) setAccountId(typeof payload?.data?.user?.id === 'string' ? payload.data.user.id : null);
+      } catch {
+        if (active) setAccountId(null);
+      } finally {
+        if (active) setAccountResolved(true);
+      }
+    };
+    void refreshAccount();
+    window.addEventListener('kairo:auth-change', refreshAccount);
+    return () => { active = false; window.removeEventListener('kairo:auth-change', refreshAccount); };
+  }, []);
   const parsedEpisode = Number(rawEpisode);
   const validEpisode = Number.isInteger(parsedEpisode) && parsedEpisode >= 1 && parsedEpisode <= 100000;
   const details = useApi<AnimeDetails>(`/anime/${key}`);
@@ -39,36 +60,34 @@ export default function WatchPage() {
   const selectedServer = serverItems.find((server) => server.id === selectedServerId) ?? serverItems[0] ?? null;
   useEffect(() => {
     if (!selectedServer) return;
-    const syncedKey = `kairo-progress:${slug}:${parsedEpisode}:sync`;
-    const serverKey = `kairo-progress:${slug}:${parsedEpisode}:${selectedServer.id}`;
+    const syncedKey = watchProgressStorageKey(accountId, slug, parsedEpisode, 'sync');
+    const serverKey = watchProgressStorageKey(accountId, slug, parsedEpisode, selectedServer.id);
     try {
       if (!localStorage.getItem(serverKey)) {
         const saved = localStorage.getItem(syncedKey);
         if (saved) localStorage.setItem(serverKey, saved);
       }
     } catch { /* browser storage may be unavailable */ }
-  }, [slug, parsedEpisode, selectedServer?.id]);
+  }, [accountId, slug, parsedEpisode, selectedServer?.id]);
   const playbackPath = selectedServer ? `/anime/${key}/episodes/${parsedEpisode}/servers/${encodeURIComponent(selectedServer.id)}/playback` : null;
   const playback = useApi<PlaybackResponse>(playbackPath);
 
   useEffect(() => {
-    if (details.status !== 'ok' || episodes.status !== 'ok' || !validEpisode) return;
+    if (!accountResolved || details.status !== 'ok' || episodes.status !== 'ok' || !validEpisode) return;
     try {
       if (localStorage.getItem('kairo-history-paused') === 'true') return;
       const anime = details.data;
       const episode = episodePages.find((item) => item.episodeNumber === parsedEpisode);
       if (!episode) return;
       const progressKey = `kairo-progress:${slug}:${parsedEpisode}:${selectedServer?.id ?? ''}`;
-      const raw = localStorage.getItem('kairo-watch-history') || '[]';
-      const previous = JSON.parse(raw);
-      const items = Array.isArray(previous) ? previous : [];
+      const items = readWatchHistory<{ slug?: string; episodeNumber?: number } & Record<string, unknown>>(accountId);
       const entry = { slug, title: anime.title, posterUrl: anime.posterUrl, episodeNumber: parsedEpisode,
-        episodeTitle: episode?.title || '', progressKey, durationSeconds: episode?.durationSeconds ?? null, updatedAt: Date.now() };
-      const next = [entry, ...items.filter((item: { slug?: string; episodeNumber?: number }) => item?.slug !== slug || item?.episodeNumber !== parsedEpisode)].slice(0, 100);
-      localStorage.setItem('kairo-watch-history', JSON.stringify(next));
+        episodeTitle: episode?.title || '', progressKey: watchProgressStorageKey(accountId, slug, parsedEpisode, selectedServer?.id ?? ''), durationSeconds: episode?.durationSeconds ?? null, updatedAt: Date.now() };
+      const next = [entry, ...items.filter((item) => item?.slug !== slug || item?.episodeNumber !== parsedEpisode)].slice(0, 100);
+      writeWatchHistory(accountId, next);
       window.dispatchEvent(new Event('kairo:history-change'));
     } catch { /* browser storage may be disabled or full */ }
-  }, [details.status, episodes.status, episodePages, slug, parsedEpisode, selectedServer?.id, validEpisode]);
+  }, [accountResolved, accountId, details.status, episodes.status, episodePages, slug, parsedEpisode, selectedServer?.id, validEpisode]);
 
   if (!validEpisode) return <div className="kc-watch-error"><h1>Invalid episode</h1><p>Choose an episode from the anime page.</p><Link className="kc-btn kc-btn-dark" to={`/anime/${key}`}>Back to anime</Link></div>;
   if (details.status === 'loading' || (episodes.status === 'loading' && episodePages.length === 0)) return <LoadingState label="Loading episode" />;
@@ -87,7 +106,7 @@ export default function WatchPage() {
   const visibleEpisodes = ordered.filter((episode) => `${episode.title ?? ''} ${episode.episodeNumber}`.toLowerCase().includes(episodeFilter.toLowerCase()));
   const progressFor = (episodeNumber: number) => {
     try {
-      const raw = localStorage.getItem(`kairo-progress:${slug}:${episodeNumber}:${selectedServer?.id ?? ''}`);
+      const raw = localStorage.getItem(watchProgressStorageKey(accountId, slug, episodeNumber, selectedServer?.id ?? ''));
       const seconds = raw ? Number(raw) : 0;
       const duration = ordered.find((item) => item.episodeNumber === episodeNumber)?.durationSeconds ?? 0;
       return duration > 0 && Number.isFinite(seconds) ? Math.max(0, Math.min(100, seconds / duration * 100)) : 0;
@@ -106,7 +125,7 @@ export default function WatchPage() {
               <KairoMediaPlayer
                 source={playback.data.source}
                 title={`${anime.title} · Episode ${parsedEpisode}`}
-                progressKey={`${slug}:${parsedEpisode}:${selectedServer?.id ?? ''}`}
+                progressKey={watchProgressIdentity(accountId, slug, parsedEpisode, selectedServer?.id ?? '')}
                 introEnd={(current as (Episode & { introEndSeconds?: number | null }) | undefined)?.introEndSeconds}
                 outroStart={(current as (Episode & { outroStartSeconds?: number | null }) | undefined)?.outroStartSeconds}
                 nextUrl={next && autoNext ? `/watch/${key}/${next.episodeNumber}` : null}
