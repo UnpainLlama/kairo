@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Bell, CalendarDays, ChevronRight, Compass, Film, Flame, History,
-  Home, LogIn, Menu, Plus, Search, Settings, Tv, UserRound, Users, Youtube,
+  Bell, CalendarDays, ChevronRight, Compass, Film, Flame, History, ListVideo,
+  LogIn, Menu, PlayCircle, Search, Settings, Tv, UserRound, Users, Youtube,
   type LucideIcon,
 } from 'lucide-react';
 import SearchBar from './components/SearchBar';
@@ -41,9 +41,9 @@ const menuItems: NavItem[] = [
 ];
 
 const youtubeNavItems: NavItem[] = [
-  { to: '/youtube', label: 'Home', icon: Home, end: true },
+  { to: '/youtube', label: 'Home', icon: PlayCircle, end: true },
   { to: '/youtube/search', label: 'Discover', icon: Compass },
-  { to: '/youtube/channels', label: 'Channels', icon: Users },
+  { to: '/youtube/channels', label: 'Channels', icon: ListVideo },
 ];
 
 const mobileNavItems: NavItem[] = [
