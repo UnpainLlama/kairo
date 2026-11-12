@@ -120,8 +120,8 @@ Validate finite non-negative numbers, enforce sensible duration/position bounds,
 - Channel search, adding channels, and loading uploads require a valid Kairo session and a connected YouTube account. Listing or removing saved Kairo channels requires only a valid Kairo session.
 - Kairo's channel list is stored separately in `youtube_feed_channels`; adding a channel does not subscribe the user to it on YouTube and does not change their YouTube subscriptions.
 - Uses the official YouTube Data API with the server-held, encrypted OAuth refresh token. Access tokens are refreshed server-side and never returned to the browser.
-- The initial implementation allows up to 20 saved channels and fetches up to four recent uploads per channel per feed request. Feed responses use `Cache-Control: no-store`; individual YouTube videos continue to open on YouTube.
-- Errors include `AUTH_REQUIRED`, `YOUTUBE_NOT_CONNECTED`, `YOUTUBE_REAUTH_REQUIRED`, `YOUTUBE_QUOTA_EXCEEDED`, `YOUTUBE_CHANNEL_LIMIT`, and `YOUTUBE_PROVIDER_UNAVAILABLE`.
+- The initial implementation allows up to 20 saved channels and fetches up to four recent uploads per channel per feed request. Channel searches are limited to five per user per 15 minutes and feed refreshes to ten per user per 15 minutes. Feed responses use `Cache-Control: no-store`; individual YouTube videos continue to open on YouTube.
+- Errors include `AUTH_REQUIRED`, `YOUTUBE_NOT_CONNECTED`, `YOUTUBE_REAUTH_REQUIRED`, `YOUTUBE_QUOTA_EXCEEDED`, `YOUTUBE_CHANNEL_LIMIT`, `RATE_LIMITED`, and `YOUTUBE_PROVIDER_UNAVAILABLE`.
 - YouTube playback remains on YouTube through the official watch URL; Kairo does not proxy video streams.
 
 ## 4. Playback routes
