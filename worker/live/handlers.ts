@@ -29,6 +29,14 @@ const pagedMeta = (p: Paged, page: number): Record<string, unknown> => ({ page, 
 const cards = (titles: Awaited<ReturnType<typeof svc.withArtwork>>) => titles.map((t) => t.card);
 const artworkMeta = (deps: svc.Deps): Record<string, unknown> => ({ artworkProvider: deps.artworkProvider?.id ?? null });
 
+const REQUIRED_LIVE_TABLES = [
+  'anime', 'episodes', 'user_profiles', 'user_preferences', 'user_library',
+  'watch_progress', 'viewing_history', 'data_sources', 'anime_provider_ids',
+  'anime_relations', 'anime_field_sources', 'auth_identities', 'password_credentials',
+  'sessions', 'email_verification_tokens', 'password_reset_tokens', 'provider_connections',
+  'auth_rate_limits', 'google_oauth_states', 'user_watch_history', 'youtube_oauth_states',
+] as const;
+
 export function currentSeason(d: Date): { season: 'winter' | 'spring' | 'summer' | 'fall'; year: number } {
   const m = d.getUTCMonth();
   return { season: m <= 2 ? 'winter' : m <= 5 ? 'spring' : m <= 8 ? 'summer' : 'fall', year: d.getUTCFullYear() };
@@ -256,10 +264,30 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
       });
     },
 
-    // Readiness does not call the providers: that would spend their rate limits on every probe. It reports configuration only.
+    // Readiness never calls external providers, but it must verify D1 because account and watch-history routes use it in live mode.
     async ready(req) {
       const deps = depsFor(req);
-      return okBody(req, { status: 'ready', catalogSource: 'live', database: 'not used', cache: req.env.METADATA_CACHE ? 'kv' : 'none', providers: deps.sources.map((s) => s.id), episodeProviders: deps.episodeProviders.map((p) => p.id), artworkProvider: deps.artworkProvider?.id ?? null, unknownEpisodeProviders: deps.unknownEpisodeProviders });
+      try {
+        if (!req.env.DB) throw new Error('D1 binding is unavailable');
+        await req.env.DB.prepare('SELECT 1 AS ok').first<{ ok: number }>();
+        const rows = await req.env.DB.prepare(
+          `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (${REQUIRED_LIVE_TABLES.map((name) => `'${name}'`).join(', ')})`
+        ).all<{ name: string }>();
+        const present = new Set((rows.results ?? []).map((row) => row.name));
+        const missing = REQUIRED_LIVE_TABLES.filter((name) => !present.has(name));
+        if (missing.length) {
+          console.error(JSON.stringify({ event: 'live_readiness_schema_missing', requestId: req.requestId, missingTables: missing }));
+          return failBody(req, 503, 'DATABASE_SCHEMA_NOT_READY', 'The account database schema is incomplete. Apply all Kairo migrations.');
+        }
+        // 0003 also extends the original profile table; verify those columns, not just its existence.
+        await req.env.DB.prepare(
+          'SELECT id, identity_subject, display_name, email, email_verified_at, account_status, role FROM user_profiles LIMIT 0'
+        ).all();
+        return okBody(req, { status: 'ready', catalogSource: 'live', database: 'ok', schema: 'ok', cache: req.env.METADATA_CACHE ? 'kv' : 'none', providers: deps.sources.map((s) => s.id), episodeProviders: deps.episodeProviders.map((p) => p.id), artworkProvider: deps.artworkProvider?.id ?? null, unknownEpisodeProviders: deps.unknownEpisodeProviders });
+      } catch (error) {
+        console.error(JSON.stringify({ event: 'live_readiness_failed', requestId: req.requestId, message: error instanceof Error ? error.message : 'unknown' }));
+        return failBody(req, 503, 'DATABASE_UNAVAILABLE', 'The account database is unavailable or its schema is incomplete.');
+      }
     },
   };
 }
