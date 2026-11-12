@@ -9,6 +9,7 @@ function routeFor(register: (app: any) => void, path: string): RouteHandler {
   register({
     get: (route: string, handler: RouteHandler) => routes.set(route, handler),
     post: () => {},
+    delete: () => {},
   });
   const handler = routes.get(path);
   if (!handler) throw new Error(`Route not registered: ${path}`);
@@ -30,6 +31,7 @@ function makeContext(options: {
     req: {
       url: options.url,
       header: (name: string) => name.toLowerCase() === 'cookie' ? options.cookie : undefined,
+      query: (name: string) => new URL(options.url).searchParams.get(name) ?? undefined,
     },
     redirect: (url: string, status = 302) => {
       redirectedTo = url;
@@ -54,8 +56,9 @@ function makeContext(options: {
   };
 }
 
-function mockDb(options: { authenticated?: boolean; recentSession?: boolean; failYoutubeStateInsert?: boolean } = {}): D1Database {
+function mockDb(options: { authenticated?: boolean; recentSession?: boolean; failYoutubeStateInsert?: boolean; youtubeRateLimitAttempts?: number; youtubeGlobalRateLimitAttempts?: number } = {}): D1Database {
   const authenticated = options.authenticated ?? true;
+  let youtubeRateLimitReads = 0;
   const db = {
     prepare: (sql: string) => ({
       bind: (..._values: unknown[]) => ({
@@ -66,6 +69,10 @@ function mockDb(options: { authenticated?: boolean; recentSession?: boolean; fai
           return { success: true, meta: { changes: 1 } };
         },
         first: async () => {
+          if (sql.includes('INSERT INTO auth_rate_limits')) {
+            youtubeRateLimitReads += 1;
+            return { attempts: youtubeRateLimitReads === 1 ? (options.youtubeRateLimitAttempts ?? 1) : (options.youtubeGlobalRateLimitAttempts ?? 1) };
+          }
           if (sql.includes('FROM sessions s') && sql.includes('INNER JOIN user_profiles')) {
             return authenticated ? {
               userId: 'user-123',
@@ -372,6 +379,112 @@ describe('YouTube OAuth configuration diagnostics', () => {
       expect(logged).toContain('test-request-id');
     } finally {
       diagnostic.mockRestore();
+    }
+  });
+});
+
+
+describe('Kairo-curated YouTube channel access controls', () => {
+  it('requires an authenticated Kairo session', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/channels/search');
+    const ctx = makeContext({
+      url: `${canonicalOrigin}/api/v1/youtube/channels/search?q=creator`,
+      cookie: `kairo_session=${'a'.repeat(43)}`,
+      env: { DB: mockDb({ authenticated: false }), YOUTUBE_TOKEN_ENCRYPTION_KEY: 'A'.repeat(43) },
+    });
+    const response = await handler(ctx.context);
+    expect(response.status).toBe(401);
+    expect(ctx.jsonBody).toMatchObject({ error: { code: 'AUTH_REQUIRED' } });
+    expect(ctx.headers.get('cache-control')).toEqual(['no-store']);
+  });
+
+  it('requires a YouTube connection without calling the provider API', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/channels/search');
+    const providerFetch = vi.fn();
+    vi.stubGlobal('fetch', providerFetch);
+    try {
+      const ctx = makeContext({
+        url: `${canonicalOrigin}/api/v1/youtube/channels/search?q=creator`,
+        cookie: `kairo_session=${'a'.repeat(43)}`,
+        env: {
+          DB: mockDb(),
+          GOOGLE_CLIENT_ID: 'google-client-id',
+          GOOGLE_CLIENT_SECRET: 'google-client-secret',
+          YOUTUBE_TOKEN_ENCRYPTION_KEY: 'A'.repeat(43),
+        },
+      });
+      const response = await handler(ctx.context);
+      expect(response.status).toBe(403);
+      expect(ctx.jsonBody).toMatchObject({ error: { code: 'YOUTUBE_NOT_CONNECTED' } });
+      expect(providerFetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+
+describe('Kairo-curated YouTube API quota protection', () => {
+  it('throttles repeated channel searches before calling YouTube', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/channels/search');
+    const providerFetch = vi.fn();
+    vi.stubGlobal('fetch', providerFetch);
+    try {
+      const ctx = makeContext({
+        url: `${canonicalOrigin}/api/v1/youtube/channels/search?q=creators`,
+        cookie: `kairo_session=${'a'.repeat(43)}`,
+        env: {
+          DB: mockDb({ youtubeRateLimitAttempts: 6 }),
+          GOOGLE_CLIENT_ID: 'google-client-id',
+          GOOGLE_CLIENT_SECRET: 'google-client-secret',
+          YOUTUBE_TOKEN_ENCRYPTION_KEY: 'A'.repeat(43),
+        },
+      });
+      const response = await handler(ctx.context);
+      expect(response.status).toBe(429);
+      expect(ctx.jsonBody).toMatchObject({ error: { code: 'RATE_LIMITED' } });
+      expect(providerFetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('throttles repeated feed refreshes', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/feed');
+    const ctx = makeContext({
+      url: `${canonicalOrigin}/api/v1/youtube/feed`,
+      cookie: `kairo_session=${'a'.repeat(43)}`,
+      env: { DB: mockDb({ youtubeRateLimitAttempts: 11 }) },
+    });
+    const response = await handler(ctx.context);
+    expect(response.status).toBe(429);
+    expect(ctx.jsonBody).toMatchObject({ error: { code: 'RATE_LIMITED' } });
+  });
+});
+
+
+describe('Kairo YouTube shared quota budgets', () => {
+  it('reserves headroom under the project-wide daily channel-search allowance', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/channels/search');
+    const providerFetch = vi.fn();
+    vi.stubGlobal('fetch', providerFetch);
+    try {
+      const ctx = makeContext({
+        url: `${canonicalOrigin}/api/v1/youtube/channels/search?q=creators`,
+        cookie: `kairo_session=${'a'.repeat(43)}`,
+        env: {
+          DB: mockDb({ youtubeGlobalRateLimitAttempts: 81 }),
+          GOOGLE_CLIENT_ID: 'google-client-id',
+          GOOGLE_CLIENT_SECRET: 'google-client-secret',
+          YOUTUBE_TOKEN_ENCRYPTION_KEY: 'A'.repeat(43),
+        },
+      });
+      const response = await handler(ctx.context);
+      expect(response.status).toBe(429);
+      expect(ctx.jsonBody).toMatchObject({ error: { code: 'RATE_LIMITED' } });
+      expect(providerFetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 });
