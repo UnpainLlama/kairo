@@ -129,7 +129,7 @@ export default function YouTubeFeedPage() {
         <div className="yt-section-heading"><div><h2>Your channels</h2><p>{channels.length} {channels.length === 1 ? 'channel' : 'channels'} in your feed</p></div><Link to="/youtube/channels">Manage <ArrowUpRight size={14} /></Link></div>
         {channels.length > 0 ? (
           <div className="yt-channel-bubbles">
-            {channels.slice(0, 12).map(channel => <Link to="/youtube/channels" className="yt-channel-bubble" key={channel.channelId} title={channel.title}>
+            {channels.map(channel => <Link to="/youtube/channels" className="yt-channel-bubble" key={channel.channelId} title={channel.title}>
               {channel.thumbnailUrl ? <img src={channel.thumbnailUrl} alt="" loading="lazy" /> : <span>{channel.title.slice(0, 1).toUpperCase()}</span>}
               <small>{channel.title}</small>
             </Link>)}
