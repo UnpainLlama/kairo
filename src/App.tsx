@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import SearchBar from './components/SearchBar';
 import HomePage from './pages/HomePage';
+import YouTubeFeedPage from './pages/YouTubeFeedPage';
 import SearchPage from './pages/SearchPage';
 import BrowsePage from './pages/BrowsePage';
 import AnimePage from './pages/AnimePage';
@@ -137,10 +138,10 @@ export default function App() {
                 <div className="kc-menu-section-label">Media</div>
                 <div className="kc-menu-grid">
                   {menuItems.slice(0, 4).map((item) => <MenuLink key={item.label} {...item} onNavigate={closeMenu} />)}
-                  <button type="button" className="kc-menu-tile kc-menu-disabled" disabled title="YouTube browsing is not available yet">
+                  <NavLink to="/youtube" className={({ isActive }) => `kc-menu-tile${isActive ? ' active' : ''}`} onClick={closeMenu}>
                     <Youtube size={17} strokeWidth={1.8} aria-hidden="true" />
-                    <span>YouTube</span><small>Soon</small>
-                  </button>
+                    <span>YouTube</span><ChevronRight size={13} className="kc-menu-chevron" aria-hidden="true" />
+                  </NavLink>
                 </div>
 
                 <div className="kc-menu-section-label">Navigate</div>
@@ -172,6 +173,7 @@ export default function App() {
           <Route path="/register" element={<AuthPage mode="register" />} />
           <Route path="/verify-email" element={<AuthPage mode="register" />} />
           <Route path="/" element={<HomePage />} />
+          <Route path="/youtube" element={<YouTubeFeedPage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/browse" element={<Navigate to="/browse/anime" replace />} />
           <Route path="/browse/:category" element={<BrowsePage />} />
