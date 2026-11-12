@@ -39,7 +39,7 @@ function deps(handler: (url: string, init?: RequestInit) => Promise<Response>, o
     cache: new MemoryCache(), breaker: new CircuitBreaker(), now: Date.now, ...over,
   };
 }
-const req = (query: Record<string, string> = {}, params: Record<string, string> = {}): LiveRequest => ({ query, param: (n) => params[n], requestId: 'r1', env: {} });
+const req = (query: Record<string, string> = {}, params: Record<string, string> = {}, env: LiveRequest['env'] = {}): LiveRequest => ({ query, param: (n) => params[n], requestId: 'r1', env });
 const call = (d: Deps, name: keyof ReturnType<typeof createLiveHandlers>, r: LiveRequest) => createLiveHandlers(async () => json({}), () => d)[name](r);
 const isAni = (url: string) => url === 'https://graphql.anilist.co';
 
@@ -381,11 +381,40 @@ describe('service and handlers', () => {
     expect(response.body).toMatchObject({ data: { items: [{ id: 'a7-e1', episodeNumber: 1, thumbnailUrl: 'https://image.tmdb.org/t/p/w780/episode-1.jpg' }] } });
   });
 
-  it('lists providers and reports ready without calling them', async () => {
+  it('lists providers and reports readiness only when D1 and the complete schema are available', async () => {
     let calls = 0;
     const d = deps(async () => { calls++; return json({}); });
     expect(await call(d, 'providers', req())).toMatchObject({ body: { data: { items: [{ id: 'anilist', priority: 1, capabilities: { episodes: false } }, { id: 'jikan', priority: 2, capabilities: { episodes: false } }], episodeProviders: [{ id: 'jikan', priority: 1, termsVerified: false, capabilities: { episodes: true } }] } } });
-    expect(await call(d, 'ready', req())).toMatchObject({ body: { data: { status: 'ready', providers: ['anilist', 'jikan'], episodeProviders: ['jikan'] } } });
+
+    const schemaTables = [
+      'anime', 'episodes', 'user_profiles', 'user_preferences', 'user_library',
+      'watch_progress', 'viewing_history', 'data_sources', 'anime_provider_ids',
+      'anime_relations', 'anime_field_sources', 'auth_identities', 'password_credentials',
+      'sessions', 'email_verification_tokens', 'password_reset_tokens', 'provider_connections',
+      'auth_rate_limits', 'google_oauth_states', 'user_watch_history', 'youtube_oauth_states',
+    ];
+    const readyDb = {
+      prepare: () => ({
+        first: async () => ({ ok: 1 }),
+        all: async () => ({ results: schemaTables.map((name) => ({ name })) }),
+      }),
+    } as unknown as NonNullable<LiveRequest['env']['DB']>;
+    expect(await call(d, 'ready', req({}, {}, { DB: readyDb }))).toMatchObject({
+      status: 200,
+      body: { data: { status: 'ready', database: 'ok', schema: 'ok', providers: ['anilist', 'jikan'], episodeProviders: ['jikan'] } },
+    });
+
+    const incompleteDb = {
+      prepare: () => ({
+        first: async () => ({ ok: 1 }),
+        all: async () => ({ results: schemaTables.filter((name) => name !== 'youtube_oauth_states').map((name) => ({ name })) }),
+      }),
+    } as unknown as NonNullable<LiveRequest['env']['DB']>;
+    expect(await call(d, 'ready', req({}, {}, { DB: incompleteDb }))).toMatchObject({
+      status: 503,
+      body: { success: false, error: { code: 'DATABASE_SCHEMA_NOT_READY' } },
+    });
+    expect(await call(d, 'ready', req())).toMatchObject({ status: 503 });
     expect(calls).toBe(0);
   });
 });
