@@ -276,7 +276,7 @@ const YOUTUBE_FEED_CURSOR_TTL_MS = 60 * 60 * 1000;
 function parseYouTubeFeedCursorState(raw: string): YouTubeFeedCursorState | null {
   try {
     const value = JSON.parse(raw) as Partial<YouTubeFeedCursorState>;
-    if (!Array.isArray(value.channelIds) || value.channelIds.length > 20_000) return null;
+    if (!Array.isArray(value.channelIds)) return null;
     if (!value.channelIds.every((id) => typeof id === 'string' && /^[A-Za-z0-9_-]{6,64}$/.test(id))) return null;
     if (!Number.isInteger(value.offset) || Number(value.offset) < 0 || Number(value.offset) > value.channelIds.length) return null;
     if (!Number.isInteger(value.olderOffset) || Number(value.olderOffset) < 0 || Number(value.olderOffset) > value.channelIds.length) return null;
