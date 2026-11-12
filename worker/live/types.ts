@@ -54,6 +54,13 @@ export interface CatalogSource {
 }
 
 export type LiveEnv = {
+  /** D1 is required for account, library and watch-history routes even when the public catalogue is live. */
+  DB?: {
+    prepare(sql: string): {
+      first<T = unknown>(): Promise<T | null>;
+      all<T = unknown>(): Promise<{ results?: T[] }>;
+    };
+  };
   APP_ENV?: string;
   /** "live" (default) serves the configured live providers; "db" keeps the original D1 routes. */
   CATALOG_SOURCE?: string;
