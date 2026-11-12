@@ -4,18 +4,19 @@ import { useApi } from '../lib/useApi';
 import type { CatalogCard, ItemList } from '../lib/catalog';
 import DiscoverPage from './DiscoverPage';
 import TrendingPage from './TrendingPage';
+import SeasonalPage from './SeasonalPage';
 import { NotFoundPage } from './StaticPages';
 
 // Plain list pages. Trending and Discover (/browse/anime) have their own layouts.
 const LISTS: Record<string, { title: string; blurb: string; endpoint: string }> = {
   latest: { title: 'Recently updated', blurb: 'Currently airing, newest first.', endpoint: '/catalog/latest' },
   movies: { title: 'Movies', blurb: 'Feature films, most popular first.', endpoint: '/catalog/browse?format=movie&sort=popularity' },
-  seasonal: { title: 'Seasonal', blurb: 'Titles from the current season.', endpoint: '/catalog/browse?season=current&sort=popularity' },
 };
 
 export default function BrowsePage() {
   const { category } = useParams();
   if (category === 'trending') return <TrendingPage />;
+  if (category === 'seasonal') return <SeasonalPage />;
   if (category === 'anime') return <DiscoverPage />;
   const list = category !== undefined && Object.prototype.hasOwnProperty.call(LISTS, category) ? LISTS[category] : null;
   if (!list) return <NotFoundPage />;

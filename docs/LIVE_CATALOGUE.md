@@ -19,11 +19,13 @@ Nothing is written to D1. Cache entries all expire (fresh 10 min to 24 h, stale 
 | Route | AniList (primary) | HiAnime (catalogue fallback / legacy IDs) | Jikan (catalogue + episode fallback) |
 |---|---|---|---|
 | featured / trending / latest | trending, trending, airing newest-first. Featured prefers banner art and rotates its page/order daily | popular, top-airing, recently-updated | top airing, this season, airing newest-first |
-| search and `/catalog/browse` | all filters | title search and category browsing; filters applied when upstream fields are present | q, type, status, genre (id looked up), date range; no "hiatus" |
+| search and `/catalog/browse` | all filters, including AniList trending-score sorting and season/year combinations | title search and category browsing; filters applied when upstream fields are present | q, type, status, genre (id looked up), date range; no "hiatus" |
 | genres | `GenreCollection` (no counts) | parses website genre links | `/genres/anime` (with counts) |
 | detail | yes, includes banner | yes, including old `h…` identifiers | yes, no banner |
 | related | relations + recommendations | related titles from the show page | recommendations |
 | episodes | no | independent episode provider can discover by title / provider URL | independent episode provider can use the MyAnimeList id |
+
+Trending and Seasonal are distinct views: Trending filters by season/year and sorts by AniList trending score; Seasonal uses the same filters sorted by popularity. Search also exposes a season filter.
 
 Adult content is excluded everywhere: `isAdult: false` on AniList, `sfw=true` plus a drop of `Rx` ratings on Jikan, and Hentai/Erotica removed from genre lists.
 
@@ -33,6 +35,12 @@ Adult content is excluded everywhere: `isAdult: false` on AniList, `sfw=true` pl
 Local development and staging use `LIVE_PROVIDERS=anilist,hianime,jikan`. AniList supplies canonical IDs and metadata first; HiAnime then Jikan provide fallbacks and keep existing HiAnime `h…` links resolvable. Production remains `anilist,jikan` until separately approved. Staging uses `EPISODE_PROVIDERS=hianime,jikan`; local development uses `jikan`. The separation is intentional: catalogue-provider selection does not change episode discovery or playback. HiAnime finds a title from its display/alternate titles or provider URL; Jikan uses the MyAnimeList ID mapped from an AniList record.
 
 Bind a KV namespace as `METADATA_CACHE` on workers.dev; without it the cache does not persist between requests and you will hit rate limits quickly. KV's free tier allows 1,000 writes a day, and each cache miss is one write.
+
+## Live spot-check log
+
+- **2026-11-11 — Jikan anime detail:** a direct request to `GET https://api.jikan.moe/v4/anime/1` returned the expected v4 `data` object. The observed fields used by `mapJikanAnime` included `mal_id`, `url`, `images.jpg.large_image_url`, `title`, `title_english`, `title_japanese`, `title_synonyms`, `type`, `episodes`, `status`, `aired.prop.from.year`, `score`, `synopsis`, `rating`, `season`, `year`, and `genres[].name`. This is a spot-check of one detail response, not validation of every endpoint or every nullable field.
+- The list/search, genre, seasonal archive, recommendations, and episode-list routes still need live checks against representative responses. Hand-written Vitest fixtures remain contract tests, not captured production payloads.
+- Jikan's and MyAnimeList's applicable terms/licensing obligations have **not** been approved for KAIRO. Keep Jikan marked as an unverified fallback until the owner reviews those terms; do not treat its open-source software license as a license for MyAnimeList data.
 
 ## Owner actions before launch
 - **First live check.** The adapters and tests use hand-written fixtures that follow the documented shapes. Call each route against the real APIs once and compare. In particular check Jikan's field names, the 25-item page limit, and the episodes page size.

@@ -46,6 +46,7 @@ Do not expose stack traces, SQL, provider tokens, internal hostnames, or secret 
 | GET | `/api/v1/catalog/trending?page=1&limit=24` | Trending titles |
 | GET | `/api/v1/catalog/latest?page=1&limit=24` | Recently updated titles |
 | GET | `/api/v1/catalog/search?q=...&page=1&limit=24` | Search |
+| GET | `/api/v1/catalog/browse?season=winter&year=2026&sort=popularity&page=1&limit=24` | Filter-only catalogue browse (genre, year, format, status, season, sort) |
 | GET | `/api/v1/catalog/genres` | Available genres |
 | GET | `/api/v1/anime/:id` | Anime details |
 | GET | `/api/v1/anime/:id/episodes?page=1&limit=50` | Episodes |
@@ -55,15 +56,15 @@ Search parameters:
 - `q`: trimmed string, 2–100 characters.
 - `page`: integer 1–500.
 - `limit`: integer 1–50; default 24.
-- Optional filters: `genre` (letters/numbers/space/`&`/`'`/`-`, up to 40 chars, matched case-insensitively against a title's genre list), `year` (1900–2100), `format` (`series|movie|ova|ona|special`), `status` (`airing|finished|upcoming|hiatus`), `season` (`winter|spring|summer|fall`), `sort` (`relevance|popularity|latest|rating`). Enum values are case-insensitive. Stored catalogue values must be normalised to these forms at ingestion for the filters to match.
-- `sort=rating` places titles without a rating last; it never invents a rating.
+- Optional filters: `genre` (letters/numbers/space/`&`/`'`/`-`, up to 40 chars, matched case-insensitively against a title's genre list), `year` (1900–2100), `format` (`series|movie|ova|ona|special`), `status` (`airing|finished|upcoming|hiatus`), `season` (`winter|spring|summer|fall`), `sort` (`relevance|popularity|trending|latest|rating`). Enum values are case-insensitive. Stored catalogue values must be normalised to these forms at ingestion for the filters to match.
+- `sort=rating` places titles without a rating last; it never invents a rating. In live mode, `sort=trending` uses AniList's `TRENDING_DESC`; fallback providers approximate it with their popularity ordering.
 - Reject invalid sort keys rather than interpolating them into SQL.
 
 ### Implementation notes (current behaviour)
 
-- `trending` ranks by the stored `popularity_score`; `latest` ranks by the catalogue row's `updated_at`. Both are only as meaningful as the ingested data.
-- `genres` returns `{ items: [{ name, count }] }`, derived from each title's stored genre list. Rows with malformed genre JSON are skipped.
-- `related` currently means *titles sharing genres* (ranked by overlap, then popularity). Each item also carries `sharedGenres`, and `meta.basis` is `"shared_genres"`. Provider-supplied relations (sequels, prequels) need a schema addition and are not implemented. Accepts `limit` (1–24, default 12).
+- In legacy `CATALOG_SOURCE=db` mode, `trending` ranks by stored `popularity_score` and `latest` by the catalogue row's `updated_at`. In live mode, AniList supplies trending-score ordering and currently airing titles newest-first; see docs/LIVE_CATALOGUE.md.
+- In DB mode, `genres` returns counts derived from stored title genre lists. In live mode, AniList returns its genre collection without counts.
+- Related-title behavior is provider-specific in live mode (AniList relations and recommendations, with provider fallbacks). The legacy DB route uses shared genres. Accepts `limit` (1–24, default 12).
 
 ## 2b. Provider routes (added; existing routes unchanged)
 

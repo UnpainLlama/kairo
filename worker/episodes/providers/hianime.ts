@@ -25,11 +25,13 @@ export function createHiAnimeEpisodeProvider(fetchImpl: FetchLike, baseUrl?: str
     if (fromUrl) {
       return fromUrl;
     }
-    const queries = [...new Set([lookup.title, ...lookup.alternateTitles].map((s) => s.trim()).filter(Boolean))].slice(0, 3);
+    const normalizeTitle = (value: string) => value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+    const aliases = new Set([lookup.title, ...lookup.alternateTitles].map((value) => normalizeTitle(value.trim())).filter(Boolean));
+    const queries = [...new Set([lookup.title, ...lookup.alternateTitles].map((s) => s.trim()).filter(Boolean))].slice(0, 4);
     for (const query of queries) {
       const response = await client.get(`/search?keyword=${encodeURIComponent(query)}&page=1`, '/', signal);
-      const normalized = query.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
-      const match = parseHiAnimeSearch(response.text, response.baseUrl).find((item) => item.title.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ') === normalized);
+      // A search response can use a different known English/romanized alias than the query we sent.
+      const match = parseHiAnimeSearch(response.text, response.baseUrl).find((item) => aliases.has(normalizeTitle(item.title)));
       if (match) return { slug: match.slug, numericId: match.id };
     }
     throw new ProviderError('not_found', 'HiAnime has no exact title match.');

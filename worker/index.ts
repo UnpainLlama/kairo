@@ -1,7 +1,10 @@
 /// <reference types="@cloudflare/workers-types" />
 import { Hono, type Context, type Next } from 'hono';
+import { Innertube } from 'youtubei.js';
 import { cors } from 'hono/cors';
 import { boundedInt, parseId, parsePagination, parseSearchParams } from './lib/validation';
+import { clearSessionCookie, findSessionUser, revokeSession } from './auth/session';
+import { registerAuthRoutes } from './auth/routes';
 import { GENRES_SQL, buildListQuery, buildRelatedQuery, buildSearchQuery } from './repositories/catalog';
 import { BASE_RECORD_SQL, INSERT_PROVIDER_ID_SQL, PROVIDER_IDS_SQL } from './repositories/providerIds';
 import { buildRegistry, createCache, resolveUnified, sharedBreaker, toBaseRecord, type BaseRow } from './metadata/service';
@@ -11,12 +14,19 @@ import type { LiveRequest, LiveResult } from './live/types';
 interface Bindings {
   DB: D1Database;
   APP_ENV?: string;
+  APP_BASE_URL?: string;
+  RESEND_API_KEY?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  /** Base64url-encoded 32-byte AES-GCM key used only for YouTube OAuth token encryption. */
+  YOUTUBE_TOKEN_ENCRYPTION_KEY?: string;
+  AUTH_EMAIL_FROM?: string;
   ALLOWED_ORIGIN?: string;
   /** Comma-separated metadata provider ids to enable, e.g. "anilist". Empty = none. */
   METADATA_PROVIDERS?: string;
   /** Optional Workers KV namespace used as the provider-response cache (recommended on workers.dev). */
   METADATA_CACHE?: KVNamespace;
-  /** "live" (default): serve the catalogue from configured live providers, no database. "db": the original D1 routes. */
+  /** "live" (default): serve the public catalogue from live providers; account, library and history routes still use D1. "db": use the original D1 catalogue routes. */
   CATALOG_SOURCE?: string;
   /** Catalogue-provider priority, comma-separated. */
   LIVE_PROVIDERS?: string;
@@ -26,6 +36,8 @@ interface Bindings {
   HIANIME_BASE_URL?: string;
   /** TMDB API Read Access Token stored as a Cloudflare Worker secret. */
   TMDB_ACCESS_TOKEN?: string;
+  /** Staging-only bearer secret for the experimental YouTube cookie-feed endpoint. */
+  YOUTUBE_STAGING_TOKEN?: string;
 }
 
 type Variables = { requestId: string };
@@ -57,6 +69,8 @@ function ok<T>(c: Context<{ Bindings: Bindings; Variables: Variables }>, data: T
 function fail(c: Context<{ Bindings: Bindings; Variables: Variables }>, status: 400 | 401 | 403 | 404 | 429 | 500 | 503, code: string, message: string) {
   return c.json({ success: false, error: { code, message }, meta: { requestId: c.get('requestId') } }, status);
 }
+
+registerAuthRoutes(app);
 
 app.get('/api/health', (c) => ok(c, { status: 'ok', service: 'kairo-api', environment: c.env.APP_ENV ?? 'unknown' }));
 
@@ -258,8 +272,213 @@ app.get('/api/v1/anime/:id/metadata', async (c) => {
   }
 });
 
-app.get('/api/v1/me', (c) => fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your profile.'));
-app.get('/api/v1/me/library', (c) => fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your library.'));
+
+// Experimental YouTube.js subscriptions-feed probe. Staging only; cookie is request-scoped and never persisted or logged.
+app.post('/api/staging/youtube/feed', async (c) => {
+  if (c.env.APP_ENV !== 'staging') return fail(c, 404, 'RESOURCE_NOT_FOUND', 'The requested API route was not found.');
+  if (!c.env.YOUTUBE_STAGING_TOKEN) return fail(c, 503, 'FEATURE_NOT_CONFIGURED', 'The staging YouTube test is not configured.');
+  const origin = c.req.header('Origin');
+  if (origin && origin !== new URL(c.req.url).origin) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This test can only be used from the Kairo staging site.');
+  const authorization = c.req.header('Authorization') ?? '';
+  const suppliedToken = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+  const expected = c.env.YOUTUBE_STAGING_TOKEN;
+  const encoder = new TextEncoder();
+  const [providedHash, expectedHash] = await Promise.all([
+    crypto.subtle.digest('SHA-256', encoder.encode(suppliedToken)),
+    crypto.subtle.digest('SHA-256', encoder.encode(expected)),
+  ]);
+  const a = new Uint8Array(providedHash);
+  const b = new Uint8Array(expectedHash);
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i += 1) mismatch |= a[i] ^ b[i];
+  if (!suppliedToken || mismatch !== 0) return fail(c, 401, 'STAGING_AUTH_REQUIRED', 'The staging access token is missing or incorrect.');
+
+  let body: { cookie?: unknown; maxPages?: unknown };
+  try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid JSON request.'); }
+  const cookie = typeof body.cookie === 'string' ? body.cookie.trim() : '';
+  if (!cookie || cookie.length > 16000 || /[\r\n]/.test(cookie)) {
+    return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid YouTube Cookie header (maximum 16 KB).');
+  }
+  const maxPages = typeof body.maxPages === 'number' && Number.isFinite(body.maxPages)
+    ? Math.min(3, Math.max(1, Math.floor(body.maxPages))) : 1;
+
+  try {
+    const innertube = await Innertube.create({ cookie, enable_session_cache: false });
+    let feed = await innertube.getSubscriptionsFeed();
+    const videosById = new Map<string, Record<string, unknown>>();
+    for (let page = 1; page <= maxPages; page += 1) {
+      for (const video of feed.videos ?? []) {
+        // Feed.videos is a union of several YouTube.js renderer types. Some entries
+        // are not ordinary videos, so inspect the runtime shape instead of assuming
+        // every union member exposes the same properties.
+        const item = video as unknown as Record<string, unknown>;
+        const asRecord = (value: unknown): Record<string, unknown> | null =>
+          value !== null && typeof value === 'object' ? value as Record<string, unknown> : null;
+        const asText = (value: unknown): string => {
+          if (value == null) return '';
+          if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+          const textValue = asRecord(value)?.text;
+          if (typeof textValue === 'string') return textValue;
+          const toString = asRecord(value)?.toString;
+          return typeof toString === 'function' ? String(toString.call(value)) : '';
+        };
+
+        const videoId = typeof item.video_id === 'string'
+          ? item.video_id
+          : typeof item.id === 'string' ? item.id : '';
+        if (!videoId) continue;
+
+        const author = asRecord(item.author);
+        const duration = asRecord(item.duration);
+        const bestThumbnail = asRecord(item.best_thumbnail);
+        const thumbnails = Array.isArray(item.thumbnails) ? item.thumbnails : [];
+        const firstThumbnail = asRecord(thumbnails[0]);
+        const thumbnail = bestThumbnail?.url ?? firstThumbnail?.url;
+
+        videosById.set(videoId, {
+          videoId,
+          title: asText(item.title),
+          channelTitle: asText(author?.name),
+          published: asText(item.published),
+          viewCount: asText(item.short_view_count ?? item.view_count),
+          duration: asText(duration?.text ?? item.length_text) || null,
+          isLive: Boolean(item.is_live),
+          thumbnail: typeof thumbnail === 'string' ? thumbnail : null,
+          url: `https://www.youtube.com/watch?v=${videoId}`,
+          embedUrl: `https://www.youtube-nocookie.com/embed/${videoId}`,
+        });
+      }
+      if (page === maxPages || !feed.has_continuation) break;
+      feed = await feed.getContinuation();
+    }
+    return ok(c, { count: videosById.size, videos: [...videosById.values()] }, { pagesRequested: maxPages });
+  } catch {
+    // Do not log request bodies, cookies, upstream response details, or authentication material.
+    return fail(c, 503, 'YOUTUBE_FEED_FAILED', 'YouTube did not return the subscriptions feed. The session may be expired, verification may be required, or the staging server IP may be blocked.');
+  }
+});
+
+// Session-backed account endpoints. User IDs always come from the validated session cookie.
+app.get('/api/v1/me', async (c) => {
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your profile.');
+  return ok(c, { user });
+});
+
+app.post('/api/v1/me/history/sync', async (c) => {
+  const origin = c.req.header('Origin');
+  if (origin && origin !== new URL(c.req.url).origin) {
+    return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
+  }
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync watch history.');
+  let body: unknown;
+  try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
+  const request = body as { items?: unknown; deleted?: unknown; clear?: unknown } | null;
+  const input = request?.items;
+  const deleted = Array.isArray(request?.deleted) ? request.deleted : [];
+  const clear = request?.clear === true;
+  if (!Array.isArray(input) || input.length > 100 || deleted.length > 100 || input.length + deleted.length > 100) {
+    return fail(c, 400, 'VALIDATION_ERROR', 'Watch history updates must contain at most 100 entries.');
+  }
+  const statements: D1PreparedStatement[] = [];
+  if (clear) {
+    statements.push(c.env.DB.prepare('DELETE FROM user_watch_history WHERE user_id = ?').bind(user.id));
+  }
+  for (const value of input) {
+    if (!value || typeof value !== 'object') continue;
+    if (clear) break;
+    const item = value as Record<string, unknown>;
+    const slug = typeof item.slug === 'string' ? item.slug.trim() : '';
+    const title = typeof item.title === 'string' ? item.title.trim() : '';
+    const episodeNumber = Number(item.episodeNumber);
+    const updatedAt = Number(item.updatedAt);
+    if (!slug || slug.length > 128 || !title || title.length > 300 ||
+        !Number.isInteger(episodeNumber) || episodeNumber < 1 || episodeNumber > 100000 ||
+        !Number.isFinite(updatedAt) || updatedAt < 0) continue;
+    const posterUrl = typeof item.posterUrl === 'string' && item.posterUrl.length <= 2048 ? item.posterUrl : null;
+    const episodeTitle = typeof item.episodeTitle === 'string' ? item.episodeTitle.slice(0, 300) : '';
+    const duration = Number(item.durationSeconds);
+    const progress = Number(item.progressSeconds);
+    statements.push(c.env.DB.prepare(`
+      INSERT INTO user_watch_history
+        (user_id, anime_slug, episode_number, title, poster_url, episode_title,
+         duration_seconds, progress_seconds, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, anime_slug, episode_number) DO UPDATE SET
+        title=excluded.title, poster_url=excluded.poster_url,
+        episode_title=excluded.episode_title, duration_seconds=excluded.duration_seconds,
+        progress_seconds=excluded.progress_seconds, updated_at=excluded.updated_at
+      WHERE excluded.updated_at > user_watch_history.updated_at
+    `).bind(user.id, slug, episodeNumber, title, posterUrl, episodeTitle,
+      Number.isFinite(duration) && duration > 0 ? Math.min(86400, Math.floor(duration)) : null,
+      Number.isFinite(progress) && progress >= 0 ? Math.min(86400, progress) : 0,
+      Math.floor(updatedAt)));
+  }
+  if (!clear) {
+    for (const value of deleted) {
+      if (!value || typeof value !== 'object') continue;
+      const item = value as Record<string, unknown>;
+      const slug = typeof item.slug === 'string' ? item.slug.trim() : '';
+      const episodeNumber = Number(item.episodeNumber);
+      if (slug && slug.length <= 128 && Number.isInteger(episodeNumber) && episodeNumber > 0 && episodeNumber <= 100000) {
+        statements.push(c.env.DB.prepare('DELETE FROM user_watch_history WHERE user_id = ? AND anime_slug = ? AND episode_number = ?').bind(user.id, slug, episodeNumber));
+      }
+    }
+  }
+  try {
+    if (statements.length) await c.env.DB.batch(statements);
+    const result = await c.env.DB.prepare(`
+      SELECT anime_slug AS slug, title, poster_url AS posterUrl,
+             episode_number AS episodeNumber, episode_title AS episodeTitle,
+             duration_seconds AS durationSeconds, progress_seconds AS progressSeconds,
+             updated_at AS updatedAt
+      FROM user_watch_history WHERE user_id = ?
+      ORDER BY updated_at DESC LIMIT 100
+    `).bind(user.id).all();
+    return ok(c, { items: result.results ?? [] }, { count: result.results?.length ?? 0 });
+  } catch (error) {
+    logError(c, 'watch_history_sync_failed', error);
+    return fail(c, 503, 'HISTORY_UNAVAILABLE', 'Watch history sync is temporarily unavailable.');
+  }
+});
+
+app.get('/api/v1/me/library', async (c) => {
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your library.');
+  try {
+    const result = await c.env.DB.prepare(
+      `SELECT l.anime_id AS animeId, l.status, l.is_favorite AS isFavorite,
+              l.added_at AS addedAt, l.updated_at AS updatedAt,
+              a.slug, a.title, a.poster_url AS posterUrl, a.banner_url AS bannerUrl,
+              a.format, a.release_year AS releaseYear, a.rating, a.episode_count AS episodeCount
+       FROM user_library l
+       INNER JOIN anime a ON a.id = l.anime_id
+       WHERE l.user_id = ?
+       ORDER BY l.updated_at DESC
+       LIMIT 200`
+    ).bind(user.id).all();
+    return ok(c, { items: result.results ?? [] }, { count: result.results?.length ?? 0 });
+  } catch (error) {
+    logError(c, 'user_library_failed', error);
+    return fail(c, 503, 'LIBRARY_UNAVAILABLE', 'Your library is temporarily unavailable.');
+  }
+});
+
+app.post('/api/v1/auth/logout', async (c) => {
+  const origin = c.req.header('Origin');
+  if (origin && origin !== new URL(c.req.url).origin) {
+    return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
+  }
+  try {
+    await revokeSession(c.env.DB, c.req.header('Cookie') ?? null);
+    c.header('Set-Cookie', clearSessionCookie(new URL(c.req.url).protocol === 'https:'));
+    return ok(c, { signedOut: true });
+  } catch (error) {
+    logError(c, 'auth_logout_failed', error);
+    return fail(c, 503, 'AUTH_UNAVAILABLE', 'Could not sign out. Please try again.');
+  }
+});
 app.get('/api/v1/anime/:id/episodes/:episodeNumber/servers/:serverId/playback', (c) => fail(c, 503, 'SOURCE_UNAVAILABLE', 'Live playback is not enabled for this catalogue configuration.'));
 
 app.notFound((c) => fail(c, 404, 'RESOURCE_NOT_FOUND', 'The requested API route was not found.'));

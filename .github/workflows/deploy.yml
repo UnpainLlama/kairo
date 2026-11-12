@@ -2,7 +2,7 @@ name: Build and deploy KAIRO
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, youtube]
   push:
     branches: [main, testing]
   workflow_dispatch:

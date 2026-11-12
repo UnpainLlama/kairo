@@ -15,7 +15,7 @@ Each environment has its own database and cache, so staging can never touch prod
 
 The deploy workflow (`.github/workflows/deploy.yml`) runs: typecheck, tests and build, then (only when requested) the guards, D1 migrations, build, deploy, and a health check that fails the run if `/api/health` or `/api/ready` is unhealthy.
 
-IDs for D1 and KV are identifiers, not credentials, so they may be committed to the public repo. **The API token is the only secret. Never paste it into chat, a file, or the repo.**
+IDs for D1 and KV are identifiers, not credentials, so they may be committed to the public repo. Cloudflare API tokens, OAuth client secrets, and encryption keys are credentials: keep them only in the appropriate GitHub or Cloudflare secret stores. Never paste a secret into chat, a file, or the repo.
 
 ## 2. Set up staging (you do this once; about 20 minutes)
 
@@ -62,27 +62,33 @@ Open these in a browser (replace the host with your staging URL):
 | URL | Expect |
 |---|---|
 | `/api/health` | JSON, `"success":true`, `"environment":"staging"` |
-| `/api/ready` | `"database":"ok"`, `"schema":"ok"`, `"cache":"kv"`, `"providers":["anilist"]` |
-| `/api/v1/providers` | AniList enabled, Kitsu disabled and `termsVerified:false` |
-| `/` | The site loads. The catalogue is **empty** until Phase 2, so you see the "catalogue is empty" notice. That is correct. |
+| `/api/ready` | `"database":"ok"`, `"schema":"ok"`, and `"cache":"kv"`. In live catalogue mode this still verifies D1 because account, library and watch-history routes depend on it. |
+| `/api/v1/providers` | The configured live catalogue providers, independent episode providers, attribution details and artwork provider. Do not assume the legacy DB-mode AniList/Kitsu response. |
+| `/` | The site loads and displays results from the configured live catalogue providers. The catalogue is not expected to be empty in live mode. |
 
-`/api/ready` returns 503 with "Apply migrations" if the database is reachable but unmigrated, and 503 if D1 is unreachable.
+`/api/ready` returns 503 if D1 is unreachable, if any required migration table is missing, or if the extended `user_profiles` account columns are unavailable. It does not call external catalogue providers, so the readiness probe does not consume their rate limits.
 
 ## 4. Environment variables and bindings
 
 | Name | Kind | Where set | Purpose |
 |---|---|---|---|
-| `DB` | D1 binding | `wrangler.jsonc` per environment | Catalogue and, later, user data |
+| `DB` | D1 binding | `wrangler.jsonc` per environment | Catalogue (DB mode) and account, library, session and watch-history data (all modes) |
 | `METADATA_CACHE` | KV binding | `wrangler.jsonc` per environment | Short-lived provider response cache (needed on workers.dev) |
 | `APP_ENV` | var | `wrangler.jsonc` | `development`, `staging`, `production` |
+| `APP_BASE_URL` | Worker variable | `wrangler.jsonc` per environment | Canonical public origin used to construct OAuth callback and return URLs |
+| `GOOGLE_CLIENT_ID` | Worker variable | `wrangler.jsonc` per environment | Google OpenID Connect and explicit YouTube authorization client |
 | `METADATA_PROVIDERS` | var | `wrangler.jsonc` | Enabled metadata providers. `anilist` now; add `kitsu` only after its terms are verified |
 | `ALLOWED_ORIGIN` | var, optional | not set | Only for cross-origin API use |
+| `GOOGLE_CLIENT_SECRET` | Worker secret | Cloudflare Worker environment | Required for Google sign-in and account linking |
+| `YOUTUBE_TOKEN_ENCRYPTION_KEY` | Worker secret | Cloudflare Worker environment | Required for YouTube token encryption; 32 random bytes, unpadded base64url |
+| `TMDB_ACCESS_TOKEN` | Worker secret, optional | Cloudflare Worker environment | Optional TMDB artwork enrichment |
+| `YOUTUBE_STAGING_TOKEN` | Worker secret, optional | Cloudflare staging environment only | Staging-only YouTube feed experiment; not a production feature |
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | GitHub environment **secrets** | GitHub only | Deploying. Never in the repo or the Worker |
 | `STAGING_DEPLOY_ENABLED` | GitHub variable | GitHub | Auto-deploy staging on merge to main |
 | `STAGING_URL` | GitHub variable, optional | GitHub | Fallback if the deploy log URL cannot be read |
 | `PRODUCTION_DEPLOY_APPROVED` | GitHub variable | GitHub | Must be `true` for any production deploy. **Do not set.** |
 
-The Worker needs **no secrets today** (public AniList reads need no key). Authentication in Phase 4 will add some, set with `wrangler secret put` or the dashboard, never in the repo.
+Authentication is already implemented. Set `GOOGLE_CLIENT_SECRET` and `YOUTUBE_TOKEN_ENCRYPTION_KEY` in Cloudflare's staging Worker **Secrets** before testing Google sign-in or YouTube connection. Keep `APP_BASE_URL` and `GOOGLE_CLIENT_ID` in the staging Worker variables. Generate the YouTube encryption key from 32 cryptographically random bytes and encode it as unpadded base64url. Do not put Worker secrets in GitHub Actions logs or source control.
 
 ## 5. Troubleshooting
 
@@ -101,9 +107,17 @@ The Worker needs **no secrets today** (public AniList reads need no key). Authen
 - Database: migrations are additive-only and the previous Worker version works against the newer schema, so a code rollback needs no database rollback.
 
 ## 7. Verified vs assumed
-**Verified in a sandbox:** the generated staging config (Worker name, D1, KV, vars); a Wrangler dry-run deploy; migrations 0001 and 0002 applied by Wrangler to a local D1, twice (second run: nothing to apply); the built Worker running in the Workers runtime locally, serving `/api/health`, `/api/ready` (200 when migrated, 503 when not), JSON API routes, and the SPA fallback; typecheck, 73 tests, build.
+**Verified on 2026-11-12:**
+- GitHub Actions typecheck, all 19 test files (163 tests at the latest verified commit), and worker/client production builds passed on the `youtube` promotion PR. The deploy job was skipped for the pull request.
+- A read-only remote Wrangler migration listing against staging reported `0007_youtube_oauth.sql` as the only migration to be applied. This indicates migrations 0001–0006 are already recorded as applied on the staging D1 journal; no migration was applied by the inspection command.
+- A staging Worker deployment was performed from the older `main` snapshot before this promotion PR was merged. It returned healthy `/api/health` and `/api/ready` responses, but that old live-mode readiness handler reported `database: "not used"`. Wrangler also warned that the old `main` config omitted the canonical `APP_BASE_URL` and `GOOGLE_CLIENT_ID` variables present on `youtube`.
 
-**Not verified (needs your Cloudflare account):** the real remote deploy, remote migrations, KV reads/writes, the token's exact permission set, and the workflow's deploy job. The first staging run is the test; its health check will say whether it worked.
+**Still to verify before enabling account features on staging:**
+- Merge/review the current `youtube` promotion PR, then deploy the promoted commit to staging. The final `/api/ready` should report both `database: "ok"` and `schema: "ok"`.
+- Confirm the staging Worker secrets `GOOGLE_CLIENT_SECRET` and `YOUTUBE_TOKEN_ENCRYPTION_KEY` exist. Cloudflare does not expose secret values for read-back; verify by running a controlled sign-in / YouTube connection test after deployment.
+- Confirm the exact YouTube and Google callback URLs are registered in the Google OAuth client.
+- Validate provider endpoints and Jikan/MyAnimeList terms as described in `docs/LIVE_CATALOGUE.md`. The staging deploy's `cache: "kv"` proves the binding is present, not that every KV read/write path has been exercised.
+- Migration `0007_youtube_oauth.sql` remains pending on staging until a reviewed staging deployment applies it. Production remains blocked and untouched.
 
 ## 8. Production (blocked)
 Production deploys are blocked by design until you approve. They need all of: a separate D1 database and KV namespace, their IDs in the `production` block, a separate token in the `production` environment, the variable `PRODUCTION_DEPLOY_APPROVED=true`, a run from `main`, and your approval as required reviewer. Do none of this until staging is proven with a real catalogue.

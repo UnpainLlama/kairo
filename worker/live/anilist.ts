@@ -16,7 +16,7 @@ const MAX_LIMIT = 50;
 const FIELDS = `id idMal siteUrl isAdult title { romaji english native } synonyms description(asHtml: false) format status episodes season seasonYear
   startDate { year } genres averageScore coverImage { extraLarge large } bannerImage`;
 
-const SORTS = { relevance: 'SEARCH_MATCH', popularity: 'POPULARITY_DESC', latest: 'START_DATE_DESC', rating: 'SCORE_DESC' } as const;
+const SORTS = { relevance: 'SEARCH_MATCH', popularity: 'POPULARITY_DESC', trending: 'TRENDING_DESC', latest: 'START_DATE_DESC', rating: 'SCORE_DESC' } as const;
 const FORMAT_IN = { series: ['TV', 'TV_SHORT'], movie: ['MOVIE'], ova: ['OVA'], ona: ['ONA'], special: ['SPECIAL'] } as const;
 const STATUS = { airing: 'RELEASING', finished: 'FINISHED', upcoming: 'NOT_YET_RELEASED', hiatus: 'HIATUS' } as const;
 

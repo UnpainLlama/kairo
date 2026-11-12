@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Kairo · YouTube Feed Lab</title>
+  <style>
+    :root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:#0f0f11;color:#f4f4f5}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 50% -15%,#25232d 0,transparent 48%),#0f0f11}
+    main{width:min(920px,calc(100% - 32px));margin:48px auto;padding-bottom:48px}
+    a{color:#c4b5fd}.eyebrow{color:#a78bfa;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+    h1{font-size:clamp(28px,5vw,42px);margin:10px 0}.muted{color:#a1a1aa;line-height:1.55}
+    .panel{background:#18181b;border:1px solid #303036;border-radius:16px;padding:22px;margin-top:22px}
+    label{display:block;font-size:13px;font-weight:650;margin:16px 0 8px}
+    input,textarea,select{width:100%;background:#101014;color:#f4f4f5;border:1px solid #3f3f46;border-radius:9px;padding:12px;font:inherit}
+    textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;font-size:12px}
+    button{border:0;border-radius:9px;background:#8b5cf6;color:white;font-weight:700;padding:12px 18px;margin-top:18px;cursor:pointer}
+    button:disabled{opacity:.55;cursor:wait}.hint{font-size:12px;color:#a1a1aa;line-height:1.5}
+    #status{margin-top:16px;white-space:pre-wrap;font-size:13px}.videos{display:grid;gap:14px;margin-top:18px}
+    .video{display:grid;grid-template-columns:180px 1fr;gap:14px;background:#202024;border:1px solid #34343b;border-radius:12px;padding:10px}
+    .video img{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:7px;background:#09090b}
+    .video h3{font-size:15px;line-height:1.35;margin:2px 0 8px}.video p{font-size:12px;color:#a1a1aa;margin:5px 0}
+    @media(max-width:560px){main{margin-top:26px}.panel{padding:16px}.video{grid-template-columns:1fr}.video img{max-height:190px}}
+  </style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">Kairo · Experimental staging tool</div>
+  <h1>YouTube subscriptions feed</h1>
+  <p class="muted">A temporary test of YouTube.js authentication and feed pagination. This page sends your cookie directly to the Kairo staging Worker over HTTPS. It does not save it in browser storage.</p>
+  <section class="panel">
+    <p class="hint"><strong>Use only a separate test account.</strong> A YouTube cookie is a session credential. Never use this on production, public/shared devices, or an untrusted staging domain. Clear the form after each test. This uses YouTube.js and YouTube's undocumented InnerTube interface.</p>
+    <form id="feed-form">
+      <label for="access-token">Kairo staging test token</label>
+      <input id="access-token" type="password" autocomplete="off" spellcheck="false" required>
+      <label for="youtube-cookie">YouTube Cookie request header</label>
+      <textarea id="youtube-cookie" autocomplete="off" autocapitalize="off" spellcheck="false" required placeholder="Paste the Cookie header from a YouTube request in DevTools"></textarea>
+      <label for="pages">Feed pages to request</label>
+      <select id="pages"><option value="1">1 page</option><option value="2">2 pages</option><option value="3">3 pages</option></select>
+      <button id="submit" type="submit">Fetch subscriptions</button>
+      <p class="hint">The cookie is sent only in the HTTPS request body, never in the URL. The Worker is configured not to persist or log it. The form clears the cookie field after the request.</p>
+    </form>
+    <div id="status" role="status" aria-live="polite"></div>
+  </section>
+  <section id="results" class="videos" aria-live="polite"></section>
+</main>
+<script>
+const form=document.querySelector('#feed-form');
+const tokenInput=document.querySelector('#access-token');
+const cookieInput=document.querySelector('#youtube-cookie');
+const pagesInput=document.querySelector('#pages');
+const submit=document.querySelector('#submit');
+const status=document.querySelector('#status');
+const results=document.querySelector('#results');
+function addText(parent,tag,value,cls){const el=document.createElement(tag);el.textContent=value??'';if(cls)el.className=cls;parent.append(el);return el;}
+form.addEventListener('submit',async(event)=>{
+  event.preventDefault();results.replaceChildren();status.textContent='Contacting the staging Worker…';submit.disabled=true;
+  const token=tokenInput.value;const cookie=cookieInput.value.trim();
+  try{
+    const response=await fetch('/api/staging/youtube/feed',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({cookie,maxPages:Number(pagesInput.value)})});
+    const payload=await response.json();
+    if(!response.ok||!payload.success)throw new Error(payload.error?.message||'Feed request failed.');
+    const videos=payload.data?.videos??[];
+    status.textContent='Retrieved '+videos.length+' videos across up to '+(payload.meta?.pagesRequested??1)+' page(s).';
+    for(const video of videos){
+      const card=document.createElement('article');card.className='video';
+      if(video.thumbnail){const img=document.createElement('img');img.loading='lazy';img.alt='';img.src=video.thumbnail;card.append(img);}
+      const details=document.createElement('div');addText(details,'h3',video.title);addText(details,'p',video.channelTitle+' · '+(video.published||'')+(video.duration?' · '+video.duration:''));addText(details,'p',video.isLive?'LIVE':(video.viewCount||''));
+      const link=document.createElement('a');link.href=video.url;link.target='_blank';link.rel='noopener noreferrer';link.textContent='Watch on YouTube';details.append(link);card.append(details);results.append(card);
+    }
+    if(!videos.length)addText(results,'p','No video entries were returned.');
+  }catch(error){status.textContent=error instanceof Error?error.message:'The request failed.';}
+  finally{cookieInput.value='';submit.disabled=false;}
+});
+</script>
+</body>
+</html>

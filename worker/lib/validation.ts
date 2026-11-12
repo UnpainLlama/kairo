@@ -28,13 +28,14 @@ export function parsePagination(q: Query, opts: { defaultLimit?: number; maxLimi
   return ok({ page, limit, offset: (page - 1) * limit });
 }
 
-export const SORT_KEYS = ['relevance', 'popularity', 'latest', 'rating'] as const;
+export const SORT_KEYS = ['relevance', 'popularity', 'trending', 'latest', 'rating'] as const;
 export type SortKey = (typeof SORT_KEYS)[number];
 
 /** Static fragments only. The client never supplies SQL; it picks a key from SORT_KEYS. */
 export const SORT_ORDER_BY: Record<SortKey, string> = {
   relevance: 'popularity_score DESC, title COLLATE NOCASE',
   popularity: 'popularity_score DESC, title COLLATE NOCASE',
+  trending: 'popularity_score DESC, title COLLATE NOCASE',
   latest: 'updated_at DESC, title COLLATE NOCASE',
   rating: 'rating IS NULL, rating DESC, title COLLATE NOCASE',
 };
