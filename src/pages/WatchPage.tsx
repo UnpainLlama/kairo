@@ -2,8 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ListVideo, Play, Search, RefreshCw, ExternalLink } from 'lucide-react';
 import { ErrorState, LoadingState } from '../components/catalog';
-import UniversalPlayer from '../components/UniversalPlayer';
-import type { KairoPlaybackSource } from '../components/KairoMediaPlayer';
+import KairoMediaPlayer, { type KairoPlaybackSource } from '../components/KairoMediaPlayer';
 import { useApi } from '../lib/useApi';
 import { accountPreferenceStorageKey, historyPausedStorageKey, readWatchHistory, watchProgressIdentity, watchProgressStorageKey, writeWatchHistory } from '../lib/accountStorage';
 import { shouldSyncPlaybackProgress, type PlaybackSaveReason } from '../lib/playbackSync';
@@ -225,14 +224,14 @@ export default function WatchPage() {
           <section className="kc-player" aria-label="Video player" key={`${slug}:${parsedEpisode}:${selectedServer?.id ?? 'none'}`}>
             {!accountResolved && <div className="kc-player-message"><h2>Loading your playback state…</h2><p>Keeping this activity separate from other accounts on this browser.</p></div>}
             {accountResolved && playback.status === 'ok' && (
-              <UniversalPlayer
-                source={{ kind: 'anime', playback: playback.data.source }}
+              <KairoMediaPlayer
+                source={playback.data.source}
                 title={`${anime.title} · Episode ${parsedEpisode}`}
                 progressKey={watchProgressIdentity(accountId, slug, parsedEpisode, selectedServer?.id ?? '')}
                 introEnd={(current as (Episode & { introEndSeconds?: number | null }) | undefined)?.introEndSeconds}
                 outroStart={(current as (Episode & { outroStartSeconds?: number | null }) | undefined)?.outroStartSeconds}
                 nextUrl={next && autoNext ? `/watch/${key}/${next.episodeNumber}` : null}
-                onMediaProgress={persistPlaybackProgress}
+                onProgress={persistPlaybackProgress}
               />
             )}
             {accountResolved && playback.status !== 'ok' && (
