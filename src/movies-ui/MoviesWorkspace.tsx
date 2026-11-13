@@ -1,5 +1,5 @@
 import { Provider } from 'react-redux';
-import { App as MoviesApp } from './App';
+import MoviesApp from './App';
 import { attachPersistence } from './state/persistence';
 import { store } from './state/store';
 import { signUp, addProfileToAccount } from './state/slices/authSlice';
