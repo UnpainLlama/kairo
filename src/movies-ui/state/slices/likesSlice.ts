@@ -1,6 +1,6 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
-interface LikesState {
+export interface LikesState {
   /** Set of liked tile IDs, keyed by profileId. */
   byProfile: Record<string, string[]>;
 }
