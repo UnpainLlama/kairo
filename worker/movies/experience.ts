@@ -165,5 +165,9 @@ export function createTmdbExperienceService(
     genres(mediaType: 'movie' | 'tv', language: string) {
       return request('/genre/' + mediaType + '/list', { language }, 86400);
     },
+
+    popularPeople(page: number) {
+      return request('/person/popular', { language: 'en-US', page: String(pageNumber(page)) }, 3600);
+    },
   };
 }
