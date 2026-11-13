@@ -205,7 +205,7 @@ app.get('/api/v1/movies/experience/feed', async (c) => {
   if (!['movie', 'tv', 'all'].includes(mediaType)) return fail(c, 400, 'VALIDATION_ERROR', 'media_type must be movie, tv, or all.');
   if (windowRaw !== 'day' && windowRaw !== 'week') return fail(c, 400, 'VALIDATION_ERROR', 'window must be day or week.');
   if (page === null) return fail(c, 400, 'VALIDATION_ERROR', 'page must be 1–500.');
-  const genreIds = (c.req.query('genres') ?? '').split(',').map((v) => v.trim()).filter((v) => /^\\d{1,8}$/.test(v)).slice(0, 10);
+  const genreIds = (c.req.query('genres') ?? '').split(',').map((v) => v.trim()).filter((v) => /^\d{1,8}$/.test(v)).slice(0, 10);
   const yearRaw = c.req.query('year');
   let year: number | undefined;
   if (yearRaw !== undefined) {
