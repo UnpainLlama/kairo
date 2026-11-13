@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import YouTubeVideoCard, { type YouTubeCardVideo } from '../components/YouTubeVideoCard';
-import { ArrowLeft, ArrowUpRight, Bookmark, BookmarkCheck, ExternalLink, History, Youtube } from 'lucide-react';
+import { ArrowLeft, Bookmark, BookmarkCheck, ExternalLink, History, Youtube } from 'lucide-react';
 import YouTubeIframePlayer from '../components/YouTubeIframePlayer';
 
 type VideoDetails = {
