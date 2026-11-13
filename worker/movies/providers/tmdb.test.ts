@@ -123,10 +123,10 @@ describe('TMDB Movies provider', () => {
     expect(url.searchParams.get('include_adult')).toBe('true');
   });
 
-  it('rejects malformed IDs and remains disabled until terms are approved', async () => {
+  it('rejects malformed IDs and records the approved non-commercial terms', async () => {
     const provider = createTmdbMovieProvider(async () => { throw new Error('should not fetch'); }, 'read-token');
     await expect(provider.byId('1; DROP TABLE movies', signal)).rejects.toMatchObject({ kind: 'not_found' });
-    expect(provider.termsVerified).toBe(false);
+    expect(provider.termsVerified).toBe(true);
     expect(TMDB_MOVIES_ATTRIBUTION.text).toContain('not endorsed or certified');
   });
 
