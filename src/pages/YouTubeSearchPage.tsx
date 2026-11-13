@@ -67,27 +67,23 @@ export default function YouTubeSearchPage() {
   };
 
   const needsLogin = error?.code === 'AUTH_REQUIRED';
-  const needsConnection = error?.code === 'YOUTUBE_NOT_CONNECTED';
-  const needsReconnect = error?.code === 'YOUTUBE_REAUTH_REQUIRED';
 
   return (
     <section className="yt-page">
       <header className="yt-page-heading">
-        <div><span className="yt-eyebrow">DISCOVER CREATORS</span><h1>Search YouTube</h1><p>Find channels and add the ones you want in your Kairo feed.</p></div>
+        <div><span className="yt-eyebrow">DISCOVER CREATORS</span><h1>Search YouTube</h1><p>Search public channels and add the ones you want in your Kairo feed.</p></div>
       </header>
 
       <form className="yt-search-form" onSubmit={search} role="search">
         <Search size={19} aria-hidden="true" />
-        <input aria-label="Search YouTube channels" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search channels, creators or topics…" maxLength={80} />
+        <input aria-label="Search YouTube channels" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search public channels, creators or topics…" maxLength={80} />
         <button type="submit" className="yt-button yt-button-primary" disabled={loading || query.trim().length < 2}>{loading ? 'Searching…' : 'Search'}</button>
       </form>
       <div className="yt-search-tip"><span>Try a topic</span>{['technology', 'gaming', 'anime', 'music', 'science'].map(term => <button key={term} type="button" onClick={() => setQuery(term)}>{term}</button>)}</div>
 
       {error && <div className="yt-notice" role="alert"><div><b>{error.message}</b>
         {needsLogin && <p><Link to="/login">Sign in</Link> to search and save channels.</p>}
-        {needsConnection && <p><a href="/api/v1/auth/youtube">Connect YouTube</a> to search public channels.</p>}
-        {needsReconnect && <p><a href="/api/v1/auth/youtube">Reconnect YouTube</a> to continue.</p>}
-        {!needsLogin && !needsConnection && !needsReconnect && <p>Check your connection and try again.</p>}
+        {!needsLogin && <p>Check your connection and try again.</p>}
       </div></div>}
       {notice && <div className="yt-notice" role="status">{notice}</div>}
 
