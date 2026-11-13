@@ -93,10 +93,26 @@ results. This keeps provider retention and data-licence review separate from rea
   retention terms have been reviewed for Kairo's intended use.
 - Do not treat metadata or availability links as authorisation to play a movie.
 
+## Noir frontend
+
+The Movies workspace is routed independently in `src/App.tsx`:
+
+- `/movies`: cinematic Noir home with a featured backdrop and horizontal rails for trending, popular, top-rated, upcoming, and now-playing films.
+- `/movies/browse/:category`: paginated collections, including genre-specific discovery.
+- `/movies/search?q=...`: global movie search results.
+- `/movies/:externalId`: movie details, cast, crew and genre links.
+
+The Movies workspace reuses Kairo's existing fixed navigation rail, persistent search bar,
+menu popover and mobile navigation. Only their context-specific destinations and labels
+change while the user is in Movies. The shared search component switches to the Movies
+search API and never calls the Anime catalogue in Movies mode. Movie cards and all page
+types use the independent Movies API contracts in `src/lib/movies.ts`.
+
 ## Current boundary
 
-The Movies API is wired independently into the Worker. It does not change Anime's route
-handlers or response contracts. Ingestion remains disabled by default and requires an
-administrator session plus explicit feature/licence approval. The next step after provider
-approval is to run the D1 migration in the intended environment, verify the live provider
-response contract, and connect the Noir Movies UI to these endpoints.
+The Movies API and frontend are wired independently of Anime and YouTube. Existing Anime
+route handlers and response contracts are unchanged. The TMDB adapter and ingestion remain
+disabled by default; the screens show a provider-configuration state until the owner approves
+the applicable metadata terms and enables the provider. The D1 migration has not been
+applied to any Cloudflare database. Before enabling it, confirm provider terms, attribution,
+and the live response contract, then apply migrations in the intended environment.
