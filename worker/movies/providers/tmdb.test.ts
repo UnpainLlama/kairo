@@ -110,6 +110,19 @@ describe('TMDB Movies provider', () => {
     expect(url.searchParams.has('region')).toBe(false);
   });
 
+  it('moves adult-inclusive discovery to the discover endpoint explicitly', async () => {
+    let requested = '';
+    const provider = createTmdbMovieProvider(async (url) => {
+      requested = url;
+      return json({ page: 1, results: [] });
+    }, 'read-token');
+
+    await provider.discover({ kind: 'trending_day', page: 1, includeAdult: true }, signal);
+    const url = new URL(requested);
+    expect(url.pathname).toBe('/3/discover/movie');
+    expect(url.searchParams.get('include_adult')).toBe('true');
+  });
+
   it('rejects malformed IDs and remains disabled until terms are approved', async () => {
     const provider = createTmdbMovieProvider(async () => { throw new Error('should not fetch'); }, 'read-token');
     await expect(provider.byId('1; DROP TABLE movies', signal)).rejects.toMatchObject({ kind: 'not_found' });
