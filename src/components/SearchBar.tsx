@@ -1,8 +1,9 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowRight, Search, X } from 'lucide-react';
+import { ArrowRight, History, Search, X } from 'lucide-react';
 import { apiGetWithMeta, isAbort } from '../lib/api';
 import { EMPTY_SEARCH, MAX_QUERY, canSearch, parseSearchState, toUrlParams } from '../lib/searchState';
+import { buildYouTubeSearchSuggestions, normalizeRecentYouTubeSearches, YOUTUBE_RECENT_SEARCHES_KEY } from '../lib/youtubeSearchSuggestions';
 import { formatLabel, type CatalogCard, type ItemList } from '../lib/catalog';
 import { Poster, animeHref } from './catalog';
 
@@ -10,8 +11,9 @@ type MediaMode = 'anime' | 'movie';
 type Result = { q: string; mode: MediaMode; status: 'ok'; items: CatalogCard[]; total?: number } | { q: string; mode: MediaMode; status: 'error' };
 
 /**
- * Header search. It queries /catalog/search as you type and lists matches in a dropdown, so you can open a title
- * without leaving the page. Enter opens the highlighted title, or the full results page when nothing is highlighted.
+ * Persistent header search. Anime suggestions use the catalogue API; YouTube suggestions use
+ * local recent searches and safe, curated query completions so typing does not spend Data API quota.
+ * Enter or the search button always opens the dedicated results route.
  */
 export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtube' }) {
   const isYouTube = mode === 'youtube';
@@ -24,22 +26,38 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const [result, setResult] = useState<Result | null>(null);
+  const [recentYouTubeQueries, setRecentYouTubeQueries] = useState<string[]>([]);
   const query = text.trim();
   const mediaMode: MediaMode = location.pathname === '/browse/movies'
     || (location.pathname === '/search' && new URLSearchParams(location.search).get('format') === 'movie')
     ? 'movie'
     : 'anime';
   const mediaLabel = isYouTube ? 'YouTube videos' : mediaMode === 'movie' ? 'movies' : 'anime';
+  const maxLength = isYouTube ? 80 : MAX_QUERY;
 
-  // Mirror the URL: on the search page show its query, everywhere else start empty.
+  const youtubeSuggestions = useMemo(
+    () => buildYouTubeSearchSuggestions(query, recentYouTubeQueries),
+    [query, recentYouTubeQueries],
+  );
+
   useEffect(() => {
     const onSearchPage = location.pathname === (isYouTube ? '/youtube/search' : '/search');
-    setText(onSearchPage ? (new URLSearchParams(location.search).get('q') ?? '').slice(0, MAX_QUERY) : '');
+    setText(onSearchPage ? (new URLSearchParams(location.search).get('q') ?? '').slice(0, maxLength) : '');
     setOpen(false);
     setActive(-1);
-  }, [isYouTube, location.pathname, location.search]);
+  }, [isYouTube, location.pathname, location.search, maxLength]);
 
-  // Debounced lookup. Older requests are aborted, and a result is only shown for the query it was fetched for.
+  useEffect(() => {
+    if (!isYouTube) return;
+    try {
+      const saved = normalizeRecentYouTubeSearches(JSON.parse(localStorage.getItem(YOUTUBE_RECENT_SEARCHES_KEY) ?? '[]'));
+      setRecentYouTubeQueries(saved);
+    } catch {
+      setRecentYouTubeQueries([]);
+    }
+  }, [isYouTube]);
+
+  // Debounced anime lookup. YouTube query completions remain local and do not consume API quota.
   useEffect(() => {
     if (isYouTube || !canSearch(query) || !open || location.pathname === '/search') return;
     const controller = new AbortController();
@@ -53,7 +71,6 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [isYouTube, query, mediaMode, open, location.pathname]);
 
-  // Ctrl/Cmd+K, or "/" outside a text field, focuses the bar. Clicking elsewhere closes the dropdown.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const el = document.activeElement;
@@ -73,36 +90,58 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
   const searching = canSearch(query);
   const current = searching && result?.q === query && result.mode === mediaMode ? result : null;
   const items = current?.status === 'ok' ? current.items : [];
+  const showPanel = open && searching;
 
-  const resultsHref = (): string => {
-    if (isYouTube) return `/youtube/search?q=${encodeURIComponent(query)}`;
+  const resultsHref = (term = query): string => {
+    const clean = term.trim().slice(0, maxLength);
+    if (isYouTube) return `/youtube/search?q=${encodeURIComponent(clean)}`;
     const base = location.pathname === '/search' ? parseSearchState(new URLSearchParams(location.search)) : EMPTY_SEARCH;
     const format = mediaMode === 'movie' ? 'movie' : (base.format === 'movie' ? '' : base.format);
-    const qs = toUrlParams({ ...base, q: query, format, page: 1 }).toString();
+    const qs = toUrlParams({ ...base, q: clean, format, page: 1 }).toString();
     return `/search${qs ? `?${qs}` : ''}`;
   };
 
   const go = (path: string) => {
     setOpen(false);
+    setActive(-1);
     inputRef.current?.blur();
     navigate(path);
+  };
+
+  const submitYouTubeSearch = (term: string) => {
+    const clean = term.trim().replace(/\s+/g, ' ').slice(0, 80);
+    if (clean.length < 2) {
+      inputRef.current?.focus();
+      return;
+    }
+    const next = normalizeRecentYouTubeSearches([clean, ...recentYouTubeQueries.filter(item => item.toLowerCase() !== clean.toLowerCase())]);
+    setRecentYouTubeQueries(next);
+    try {
+      localStorage.setItem(YOUTUBE_RECENT_SEARCHES_KEY, JSON.stringify(next));
+    } catch {
+      // Search still works when browser storage is unavailable.
+    }
+    go(resultsHref(clean));
   };
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'ArrowDown') {
       event.preventDefault();
       setOpen(true);
-      setActive((i) => (items.length ? (i + 1) % items.length : -1));
+      const count = isYouTube ? youtubeSuggestions.length : items.length;
+      setActive(index => count ? (index + 1) % count : -1);
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
-      setActive((i) => (items.length ? (i <= 0 ? items.length - 1 : i - 1) : -1));
+      const count = isYouTube ? youtubeSuggestions.length : items.length;
+      setActive(index => count ? (index <= 0 ? count - 1 : index - 1) : -1);
     } else if (event.key === 'Escape') {
       setOpen(false);
+      setActive(-1);
       inputRef.current?.blur();
     } else if (event.key === 'Enter') {
       event.preventDefault();
       if (isYouTube) {
-        if (searching) go(resultsHref());
+        submitYouTubeSearch(active >= 0 ? (youtubeSuggestions[active] ?? query) : query);
       } else {
         const item = items[active];
         if (item) go(animeHref(item));
@@ -111,7 +150,8 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
     }
   };
 
-  const showPanel = !isYouTube && open && searching;
+  const showAnimePanel = !isYouTube && showPanel;
+  const showYouTubePanel = isYouTube && showPanel;
 
   return (
     <div className="kc-search-wrap" ref={rootRef} role="search">
@@ -127,18 +167,45 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
           aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
           autoComplete="off"
           spellCheck={false}
-          maxLength={MAX_QUERY}
+          maxLength={maxLength}
           placeholder={`Search ${mediaLabel}...`}
           value={text}
-          onChange={(event) => { setText(event.target.value); setActive(-1); setOpen(true); }}
+          onChange={event => { setText(event.target.value); setActive(-1); setOpen(true); }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
         />
         {text && <button type="button" className="kc-top-clear" aria-label="Clear search" onClick={() => { setText(''); setActive(-1); inputRef.current?.focus(); }}><X size={15} aria-hidden="true" /></button>}
-        <button type="button" className="kc-top-go" aria-label="Search" onClick={() => { if (searching) go(resultsHref()); else inputRef.current?.focus(); }}><Search size={16} aria-hidden="true" /></button>
+        <button type="button" className="kc-top-go" aria-label="Search" onClick={() => { if (isYouTube) submitYouTubeSearch(query); else if (searching) go(resultsHref()); else inputRef.current?.focus(); }}><Search size={16} aria-hidden="true" /></button>
       </div>
 
-      {showPanel && (
+      {showYouTubePanel && (
+        <div className="kc-suggest kc-yt-suggest" id={listId} role="listbox" aria-label="YouTube search suggestions">
+          <div className="kc-yt-suggest-heading">Suggestions</div>
+          {youtubeSuggestions.map((suggestion, index) => (
+            <button
+              key={suggestion}
+              type="button"
+              role="option"
+              id={`${listId}-${index}`}
+              aria-selected={index === active}
+              className={`kc-yt-suggest-row${index === active ? ' active' : ''}`}
+              onMouseEnter={() => setActive(index)}
+              onClick={() => submitYouTubeSearch(suggestion)}
+            >
+              {recentYouTubeQueries.some(item => item.toLowerCase() === suggestion.toLowerCase())
+                ? <History size={16} aria-hidden="true" />
+                : <Search size={16} aria-hidden="true" />}
+              <span>{suggestion}</span>
+            </button>
+          ))}
+          <button type="button" className="kc-yt-suggest-exact" onClick={() => submitYouTubeSearch(query)}>
+            <Search size={15} aria-hidden="true" />
+            <span>Search for <b>{query}</b></span>
+          </button>
+        </div>
+      )}
+
+      {showAnimePanel && (
         <div className="kc-suggest" id={listId} role="listbox" aria-label="Search results">
           {!current && <p className="kc-suggest-note" role="status">Searching…</p>}
           {current?.status === 'error' && <p className="kc-suggest-note" role="alert">Search is unavailable right now.</p>}

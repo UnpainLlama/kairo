@@ -44,7 +44,7 @@ const menuItems: NavItem[] = [
 
 const youtubeNavItems: NavItem[] = [
   { to: '/youtube', label: 'Home', icon: PlayCircle, end: true },
-  { to: '/youtube/search', label: 'Discover', icon: Compass },
+  { to: '/youtube/search', label: 'Search', icon: Search },
   { to: '/youtube/channels', label: 'Channels', icon: ListVideo },
   { to: '/youtube/watch-later', label: 'Watch Later', icon: Bookmark },
   { to: '/youtube/history', label: 'History', icon: History },

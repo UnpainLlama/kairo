@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import YouTubeVideoCard, { type YouTubeCardVideo } from '../components/YouTubeVideoCard';
 import { ArrowUpRight, Check, Plus, Search, Youtube } from 'lucide-react';
@@ -126,11 +126,6 @@ export default function YouTubeSearchPage() {
     navigate('/youtube/search?' + params.toString());
   };
 
-  const search = (event: FormEvent) => {
-    event.preventDefault();
-    openSearch(query);
-  };
-
   const addChannel = async (channel: ChannelResult) => {
     setAdding(channel.channelId);
     setNotice(null);
@@ -164,17 +159,11 @@ export default function YouTubeSearchPage() {
     <section className="yt-page">
       <header className="yt-page-heading">
         <div>
-          <span className="yt-eyebrow">DISCOVER VIDEOS AND CREATORS</span>
-          <h1>Search YouTube</h1>
-          <p>Find videos by topic, title or creator, then watch them in Kairo.</p>
+          <span className="yt-eyebrow">YOUTUBE SEARCH</span>
+          <h1>{query ? `Results for “${query}”` : 'Search YouTube'}</h1>
+          <p>{query ? 'Videos and channels matching your search.' : 'Search for a video, topic or creator from the bar above.'}</p>
         </div>
       </header>
-
-      <form className="yt-search-form" onSubmit={search} role="search">
-        <Search size={19} aria-hidden="true" />
-        <input aria-label="Search YouTube" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder={mode === 'videos' ? 'Search videos, games, music, creators…' : 'Search public channels or creators…'} maxLength={80} />
-        <button type="submit" className="yt-button yt-button-primary" disabled={loading || query.trim().length < 2}>{loading ? 'Searching…' : 'Search'}</button>
-      </form>
 
       <div className="yt-search-modes" role="tablist" aria-label="YouTube search type">
         <button type="button" role="tab" aria-selected={mode === 'videos'} className={mode === 'videos' ? 'active' : ''} onClick={() => openSearch(query, 'videos')}>Videos</button>
@@ -202,11 +191,6 @@ export default function YouTubeSearchPage() {
         </div>
       )}
 
-      <div className="yt-search-tip">
-        <span>Try a topic</span>
-        {['Minecraft', 'gaming', 'music', 'technology', 'science'].map(term => <button key={term} type="button" onClick={() => openSearch(term)}>{term}</button>)}
-      </div>
-
       {error && <div className="yt-notice" role="alert"><div><b>{error.message}</b>
         {needsLogin && <p><Link to="/login">Sign in</Link> to search and save channels.</p>}
         {!needsLogin && <p>Check your connection and try again.</p>}
@@ -225,9 +209,9 @@ export default function YouTubeSearchPage() {
       {!loading && videos.length > 0 && mode === 'videos' && (
         <div className="yt-results yt-video-search-results">
           <div className="yt-section-heading"><div><h2>Video results</h2><p>{totalResults !== null ? totalResults.toLocaleString() + ' results' : videos.length + ' videos loaded'}</p></div></div>
-          <div className="yt-video-grid">
+          <div className="yt-search-video-list">
             {videos.map(video => (
-              <YouTubeVideoCard key={video.videoId} video={video} relatedVideos={relatedVideos} />
+              <YouTubeVideoCard key={video.videoId} video={video} relatedVideos={relatedVideos} layout="list" />
             ))}
           </div>
           {nextPageToken && <div className="yt-scroll-sentinel">
