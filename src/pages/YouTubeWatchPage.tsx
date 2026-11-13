@@ -28,6 +28,25 @@ async function responsePayload(response: Response): Promise<any> {
   return response.json().catch(() => null);
 }
 
+
+/** Temporary browser diagnostics. Enable with ?ytdebug=1; remove after the embed issue is diagnosed. */
+function youtubeDebug(event: string, details: Record<string, unknown> = {}): void {
+  if (new URLSearchParams(window.location.search).get('ytdebug') !== '1') return;
+  const referrer = document.referrer;
+  let referrerOrigin: string | null = null;
+  if (referrer) {
+    try { referrerOrigin = new URL(referrer).origin; } catch { /* never log an unparsed referrer */ }
+  }
+  console.info('[KAIRO YouTube debug]', event, {
+    videoOrigin: window.location.origin,
+    referrerPresent: Boolean(referrer),
+    referrerOrigin,
+    referrerPolicy: document.referrerPolicy || null,
+    metaReferrerPolicy: document.querySelector<HTMLMetaElement>('meta[name="referrer"]')?.content ?? null,
+    ...details,
+  });
+}
+
 function relatedFromState(state: unknown, currentVideoId: string): YouTubeCardVideo[] {
   if (!state || typeof state !== 'object') return [];
   const raw = (state as { youtubeRelatedVideos?: unknown }).youtubeRelatedVideos;
@@ -62,6 +81,7 @@ export default function YouTubeWatchPage() {
   useEffect(() => {
     let active = true;
     const load = async () => {
+      youtubeDebug('watch-page-load', { videoId });
       setLoading(true);
       setError('');
       setVideo(null);
@@ -72,6 +92,20 @@ export default function YouTubeWatchPage() {
           fetch('/api/v1/me', { credentials: 'same-origin', headers: { Accept: 'application/json' } }),
         ]);
         const videoPayload = await responsePayload(videoResponse);
+        const returnedVideo = videoPayload?.data && typeof videoPayload.data === 'object'
+          ? videoPayload.data as Record<string, unknown>
+          : null;
+        youtubeDebug('metadata-response', {
+          videoId,
+          httpStatus: videoResponse.status,
+          responseOk: videoResponse.ok,
+          apiSuccess: videoPayload?.success === true,
+          apiErrorCode: typeof videoPayload?.error?.code === 'string' ? videoPayload.error.code : null,
+          hasVideoData: Boolean(returnedVideo),
+          returnedVideoIdMatches: returnedVideo?.videoId === videoId,
+          embeddable: typeof returnedVideo?.embeddable === 'boolean' ? returnedVideo.embeddable : null,
+          embeddableFieldPresent: Boolean(returnedVideo && Object.prototype.hasOwnProperty.call(returnedVideo, 'embeddable')),
+        });
         if (!videoResponse.ok || !videoPayload?.success || !videoPayload.data) {
           throw new Error(videoPayload?.error?.message ?? 'This YouTube video could not be found.');
         }

@@ -37,10 +37,32 @@ type Props = {
   onProgress?: (seconds: number, duration: number, completed: boolean, reason: YouTubeProgressReason) => void;
 };
 
+
+/** Temporary browser diagnostics. Enable with ?ytdebug=1; remove after the embed issue is diagnosed. */
+function youtubeDebug(event: string, details: Record<string, unknown> = {}): void {
+  if (new URLSearchParams(window.location.search).get('ytdebug') !== '1') return;
+  const referrer = document.referrer;
+  let referrerOrigin: string | null = null;
+  if (referrer) {
+    try { referrerOrigin = new URL(referrer).origin; } catch { /* never log an unparsed referrer */ }
+  }
+  console.info('[KAIRO YouTube debug]', event, {
+    videoOrigin: window.location.origin,
+    referrerPresent: Boolean(referrer),
+    referrerOrigin,
+    referrerPolicy: document.referrerPolicy || null,
+    metaReferrerPolicy: document.querySelector<HTMLMetaElement>('meta[name="referrer"]')?.content ?? null,
+    ...details,
+  });
+}
+
 let apiPromise: Promise<YouTubeApi> | null = null;
 
 function loadYouTubeIframeApi(): Promise<YouTubeApi> {
-  if (window.YT?.Player) return Promise.resolve(window.YT);
+  if (window.YT?.Player) {
+    youtubeDebug('iframe-api-already-available');
+    return Promise.resolve(window.YT);
+  }
   if (apiPromise) return apiPromise;
   apiPromise = new Promise<YouTubeApi>((resolve, reject) => {
     const previousReady = window.onYouTubeIframeAPIReady;
@@ -54,6 +76,7 @@ function loadYouTubeIframeApi(): Promise<YouTubeApi> {
       resolve(window.YT);
     };
     window.onYouTubeIframeAPIReady = () => {
+      youtubeDebug('iframe-api-callback');
       try { previousReady?.(); } catch { /* preserve the player API callback */ }
       finish();
     };
@@ -61,14 +84,17 @@ function loadYouTubeIframeApi(): Promise<YouTubeApi> {
       if (settled) return;
       settled = true;
       apiPromise = null;
+      youtubeDebug('iframe-api-timeout', { timeoutMs: 15000 });
       reject(new Error('The YouTube player took too long to load.'));
     }, 15000);
     const existing = document.querySelector<HTMLScriptElement>('script[src="https://www.youtube.com/iframe_api"]');
+    youtubeDebug('iframe-api-load-start', { scriptAlreadyPresent: Boolean(existing) });
     if (!existing) {
       const script = document.createElement('script');
       script.src = 'https://www.youtube.com/iframe_api';
       script.async = true;
       script.onerror = () => {
+        youtubeDebug('iframe-api-script-error');
         if (settled) return;
         settled = true;
         window.clearTimeout(timeout);
@@ -117,6 +143,7 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
       stopTimer();
       timerRef.current = window.setInterval(() => report('timeupdate'), 10000);
     };
+    youtubeDebug('player-initializing', { videoId, startSeconds });
     const restorePosition = (target: YouTubePlayer): boolean => {
       if (restoredRef.current) return true;
       const duration = target.getDuration();
@@ -128,6 +155,7 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
     };
 
     void loadYouTubeIframeApi().then((api) => {
+      youtubeDebug('iframe-api-ready', { videoId });
       if (cancelled || !hostRef.current) return;
       const player = new api.Player(hostRef.current, {
         videoId,
@@ -143,6 +171,7 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
         },
         events: {
           onReady: (event) => {
+            youtubeDebug('player-ready', { videoId });
             if (cancelled) return;
             playerRef.current = event.target;
             setReady(true);
@@ -158,6 +187,15 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
             }
           },
           onStateChange: (event) => {
+            const stateNames: Record<number, string> = {
+              [api.PlayerState.UNSTARTED]: 'unstarted',
+              [api.PlayerState.ENDED]: 'ended',
+              [api.PlayerState.PLAYING]: 'playing',
+              [api.PlayerState.PAUSED]: 'paused',
+              [api.PlayerState.BUFFERING]: 'buffering',
+              [api.PlayerState.CUED]: 'cued',
+            };
+            youtubeDebug('player-state', { videoId, state: event.data, stateName: stateNames[event.data] ?? 'unknown' });
             if (event.data === api.PlayerState.PLAYING) {
               if (!restorePosition(event.target) && resumeTimerRef.current === null) {
                 let attempts = 0;
@@ -182,6 +220,7 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
             }
           },
           onError: (event) => {
+            youtubeDebug('player-error', { videoId, errorCode: event.data });
             stopTimer();
             const messages: Record<number, string> = {
               2: 'YouTube rejected this video ID.',
@@ -197,6 +236,7 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
       });
       playerRef.current = player;
     }).catch((reason: unknown) => {
+      youtubeDebug('player-initialization-error', { videoId, error: reason instanceof Error ? reason.message : 'unknown' });
       if (!cancelled) setError(reason instanceof Error ? reason.message : 'The YouTube player could not be loaded.');
     });
 
