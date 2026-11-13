@@ -10,7 +10,7 @@ The intended experience has two distinct entry points:
 
 Search, channel pages, video rows/cards, and a watch view should use official YouTube services. Kairo may add independent value through saved videos, personal organisation, and cross-provider navigation. Do not claim to reproduce the exact personalised YouTube Home recommendations feed: the documented Data API does not expose it.
 
-This plan describes the full provider roadmap. The current account-foundation work implements the explicit YouTube connection/security foundation only; it does not claim that subscriptions sync or public feeds are already shipped.
+This plan describes the full provider roadmap. The current `youtube` branch includes the separate YouTube OAuth foundation, Kairo-curated public-channel feed, channel search/management, and a Kairo watch page using the official IFrame Player API with Kairo-owned History and Watch Later. It does not yet include authorized YouTube subscription import or a guest-facing general discovery feed.
 
 ## Product, policy and playback boundaries
 
@@ -32,7 +32,7 @@ This plan describes the full provider roadmap. The current account-foundation wo
 
 1. YouTube is an independent provider route/page, not a replacement for anime metadata or playback providers.
 2. The frontend calls the same-origin Kairo API only; no YouTube API key or OAuth client secret belongs in browser bundles.
-3. Public API operations use a Worker-side `YOUTUBE_API_KEY` secret. Validate channel IDs/handles and use quota-aware documented endpoints.
+3. Public API operations use the Worker-side `YOUTUBE_DATA_API_KEY` secret. Validate channel IDs/handles and use quota-aware documented endpoints.
 4. The authenticated YouTube connection has separate connect, callback, status, disconnect and (later) sync behavior. Do not reuse the sign-in-only callback as an API-token store.
 5. Persist per-user connection metadata and encrypted credentials in D1. Keep encryption key material in Worker secrets, not D1 or source control.
 6. Normalize feed items to a small internal `YouTubeVideo` shape: `videoId`, `title`, `description`, `thumbnail`, `channelId`, `channelTitle`, `publishedAt`, `duration` (when available), live status, and source/feed context.
@@ -77,7 +77,7 @@ This plan describes the full provider roadmap. The current account-foundation wo
 - Build a public discovery feed that works without a connected account.
 - Build a separate subscriptions feed from the user's synchronized channel data.
 - Fetch public channel uploads through the documented API, resolve uploads playlists, and paginate efficiently; avoid routine high-cost search requests.
-- Add channel/video cards, channel details, sorting/filtering, loading/empty/error states, and official embedded playback with an external Watch on YouTube fallback.
+- Add channel/video cards, channel details, sorting/filtering, loading/empty/error states, and official embedded playback with an external Watch on YouTube fallback. The Kairo watch page and embedded-player portion is now implemented; general guest discovery and authorized subscription import remain outstanding.
 - Acceptance: visitors can use public discovery without OAuth; connected users can switch to their subscriptions feed; playback respects YouTube's player requirements.
 
 ### Phase 4 — automation, resilience and account controls
@@ -102,7 +102,7 @@ This plan describes the full provider roadmap. The current account-foundation wo
 - Add `YOUTUBE_TOKEN_ENCRYPTION_KEY` as a Worker secret; generate a cryptographically random 32-byte key, encode it as unpadded base64url, and keep it out of source control. Never paste the secret into chat.
 - Keep `APP_BASE_URL` canonical for each environment. The staging callback is `https://kairo-anime-platform-staging.unpainllama.workers.dev/api/v1/auth/youtube/callback`; register the exact callback URI for every configured environment in Google Cloud Console. Keep the separate Google sign-in callback registered too.
 - Enable YouTube Data API v3 in the associated Google Cloud project.
-- Public API access will require a Worker-side `YOUTUBE_API_KEY` secret if/when the public feed adapter is implemented.
+- Current channel/feed and video-metadata endpoints require the Worker-side `YOUTUBE_DATA_API_KEY` secret. The separate OAuth token-encryption key remains `YOUTUBE_TOKEN_ENCRYPTION_KEY`.
 - Apply D1 migrations to each environment only after review and explicit release approval.
 - For the staging experiment only, any existing `YOUTUBE_STAGING_TOKEN` remains a secret and its endpoint remains restricted to staging. It is not a production feature.
 

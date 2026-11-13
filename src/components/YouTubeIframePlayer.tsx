@@ -158,7 +158,19 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
             }
           },
           onStateChange: (event) => {
-            if (event.data === api.PlayerState.PLAYING) startTimer();
+            if (event.data === api.PlayerState.PLAYING) {
+              if (!restorePosition(event.target) && resumeTimerRef.current === null) {
+                let attempts = 0;
+                resumeTimerRef.current = window.setInterval(() => {
+                  attempts += 1;
+                  if (restorePosition(event.target) || attempts >= 20) {
+                    if (resumeTimerRef.current !== null) window.clearInterval(resumeTimerRef.current);
+                    resumeTimerRef.current = null;
+                  }
+                }, 500);
+              }
+              startTimer();
+            }
             else if (event.data === api.PlayerState.PAUSED) {
               stopTimer();
               report('pause');
