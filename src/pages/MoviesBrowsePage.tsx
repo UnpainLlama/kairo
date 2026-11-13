@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ChevronLeft, ChevronRight, Filter, RefreshCw } from 'lucide-react';
 import { ApiError, apiGet } from '../lib/api';
-import type { MovieGenre, MoviePage as MoviePageData, MovieSummary } from '../lib/movies';
+import type { MovieGenre, MoviePage as MoviePageData } from '../lib/movies';
 import MovieCard from '../components/MovieCard';
 
 const CATEGORIES: Record<string, { title: string; kind: string; description: string }> = {
