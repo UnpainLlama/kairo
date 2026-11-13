@@ -81,7 +81,7 @@ Open these in a browser (replace the host with your staging URL):
 | `ALLOWED_ORIGIN` | var, optional | not set | Only for cross-origin API use |
 | `GOOGLE_CLIENT_SECRET` | Worker secret | Cloudflare Worker environment | Required for Google sign-in and account linking |
 | `YOUTUBE_TOKEN_ENCRYPTION_KEY` | Worker secret | Cloudflare Worker environment | Required for YouTube token encryption; 32 random bytes, unpadded base64url |
-| `YOUTUBE_DATA_API_KEY` | Worker secret | Cloudflare Worker environment | Required for public YouTube channel search and uploads; restrict to YouTube Data API v3 |
+| `YOUTUBE_DATA_API_KEY` | Worker secret | Cloudflare Worker environment | Required for public YouTube video/channel search, uploads and watch metadata; restrict to YouTube Data API v3 |
 | `TMDB_ACCESS_TOKEN` | Worker secret, optional | Cloudflare Worker environment | Optional TMDB artwork enrichment |
 | `YOUTUBE_STAGING_TOKEN` | Worker secret, optional | Cloudflare staging environment only | Staging-only YouTube feed experiment; not a production feature |
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | GitHub environment **secrets** | GitHub only | Deploying. Never in the repo or the Worker |

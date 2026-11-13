@@ -581,6 +581,105 @@ export function registerYouTubeAuthRoutes(app: any): void {
     }
   });
 
+
+  app.get('/api/v1/youtube/videos/search', async (c: YouTubeContext) => {
+    c.header('Cache-Control', 'no-store');
+    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to search YouTube videos.' } }, 401);
+
+    const params = new URL(c.req.url).searchParams;
+    const term = params.get('q')?.trim() ?? '';
+    const order = params.get('order') ?? 'relevance';
+    const duration = params.get('duration') ?? 'any';
+    const pageToken = params.get('pageToken') ?? '';
+    if (term.length < 2 || term.length > 80 || /[\u0000-\u001F\u007F]/.test(term)) {
+      return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Enter a video title, topic or creator between 2 and 80 characters.' } }, 400);
+    }
+    if (!['relevance', 'date', 'viewCount', 'rating', 'title'].includes(order)) {
+      return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Choose a supported video sort order.' } }, 400);
+    }
+    if (!['any', 'short', 'medium', 'long'].includes(duration)) {
+      return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Choose a supported video duration.' } }, 400);
+    }
+    if (pageToken.length > 512 || /[\u0000-\u001F\u007F]/.test(pageToken)) {
+      return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'The search page token is invalid. Start a new search.' } }, 400);
+    }
+    if (!c.env.YOUTUBE_DATA_API_KEY?.trim()) return youtubeRouteError(c, 'youtube_video_search_config_unavailable', new Error('YOUTUBE_API_KEY_MISSING'));
+    if (!await allowYouTubeRequest(c, user.id, 'video-search', 8, { bucket: 'search-list-daily', limit: YOUTUBE_SEARCH_DAILY_LIMIT, windowMs: YOUTUBE_DAILY_WINDOW_MS })) {
+      return c.json({ success: false, error: { code: 'RATE_LIMITED', message: 'Too many YouTube video searches. Please try again in 15 minutes.' } }, 429);
+    }
+
+    try {
+      const apiKey = youtubeApiKey(c);
+      const searchParams: Record<string, string> = {
+        part: 'snippet',
+        type: 'video',
+        maxResults: '18',
+        q: term,
+        order,
+        safeSearch: 'moderate',
+      };
+      if (duration !== 'any') searchParams.videoDuration = duration;
+      if (pageToken) searchParams.pageToken = pageToken;
+      const result = await youtubeApiGet(apiKey, 'search', searchParams);
+      const candidates = (Array.isArray(result.items) ? result.items : []).map((item: any) => {
+        const videoId = item?.id?.videoId;
+        if (typeof videoId !== 'string' || !/^[A-Za-z0-9_-]{11}$/.test(videoId)) return null;
+        const snippet = item?.snippet ?? {};
+        const publishedAt = typeof snippet.publishedAt === 'string' && !Number.isNaN(Date.parse(snippet.publishedAt))
+          ? new Date(snippet.publishedAt).toISOString()
+          : null;
+        return {
+          videoId,
+          title: typeof snippet.title === 'string' ? snippet.title.slice(0, 300) : 'YouTube video',
+          description: typeof snippet.description === 'string' ? snippet.description.slice(0, 1000) : '',
+          thumbnailUrl: youtubeThumbnail(snippet.thumbnails),
+          channelId: typeof snippet.channelId === 'string' ? snippet.channelId.slice(0, 64) : '',
+          channelTitle: typeof snippet.channelTitle === 'string' ? snippet.channelTitle.slice(0, 180) : 'YouTube',
+          publishedAt,
+          durationSeconds: null as number | null,
+          url: 'https://www.youtube.com/watch?v=' + videoId,
+        };
+      }).filter((item: any) => item !== null);
+      
+      // Duration enrichment is a single inexpensive videos.list request for this result page.
+      // Search results remain usable if metadata enrichment is temporarily unavailable.
+      const videoIds = candidates.map((video: any) => video.videoId as string);
+      if (videoIds.length && await bumpYouTubeRateBucket(c, 'data-api-daily', YOUTUBE_DATA_DAILY_LIMIT, YOUTUBE_DAILY_WINDOW_MS, 1)) {
+        try {
+          const details = await youtubeApiGet(apiKey, 'videos', { part: 'contentDetails', id: videoIds.join(',') });
+          const durationById = new Map<string, number>();
+          for (const item of Array.isArray(details.items) ? details.items : []) {
+            const id = item?.id;
+            const rawDuration = item?.contentDetails?.duration;
+            if (typeof id !== 'string' || typeof rawDuration !== 'string') continue;
+            const match = /^P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/.exec(rawDuration);
+            if (!match) continue;
+            const seconds = Number(match[1] ?? 0) * 86400 + Number(match[2] ?? 0) * 3600 + Number(match[3] ?? 0) * 60 + Number(match[4] ?? 0);
+            if (Number.isFinite(seconds) && seconds >= 0 && seconds <= 604800) durationById.set(id, Math.floor(seconds));
+          }
+          for (const video of candidates) video.durationSeconds = durationById.get(video.videoId) ?? null;
+        } catch (error) {
+          logYouTubeDiagnostic(c, 'youtube_video_search_details_failed', { errorName: safeErrorName(error), reason: error instanceof Error ? error.message : 'unknown' });
+        }
+      }
+
+      const nextPageToken = typeof result.nextPageToken === 'string' && result.nextPageToken.length <= 512 ? result.nextPageToken : null;
+      const totalResults = Number(result.pageInfo?.totalResults);
+      return c.json({
+        success: true,
+        data: {
+          videos: candidates,
+          nextPageToken,
+          totalResults: Number.isFinite(totalResults) && totalResults >= 0 ? totalResults : null,
+        },
+        meta: { requestId: requestId(c) },
+      });
+    } catch (error) {
+      return youtubeRouteError(c, 'youtube_video_search_failed', error);
+    }
+  });
+
   app.post('/api/v1/youtube/channels', async (c: any) => {
     c.header('Cache-Control', 'no-store');
     const origin = c.req.header('Origin');

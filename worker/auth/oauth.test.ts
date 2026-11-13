@@ -554,3 +554,128 @@ describe('Kairo YouTube shared quota budgets', () => {
     }
   });
 });
+
+
+describe('YouTube keyword video search', () => {
+  it('searches videos, supports filters and pagination, and enriches result durations', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/videos/search');
+    const providerFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      expect(url.searchParams.get('key')).toBe('worker-test-key');
+      if (url.pathname.endsWith('/search')) {
+        expect(url.searchParams.get('q')).toBe('Minecraft');
+        expect(url.searchParams.get('type')).toBe('video');
+        expect(url.searchParams.get('order')).toBe('date');
+        expect(url.searchParams.get('videoDuration')).toBe('short');
+        expect(url.searchParams.get('pageToken')).toBe('page-one');
+        return new Response(JSON.stringify({
+          items: [{
+            id: { kind: 'youtube#video', videoId: 'dQw4w9WgXcQ' },
+            snippet: {
+              title: 'Minecraft survival guide',
+              description: 'A gameplay guide',
+              channelId: 'UCabcdefghij',
+              channelTitle: 'Example Gaming',
+              publishedAt: '2026-10-01T12:00:00Z',
+              thumbnails: { high: { url: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg' } },
+            },
+          }],
+          nextPageToken: 'next-page',
+          pageInfo: { totalResults: 37 },
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      expect(url.pathname).toBe('/youtube/v3/videos');
+      expect(url.searchParams.get('part')).toBe('contentDetails');
+      expect(url.searchParams.get('id')).toBe('dQw4w9WgXcQ');
+      return new Response(JSON.stringify({
+        items: [{ id: 'dQw4w9WgXcQ', contentDetails: { duration: 'PT12M5S' } }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    vi.stubGlobal('fetch', providerFetch);
+    try {
+      const ctx = makeContext({
+        url: canonicalOrigin + '/api/v1/youtube/videos/search?q=Minecraft&order=date&duration=short&pageToken=page-one',
+        cookie: 'kairo_session=' + 'a'.repeat(43),
+        env: { DB: mockDb(), YOUTUBE_DATA_API_KEY: 'worker-test-key' },
+      });
+      const response = await handler(ctx.context);
+      expect(response.status).toBe(200);
+      expect(ctx.jsonBody).toMatchObject({
+        success: true,
+        data: {
+          videos: [{
+            videoId: 'dQw4w9WgXcQ',
+            title: 'Minecraft survival guide',
+            channelTitle: 'Example Gaming',
+            durationSeconds: 725,
+            url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          }],
+          nextPageToken: 'next-page',
+          totalResults: 37,
+        },
+      });
+      expect(JSON.stringify(ctx.jsonBody)).not.toContain('worker-test-key');
+      expect(providerFetch).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('requires a signed-in Kairo session', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/videos/search');
+    const providerFetch = vi.fn();
+    vi.stubGlobal('fetch', providerFetch);
+    try {
+      const ctx = makeContext({
+        url: canonicalOrigin + '/api/v1/youtube/videos/search?q=Minecraft',
+        cookie: 'kairo_session=' + 'a'.repeat(43),
+        env: { DB: mockDb({ authenticated: false }), YOUTUBE_DATA_API_KEY: 'worker-test-key' },
+      });
+      const response = await handler(ctx.context);
+      expect(response.status).toBe(401);
+      expect(ctx.jsonBody).toMatchObject({ error: { code: 'AUTH_REQUIRED' } });
+      expect(providerFetch).not.toHaveBeenCalled();
+      expect(ctx.headers.get('cache-control')).toEqual(['no-store']);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('validates sort and duration filters before calling YouTube', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/videos/search');
+    const providerFetch = vi.fn();
+    vi.stubGlobal('fetch', providerFetch);
+    try {
+      const ctx = makeContext({
+        url: canonicalOrigin + '/api/v1/youtube/videos/search?q=Minecraft&order=invalid',
+        cookie: 'kairo_session=' + 'a'.repeat(43),
+        env: { DB: mockDb(), YOUTUBE_DATA_API_KEY: 'worker-test-key' },
+      });
+      const response = await handler(ctx.context);
+      expect(response.status).toBe(400);
+      expect(ctx.jsonBody).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+      expect(providerFetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('respects the shared daily search.list call budget', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/videos/search');
+    const providerFetch = vi.fn();
+    vi.stubGlobal('fetch', providerFetch);
+    try {
+      const ctx = makeContext({
+        url: canonicalOrigin + '/api/v1/youtube/videos/search?q=Minecraft',
+        cookie: 'kairo_session=' + 'a'.repeat(43),
+        env: { DB: mockDb({ youtubeGlobalRateLimitAttempts: 81 }), YOUTUBE_DATA_API_KEY: 'worker-test-key' },
+      });
+      const response = await handler(ctx.context);
+      expect(response.status).toBe(429);
+      expect(ctx.jsonBody).toMatchObject({ error: { code: 'RATE_LIMITED' } });
+      expect(providerFetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});

@@ -1403,3 +1403,25 @@ img { display: block; }
   .yt-library-item { grid-template-columns: 110px minmax(0,1fr); gap: 10px; }
   .yt-library-item > .yt-remove-button { grid-column: 2; justify-self: start; font-size: 11px; }
 }
+
+
+/* YouTube keyword search */
+.yt-search-modes { display: flex; align-items: center; gap: 6px; margin-top: 18px; }
+.yt-search-modes button { min-height: 35px; padding: 0 14px; border: 1px solid #34353d; border-radius: 8px; background: transparent; color: #a9aab3; font-size: 12px; font-weight: 750; }
+.yt-search-modes button:hover { border-color: #666772; color: #fff; }
+.yt-search-modes button.active { border-color: #666772; background: #282930; color: #fff; }
+.yt-search-filters { display: flex; align-items: end; gap: 12px; margin-top: 15px; }
+.yt-search-filters label { display: grid; gap: 6px; color: #92939d; font-size: 11px; font-weight: 650; }
+.yt-search-filters select { min-width: 150px; height: 36px; padding: 0 30px 0 10px; border: 1px solid #373841; border-radius: 7px; background: #191a20; color: #e6e6e9; font: inherit; font-size: 12px; }
+.yt-search-filters select:disabled { opacity: .55; }
+.yt-video-search-results { max-width: none; }
+.yt-video-search-results .yt-video-grid { margin-top: 4px; }
+.yt-video-thumb .yt-video-duration { right: auto; left: 9px; display: inline-flex; align-items: center; gap: 4px; opacity: 1; }
+.yt-video-thumb .yt-video-watch-label { right: 9px; opacity: 0; }
+.yt-video-thumb:hover .yt-video-watch-label, .yt-video-thumb:focus-visible .yt-video-watch-label { opacity: 1; }
+
+@media (max-width: 680px) {
+  .yt-search-filters { gap: 8px; }
+  .yt-search-filters label { flex: 1; min-width: 0; }
+  .yt-search-filters select { width: 100%; min-width: 0; }
+}

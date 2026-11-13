@@ -6,6 +6,7 @@ Make YouTube a first-class Kairo provider, reachable from the Media provider men
 
 The intended experience has two distinct entry points:
 - A public discovery feed that works without connecting an account.
+- Keyword-based public video search (including sort, duration filters and pagination) and channel discovery, without requiring a YouTube account connection.
 - An optional subscriptions feed for users who explicitly connect YouTube to their signed-in Kairo account.
 
 Search, channel pages, video rows/cards, and a watch view should use official YouTube services. Kairo may add independent value through saved videos, personal organisation, and cross-provider navigation. Do not claim to reproduce the exact personalised YouTube Home recommendations feed: the documented Data API does not expose it.
@@ -15,7 +16,7 @@ This plan describes the full provider roadmap. The current `youtube` branch incl
 ## Product, policy and playback boundaries
 
 - Use the official YouTube Data API v3 for public channel/video metadata, uploads playlists, and authorized subscription data.
-- Resolve a channel's uploads playlist through the channel resource, then page `playlistItems.list`. Avoid routine `search.list` calls because their quota cost is substantially higher.
+- Resolve a channel's uploads playlist through the channel resource, then page `playlistItems.list` for feed building. Interactive keyword search uses the official `search.list` endpoint and must remain behind the app's shared daily search-call budget.
 - Use Google's documented OAuth authorization-code flow with PKCE for optional YouTube access. Request only `https://www.googleapis.com/auth/youtube.readonly` for the initial connection.
 - Kairo Google sign-in is a separate identity flow and must continue to request only `openid email profile`. Connecting YouTube must never silently expand sign-in scopes.
 - **Production product boundary:** never request or store YouTube passwords, browser cookies, or copied session tokens; never depend on undocumented InnerTube endpoints or scrape YouTube. Use the official YouTube Data API and supported OAuth flows.

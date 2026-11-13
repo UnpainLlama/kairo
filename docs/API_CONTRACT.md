@@ -112,6 +112,7 @@ Validate finite non-negative numbers, enforce sensible duration/position bounds,
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/v1/youtube/channels/search?q=...` | Search public YouTube channels using the server-side API key. |
+| GET | `/api/v1/youtube/videos/search?q=...` | Search public YouTube videos by keyword, with sort, duration and page-token filters. |
 | GET | `/api/v1/youtube/channels` | List the user's channels saved in Kairo. |
 | POST | `/api/v1/youtube/channels` | Add a public channel to the user's Kairo feed. |
 | DELETE | `/api/v1/youtube/channels/:channelId` | Remove a channel from the user's Kairo feed. |
