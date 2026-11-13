@@ -256,6 +256,17 @@ app.get('/api/v1/movies/experience/genres', async (c) => {
   }
 });
 
+app.get('/api/v1/movies/experience/people/popular', async (c) => {
+  if (!moviesProviderEnabled(c)) return fail(c, 503, 'MOVIES_DISABLED', 'Movies metadata is not enabled or its provider terms have not been approved.');
+  const page = boundedInt(c.req.query('page'), 1, 1, 100);
+  if (page === null) return fail(c, 400, 'VALIDATION_ERROR', 'page must be 1–100.');
+  try {
+    return ok(c, await movieExperience(c).popularPeople(page), { provider: 'tmdb', catalogue: 'people' });
+  } catch (error) {
+    return movieProviderFailure(c, error);
+  }
+});
+
 app.get('/api/v1/movies/experience/detail/:mediaType/:externalId', async (c) => {
   if (!moviesProviderEnabled(c)) return fail(c, 503, 'MOVIES_DISABLED', 'Movies metadata is not enabled or its provider terms have not been approved.');
   const mediaType = c.req.param('mediaType');
