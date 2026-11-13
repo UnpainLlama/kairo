@@ -1,4 +1,5 @@
 import { memo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { selectActivePage } from '../state/selectors';
 import { usePageLoader } from '../hooks/usePageLoader';
@@ -24,6 +25,7 @@ const ALL_TABS: Tab[] = [
 
 export const MobileNavBar = memo(function MobileNavBar() {
   const activePage = useSelector(selectActivePage);
+  const navigate = useNavigate();
   const loadPage = usePageLoader();
   const settings = useSettings();
   const currentProfile = useCurrentProfile();
@@ -53,6 +55,7 @@ export const MobileNavBar = memo(function MobileNavBar() {
 
   return (
     <nav style={bar} role="navigation" aria-label="Mobile navigation">
+      <button type="button" aria-label="Back to Kairo" onClick={() => navigate('/')} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: '6px 10px', background: 'none', border: 'none', color: 'rgba(255,255,255,0.65)', fontSize: 10, fontFamily: theme.typography.fontFamily }}><span style={{ fontSize: 20, fontWeight: 900, color: '#e50914' }}>K</span><span>Kairo</span></button>
       {tabs.map((tab) => {
         const isActive = activePage === tab.id;
         const tabStyle: CSSProperties = {
