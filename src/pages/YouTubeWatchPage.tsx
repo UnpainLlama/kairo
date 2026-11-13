@@ -13,6 +13,7 @@ type VideoDetails = {
   publishedAt: string | null;
   durationSeconds: number | null;
   embeddable: boolean;
+  madeForKids: boolean;
   url: string;
 };
 type StoredHistory = { videoId: string; progressSeconds: number; durationSeconds: number | null };
@@ -54,9 +55,10 @@ export default function YouTubeWatchPage() {
         }
         const userPayload = accountResponse.ok ? await responsePayload(accountResponse) : null;
         const userId = typeof userPayload?.data?.user?.id === 'string' ? userPayload.data.user.id : null;
+        const madeForKids = videoPayload.data.madeForKids === true;
         let history: StoredHistory | null = null;
         let saved = false;
-        if (userId) {
+        if (userId && !madeForKids) {
           const [historyResponse, laterResponse] = await Promise.all([
             fetch('/api/v1/youtube/history', { credentials: 'same-origin', headers: { Accept: 'application/json' } }),
             fetch('/api/v1/youtube/watch-later', { credentials: 'same-origin', headers: { Accept: 'application/json' } }),
@@ -67,7 +69,7 @@ export default function YouTubeWatchPage() {
           saved = (laterPayload?.data?.items ?? []).some((item: { videoId: string }) => item.videoId === videoId);
         }
         let localProgress = 0;
-        try { localProgress = Number(localStorage.getItem(progressKey(userId, videoId)) ?? 0); } catch { /* storage may be disabled */ }
+        try { localProgress = madeForKids ? 0 : Number(localStorage.getItem(progressKey(userId, videoId)) ?? 0); } catch { /* storage may be disabled */ }
         const resume = history && Number.isFinite(history.progressSeconds) ? history.progressSeconds : localProgress;
         if (active) {
           setVideo(videoPayload.data as VideoDetails);
@@ -86,7 +88,7 @@ export default function YouTubeWatchPage() {
   }, [videoId]);
 
   const onProgress = useCallback((seconds: number, duration: number, completed: boolean, reason: 'timeupdate' | 'pause' | 'ended' | 'pagehide') => {
-    if (!video || !Number.isFinite(seconds) || !Number.isFinite(duration) || duration <= 0) return;
+    if (!video || video.madeForKids || !Number.isFinite(seconds) || !Number.isFinite(duration) || duration <= 0) return;
     const position = completed ? duration : Math.max(0, Math.min(duration, seconds));
     const now = Date.now();
     try { localStorage.setItem(progressKey(accountId, video.videoId), String(position)); } catch { /* local storage may be disabled */ }
@@ -115,7 +117,7 @@ export default function YouTubeWatchPage() {
   }, [accountId, video]);
 
   const saveToWatchLater = async () => {
-    if (!video || !accountId || saving) return;
+    if (!video || video.madeForKids || !accountId || saving) return;
     setSaving(true);
     setError('');
     try {
@@ -170,14 +172,16 @@ export default function YouTubeWatchPage() {
                 videoId={video.videoId}
                 title={video.title}
                 startSeconds={startSeconds}
-                onProgress={onProgress}
+                onProgress={video.madeForKids ? undefined : onProgress}
               />
             )}
           </section>
           <div className="kc-player-toolbar">
             <div className="kc-player-toolbar-left"><span className="kc-live-dot" /> <span>YouTube player</span><span className="kc-toolbar-divider" /><span>{video.durationSeconds ? Math.floor(video.durationSeconds / 60) + ' min' : 'Video'}</span></div>
             <div className="kc-player-toolbar-actions">
-              {accountId ? (
+              {video.madeForKids ? (
+                <span className="kc-player-tool" role="note">History is off for this video</span>
+              ) : accountId ? (
                 <button type="button" className={'kc-player-tool' + (isSaved ? ' is-on' : '')} onClick={() => void saveToWatchLater()} disabled={isSaved || saving} aria-pressed={isSaved}>
                   {isSaved ? <BookmarkCheck size={14} /> : <Bookmark size={14} />}{isSaved ? 'Saved' : saving ? 'Saving…' : 'Watch later'}
                 </button>
@@ -191,6 +195,7 @@ export default function YouTubeWatchPage() {
               <p>{video.channelTitle}{video.publishedAt ? ' · ' + new Date(video.publishedAt).toLocaleDateString() : ''}</p>
             </div>
           </div>
+          {video.madeForKids && <div className="yt-notice" role="note">YouTube marks this video as Made for Kids, so Kairo does not save watch history or playback progress for it.</div>}
           {error && <div className="yt-notice" role="alert">{error}</div>}
           {video.description && <div className="kc-watch-about yt-video-description"><p>{video.description}</p></div>}
         </div>
@@ -200,8 +205,8 @@ export default function YouTubeWatchPage() {
           <div className="yt-watch-sidebar-copy">
             <b>{video.channelTitle}</b>
             <p>{video.publishedAt ? 'Published ' + new Date(video.publishedAt).toLocaleDateString() : 'YouTube video'}</p>
-            {accountId && <Link to="/youtube/history"><History size={14} /> Your watch history</Link>}
-            <Link to="/youtube/watch-later"><Bookmark size={14} /> Watch Later</Link>
+            {!video.madeForKids && accountId && <Link to="/youtube/history"><History size={14} /> Your watch history</Link>}
+            {!video.madeForKids && <Link to="/youtube/watch-later"><Bookmark size={14} /> Watch Later</Link>}
             <a href={video.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} /> Open on YouTube</a>
           </div>
         </aside>

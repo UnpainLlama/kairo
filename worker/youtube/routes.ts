@@ -29,8 +29,14 @@ export type YouTubeVideoRecord = {
   publishedAt: string | null;
   durationSeconds: number | null;
   embeddable: boolean;
+  madeForKids: boolean;
   url: string;
 };
+
+export function isYouTubeVideoMarkedMadeForKids(status: unknown): boolean {
+  if (!status || typeof status !== 'object') return false;
+  return (status as Record<string, unknown>).madeForKids === true;
+}
 
 export function isYouTubeVideoId(value: unknown): value is string {
   return typeof value === 'string' && VIDEO_ID.test(value);
@@ -173,6 +179,7 @@ async function youtubeApiVideo(c: YouTubeContext, videoId: string): Promise<YouT
     publishedAt: typeof snippet.publishedAt === 'string' && !Number.isNaN(Date.parse(snippet.publishedAt)) ? new Date(snippet.publishedAt).toISOString() : null,
     durationSeconds: parseYouTubeDuration(item.contentDetails?.duration),
     embeddable: item.status?.embeddable === true,
+    madeForKids: isYouTubeVideoMarkedMadeForKids(item.status),
     url: 'https://www.youtube.com/watch?v=' + videoId,
   };
 }

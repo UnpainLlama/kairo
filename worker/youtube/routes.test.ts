@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isYouTubeVideoId, parseYouTubeDuration, safeYouTubeThumbnailUrl } from './routes';
+import { isYouTubeVideoId, isYouTubeVideoMarkedMadeForKids, parseYouTubeDuration, safeYouTubeThumbnailUrl } from './routes';
 
 describe('YouTube media input validation', () => {
   it('accepts canonical 11-character video IDs only', () => {
@@ -22,5 +22,14 @@ describe('YouTube media input validation', () => {
     expect(safeYouTubeThumbnailUrl('https://yt3.ggpht.com/channel/avatar')).toBe('https://yt3.ggpht.com/channel/avatar');
     expect(safeYouTubeThumbnailUrl('http://i.ytimg.com/image.jpg')).toBe(null);
     expect(safeYouTubeThumbnailUrl('https://example.com/image.jpg')).toBe(null);
+  });
+});
+
+describe('YouTube Made for Kids status', () => {
+  it('detects the API-provided Made for Kids flag without guessing when absent', () => {
+    expect(isYouTubeVideoMarkedMadeForKids({ madeForKids: true })).toBe(true);
+    expect(isYouTubeVideoMarkedMadeForKids({ madeForKids: false })).toBe(false);
+    expect(isYouTubeVideoMarkedMadeForKids({})).toBe(false);
+    expect(isYouTubeVideoMarkedMadeForKids(null)).toBe(false);
   });
 });

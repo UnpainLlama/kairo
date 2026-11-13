@@ -23,7 +23,7 @@ This plan describes the full provider roadmap. The current `youtube` branch incl
 - Store OAuth access/refresh tokens only on the Worker side, encrypted at rest with a dedicated key. Never return tokens to the browser or write them to logs.
 - Bind a YouTube connection to the authenticated Kairo user. Do not auto-link accounts by matching email addresses.
 - Public video embeds do not require the viewer to sign in. Public discovery must remain usable when YouTube is disconnected. Clearly distinguish Kairo discovery from a user's subscriptions and from YouTube Home.
-- Preserve YouTube player branding, ads, controls and attribution. Respect videos with embedding disabled, private/deleted videos, regional restrictions, API errors and player error 153. Always retain a Watch on YouTube fallback.
+- Preserve YouTube player branding, ads, controls and attribution. Respect videos with embedding disabled, private/deleted videos, regional restrictions, API errors and player error 153. Always retain a Watch on YouTube fallback. Query the Made for Kids status for every embedded video and disable Kairo's own history/progress collection for videos marked Made for Kids.
 - Do not proxy video bytes, extract stream URLs, or bypass playback restrictions.
 - Respect API quota, pagination, caching/retention/deletion requirements, and applicable YouTube API policies. Track fetch times and do not retain API data longer than policy permits.
 - The staging-only YouTube.js/cookie experiment in `experiments/youtube-feed-prototype/` and `public/youtube-feed-lab.html` is unofficial, may violate YouTube developer policies, and is not part of the production architecture. It must not be promoted, enabled in production, or used as justification for shipping cookie-based access.
