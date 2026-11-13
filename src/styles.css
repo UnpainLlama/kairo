@@ -1598,7 +1598,6 @@ img { display: block; }
 /* ---------- Movies Noir workspace ---------- */
 .mv-app { --mv-accent: var(--accent); background: var(--bg); }
 .mv-app .kc-rail { background: linear-gradient(90deg, rgba(15,15,17,.88), rgba(15,15,17,.64)); backdrop-filter: blur(10px); }
-.mv-app .kc-main { overflow-x: clip; }
 .mv-home {
   margin: calc(var(--top) * -1) calc(var(--pad) * -1) 0 calc(var(--rail) * -1 - var(--pad));
   padding-bottom: 24px;
