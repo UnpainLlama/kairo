@@ -13,7 +13,7 @@ import { createLiveHandlers, isLiveMode, type LiveHandlers } from './live/handle
 import type { LiveRequest, LiveResult } from './live/types';
 import { createTmdbMovieProvider } from './movies/providers/tmdb';
 import { createMovieCatalogService } from './movies/service';
-import { persistMovieDetail, persistMovieSummary, searchStoredMovies } from './movies/repository';
+import { movieIdentity, persistMovieDetail, persistMovieSummary, searchStoredMovies } from './movies/repository';
 import type { MovieDiscoverQuery, MovieListKind } from './movies/types';
 import { ProviderError } from './metadata/types';
 
@@ -245,7 +245,7 @@ app.post('/api/v1/movies/ingest/:externalId', async (c) => {
   try {
     const result = await movieCatalog(c).byId(externalId);
     const movieId = await persistMovieDetail(c.env.DB, result.data, new Date().toISOString());
-    return ok(c, { id: movieId, slug: result.data.title, provider: 'tmdb' }, { cache: result.cache });
+    return ok(c, { id: movieId, slug: movieIdentity(result.data.providerId, result.data.externalId).slug, provider: 'tmdb' }, { cache: result.cache });
   } catch (error) {
     return movieProviderFailure(c, error);
   }
