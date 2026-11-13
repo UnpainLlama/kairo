@@ -15,7 +15,7 @@ export interface Profile {
   variant?: VariantId;
 }
 
-interface ProfileState {
+export interface ProfileState {
   profiles: Profile[];
   currentProfileId: string | null;
 }
