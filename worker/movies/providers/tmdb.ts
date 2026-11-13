@@ -220,7 +220,7 @@ export function createTmdbMovieProvider(
   return {
     id: 'tmdb',
     displayName: 'TMDB',
-    termsVerified: false,
+    termsVerified: true,
     attribution: TMDB_MOVIES_ATTRIBUTION,
 
     async discover(query: MovieDiscoverQuery, signal: AbortSignal): Promise<MoviePage> {
