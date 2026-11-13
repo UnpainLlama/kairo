@@ -66,7 +66,7 @@ export default function YouTubeVideoCard({ video, relatedVideos = [], channelAva
         </span>
         <div className="yt-video-copy">
           <h3><Link to={'/youtube/watch/' + video.videoId} state={navigationState}>{video.title}</Link></h3>
-          <p>{video.channelTitle || 'YouTube'} · {publishedLabel(video.publishedAt)}</p>
+          <p>{isList ? (video.channelTitle || 'YouTube') + ' · ' + publishedLabel(video.publishedAt) : (video.channelTitle || 'YouTube')}</p>
           {isList && video.description
             ? <small className="yt-video-description-preview">{video.description}</small>
             : !isList && <small>{publishedLabel(video.publishedAt)}</small>}
