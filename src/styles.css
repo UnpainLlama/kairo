@@ -1190,8 +1190,8 @@ img { display: block; }
 .yt-nav-link:hover { color: #fff; background: #1a1b20; }
 .yt-nav-link.active { color: #fff; background: #25262d; }
 .yt-nav-link.active svg { color: var(--yt-accent); }
-.yt-add-channel { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 42px; margin: 0 5px; border: 1px solid rgba(255,82,93,.36); border-radius: 9px; background: var(--yt-accent-soft); color: var(--accent); font-size: 13px; font-weight: 750; }
-.yt-add-channel:hover { background: rgba(255,82,93,.2); color: var(--accent); }
+.yt-add-channel { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 42px; margin: 0 5px; border: 1px solid var(--accent-bg); border-radius: 9px; background: var(--yt-accent-soft); color: var(--accent); font-size: 13px; font-weight: 750; }
+.yt-add-channel:hover { background: var(--accent-bg); color: var(--accent); }
 .yt-sidebar-bottom { display: grid; gap: 4px; margin-top: auto; padding-top: 16px; border-top: 1px solid #24252b; }
 .yt-sidebar-bottom a { display: flex; align-items: center; gap: 12px; min-height: 38px; padding: 0 12px; border-radius: 8px; color: #81828c; font-size: 12px; font-weight: 650; }
 .yt-sidebar-bottom a:hover { background: #191a20; color: #f5f5f6; }
@@ -1221,7 +1221,7 @@ img { display: block; }
 .yt-channel-bubble small { width: 100%; overflow: hidden; color: #a7a8b1; font-size: 10px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .yt-channel-bubble:hover img { outline: 2px solid var(--yt-accent); outline-offset: 3px; }
 .yt-channel-add { display: grid; flex: 0 0 58px; justify-items: center; gap: 8px; color: var(--accent); font-size: 10px; font-weight: 700; }
-.yt-channel-add svg { width: 58px; height: 58px; padding: 18px; border: 1px dashed rgba(255,82,93,.55); border-radius: 50%; background: var(--yt-accent-soft); }
+.yt-channel-add svg { width: 58px; height: 58px; padding: 18px; border: 1px dashed var(--accent-bg); border-radius: 50%; background: var(--yt-accent-soft); }
 .yt-channel-empty { display: flex; align-items: center; gap: 15px; padding: 17px 18px; border: 1px solid #292a32; border-radius: 12px; background: #14151a; }
 .yt-plus-orb { display: grid; flex: 0 0 42px; width: 42px; height: 42px; place-items: center; border-radius: 50%; background: var(--yt-accent-soft); color: var(--accent); }
 .yt-channel-empty > div { flex: 1; min-width: 0; }
@@ -1240,7 +1240,7 @@ img { display: block; }
 .yt-video-copy h3 a:hover { color: var(--accent); }
 .yt-video-copy p { margin-top: 7px; overflow: hidden; color: #a2a3ad; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .yt-video-copy small { display: block; margin-top: 3px; color: #777984; font-size: 10px; }
-.yt-notice { margin: 0 0 20px; padding: 15px 17px; border: 1px solid rgba(255,82,93,.25); border-radius: 10px; background: rgba(255,82,93,.07); color: #dedee2; font-size: 13px; }
+.yt-notice { margin: 0 0 20px; padding: 15px 17px; border: 1px solid var(--accent-bg); border-radius: 10px; background: var(--accent-bg); color: #dedee2; font-size: 13px; }
 .yt-notice b { color: #f7f7f8; }
 .yt-notice p { margin-top: 7px; color: #b0b0b9; }
 .yt-notice a, .yt-inline-action { color: var(--accent); font-weight: 750; text-decoration: underline; text-underline-offset: 3px; }
