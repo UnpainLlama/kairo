@@ -9,15 +9,6 @@ export type TmdbFeedKind = 'trending' | 'popular' | 'top_rated' | 'now_playing' 
 const API_BASE = 'https://api.themoviedb.org/3';
 const API_HOST = 'api.themoviedb.org';
 
-function hash(value: string): string {
-  let result = 0x811c9dc5;
-  for (let i = 0; i < value.length; i += 1) {
-    result ^= value.charCodeAt(i);
-    result = Math.imul(result, 0x01000193);
-  }
-  return (result >>> 0).toString(36);
-}
-
 function positiveId(value: string): boolean {
   return /^\d{1,12}$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) > 0;
 }
@@ -41,7 +32,7 @@ export function createTmdbExperienceService(
 
   async function request(path: string, params: Record<string, string>, cacheTtl: number): Promise<unknown> {
     if (!token) throw new ProviderError('unavailable', 'TMDB is not configured.');
-    const key = 'movies:experience:' + hash(path + '?' + new URLSearchParams(params).toString());
+    const key = 'movies:experience:' + path + '?' + new URLSearchParams(params).toString();
     const cached = await cache.get<unknown>(key);
     if (cached !== null) return cached;
 
