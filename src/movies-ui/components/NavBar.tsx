@@ -1,4 +1,5 @@
 import { memo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectActivePage, selectNavFocused, selectNavIndex, selectInteractionMode } from '../state/selectors';
 import { setInteractionMode } from '../state/slices/uiSlice';
@@ -14,6 +15,7 @@ import type { PageId, InteractionMode } from '../state/slices/uiSlice';
 
 export const NavBar = memo(function NavBar() {
   const dispatch = useDispatch();
+  const navigate = useNavigate();
   const activePage = useSelector(selectActivePage);
   const navFocused = useSelector(selectNavFocused);
   const navIndex = useSelector(selectNavIndex);
@@ -44,7 +46,7 @@ export const NavBar = memo(function NavBar() {
 
   return (
     <nav style={navStyles.container(isTv && navFocused)} role="navigation" aria-label="Main navigation">
-      <div style={navStyles.logo}>J</div>
+      <button type="button" style={{ ...navStyles.logo, background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }} aria-label="Back to Kairo" title="Back to Kairo" onClick={() => navigate('/')}>K</button>
       <ul style={navStyles.navList}>
         {NAV_ITEMS.filter((item) => !(item.id === 'myList' && settings.disableMyList)).map((item, i) => {
           const isActive = activePage === item.id;
