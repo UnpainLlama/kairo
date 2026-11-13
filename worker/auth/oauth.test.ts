@@ -4,15 +4,15 @@ import { isMarkedYouTubeShort, registerYouTubeAuthRoutes } from './youtube';
 
 type RouteHandler = (context: any) => Promise<Response>;
 
-function routeFor(register: (app: any) => void, path: string): RouteHandler {
+function routeFor(register: (app: any) => void, path: string, method: 'get' | 'post' | 'delete' = 'get'): RouteHandler {
   const routes = new Map<string, RouteHandler>();
   register({
-    get: (route: string, handler: RouteHandler) => routes.set(route, handler),
-    post: () => {},
-    delete: () => {},
+    get: (route: string, handler: RouteHandler) => { routes.set(route, handler); routes.set(`GET ${route}`, handler); },
+    post: (route: string, handler: RouteHandler) => routes.set(`POST ${route}`, handler),
+    delete: (route: string, handler: RouteHandler) => routes.set(`DELETE ${route}`, handler),
   });
-  const handler = routes.get(path);
-  if (!handler) throw new Error(`Route not registered: ${path}`);
+  const handler = routes.get(`${method.toUpperCase()} ${path}`) ?? routes.get(path);
+  if (!handler) throw new Error(`Route not registered: ${method.toUpperCase()} ${path}`);
   return handler;
 }
 
@@ -20,6 +20,8 @@ function makeContext(options: {
   url: string;
   env: Record<string, unknown>;
   cookie?: string;
+  origin?: string;
+  body?: unknown;
 }) {
   const responseHeaders = new Map<string, string[]>();
   let redirectedTo: string | null = null;
@@ -30,8 +32,9 @@ function makeContext(options: {
     get: (name: string) => name === 'requestId' ? 'test-request-id' : undefined,
     req: {
       url: options.url,
-      header: (name: string) => name.toLowerCase() === 'cookie' ? options.cookie : undefined,
+      header: (name: string) => name.toLowerCase() === 'cookie' ? options.cookie : name.toLowerCase() === 'origin' ? options.origin : undefined,
       query: (name: string) => new URL(options.url).searchParams.get(name) ?? undefined,
+      json: async () => options.body,
     },
     redirect: (url: string, status = 302) => {
       redirectedTo = url;
@@ -56,13 +59,22 @@ function makeContext(options: {
   };
 }
 
-function mockDb(options: { authenticated?: boolean; recentSession?: boolean; failYoutubeStateInsert?: boolean; youtubeRateLimitAttempts?: number; youtubeGlobalRateLimitAttempts?: number } = {}): D1Database {
+function mockDb(options: {
+  authenticated?: boolean;
+  recentSession?: boolean;
+  failYoutubeStateInsert?: boolean;
+  youtubeRateLimitAttempts?: number;
+  youtubeGlobalRateLimitAttempts?: number;
+  savedChannels?: Array<Record<string, unknown>>;
+  runCalls?: Array<{ sql: string; values: unknown[] }>;
+} = {}): D1Database {
   const authenticated = options.authenticated ?? true;
   let youtubeRateLimitReads = 0;
   const db = {
     prepare: (sql: string) => ({
-      bind: (..._values: unknown[]) => ({
+      bind: (...values: unknown[]) => ({
         run: async () => {
+          options.runCalls?.push({ sql, values });
           if (options.failYoutubeStateInsert && sql.includes('INSERT INTO youtube_oauth_states')) {
             throw new Error('D1_ERROR: no such table: youtube_oauth_states');
           }
@@ -85,7 +97,7 @@ function mockDb(options: { authenticated?: boolean; recentSession?: boolean; fai
           if (sql.includes('SELECT id FROM sessions')) return authenticated && options.recentSession !== false ? { id: 'session-123' } : null;
           return null;
         },
-        all: async () => ({ results: [] }),
+        all: async () => ({ results: sql.includes('FROM youtube_feed_channels') ? (options.savedChannels ?? []) : [] }),
       }),
     }),
   };
@@ -472,6 +484,86 @@ describe('Kairo-curated YouTube channel access controls', () => {
       const response = await handler(ctx.context);
       expect(response.status).toBe(200);
       expect(ctx.jsonBody).toMatchObject({ success: true, data: { channels: [] } });
+      expect(providerFetch).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('stores the uploads playlist ID when a public channel is added', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/channels', 'post');
+    const runCalls: Array<{ sql: string; values: unknown[] }> = [];
+    const providerFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      expect(url.searchParams.get('key')).toBe('worker-test-key');
+      expect(url.searchParams.get('part')).toBe('snippet,contentDetails');
+      return new Response(JSON.stringify({
+        items: [{
+          id: 'UCabc123',
+          snippet: { title: 'Example creator', description: 'Public channel', thumbnails: { high: { url: 'https://img.example/channel.jpg' } } },
+          contentDetails: { relatedPlaylists: { uploads: 'UUabc123' } },
+        }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    vi.stubGlobal('fetch', providerFetch);
+    try {
+      const ctx = makeContext({
+        url: `${canonicalOrigin}/api/v1/youtube/channels`,
+        cookie: `kairo_session=${'a'.repeat(43)}`,
+        origin: canonicalOrigin,
+        body: { channelId: 'UCabc123' },
+        env: { DB: mockDb({ runCalls }), YOUTUBE_DATA_API_KEY: 'worker-test-key' },
+      });
+      const response = await handler(ctx.context);
+      expect(response.status).toBe(201);
+      expect(ctx.jsonBody).toMatchObject({ success: true, data: { added: true, channel: { channelId: 'UCabc123' } } });
+      const insert = runCalls.find(call => call.sql.includes('INSERT INTO youtube_feed_channels'));
+      expect(insert?.sql).toContain('upload_playlist_id');
+      expect(insert?.values).toContain('UUabc123');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('loads public uploads from the saved playlist without a YouTube OAuth token', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/feed');
+    const providerFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      expect(url.pathname).toBe('/youtube/v3/playlistItems');
+      expect(url.searchParams.get('key')).toBe('worker-test-key');
+      expect(url.searchParams.get('playlistId')).toBe('UUabc123');
+      expect(new Headers(init?.headers).has('Authorization')).toBe(false);
+      return new Response(JSON.stringify({
+        items: [{
+          snippet: {
+            resourceId: { videoId: 'video123' },
+            title: 'Latest public upload',
+            description: 'A regular video',
+            channelTitle: 'Example creator',
+            publishedAt: '2026-11-13T10:00:00Z',
+            thumbnails: { high: { url: 'https://img.example/video.jpg' } },
+          },
+          contentDetails: { videoPublishedAt: '2026-11-13T10:00:00Z' },
+        }],
+        nextPageToken: 'next-page-token',
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    vi.stubGlobal('fetch', providerFetch);
+    try {
+      const ctx = makeContext({
+        url: `${canonicalOrigin}/api/v1/youtube/feed`,
+        cookie: `kairo_session=${'a'.repeat(43)}`,
+        env: {
+          DB: mockDb({ savedChannels: [{ channelId: 'UCabc123', title: 'Example creator', thumbnailUrl: null, uploadPlaylistId: 'UUabc123' }] }),
+          YOUTUBE_DATA_API_KEY: 'worker-test-key',
+        },
+      });
+      const response = await handler(ctx.context);
+      expect(response.status).toBe(200);
+      expect(ctx.jsonBody).toMatchObject({
+        success: true,
+        data: { videos: [{ videoId: 'video123', channelId: 'UCabc123' }], channelsChecked: 1 },
+      });
       expect(providerFetch).toHaveBeenCalledTimes(1);
     } finally {
       vi.unstubAllGlobals();
