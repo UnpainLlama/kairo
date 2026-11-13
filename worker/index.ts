@@ -11,6 +11,11 @@ import { BASE_RECORD_SQL, INSERT_PROVIDER_ID_SQL, PROVIDER_IDS_SQL } from './rep
 import { buildRegistry, createCache, resolveUnified, sharedBreaker, toBaseRecord, type BaseRow } from './metadata/service';
 import { createLiveHandlers, isLiveMode, type LiveHandlers } from './live/handlers';
 import type { LiveRequest, LiveResult } from './live/types';
+import { createTmdbMovieProvider } from './movies/providers/tmdb';
+import { createMovieCatalogService } from './movies/service';
+import { persistMovieDetail, persistMovieSummary, searchStoredMovies } from './movies/repository';
+import type { MovieDiscoverQuery, MovieListKind } from './movies/types';
+import { ProviderError } from './metadata/types';
 
 interface Bindings {
   DB: D1Database;
@@ -43,6 +48,12 @@ interface Bindings {
   TMDB_ACCESS_TOKEN?: string;
   /** Staging-only bearer secret for the experimental YouTube cookie-feed endpoint. */
   YOUTUBE_STAGING_TOKEN?: string;
+  /** Enable TMDB-powered Movies discovery/search only after credentials and provider terms are approved. */
+  MOVIES_TMDB_ENABLED?: string;
+  /** Explicit owner approval for the provider's applicable licence, caching, and attribution terms. */
+  MOVIES_TMDB_TERMS_APPROVED?: string;
+  /** Enable admin-only incremental D1 ingestion. Requires MOVIES_TMDB_TERMS_APPROVED=true. */
+  MOVIES_INGESTION_ENABLED?: string;
 }
 
 type Variables = { requestId: string };
@@ -77,6 +88,179 @@ function fail(c: Context<{ Bindings: Bindings; Variables: Variables }>, status: 
 
 registerAuthRoutes(app);
 registerYouTubeMediaRoutes(app);
+
+function moviesProviderEnabled(c: AppContext): boolean {
+  return c.env.MOVIES_TMDB_ENABLED === 'true' && c.env.MOVIES_TMDB_TERMS_APPROVED === 'true';
+}
+
+function movieCatalog(c: AppContext) {
+  const provider = createTmdbMovieProvider(fetch, c.env.TMDB_ACCESS_TOKEN);
+  return createMovieCatalogService(provider, createCache(c.env));
+}
+
+function movieProviderFailure(c: AppContext, error: unknown) {
+  if (error instanceof ProviderError) {
+    if (error.kind === 'not_found') return fail(c, 404, 'MOVIE_NOT_FOUND', 'The requested movie was not found.');
+    if (error.kind === 'rate_limited') {
+      c.header('Retry-After', String(error.retryAfterSeconds ?? 60));
+      return fail(c, 429, 'MOVIE_PROVIDER_RATE_LIMITED', 'The movie metadata provider is rate limiting requests.');
+    }
+    if (error.kind === 'invalid_response') return fail(c, 503, 'MOVIE_PROVIDER_INVALID_RESPONSE', 'The movie metadata provider returned an unexpected response.');
+  }
+  logError(c, 'movies_provider_failed', error);
+  return fail(c, 503, 'MOVIES_UNAVAILABLE', 'Movie discovery is temporarily unavailable.');
+}
+
+const MOVIE_LIST_KINDS: MovieListKind[] = [
+  'trending_day', 'trending_week', 'popular', 'top_rated', 'upcoming', 'now_playing',
+];
+
+app.get('/api/v1/movies/discover', async (c) => {
+  if (!moviesProviderEnabled(c)) return fail(c, 503, 'MOVIES_DISABLED', 'Movies metadata is not enabled or its provider terms have not been approved.');
+  const kindRaw = c.req.query('kind') ?? 'trending_week';
+  if (!MOVIE_LIST_KINDS.includes(kindRaw as MovieListKind)) return fail(c, 400, 'VALIDATION_ERROR', 'kind must be trending_day, trending_week, popular, top_rated, upcoming, or now_playing.');
+  const page = boundedInt(c.req.query('page'), 1, 1, 500);
+  const yearRaw = c.req.query('year');
+  const year = yearRaw === undefined ? undefined : boundedInt(yearRaw, 2000, 1800, 2200);
+  if (page === null || (yearRaw !== undefined && year === null)) return fail(c, 400, 'VALIDATION_ERROR', 'page must be 1–500 and year must be 1800–2200.');
+  const genreIds = (c.req.query('genres') ?? '').split(',').map((value) => value.trim()).filter((value) => /^\d{1,8}$/.test(value)).slice(0, 10);
+  const language = c.req.query('language');
+  if (language && !/^[a-z]{2,3}$/.test(language)) return fail(c, 400, 'VALIDATION_ERROR', 'language must be a 2–3 character ISO language code.');
+  const query: MovieDiscoverQuery = {
+    kind: kindRaw as MovieListKind,
+    page,
+    ...(year === undefined ? {} : { year }),
+    ...(genreIds.length ? { genreIds } : {}),
+    ...(language ? { originalLanguage: language } : {}),
+    includeAdult: c.req.query('include_adult') === 'true',
+  };
+  try {
+    const result = await movieCatalog(c).discover(query);
+    return ok(c, result.data, { provider: 'tmdb', cache: result.cache, globalCatalogue: true });
+  } catch (error) {
+    return movieProviderFailure(c, error);
+  }
+});
+
+app.get('/api/v1/movies/search', async (c) => {
+  if (!moviesProviderEnabled(c)) return fail(c, 503, 'MOVIES_DISABLED', 'Movies metadata is not enabled or its provider terms have not been approved.');
+  const q = (c.req.query('q') ?? '').trim();
+  if (q.length < 1 || q.length > 120) return fail(c, 400, 'VALIDATION_ERROR', 'q must contain 1–120 characters.');
+  const page = boundedInt(c.req.query('page'), 1, 1, 500);
+  const yearRaw = c.req.query('year');
+  const year = yearRaw === undefined ? undefined : boundedInt(yearRaw, 2000, 1800, 2200);
+  const language = c.req.query('language');
+  if (page === null || (yearRaw !== undefined && year === null)) return fail(c, 400, 'VALIDATION_ERROR', 'page must be 1–500 and year must be 1800–2200.');
+  if (language && !/^[a-z]{2}-[A-Z]{2}$/.test(language)) return fail(c, 400, 'VALIDATION_ERROR', 'language must use the format en-US.');
+  try {
+    const result = await movieCatalog(c).search({
+      query: q,
+      page,
+      ...(year === undefined ? {} : { year }),
+      ...(language ? { language } : {}),
+      includeAdult: c.req.query('include_adult') === 'true',
+    });
+    return ok(c, result.data, { provider: 'tmdb', cache: result.cache, globalCatalogue: true });
+  } catch (error) {
+    return movieProviderFailure(c, error);
+  }
+});
+
+app.get('/api/v1/movies/genres', async (c) => {
+  if (!moviesProviderEnabled(c)) return fail(c, 503, 'MOVIES_DISABLED', 'Movies metadata is not enabled or its provider terms have not been approved.');
+  const language = c.req.query('language') ?? 'en-US';
+  if (!/^[a-z]{2}-[A-Z]{2}$/.test(language)) return fail(c, 400, 'VALIDATION_ERROR', 'language must use the format en-US.');
+  try {
+    const result = await movieCatalog(c).genres(language);
+    return ok(c, { items: result.data }, { provider: 'tmdb', cache: result.cache });
+  } catch (error) {
+    return movieProviderFailure(c, error);
+  }
+});
+
+/** Search only the movies already ingested into D1; this route never contacts a metadata provider. */
+app.get('/api/v1/movies/catalogue/search', async (c) => {
+  const q = (c.req.query('q') ?? '').trim();
+  if (q.length < 1 || q.length > 100) return fail(c, 400, 'VALIDATION_ERROR', 'q must contain 1–100 characters.');
+  const page = boundedInt(c.req.query('page'), 1, 1, 500);
+  const limit = boundedInt(c.req.query('limit'), 20, 1, 50);
+  if (page === null || limit === null) return fail(c, 400, 'VALIDATION_ERROR', 'page must be 1–500 and limit must be 1–50.');
+  try {
+    const result = await searchStoredMovies(c.env.DB, q, page, limit);
+    return ok(c, result, { source: 'd1', globalCatalogue: true });
+  } catch (error) {
+    logError(c, 'movies_catalogue_search_failed', error);
+    return fail(c, 503, 'MOVIES_UNAVAILABLE', 'The stored movie catalogue is temporarily unavailable.');
+  }
+});
+
+/** Bounded, admin-only, one-page-at-a-time ingestion. No provider-wide scraping job is exposed. */
+app.post('/api/v1/movies/ingest', async (c) => {
+  if (c.env.MOVIES_INGESTION_ENABLED !== 'true' || !moviesProviderEnabled(c)) {
+    return fail(c, 503, 'MOVIES_INGESTION_DISABLED', 'Movie ingestion is disabled until the metadata provider terms and persistence rules are approved.');
+  }
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to continue.');
+  if (user.role !== 'admin') return fail(c, 403, 'ADMIN_REQUIRED', 'Administrator access is required.');
+  const body: unknown = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(c, 400, 'VALIDATION_ERROR', 'A JSON request body is required.');
+  const record = body as Record<string, unknown>;
+  const kind = record.kind === undefined ? 'popular' : record.kind;
+  if (typeof kind !== 'string' || !MOVIE_LIST_KINDS.includes(kind as MovieListKind)) return fail(c, 400, 'VALIDATION_ERROR', 'Invalid movie list kind.');
+  const pageRaw = record.page === undefined ? '1' : String(record.page);
+  const page = boundedInt(pageRaw, 1, 1, 10);
+  if (page === null) return fail(c, 400, 'VALIDATION_ERROR', 'Ingestion page must be 1–10 per request.');
+  const year = typeof record.year === 'number' && Number.isInteger(record.year) && record.year >= 1800 && record.year <= 2200 ? record.year : undefined;
+  const genreIds = Array.isArray(record.genreIds) ? record.genreIds.filter((v): v is string => typeof v === 'string' && /^\d{1,8}$/.test(v)).slice(0, 10) : [];
+  const language = typeof record.originalLanguage === 'string' && /^[a-z]{2,3}$/.test(record.originalLanguage) ? record.originalLanguage : undefined;
+  try {
+    const result = await movieCatalog(c).discover({
+      kind: kind as MovieListKind,
+      page,
+      ...(year === undefined ? {} : { year }),
+      ...(genreIds.length ? { genreIds } : {}),
+      ...(language ? { originalLanguage: language } : {}),
+      includeAdult: record.includeAdult === true,
+    });
+    const fetchedAt = new Date().toISOString();
+    let stored = 0;
+    for (const movie of result.data.items) {
+      await persistMovieSummary(c.env.DB, movie, fetchedAt);
+      stored += 1;
+    }
+    return ok(c, { stored, page, kind, provider: 'tmdb' }, { cache: result.cache, boundedIngestion: true });
+  } catch (error) {
+    return movieProviderFailure(c, error);
+  }
+});
+
+app.post('/api/v1/movies/ingest/:externalId', async (c) => {
+  if (c.env.MOVIES_INGESTION_ENABLED !== 'true' || !moviesProviderEnabled(c)) {
+    return fail(c, 503, 'MOVIES_INGESTION_DISABLED', 'Movie ingestion is disabled until the metadata provider terms and persistence rules are approved.');
+  }
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to continue.');
+  if (user.role !== 'admin') return fail(c, 403, 'ADMIN_REQUIRED', 'Administrator access is required.');
+  const externalId = c.req.param('externalId');
+  try {
+    const result = await movieCatalog(c).byId(externalId);
+    const movieId = await persistMovieDetail(c.env.DB, result.data, new Date().toISOString());
+    return ok(c, { id: movieId, slug: result.data.title, provider: 'tmdb' }, { cache: result.cache });
+  } catch (error) {
+    return movieProviderFailure(c, error);
+  }
+});
+
+app.get('/api/v1/movies/:externalId', async (c) => {
+  if (!moviesProviderEnabled(c)) return fail(c, 503, 'MOVIES_DISABLED', 'Movies metadata is not enabled or its provider terms have not been approved.');
+  const externalId = c.req.param('externalId');
+  try {
+    const result = await movieCatalog(c).byId(externalId);
+    return ok(c, result.data, { provider: 'tmdb', cache: result.cache });
+  } catch (error) {
+    return movieProviderFailure(c, error);
+  }
+});
 
 app.get('/api/health', (c) => ok(c, { status: 'ok', service: 'kairo-api', environment: c.env.APP_ENV ?? 'unknown' }));
 
