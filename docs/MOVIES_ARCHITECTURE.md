@@ -34,11 +34,13 @@ The initial TMDB adapter supports:
 The adapter deliberately omits region/watch-region filters from catalogue calls. Locale is
 only used to select display language and does not limit which countries' films are listed.
 
-TMDB's current developer API policy says free access is for non-commercial use with attribution;
-projects whose primary purpose is to generate revenue for the owner need a commercial licence.
-The required product notice and approved logo also need to appear in Kairo's About/Credits area.
-For that reason, `termsVerified` is false and this adapter must not be activated in production
-until the owner has confirmed the applicable licence and branding requirements.
+TMDB's developer API is free for non-commercial use with attribution. The project owner
+confirmed on 2026-11-13 that Kairo is a personal, non-commercial website. Kairo's `/about`
+page displays a TMDB logo and the required notice:
+"This product uses the TMDB API but is not endorsed or certified by TMDB."
+The adapter's `termsVerified` flag records that approval. Keep staging enabled for this
+personal-use scope; do not enable commercial or revenue-generating use without a separate
+TMDB commercial licence.
 
 The TMDB Read Access Token must be stored as a Cloudflare Worker secret named
 `TMDB_ACCESS_TOKEN`. It must never be shipped to the React client.
@@ -71,11 +73,12 @@ The provider service uses short-lived KV/memory caching, provider timeouts and s
 responses. Global catalogue endpoints omit country/watch-region filters. Country is relevant
 only to the separate availability data, not catalogue visibility.
 
-All provider endpoints require these server-side Wrangler vars to be explicitly enabled:
-`MOVIES_TMDB_ENABLED=true` and `MOVIES_TMDB_TERMS_APPROVED=true`. D1 persistence additionally
-requires `MOVIES_INGESTION_ENABLED=true` and an authenticated Kairo administrator session.
-All three flags default to false in local, staging and production configuration. The adapter
-is not activated by simply supplying a TMDB token.
+All provider endpoints require the server-side Wrangler vars
+`MOVIES_TMDB_ENABLED=true` and `MOVIES_TMDB_TERMS_APPROVED=true`. Staging opts in to
+read-only TMDB discovery/search; local development and production remain off by default.
+The separate `MOVIES_INGESTION_ENABLED` flag remains false in every environment and also
+requires an authenticated Kairo administrator session. The adapter is not activated by
+simply supplying a TMDB token.
 
 The initial ingestion operation is deliberately incremental: one selected discovery page
 per request, and one detail record per request. It is not a TMDB database mirror or unbounded
@@ -111,8 +114,8 @@ types use the independent Movies API contracts in `src/lib/movies.ts`.
 ## Current boundary
 
 The Movies API and frontend are wired independently of Anime and YouTube. Existing Anime
-route handlers and response contracts are unchanged. The TMDB adapter and ingestion remain
-disabled by default; the screens show a provider-configuration state until the owner approves
-the applicable metadata terms and enables the provider. The D1 migration has not been
-applied to any Cloudflare database. Before enabling it, confirm provider terms, attribution,
-and the live response contract, then apply migrations in the intended environment.
+route handlers and response contracts are unchanged. Staging enables read-only TMDB discovery
+for the owner's confirmed personal, non-commercial use and displays TMDB attribution on
+`/about`. The ingestion flag remains off pending a separate review of durable retention.
+The D1 migration is applied by the staging deployment workflow; production remains disabled
+and untouched.
