@@ -20,7 +20,7 @@ import { useIsTvMode } from '../hooks/useMode';
 import { useSettings } from '../hooks/useSettings';
 import { useTvHint } from '../hooks/useTvHint';
 
-const HERO_BUTTONS = ['▶  Play', '+ Add to List'];
+const HERO_BUTTONS = ['More Info', '+ Add to List'];
 
 export const HeroBanner = memo(function HeroBanner() {
   const dispatch = useDispatch();
