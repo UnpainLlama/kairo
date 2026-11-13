@@ -19,7 +19,7 @@ function hash(value: string): string {
 }
 
 function positiveId(value: string): boolean {
-  return /^\\d{1,12}$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) > 0;
+  return /^\d{1,12}$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) > 0;
 }
 
 function pageNumber(value: number): number {
@@ -91,7 +91,7 @@ export function createTmdbExperienceService(
       }
       if (input.mediaType === 'all') throw new ProviderError('invalid_response', 'Only trending feeds support all media types.');
       if (input.kind === 'discover') {
-        const validGenres = (input.genreIds ?? []).filter((id) => /^\\d{1,8}$/.test(id)).slice(0, 10);
+        const validGenres = (input.genreIds ?? []).filter((id) => /^\d{1,8}$/.test(id)).slice(0, 10);
         if (validGenres.length) params.with_genres = validGenres.join(',');
         params.sort_by = input.sortBy && ['popularity.desc', 'vote_average.desc', 'primary_release_date.desc', 'primary_release_date.asc', 'first_air_date.desc', 'first_air_date.asc'].includes(input.sortBy)
           ? input.sortBy
