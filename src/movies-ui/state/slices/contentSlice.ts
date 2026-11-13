@@ -21,7 +21,7 @@ export interface RowData {
   tiles: TileData[];
 }
 
-interface ContentState {
+export interface ContentState {
   rows: RowData[];
   pages: Record<string, RowData[]>;
   searchResults: RowData[];
