@@ -7,7 +7,7 @@ export interface Account {
   createdAt: number;
 }
 
-interface AuthState {
+export interface AuthState {
   accounts: Account[];
   currentUserId: string | null;
 }
