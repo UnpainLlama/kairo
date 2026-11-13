@@ -1,7 +1,7 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import type { TileData } from './contentSlice';
 
-interface WatchlistState {
+export interface WatchlistState {
   /** Watchlist items keyed by profileId. */
   byProfile: Record<string, TileData[]>;
 }
