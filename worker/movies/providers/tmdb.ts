@@ -225,17 +225,14 @@ export function createTmdbMovieProvider(
 
     async discover(query: MovieDiscoverQuery, signal: AbortSignal): Promise<MoviePage> {
       const page = boundedPage(query.page);
-      const params: Record<string, string> = { page: String(page), include_adult: String(query.includeAdult === true) };
-      if (query.year !== undefined && Number.isInteger(query.year) && query.year >= 1800 && query.year <= 2200) {
-        params.primary_release_year = String(query.year);
-      }
-      if (query.genreIds?.length) {
-        const genres = query.genreIds.filter((id) => /^\d+$/.test(id)).slice(0, 10);
-        if (genres.length) params.with_genres = genres.join(',');
-      }
-      if (query.originalLanguage && /^[a-z]{2,3}$/.test(query.originalLanguage)) {
-        params.with_original_language = query.originalLanguage;
-      }
+      const params: Record<string, string> = { page: String(page) };
+      const validYear = query.year !== undefined && Number.isInteger(query.year) && query.year >= 1800 && query.year <= 2200;
+      const validGenres = (query.genreIds ?? []).filter((id) => /^\d+$/.test(id)).slice(0, 10);
+      const validLanguage = Boolean(query.originalLanguage && /^[a-z]{2,3}$/.test(query.originalLanguage));
+      if (validYear) params.primary_release_year = String(query.year);
+      if (validGenres.length) params.with_genres = validGenres.join(',');
+      if (validLanguage) params.with_original_language = query.originalLanguage!;
+      const includeAdult = query.includeAdult === true;
 
       const kindPath: Record<MovieDiscoverQuery['kind'], string> = {
         trending_day: '/trending/movie/day',
@@ -245,7 +242,7 @@ export function createTmdbMovieProvider(
         upcoming: '/movie/upcoming',
         now_playing: '/movie/now_playing',
       };
-      const hasFilters = query.year !== undefined || Boolean(query.genreIds?.length) || Boolean(query.originalLanguage);
+      const hasFilters = Boolean(validYear || validGenres.length || validLanguage || includeAdult);
       const path = hasFilters ? '/discover/movie' : kindPath[query.kind];
       if (hasFilters) {
         const sortBy: Record<MovieDiscoverQuery['kind'], string> = {
@@ -256,8 +253,9 @@ export function createTmdbMovieProvider(
           upcoming: 'primary_release_date.asc',
           now_playing: 'popularity.desc',
         };
+        params.include_adult = String(includeAdult);
         params.sort_by = sortBy[query.kind];
-        params['vote_count.gte'] = query.kind === 'top_rated' ? '50' : '0';
+        if (query.kind === 'top_rated') params['vote_count.gte'] = '50';
       }
       // Deliberately omit region/watch_region: catalogue discovery is global.
       return mapPage(await get(path, params, signal));
