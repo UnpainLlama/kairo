@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import YouTubeVideoCard, { type YouTubeCardVideo } from '../components/YouTubeVideoCard';
-import { ArrowLeft, ArrowUpRight, Bookmark, BookmarkCheck, ExternalLink, History, Youtube } from 'lucide-react';
+import { ArrowLeft, Bookmark, BookmarkCheck, ExternalLink, History, Youtube } from 'lucide-react';
 import YouTubeIframePlayer from '../components/YouTubeIframePlayer';
 
 type VideoDetails = {
@@ -189,22 +189,13 @@ export default function YouTubeWatchPage() {
       <div className="kc-watch-layout">
         <div className="kc-watch-main">
           <section className="kc-player yt-player-shell" aria-label="YouTube video player">
-            {video.embeddable === false ? (
-              <div className="kc-player-message">
-                <span className="kc-player-icon"><Youtube size={24} /></span>
-                <h2>This video cannot be embedded</h2>
-                <p>The video owner or YouTube has disabled embedded playback. You can still watch it on YouTube.</p>
-                <a className="yt-button yt-button-primary" href={video.url} target="_blank" rel="noopener noreferrer">Watch on YouTube <ArrowUpRight size={14} /></a>
-              </div>
-            ) : (
-              <YouTubeIframePlayer
-                key={video.videoId}
-                videoId={video.videoId}
-                title={video.title}
-                startSeconds={startSeconds}
-                onProgress={video.madeForKids ? undefined : onProgress}
-              />
-            )}
+            <YouTubeIframePlayer
+              key={video.videoId}
+              videoId={video.videoId}
+              title={video.title}
+              startSeconds={startSeconds}
+              onProgress={video.madeForKids ? undefined : onProgress}
+            />
           </section>
           <div className="kc-player-toolbar">
             <div className="kc-player-toolbar-left"><span className="kc-live-dot" /> <span>YouTube player</span><span className="kc-toolbar-divider" /><span>{video.durationSeconds ? Math.floor(video.durationSeconds / 60) + ' min' : 'Video'}</span></div>
