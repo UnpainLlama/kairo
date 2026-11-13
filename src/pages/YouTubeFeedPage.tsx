@@ -115,6 +115,7 @@ export default function YouTubeFeedPage() {
   const relatedVideos: YouTubeCardVideo[] = useMemo(() => videos.map(video => ({
     videoId: video.videoId,
     title: video.title,
+    description: video.description,
     thumbnailUrl: video.thumbnail,
     channelId: video.channelId,
     channelTitle: video.channelTitle,
