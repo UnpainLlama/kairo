@@ -19,6 +19,7 @@ import {
   setDetailZone,
   setDetailSeasonIndex,
   setDetailEpisodeIndex,
+  setDetailTrailerPaused,
 } from '../state/slices/uiSlice';
 import {
   setContent,
@@ -28,6 +29,7 @@ import {
 } from '../state/slices/contentSlice';
 import { setLastNavAction, toggleTrailerMute, toggleTrailerPaused, setTrailerPaused, setTileTrailerPlaying, setActiveTrailer } from '../state/slices/trailerSlice';
 import { toggleWatchlist, clearWatchlist } from '../state/slices/watchlistSlice';
+import { toggleLike } from '../state/slices/likesSlice';
 import { clearAllAppData } from '../state/persistence';
 import {
   selectRows,
@@ -411,9 +413,21 @@ export function useInputNavigation() {
           } else if (action === 'DOWN' && hasSeasons) {
             dispatch(setDetailZone('seasons'));
           } else if (action === 'SELECT') {
-            if (ov.buttonIndex === 1 && ov.tile) {
-              const profileId = store.getState().profile.currentProfileId;
-              if (profileId) dispatch(toggleWatchlist({ profileId, tile: ov.tile }));
+            if (ov.buttonIndex === 0) {
+              dispatch(setDetailTrailerPaused(!store.getState().ui.detailOverlay.detailTrailerPaused));
+            } else if (ov.tile) {
+              const state = store.getState();
+              const profileId = state.profile.currentProfileId;
+              if (profileId) {
+                const settings = state.settings.byProfile[profileId];
+                if (settings?.disableMyList) {
+                  if (ov.buttonIndex === 1) dispatch(toggleLike({ profileId, tileId: ov.tile.id }));
+                } else if (ov.buttonIndex === 1) {
+                  dispatch(toggleWatchlist({ profileId, tile: ov.tile }));
+                } else if (ov.buttonIndex === 2) {
+                  dispatch(toggleLike({ profileId, tileId: ov.tile.id }));
+                }
+              }
             }
           }
           return;
@@ -475,7 +489,15 @@ export function useInputNavigation() {
             dispatch(setNavIndex(navIdx >= 0 ? navIdx : 0));
             engine.setPosition({ rowIndex: -1, tileIndex: navIdx >= 0 ? navIdx : 0 });
           } else if (action === 'SELECT') {
-            // Hero button pressed — no-op for now (Play / Add to List)
+            const state = store.getState();
+            const tile = state.content.rows[0]?.tiles[0];
+            const profileId = state.profile.currentProfileId;
+            if (heroButtonIndexRef.current === 0 && tile) {
+              dispatch(openDetail(tile));
+              dispatch(setTrailerPaused(true));
+            } else if (heroButtonIndexRef.current === 1 && tile && profileId) {
+              dispatch(toggleWatchlist({ profileId, tile }));
+            }
           } else if (action === 'BACK') {
             // Leave hero → go to nav
             dispatch(setHeroFocused(false));
