@@ -2001,3 +2001,38 @@ img { display: block; }
   .mv-app .mv-rail-controls button,
   .mv-app .mv-catalog-search { transition: none; }
 }
+
+/* Final neutral tone pass for every Movies-only surface (including detail/search pages). */
+.mv-app .mv-hero-meta { color: #e2e2e2; }
+.mv-app .mv-hero-copy > p { color: #d0d0d0; }
+.mv-app .mv-hero-current span { color: #d5d5d5; }
+.mv-app .mv-category-strip a { color: #b9b9b9; }
+.mv-app .mv-category-strip a:hover { border-color: #55555a; }
+.mv-app .mv-category-strip a.active { border-color: #77777e; color: #111111; }
+.mv-app .mv-section-heading > a { color: #bbbbbb; }
+.mv-app .mv-poster { background: linear-gradient(145deg, #272729, #171719 64%); }
+.mv-app .mv-card-copy b { color: #eeeeee; }
+.mv-app .mv-card-copy small { color: #858585; }
+.mv-app .mv-genre-grid a { border-color: #353535; background: linear-gradient(120deg, #242424, #171717); color: #e3e3e3; }
+.mv-app .mv-genre-grid a:hover { border-color: #666666; background: #292929; }
+.mv-app .mv-genre-grid svg { color: #a9a9a9; }
+.mv-app .mv-provider-notice { border-color: #373737; background: linear-gradient(110deg, rgba(42,42,42,.78), rgba(24,24,24,.9)); color: #e4e4e4; }
+.mv-app .mv-provider-mark { background: rgba(255,255,255,.12); color: #c3c3c3; }
+.mv-app .mv-provider-notice p { color: #aaaaaa; }
+.mv-app .mv-provider-notice button { border-color: #515151; color: #e6e6e6; }
+.mv-app .mv-empty-state a { color: #c9c9c9; }
+.mv-app .mv-page-heading h1 { color: #f6f6f6; }
+.mv-app .mv-page-heading p { color: #a0a0a0; }
+.mv-app .mv-results-meta { color: #909090; }
+.mv-app .mv-pager button:hover:not(:disabled) { border-color: #626262; }
+.mv-app .mv-detail-backdrop { background: #171717; }
+.mv-app .mv-detail-backdrop span { background: linear-gradient(90deg, rgba(15,15,15,.96), rgba(15,15,15,.7) 52%, rgba(15,15,15,.48)), linear-gradient(0deg, #0f0f0f 0%, transparent 72%); }
+.mv-app .mv-detail-tagline { color: #c9c9c9; }
+.mv-app .mv-detail-facts { color: #d0d0d0; }
+.mv-app .mv-detail-facts .mv-detail-rating { color: #f3f3f3; }
+.mv-app .mv-detail-overview { color: #d0d0d0; }
+.mv-app .mv-detail-genres a { border-color: rgba(255,255,255,.2); background: rgba(30,30,30,.55); color: #e1e1e1; }
+.mv-app .mv-detail-genres a:hover { border-color: #777777; background: #292929; }
+.mv-app .mv-detail-languages { color: #969696; }
+.mv-app .mv-detail-section h2 { color: #f4f4f4; }
+.mv-app .mv-person b { color: #e7e7e7; }
