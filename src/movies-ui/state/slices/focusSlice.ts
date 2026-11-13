@@ -1,6 +1,6 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
-interface FocusState {
+export interface FocusState {
   rowIndex: number;
   tileIndex: number;
 }
