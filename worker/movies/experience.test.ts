@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { MemoryCache } from '../../metadata/cache';
-import { ProviderError } from '../../metadata/types';
+import { MemoryCache } from '../metadata/cache';
+import { ProviderError } from '../metadata/types';
 import { createTmdbExperienceService } from './experience';
 
 function response(body: unknown, status = 200): Response {
