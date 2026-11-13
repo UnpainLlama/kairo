@@ -63,7 +63,7 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
 
   // Debounced anime lookup. YouTube query completions remain local and do not consume API quota.
   useEffect(() => {
-    if (isYouTube || !canSearch(query) || !open || location.pathname === '/search') return;
+    if (isYouTube || isMovies || !canSearch(query) || !open || location.pathname === '/search') return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams({ q: query, limit: '8', sort: 'relevance' });
