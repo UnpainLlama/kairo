@@ -208,13 +208,6 @@ export default function App() {
                     <Bell size={15} aria-hidden="true" /><span>Announcements</span><small>Soon</small>
                   </button>
                 </>}
-                {isMoviesMode && <>
-                  <div className="kc-menu-section-label">Other spaces</div>
-                  <div className="kc-menu-grid">
-                    <MenuLink to="/browse/anime" label="Anime" icon={Tv} onNavigate={closeMenu} />
-                    <MenuLink to="/youtube" label="YouTube" icon={Youtube} onNavigate={closeMenu} />
-                  </div>
-                </>}
                 <div className="kc-menu-footer">
                   <Link to="/settings" onClick={closeMenu}><Settings size={15} aria-hidden="true" />Settings</Link>
                   {currentUser ? <button type="button" onClick={() => void logout()} disabled={authBusy}><LogIn size={15} aria-hidden="true" />{authBusy ? 'Signing out…' : 'Sign out'}</button> : <Link to="/login" onClick={closeMenu}><LogIn size={15} aria-hidden="true" />Login</Link>}
