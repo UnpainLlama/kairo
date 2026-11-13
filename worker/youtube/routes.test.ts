@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isYouTubeVideoId, isYouTubeVideoMarkedMadeForKids, parseYouTubeDuration, safeYouTubeThumbnailUrl } from './routes';
+import { isYouTubeVideoId, isYouTubeVideoMarkedMadeForKids, parseYouTubeDuration, safeYouTubeThumbnailUrl, youtubeChannelAvatarUrl } from './routes';
 
 describe('YouTube media input validation', () => {
   it('accepts canonical 11-character video IDs only', () => {
@@ -22,6 +22,24 @@ describe('YouTube media input validation', () => {
     expect(safeYouTubeThumbnailUrl('https://yt3.ggpht.com/channel/avatar')).toBe('https://yt3.ggpht.com/channel/avatar');
     expect(safeYouTubeThumbnailUrl('http://i.ytimg.com/image.jpg')).toBe(null);
     expect(safeYouTubeThumbnailUrl('https://example.com/image.jpg')).toBe(null);
+  });
+});
+
+describe('YouTube channel avatar metadata', () => {
+  it('selects the best available official channel thumbnail', () => {
+    expect(youtubeChannelAvatarUrl({
+      maxres: { url: 'https://yt3.ggpht.com/channel/max' },
+      high: { url: 'https://yt3.ggpht.com/channel/high' },
+    })).toBe('https://yt3.ggpht.com/channel/max');
+    expect(youtubeChannelAvatarUrl({
+      high: { url: 'http://yt3.ggpht.com/channel/high' },
+      medium: { url: 'https://yt3.ggpht.com/channel/medium' },
+    })).toBe('https://yt3.ggpht.com/channel/medium');
+  });
+
+  it('rejects non-YouTube hosts and missing channel thumbnails', () => {
+    expect(youtubeChannelAvatarUrl({ high: { url: 'https://example.com/avatar.png' } })).toBe(null);
+    expect(youtubeChannelAvatarUrl(null)).toBe(null);
   });
 });
 

@@ -584,6 +584,16 @@ describe('YouTube keyword video search', () => {
           pageInfo: { totalResults: 37 },
         }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+      if (url.pathname.endsWith('/channels')) {
+        expect(url.searchParams.get('part')).toBe('snippet');
+        expect(url.searchParams.get('id')).toBe('UCabcdefghij');
+        return new Response(JSON.stringify({
+          items: [{
+            id: 'UCabcdefghij',
+            snippet: { thumbnails: { high: { url: 'https://yt3.ggpht.com/example-channel-avatar' } } },
+          }],
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
       expect(url.pathname).toBe('/youtube/v3/videos');
       expect(url.searchParams.get('part')).toBe('contentDetails');
       expect(url.searchParams.get('id')).toBe('dQw4w9WgXcQ');
@@ -607,6 +617,7 @@ describe('YouTube keyword video search', () => {
             videoId: 'dQw4w9WgXcQ',
             title: 'Minecraft survival guide',
             channelTitle: 'Example Gaming',
+            channelAvatarUrl: 'https://yt3.ggpht.com/example-channel-avatar',
             durationSeconds: 725,
             url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
           }],
@@ -615,7 +626,7 @@ describe('YouTube keyword video search', () => {
         },
       });
       expect(JSON.stringify(ctx.jsonBody)).not.toContain('worker-test-key');
-      expect(providerFetch).toHaveBeenCalledTimes(2);
+      expect(providerFetch).toHaveBeenCalledTimes(3);
     } finally {
       vi.unstubAllGlobals();
     }

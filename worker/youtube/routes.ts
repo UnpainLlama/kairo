@@ -26,6 +26,7 @@ export type YouTubeVideoRecord = {
   thumbnailUrl: string | null;
   channelId: string;
   channelTitle: string;
+  channelAvatarUrl?: string | null;
   publishedAt: string | null;
   durationSeconds: number | null;
   embeddable: boolean;
@@ -65,6 +66,16 @@ export function safeYouTubeThumbnailUrl(value: unknown): string | null {
   } catch {
     return null;
   }
+}
+
+export function youtubeChannelAvatarUrl(thumbnails: unknown): string | null {
+  if (!thumbnails || typeof thumbnails !== 'object') return null;
+  const variants = thumbnails as Record<string, { url?: unknown } | undefined>;
+  for (const size of ['maxres', 'high', 'medium', 'default']) {
+    const candidate = safeYouTubeThumbnailUrl(variants[size]?.url);
+    if (candidate) return candidate;
+  }
+  return null;
 }
 
 async function shaHex(value: string): Promise<string> {
@@ -140,6 +151,27 @@ function parseVideoPayload(raw: unknown): Omit<YouTubeVideoRecord, 'embeddable' 
   };
 }
 
+async function youtubeApiChannelAvatar(c: YouTubeContext, apiKey: string, channelId: string): Promise<string | null> {
+  if (!CHANNEL_ID.test(channelId)) return null;
+  if (!await bumpRateBucket(c, 'data-api-daily', DAILY_API_LIMIT, DAILY_WINDOW_MS, 1)) return null;
+  const url = new URL('https://www.googleapis.com/youtube/v3/channels');
+  url.search = new URLSearchParams({ part: 'snippet', id: channelId, key: apiKey }).toString();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(url.toString(), { headers: { Accept: 'application/json' }, signal: controller.signal });
+    const payload = await response.json().catch(() => ({})) as any;
+    if (!response.ok) return null;
+    const channel = payload?.items?.[0];
+    return channel?.id === channelId ? youtubeChannelAvatarUrl(channel.snippet?.thumbnails) : null;
+  } catch {
+    // Channel art is optional metadata; a transient avatar failure must not block playback.
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function youtubeApiVideo(c: YouTubeContext, videoId: string): Promise<YouTubeVideoRecord | null> {
   const apiKey = c.env.YOUTUBE_DATA_API_KEY?.trim();
   if (!apiKey) throw new Error('YOUTUBE_API_KEY_MISSING');
@@ -169,13 +201,16 @@ async function youtubeApiVideo(c: YouTubeContext, videoId: string): Promise<YouT
   const item = payload?.items?.[0];
   if (!item || item.id !== videoId) return null;
   const snippet = item.snippet ?? {};
+  const channelId = cleanText(snippet.channelId, 64);
+  const channelAvatarUrl = channelId ? await youtubeApiChannelAvatar(c, apiKey, channelId) : null;
   return {
     videoId: videoId,
     title: cleanText(snippet.title, 300, 'Untitled video'),
     description: cleanText(snippet.description, 5000),
     thumbnailUrl: safeYouTubeThumbnailUrl(snippet.thumbnails?.maxres?.url ?? snippet.thumbnails?.standard?.url ?? snippet.thumbnails?.high?.url ?? snippet.thumbnails?.medium?.url ?? snippet.thumbnails?.default?.url),
-    channelId: cleanText(snippet.channelId, 64),
+    channelId: channelId,
     channelTitle: cleanText(snippet.channelTitle, 180, 'YouTube'),
+    channelAvatarUrl: channelAvatarUrl,
     publishedAt: typeof snippet.publishedAt === 'string' && !Number.isNaN(Date.parse(snippet.publishedAt)) ? new Date(snippet.publishedAt).toISOString() : null,
     durationSeconds: parseYouTubeDuration(item.contentDetails?.duration),
     embeddable: item.status?.embeddable === true,
