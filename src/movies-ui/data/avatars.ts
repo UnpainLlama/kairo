@@ -1,22 +1,13 @@
-// Profile avatar fetching: pulls from TMDB person endpoint (actor headshots)
-// + a curated franchise list (movie posters cropped to top portion).
-
-const TOKEN = import.meta.env.VITE_TMDB_TOKEN as string;
+const API = '/api/v1/movies/experience';
 const IMG_BASE = 'https://image.tmdb.org/t/p';
-const headers = {
-  Authorization: `Bearer ${TOKEN}`,
-  'Content-Type': 'application/json',
-};
 
 const CACHE_KEY = 'tvui:avatars:v1';
-const CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
+const CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 
 export interface AvatarOption {
   id: string;
   url: string;
-  /** Description for accessibility */
   label: string;
-  /** "person" = actor headshot, "poster" = movie poster crop */
   kind: 'person' | 'poster';
 }
 
@@ -24,8 +15,23 @@ interface CachedAvatars {
   ts: number;
   options: AvatarOption[];
 }
+interface ApiEnvelope<T> {
+  success: boolean;
+  data?: T;
+}
+interface TmdbPerson {
+  id: number;
+  name: string;
+  profile_path: string | null;
+  known_for_department?: string;
+}
+interface TmdbPersonResponse {
+  results: TmdbPerson[];
+}
+interface TmdbTitleDetail {
+  poster_path: string | null;
+}
 
-// Curated franchise list — popular TMDB movie/TV ids with iconic poster art
 const FRANCHISE_TITLES: { tmdbId: number; mediaType: 'movie' | 'tv'; label: string }[] = [
   { tmdbId: 299536, mediaType: 'movie', label: 'Avengers: Infinity War' },
   { tmdbId: 11, mediaType: 'movie', label: 'Star Wars' },
@@ -39,39 +45,28 @@ const FRANCHISE_TITLES: { tmdbId: number; mediaType: 'movie' | 'tv'; label: stri
   { tmdbId: 1402, mediaType: 'tv', label: 'The Walking Dead' },
 ];
 
-interface TmdbPerson {
-  id: number;
-  name: string;
-  profile_path: string | null;
-  known_for_department?: string;
-}
-
-interface TmdbPersonResponse {
-  results: TmdbPerson[];
-}
-
-interface TmdbMovieDetail {
-  id: number;
-  title?: string;
-  name?: string;
-  poster_path: string | null;
+async function apiGet<T>(path: string): Promise<T> {
+  const response = await fetch(API + path, {
+    credentials: 'same-origin',
+    headers: { Accept: 'application/json' },
+  });
+  const payload = await response.json().catch(() => null) as ApiEnvelope<T> | null;
+  if (!response.ok || !payload?.success || payload.data === undefined) {
+    throw new Error('Could not load profile artwork.');
+  }
+  return payload.data;
 }
 
 async function fetchPopularPeople(): Promise<AvatarOption[]> {
   try {
-    const res = await fetch(
-      'https://api.themoviedb.org/3/person/popular?page=1',
-      { headers }
-    );
-    if (!res.ok) return [];
-    const data: TmdbPersonResponse = await res.json();
-    return data.results
-      .filter((p) => !!p.profile_path && p.known_for_department === 'Acting')
+    const data = await apiGet<TmdbPersonResponse>('/people/popular?page=1');
+    return (data.results ?? [])
+      .filter((person) => !!person.profile_path && person.known_for_department === 'Acting')
       .slice(0, 12)
-      .map((p) => ({
-        id: `person-${p.id}`,
-        url: `${IMG_BASE}/w300${p.profile_path}`,
-        label: p.name,
+      .map((person) => ({
+        id: `person-${person.id}`,
+        url: `${IMG_BASE}/w300${person.profile_path}`,
+        label: person.name,
         kind: 'person' as const,
       }));
   } catch {
@@ -80,36 +75,24 @@ async function fetchPopularPeople(): Promise<AvatarOption[]> {
 }
 
 async function fetchFranchisePosters(): Promise<AvatarOption[]> {
-  const results = await Promise.all(
-    FRANCHISE_TITLES.map(async (item): Promise<AvatarOption | null> => {
-      try {
-        const url = item.mediaType === 'movie'
-          ? `https://api.themoviedb.org/3/movie/${item.tmdbId}`
-          : `https://api.themoviedb.org/3/tv/${item.tmdbId}`;
-        const res = await fetch(url, { headers });
-        if (!res.ok) return null;
-        const data: TmdbMovieDetail = await res.json();
-        if (!data.poster_path) return null;
-        return {
-          id: `poster-${item.tmdbId}`,
-          url: `${IMG_BASE}/w300${data.poster_path}`,
-          label: item.label,
-          kind: 'poster',
-        };
-      } catch {
-        return null;
-      }
-    })
-  );
-  return results.filter((x): x is AvatarOption => x !== null);
+  const results = await Promise.all(FRANCHISE_TITLES.map(async (item): Promise<AvatarOption | null> => {
+    try {
+      const data = await apiGet<TmdbTitleDetail>(`/detail/${item.mediaType}/${item.tmdbId}`);
+      if (!data.poster_path) return null;
+      return {
+        id: `poster-${item.tmdbId}`,
+        url: `${IMG_BASE}/w300${data.poster_path}`,
+        label: item.label,
+        kind: 'poster',
+      };
+    } catch {
+      return null;
+    }
+  }));
+  return results.filter((item): item is AvatarOption => item !== null);
 }
 
-/**
- * Fetch a curated mix of profile avatars (actor headshots + franchise posters).
- * Cached in localStorage for 7 days. Always returns at least the cached set on failure.
- */
 export async function fetchProfileAvatars(): Promise<AvatarOption[]> {
-  // Check cache first
   try {
     const raw = localStorage.getItem(CACHE_KEY);
     if (raw) {
@@ -118,35 +101,24 @@ export async function fetchProfileAvatars(): Promise<AvatarOption[]> {
         return cached.options;
       }
     }
-  } catch { /* ignore */ }
+  } catch { /* ignore unavailable browser storage */ }
 
-  // Fetch fresh
-  const [people, posters] = await Promise.all([
-    fetchPopularPeople(),
-    fetchFranchisePosters(),
-  ]);
-
-  // Interleave for visual variety
+  const [people, posters] = await Promise.all([fetchPopularPeople(), fetchFranchisePosters()]);
   const merged: AvatarOption[] = [];
   const max = Math.max(people.length, posters.length);
-  for (let i = 0; i < max; i++) {
+  for (let i = 0; i < max; i += 1) {
     if (i < people.length) merged.push(people[i]);
     if (i < posters.length) merged.push(posters[i]);
   }
-
-  // Cache
-  if (merged.length > 0) {
+  if (merged.length) {
     try {
       localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), options: merged }));
-    } catch { /* ignore */ }
+    } catch { /* ignore unavailable browser storage */ }
   }
-
   return merged;
 }
 
-/** Pick a random default avatar URL from the cached/fresh list. */
 export async function getRandomAvatar(): Promise<string> {
   const list = await fetchProfileAvatars();
-  if (list.length === 0) return '';
-  return list[Math.floor(Math.random() * list.length)].url;
+  return list.length ? list[Math.floor(Math.random() * list.length)].url : '';
 }
