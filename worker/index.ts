@@ -37,6 +37,8 @@ interface Bindings {
   EPISODE_PROVIDERS?: string;
   /** HiAnime mirror base URL; adapter enforces a fixed HTTPS host allowlist. */
   HIANIME_BASE_URL?: string;
+  /** Opt-in to ZokoAnime's documented iframe route; disabled unless explicitly set to true. */
+  ZOKOANIME_EMBED_ENABLED?: string;
   /** TMDB API Read Access Token stored as a Cloudflare Worker secret. */
   TMDB_ACCESS_TOKEN?: string;
   /** Staging-only bearer secret for the experimental YouTube cookie-feed endpoint. */

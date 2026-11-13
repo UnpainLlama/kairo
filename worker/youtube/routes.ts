@@ -29,10 +29,17 @@ export type YouTubeVideoRecord = {
   channelAvatarUrl?: string | null;
   publishedAt: string | null;
   durationSeconds: number | null;
-  embeddable: boolean;
+  /** null means YouTube did not return this field; it is not the same as an explicit false. */
+  embeddable: boolean | null;
   madeForKids: boolean;
   url: string;
 };
+
+export function isYouTubeVideoEmbeddable(status: unknown): boolean | null {
+  if (!status || typeof status !== 'object' || Array.isArray(status)) return null;
+  const value = (status as Record<string, unknown>).embeddable;
+  return typeof value === 'boolean' ? value : null;
+}
 
 export function isYouTubeVideoMarkedMadeForKids(status: unknown): boolean {
   if (!status || typeof status !== 'object') return false;
@@ -213,7 +220,7 @@ async function youtubeApiVideo(c: YouTubeContext, videoId: string): Promise<YouT
     channelAvatarUrl: channelAvatarUrl,
     publishedAt: typeof snippet.publishedAt === 'string' && !Number.isNaN(Date.parse(snippet.publishedAt)) ? new Date(snippet.publishedAt).toISOString() : null,
     durationSeconds: parseYouTubeDuration(item.contentDetails?.duration),
-    embeddable: item.status?.embeddable === true,
+    embeddable: isYouTubeVideoEmbeddable(item.status),
     madeForKids: isYouTubeVideoMarkedMadeForKids(item.status),
     url: 'https://www.youtube.com/watch?v=' + videoId,
   };

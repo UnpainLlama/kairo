@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isYouTubeVideoId, isYouTubeVideoMarkedMadeForKids, parseYouTubeDuration, safeYouTubeThumbnailUrl, youtubeChannelAvatarUrl } from './routes';
+import { isYouTubeVideoId, isYouTubeVideoEmbeddable, isYouTubeVideoMarkedMadeForKids, parseYouTubeDuration, safeYouTubeThumbnailUrl, youtubeChannelAvatarUrl } from './routes';
 
 describe('YouTube media input validation', () => {
   it('accepts canonical 11-character video IDs only', () => {
@@ -40,6 +40,16 @@ describe('YouTube channel avatar metadata', () => {
   it('rejects non-YouTube hosts and missing channel thumbnails', () => {
     expect(youtubeChannelAvatarUrl({ high: { url: 'https://example.com/avatar.png' } })).toBe(null);
     expect(youtubeChannelAvatarUrl(null)).toBe(null);
+  });
+});
+
+describe('YouTube embedding status', () => {
+  it('distinguishes explicit permission, explicit restriction, and a missing API field', () => {
+    expect(isYouTubeVideoEmbeddable({ embeddable: true })).toBe(true);
+    expect(isYouTubeVideoEmbeddable({ embeddable: false })).toBe(false);
+    expect(isYouTubeVideoEmbeddable({})).toBe(null);
+    expect(isYouTubeVideoEmbeddable(null)).toBe(null);
+    expect(isYouTubeVideoEmbeddable(undefined)).toBe(null);
   });
 });
 

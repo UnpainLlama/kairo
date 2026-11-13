@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import YouTubeVideoCard, { type YouTubeCardVideo } from '../components/YouTubeVideoCard';
 import { ArrowLeft, ArrowUpRight, Bookmark, BookmarkCheck, ExternalLink, History, Youtube } from 'lucide-react';
-import YouTubeIframePlayer from '../components/YouTubeIframePlayer';
+import UniversalPlayer from '../components/UniversalPlayer';
 
 type VideoDetails = {
   videoId: string;
@@ -14,7 +14,7 @@ type VideoDetails = {
   channelAvatarUrl?: string | null;
   publishedAt: string | null;
   durationSeconds: number | null;
-  embeddable: boolean;
+  embeddable: boolean | null;
   madeForKids: boolean;
   url: string;
 };
@@ -26,6 +26,25 @@ function progressKey(accountId: string | null, videoId: string): string {
 
 async function responsePayload(response: Response): Promise<any> {
   return response.json().catch(() => null);
+}
+
+
+/** Temporary browser diagnostics. Enable with ?ytdebug=1; remove after the embed issue is diagnosed. */
+function youtubeDebug(event: string, details: Record<string, unknown> = {}): void {
+  if (new URLSearchParams(window.location.search).get('ytdebug') !== '1') return;
+  const referrer = document.referrer;
+  let referrerOrigin: string | null = null;
+  if (referrer) {
+    try { referrerOrigin = new URL(referrer).origin; } catch { /* never log an unparsed referrer */ }
+  }
+  console.info('[KAIRO YouTube debug]', event, {
+    videoOrigin: window.location.origin,
+    referrerPresent: Boolean(referrer),
+    referrerOrigin,
+    referrerPolicy: document.querySelector<HTMLMetaElement>('meta[name="referrer"]')?.content ?? null,
+    metaReferrerPolicy: document.querySelector<HTMLMetaElement>('meta[name="referrer"]')?.content ?? null,
+    ...details,
+  });
 }
 
 function relatedFromState(state: unknown, currentVideoId: string): YouTubeCardVideo[] {
@@ -62,6 +81,7 @@ export default function YouTubeWatchPage() {
   useEffect(() => {
     let active = true;
     const load = async () => {
+      youtubeDebug('watch-page-load', { videoId });
       setLoading(true);
       setError('');
       setVideo(null);
@@ -72,6 +92,20 @@ export default function YouTubeWatchPage() {
           fetch('/api/v1/me', { credentials: 'same-origin', headers: { Accept: 'application/json' } }),
         ]);
         const videoPayload = await responsePayload(videoResponse);
+        const returnedVideo = videoPayload?.data && typeof videoPayload.data === 'object'
+          ? videoPayload.data as Record<string, unknown>
+          : null;
+        youtubeDebug('metadata-response', {
+          videoId,
+          httpStatus: videoResponse.status,
+          responseOk: videoResponse.ok,
+          apiSuccess: videoPayload?.success === true,
+          apiErrorCode: typeof videoPayload?.error?.code === 'string' ? videoPayload.error.code : null,
+          hasVideoData: Boolean(returnedVideo),
+          returnedVideoIdMatches: returnedVideo?.videoId === videoId,
+          embeddable: typeof returnedVideo?.embeddable === 'boolean' ? returnedVideo.embeddable : null,
+          embeddableFieldPresent: Boolean(returnedVideo && Object.prototype.hasOwnProperty.call(returnedVideo, 'embeddable')),
+        });
         if (!videoResponse.ok || !videoPayload?.success || !videoPayload.data) {
           throw new Error(videoPayload?.error?.message ?? 'This YouTube video could not be found.');
         }
@@ -188,7 +222,7 @@ export default function YouTubeWatchPage() {
       <div className="kc-watch-layout">
         <div className="kc-watch-main">
           <section className="kc-player yt-player-shell" aria-label="YouTube video player">
-            {!video.embeddable ? (
+            {video.embeddable === false ? (
               <div className="kc-player-message">
                 <span className="kc-player-icon"><Youtube size={24} /></span>
                 <h2>This video cannot be embedded</h2>
@@ -196,12 +230,11 @@ export default function YouTubeWatchPage() {
                 <a className="yt-button yt-button-primary" href={video.url} target="_blank" rel="noopener noreferrer">Watch on YouTube <ArrowUpRight size={14} /></a>
               </div>
             ) : (
-              <YouTubeIframePlayer
-                key={video.videoId}
-                videoId={video.videoId}
+              <UniversalPlayer
+                source={{ kind: 'youtube', videoId: video.videoId }}
                 title={video.title}
                 startSeconds={startSeconds}
-                onProgress={video.madeForKids ? undefined : onProgress}
+                onYouTubeProgress={video.madeForKids ? undefined : onProgress}
               />
             )}
           </section>

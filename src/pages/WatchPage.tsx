@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ListVideo, Play, Search, RefreshCw, ExternalLink } from 'lucide-react';
 import { ErrorState, LoadingState } from '../components/catalog';
-import KairoMediaPlayer, { type KairoPlaybackSource } from '../components/KairoMediaPlayer';
+import UniversalPlayer from '../components/UniversalPlayer';
+import type { KairoPlaybackSource } from '../components/KairoMediaPlayer';
 import { useApi } from '../lib/useApi';
 import { accountPreferenceStorageKey, historyPausedStorageKey, readWatchHistory, watchProgressIdentity, watchProgressStorageKey, writeWatchHistory } from '../lib/accountStorage';
 import { shouldSyncPlaybackProgress, type PlaybackSaveReason } from '../lib/playbackSync';
@@ -224,14 +225,14 @@ export default function WatchPage() {
           <section className="kc-player" aria-label="Video player" key={`${slug}:${parsedEpisode}:${selectedServer?.id ?? 'none'}`}>
             {!accountResolved && <div className="kc-player-message"><h2>Loading your playback state…</h2><p>Keeping this activity separate from other accounts on this browser.</p></div>}
             {accountResolved && playback.status === 'ok' && (
-              <KairoMediaPlayer
-                source={playback.data.source}
+              <UniversalPlayer
+                source={{ kind: 'anime', playback: playback.data.source }}
                 title={`${anime.title} · Episode ${parsedEpisode}`}
                 progressKey={watchProgressIdentity(accountId, slug, parsedEpisode, selectedServer?.id ?? '')}
                 introEnd={(current as (Episode & { introEndSeconds?: number | null }) | undefined)?.introEndSeconds}
                 outroStart={(current as (Episode & { outroStartSeconds?: number | null }) | undefined)?.outroStartSeconds}
                 nextUrl={next && autoNext ? `/watch/${key}/${next.episodeNumber}` : null}
-                onProgress={persistPlaybackProgress}
+                onMediaProgress={persistPlaybackProgress}
               />
             )}
             {accountResolved && playback.status !== 'ok' && (
@@ -277,7 +278,7 @@ export default function WatchPage() {
             {servers.status === 'ok' && serverItems.length === 0 && <p className="kc-hint">No servers are listed for this episode.</p>}
             {servers.status === 'ok' && serverItems.length > 0 && (
               <div className="kc-server-groups">
-                {[['sub', 'Sub', subServers], ['dub', 'Dub', dubServers], ['raw', 'Raw', serverItems.filter((server) => server.type === 'raw')]].map(([type, label, items]) => (
+                {[['sub', 'Sub', subServers], ['hsub', 'Hard Sub', serverItems.filter((server) => server.type === 'hsub')], ['dub', 'Dub', dubServers], ['raw', 'Raw', serverItems.filter((server) => server.type === 'raw')]].map(([type, label, items]) => (
                   <div key={String(type)}><b>{String(label)}</b><span className="kc-server-options">{(items as EpisodeServer[]).length ? (items as EpisodeServer[]).map((server) => (
                     <button key={server.id} type="button" className={`kc-server-option${selectedServer?.id === server.id ? ' active' : ''}`} aria-pressed={selectedServer?.id === server.id} onClick={() => setSelectedServerId(server.id)}>{server.name}</button>
                   )) : 'Not listed'}</span></div>
