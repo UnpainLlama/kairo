@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Info, Play, Star } from 'lucide-react';
 import { EmptyState, ErrorState, LoadingState, Pager, Poster, Rail, StatusDot } from '../components/catalog';
@@ -86,6 +86,7 @@ function Sources({ enriched, failed, loading }: { enriched: UnifiedMetadata | nu
 
 function Episodes({ slug }: { slug: string }) {
   const [page, setPage] = useState(1);
+  useEffect(() => { setPage(1); }, [slug]);
   const result = useApi<ItemList<Episode>>(`/anime/${slug}/episodes?page=${page}&limit=50`);
   return (
     <section id="episodes" className="kc-section" aria-labelledby="episodes-heading">

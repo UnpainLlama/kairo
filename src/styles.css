@@ -546,9 +546,7 @@ img { display: block; }
   .kc-app.kc-home-view .kc-hero-synopsis { -webkit-line-clamp: 2; font-size: 14px; }
   .kc-app.kc-home-view .kc-hero .kc-btn { min-height: 50px; padding-inline: 16px; font-size: 14px; }
 }
-@media (max-width: 860px) {
-  .kc-mobile-nav { border-top: 0; background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; }
-}
+
 
 
 /* Primary rail + compact secondary media menu. The menu sits beside search on desktop
@@ -1588,3 +1586,9 @@ img { display: block; }
   .yt-video-card-list .yt-video-copy p { font-size: 10px; }
   .yt-video-card-list .yt-video-copy small.yt-video-description-preview { display: none; }
 }
+
+
+/* UI audit: independent Home side-rail loading and retry states. */
+.kc-panel-state { display: grid; gap: 8px; padding: 12px 14px 14px; color: var(--muted); font-size: 12px; }
+.kc-panel-state button { justify-self: start; min-height: 30px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: 7px; background: var(--surface-2); color: var(--text); font-size: 11px; font-weight: 700; }
+.kc-panel-state button:hover { border-color: #55555e; background: var(--surface-3); }

@@ -5,7 +5,7 @@ import { CardGrid, ErrorState, MetaChips, Poster, Section, SkeletonGrid, StatusD
 import { useApi, type ApiState } from '../lib/useApi';
 import { formatLabel, safeImageUrl, textList, type CatalogCard, type ItemList } from '../lib/catalog';
 
-type CardsState = ApiState<ItemList<CatalogCard>>;
+type CardsState = ApiState<ItemList<CatalogCard>> & { reload: () => void };
 const itemsOf = (state: CardsState): CatalogCard[] => (state.status === 'ok' ? state.data.items : []);
 
 export default function HomePage() {
@@ -37,23 +37,26 @@ export default function HomePage() {
           {trendingItems.length > 0 && <Section title="Trending now" to="/browse/trending"><CardGrid items={trendingItems} /></Section>}
         </div>
         <aside className="kc-home-side" aria-label="Lists">
-          <SidePanel title="Top airing" items={itemsOf(airing)} />
-          <SidePanel title="Upcoming" items={itemsOf(upcoming)} />
+          <SidePanel title="Top airing" state={airing} />
+          <SidePanel title="Upcoming" state={upcoming} />
         </aside>
       </div>
     </>
   );
 }
 
-function SidePanel({ title, items }: { title: string; items: CatalogCard[] }) {
+function SidePanel({ title, state }: { title: string; state: CardsState }) {
   const [open, setOpen] = useState(true);
-  if (items.length === 0) return null;
+  const items = itemsOf(state);
+  if (state.status === 'ok' && items.length === 0) return null;
   return (
     <section className="kc-panel">
       <button type="button" className="kc-panel-head" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         <ChevronDown size={15} aria-hidden="true" className={open ? '' : 'turned'} />{title}
       </button>
-      {open && (
+      {open && state.status === 'loading' && <p className="kc-panel-state" role="status">Loading titles…</p>}
+      {open && state.status === 'error' && <div className="kc-panel-state" role="alert"><p>{state.error.message}</p><button type="button" onClick={state.reload}>Try again</button></div>}
+      {open && state.status === 'ok' && (
         <ul>
           {items.map((item) => (
             <li key={item.id}>

@@ -87,7 +87,7 @@ function MenuLink({ to, label, icon: Icon, end, onNavigate }: NavItem & { onNavi
 }
 
 export default function App() {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const isYouTubeMode = pathname.startsWith('/youtube');
   const activeNavItems = isYouTubeMode ? youtubeNavItems : navItems;
   const activeMenuItems = isYouTubeMode
@@ -100,7 +100,7 @@ export default function App() {
   const navigate = useNavigate();
   const menuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { window.scrollTo(0, 0); }, [pathname]);
+  useEffect(() => { window.scrollTo({ top: 0, left: 0, behavior: 'auto' }); }, [pathname, search]);
 
   useEffect(() => {
     let active=true;
