@@ -77,7 +77,7 @@ export default function YouTubeSearchPage() {
       <form className="yt-search-form" onSubmit={search} role="search">
         <Search size={19} aria-hidden="true" />
         <input aria-label="Search YouTube channels" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search public channels, creators or topics…" maxLength={80} />
-        <button type="submit" className="yt-button yt-button-primary" disabled={loading || query.trim().length < 2}>{loading ? 'Searching…' : 'Search'}</button>
+        <button type="submit" className="kc-btn kc-btn-primary" disabled={loading || query.trim().length < 2}>{loading ? 'Searching…' : 'Search'}</button>
       </form>
       <div className="yt-search-tip"><span>Try a topic</span>{['technology', 'gaming', 'anime', 'music', 'science'].map(term => <button key={term} type="button" onClick={() => setQuery(term)}>{term}</button>)}</div>
 
@@ -96,7 +96,7 @@ export default function YouTubeSearchPage() {
             {channel.thumbnailUrl ? <img src={channel.thumbnailUrl} alt="" loading="lazy" /> : <Youtube size={26} />}
           </a>
           <div className="yt-result-copy"><h3><a href={channel.url} target="_blank" rel="noopener noreferrer">{channel.title} <ArrowUpRight size={13} /></a></h3><p>{channel.description || 'YouTube channel'}</p></div>
-          <button type="button" className={`yt-button ${channel.isAdded ? 'yt-button-added' : 'yt-button-primary'}`} disabled={channel.isAdded || adding === channel.channelId} onClick={() => void addChannel(channel)}>
+          <button type="button" className={`kc-btn ${channel.isAdded ? 'kc-btn-dark' : 'kc-btn-primary'}`} disabled={channel.isAdded || adding === channel.channelId} onClick={() => void addChannel(channel)}>
             {channel.isAdded ? <><Check size={15} /> Added</> : adding === channel.channelId ? 'Adding…' : <><Plus size={15} /> Add to feed</>}
           </button>
         </article>)}
