@@ -14,7 +14,7 @@ export const DEFAULT_SETTINGS: ProfileSettings = {
   activityTracking: true,
 };
 
-interface SettingsState {
+export interface SettingsState {
   /** Settings keyed by profileId. Each profile has its own. */
   byProfile: Record<string, ProfileSettings>;
 }
