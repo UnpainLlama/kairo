@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Bell, CalendarDays, ChevronRight, Compass, Film, Flame, History, ListVideo,
+  Bell, Bookmark, CalendarDays, ChevronRight, Compass, Film, Flame, History, ListVideo,
   Home, LogIn, Menu, PlayCircle, Search, Settings, Tv, UserRound, Youtube,
   type LucideIcon,
 } from 'lucide-react';
@@ -10,6 +10,8 @@ import HomePage from './pages/HomePage';
 import YouTubeFeedPage from './pages/YouTubeFeedPage';
 import YouTubeSearchPage from './pages/YouTubeSearchPage';
 import YouTubeChannelsPage from './pages/YouTubeChannelsPage';
+import YouTubeWatchPage from './pages/YouTubeWatchPage';
+import { YouTubeHistoryPage, YouTubeWatchLaterPage } from './pages/YouTubeLibraryPages';
 import SearchPage from './pages/SearchPage';
 import BrowsePage from './pages/BrowsePage';
 import AnimePage from './pages/AnimePage';
@@ -44,6 +46,8 @@ const youtubeNavItems: NavItem[] = [
   { to: '/youtube', label: 'Home', icon: PlayCircle, end: true },
   { to: '/youtube/search', label: 'Discover', icon: Compass },
   { to: '/youtube/channels', label: 'Channels', icon: ListVideo },
+  { to: '/youtube/watch-later', label: 'Watch Later', icon: Bookmark },
+  { to: '/youtube/history', label: 'History', icon: History },
 ];
 
 const mobileNavItems: NavItem[] = [
@@ -158,7 +162,7 @@ export default function App() {
                 </Link>
                 <div className="kc-menu-section-label">{isYouTubeMode ? 'Video' : 'Media'}</div>
                 <div className="kc-menu-grid">
-                  {activeMenuItems.slice(0, isYouTubeMode ? 3 : 4).map((item) => <MenuLink key={item.label} {...item} onNavigate={closeMenu} />)}
+                  {activeMenuItems.slice(0, isYouTubeMode ? 5 : 4).map((item) => <MenuLink key={item.label} {...item} onNavigate={closeMenu} />)}
                   <NavLink to={isYouTubeMode ? '/' : '/youtube'} className={({ isActive }) => `kc-menu-tile${isActive ? ' active' : ''}`} onClick={closeMenu}>
                     {isYouTubeMode
                       ? <Tv size={17} strokeWidth={1.8} aria-hidden="true" />
@@ -198,6 +202,9 @@ export default function App() {
           <Route path="/youtube" element={<YouTubeFeedPage />} />
           <Route path="/youtube/search" element={<YouTubeSearchPage />} />
           <Route path="/youtube/channels" element={<YouTubeChannelsPage />} />
+          <Route path="/youtube/watch/:videoId" element={<YouTubeWatchPage />} />
+          <Route path="/youtube/watch-later" element={<YouTubeWatchLaterPage />} />
+          <Route path="/youtube/history" element={<YouTubeHistoryPage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/browse" element={<Navigate to="/browse/anime" replace />} />
           <Route path="/browse/:category" element={<BrowsePage />} />
