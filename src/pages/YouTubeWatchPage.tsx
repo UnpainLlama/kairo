@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
+import YouTubeVideoCard, { type YouTubeCardVideo } from '../components/YouTubeVideoCard';
 import { ArrowLeft, ArrowUpRight, Bookmark, BookmarkCheck, ExternalLink, History, Youtube } from 'lucide-react';
 import YouTubeIframePlayer from '../components/YouTubeIframePlayer';
 
@@ -26,8 +27,27 @@ async function responsePayload(response: Response): Promise<any> {
   return response.json().catch(() => null);
 }
 
+function relatedFromState(state: unknown, currentVideoId: string): YouTubeCardVideo[] {
+  if (!state || typeof state !== 'object') return [];
+  const raw = (state as { youtubeRelatedVideos?: unknown }).youtubeRelatedVideos;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((item): item is YouTubeCardVideo => {
+    if (!item || typeof item !== 'object') return false;
+    const video = item as Record<string, unknown>;
+    return typeof video.videoId === 'string'
+      && video.videoId !== currentVideoId
+      && typeof video.title === 'string'
+      && typeof video.channelTitle === 'string'
+      && (video.thumbnailUrl === null || typeof video.thumbnailUrl === 'string')
+      && (video.publishedAt === null || typeof video.publishedAt === 'string')
+      && (video.durationSeconds === undefined || video.durationSeconds === null || typeof video.durationSeconds === 'number');
+  }).slice(0, 12);
+}
+
 export default function YouTubeWatchPage() {
   const { videoId = '' } = useParams();
+  const location = useLocation();
+  const relatedVideos = relatedFromState(location.state, videoId);
   const [video, setVideo] = useState<VideoDetails | null>(null);
   const [accountId, setAccountId] = useState<string | null>(null);
   const [startSeconds, setStartSeconds] = useState(0);
@@ -199,13 +219,23 @@ export default function YouTubeWatchPage() {
           {error && <div className="yt-notice" role="alert">{error}</div>}
           {video.description && <div className="kc-watch-about yt-video-description"><p>{video.description}</p></div>}
         </div>
-        <aside className="kc-queue yt-watch-sidebar" aria-label="Video details">
-          <div className="kc-queue-head"><div><span className="kc-section-kicker">NOW PLAYING</span><h2>Video details</h2></div><Youtube size={18} /></div>
-          {video.thumbnailUrl && <img className="yt-watch-sidebar-art" src={video.thumbnailUrl} alt="" />}
-          <div className="yt-watch-sidebar-copy">
-            <b>{video.channelTitle}</b>
-            <p>{video.publishedAt ? 'Published ' + new Date(video.publishedAt).toLocaleDateString() : 'YouTube video'}</p>
-            {!video.madeForKids && accountId && <Link to="/youtube/history"><History size={14} /> Your watch history</Link>}
+        <aside className="kc-queue yt-watch-sidebar yt-up-next" aria-label="Up next">
+          <div className="kc-queue-head">
+            <div><span className="kc-section-kicker">UP NEXT</span><h2>Recommended videos</h2></div>
+            <Youtube size={18} />
+          </div>
+          {relatedVideos.length > 0 ? (
+            <div className="yt-recommended-list">
+              {relatedVideos.map(item => <YouTubeVideoCard key={item.videoId} video={item} relatedVideos={relatedVideos} compact />)}
+            </div>
+          ) : (
+            <div className="yt-recommendations-empty">
+              <p>Open a video from Home or Search to keep its related videos in this watch queue.</p>
+              <Link to="/youtube/search">Find more videos <ExternalLink size={13} /></Link>
+            </div>
+          )}
+          <div className="yt-watch-sidebar-footer">
+            {!video.madeForKids && accountId && <Link to="/youtube/history"><History size={14} /> Watch history</Link>}
             {!video.madeForKids && <Link to="/youtube/watch-later"><Bookmark size={14} /> Watch Later</Link>}
             <a href={video.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} /> Open on YouTube</a>
           </div>

@@ -29,7 +29,7 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
     || (location.pathname === '/search' && new URLSearchParams(location.search).get('format') === 'movie')
     ? 'movie'
     : 'anime';
-  const mediaLabel = isYouTube ? 'YouTube channels' : mediaMode === 'movie' ? 'movies' : 'anime';
+  const mediaLabel = isYouTube ? 'YouTube videos' : mediaMode === 'movie' ? 'movies' : 'anime';
 
   // Mirror the URL: on the search page show its query, everywhere else start empty.
   useEffect(() => {

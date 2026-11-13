@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUpRight, Plus, RefreshCw, Youtube } from 'lucide-react';
+import YouTubeVideoCard, { type YouTubeCardVideo } from '../components/YouTubeVideoCard';
 
 type SavedChannel = { channelId: string; title: string; description: string; thumbnailUrl: string | null; addedAt?: string };
 type FeedVideo = {
@@ -18,6 +19,7 @@ type FeedError = { code: string; message: string };
 export default function YouTubeFeedPage() {
   const [channels, setChannels] = useState<SavedChannel[]>([]);
   const [videos, setVideos] = useState<FeedVideo[]>([]);
+  const [selectedChannel, setSelectedChannel] = useState('all');
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<FeedError | null>(null);
@@ -30,6 +32,7 @@ export default function YouTubeFeedPage() {
     setLoading(true);
     loadingMoreRef.current = false;
     setLoadingMore(false);
+    setSelectedChannel('all');
     setError(null);
     setVideos([]);
     setNextCursor(null);
@@ -102,17 +105,48 @@ export default function YouTubeFeedPage() {
     return () => observer.disconnect();
   }, [error, loadMore, loading, loadingMore, nextCursor, videos.length]);
 
+  const channelById = useMemo(() => {
+    const index = new Map<string, SavedChannel>();
+    for (const channel of channels) index.set(channel.channelId, channel);
+    return index;
+  }, [channels]);
+  const relatedVideos: YouTubeCardVideo[] = useMemo(() => videos.map(video => ({
+    videoId: video.videoId,
+    title: video.title,
+    thumbnailUrl: video.thumbnail,
+    channelId: video.channelId,
+    channelTitle: video.channelTitle,
+    publishedAt: video.publishedAt,
+    durationSeconds: null,
+  })), [videos]);
+  const visibleVideos = selectedChannel === 'all'
+    ? relatedVideos
+    : relatedVideos.filter(video => video.channelId === selectedChannel);
+  const selectedChannelTitle = channels.find(channel => channel.channelId === selectedChannel)?.title;
   const needsLogin = error?.code === 'AUTH_REQUIRED';
 
   return (
-    <section className="yt-page">
-      <header className="yt-page-heading">
-        <div><span className="yt-eyebrow">YOUR VIDEO SPACE</span><h1>Home</h1><p>Public uploads from the channels you choose.</p></div>
+    <section className="yt-page yt-home-page">
+      <header className="yt-page-heading yt-home-heading">
+        <div>
+          <h1>Home</h1>
+          <p>Fresh uploads from the creators you follow.</p>
+        </div>
         <div className="yt-heading-actions">
-          <Link to="/youtube/search" className="yt-button yt-button-primary"><Plus size={15} /> Add channels</Link>
+          <Link to="/youtube/search" className="yt-button yt-button-primary"><Plus size={15} /> Find videos</Link>
           <button className="yt-button yt-button-quiet" type="button" onClick={() => setRefreshKey(value => value + 1)} disabled={loading || loadingMore}><RefreshCw size={15} /> Refresh</button>
         </div>
       </header>
+
+      <nav className="yt-home-chips" aria-label="Filter videos by channel">
+        <button type="button" className={selectedChannel === 'all' ? 'active' : ''} aria-pressed={selectedChannel === 'all'} onClick={() => setSelectedChannel('all')}>All</button>
+        {channels.map(channel => (
+          <button key={channel.channelId} type="button" className={selectedChannel === channel.channelId ? 'active' : ''} aria-pressed={selectedChannel === channel.channelId} onClick={() => setSelectedChannel(channel.channelId)}>
+            {channel.title}
+          </button>
+        ))}
+        <Link to="/youtube/channels" className="yt-home-chip-manage"><ArrowUpRight size={13} /> Manage channels</Link>
+      </nav>
 
       {error && <div className="yt-notice" role="alert">
         <div><b>{error.message}</b>
@@ -122,44 +156,59 @@ export default function YouTubeFeedPage() {
       </div>}
 
       <section className="yt-feed-section">
-        <div className="yt-section-heading"><div><h2>Latest videos</h2><p>{channels.length ? 'Recent public uploads from your selected channels' : 'Your videos will show up here'}</p></div></div>
-        {loading && <div className="yt-loading" role="status">Loading your feed…</div>}
-        {!loading && !error && channels.length > 0 && videos.length === 0 && !nextCursor && <div className="yt-empty"><Youtube size={28} /><h3>No recent uploads yet</h3><p>When your selected channels publish new videos, they’ll appear here.</p></div>}
-        {!loading && videos.length > 0 && <>
-          <div className="yt-video-grid">
-            {videos.map(video => <article className="yt-video-card" key={video.videoId}>
-              <Link className="yt-video-thumb" to={'/youtube/watch/' + video.videoId} aria-label={'Watch ' + video.title + ' in Kairo'}>
-                {video.thumbnail ? <img src={video.thumbnail} alt="" loading="lazy" /> : <span><Youtube size={30} /></span>}
-                <i>Watch <ArrowUpRight size={13} /></i>
-              </Link>
-              <div className="yt-video-copy">
-                <h3><Link to={'/youtube/watch/' + video.videoId}>{video.title}</Link></h3>
-                <p>{video.channelTitle}</p>
-                <small>{video.publishedAt ? new Date(video.publishedAt).toLocaleDateString() : 'Recently uploaded'}</small>
-              </div>
-            </article>)}
-          </div>
+        <div className="yt-section-heading yt-home-section-heading">
+          <div><h2>{selectedChannelTitle ?? 'Latest videos'}</h2><p>{selectedChannelTitle ? 'Recent uploads from this channel' : 'Recommended from your subscriptions'}</p></div>
+          <span>{visibleVideos.length.toLocaleString()} videos</span>
+        </div>
 
-        </>}
+        {loading && <div className="yt-video-grid yt-skeleton-grid" role="status" aria-label="Loading videos">
+          {Array.from({ length: 8 }, (_, index) => <div className="yt-video-skeleton" key={index}><span /><i /><b /><small /></div>)}
+        </div>}
+
+        {!loading && !error && channels.length === 0 && <div className="yt-empty yt-home-empty">
+          <Youtube size={30} /><h3>Your home feed starts with subscriptions</h3><p>Find creators you enjoy and add their channels. Their latest public uploads will appear here.</p>
+          <Link to="/youtube/search" className="yt-button yt-button-primary"><Plus size={15} /> Find channels</Link>
+        </div>}
+
+        {!loading && !error && channels.length > 0 && videos.length === 0 && !nextCursor && <div className="yt-empty">
+          <Youtube size={28} /><h3>No recent uploads yet</h3><p>When your selected channels publish new videos, they’ll appear here.</p>
+        </div>}
+
+        {!loading && !error && videos.length > 0 && visibleVideos.length === 0 && <div className="yt-empty">
+          <Youtube size={25} /><h3>No videos from {selectedChannelTitle ?? 'this channel'} yet</h3><p>Choose another channel or switch back to All.</p>
+          <button type="button" className="yt-button yt-button-quiet" onClick={() => setSelectedChannel('all')}>Show all videos</button>
+        </div>}
+
+        {!loading && visibleVideos.length > 0 && <div className="yt-video-grid">
+          {visibleVideos.map(video => (
+            <YouTubeVideoCard
+              key={video.videoId}
+              video={video}
+              relatedVideos={relatedVideos}
+              channelAvatarUrl={channelById.get(video.channelId ?? '')?.thumbnailUrl ?? null}
+            />
+          ))}
+        </div>}
+
         {!loading && (videos.length > 0 || nextCursor) && <div className="yt-scroll-sentinel" ref={sentinelRef}>
           {loadingMore ? <div className="yt-loading" role="status">Loading more videos…</div> : nextCursor ? <button type="button" className="yt-button yt-button-quiet" onClick={() => void loadMore()}>Load more</button> : <p>You’re all caught up.</p>}
         </div>}
       </section>
+
       <section className="yt-channel-shelf" aria-label="Your selected channels">
-        <div className="yt-section-heading"><div><h2>Your channels</h2><p>{channels.length} {channels.length === 1 ? 'channel' : 'channels'} in your feed</p></div><Link to="/youtube/channels">Manage <ArrowUpRight size={14} /></Link></div>
+        <div className="yt-section-heading"><div><h2>Subscriptions</h2><p>{channels.length} {channels.length === 1 ? 'channel' : 'channels'} in your feed</p></div><Link to="/youtube/channels">Manage <ArrowUpRight size={14} /></Link></div>
         {channels.length > 0 ? (
           <div className="yt-channel-bubbles">
-            {channels.map(channel => <Link to="/youtube/channels" className="yt-channel-bubble" key={channel.channelId} title={channel.title}>
+            {channels.map(channel => <button type="button" className={'yt-channel-bubble' + (selectedChannel === channel.channelId ? ' active' : '')} key={channel.channelId} title={'Show ' + channel.title} onClick={() => { setSelectedChannel(channel.channelId); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
               {channel.thumbnailUrl ? <img src={channel.thumbnailUrl} alt="" loading="lazy" /> : <span>{channel.title.slice(0, 1).toUpperCase()}</span>}
               <small>{channel.title}</small>
-            </Link>)}
+            </button>)}
             <Link to="/youtube/search" className="yt-channel-add"><Plus size={19} /><span>Add</span></Link>
           </div>
         ) : (
-          <div className="yt-channel-empty"><span className="yt-plus-orb"><Plus size={21} /></span><div><b>Your feed starts with a few good channels.</b><p>Find creators you like and add them to your Kairo feed.</p></div><Link to="/youtube/search" className="yt-button yt-button-primary">Find channels <ArrowUpRight size={15} /></Link></div>
+          <div className="yt-channel-empty"><span className="yt-plus-orb"><Plus size={21} /></span><div><b>Build your subscriptions.</b><p>Find channels you like and add them to your feed.</p></div><Link to="/youtube/search" className="yt-button yt-button-primary">Find channels <ArrowUpRight size={15} /></Link></div>
         )}
       </section>
-
     </section>
   );
 }
