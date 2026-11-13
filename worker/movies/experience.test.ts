@@ -56,8 +56,8 @@ describe('TMDB experience provider', () => {
   it('rejects invalid IDs and media combinations before contacting TMDB', async () => {
     const fetcher = vi.fn(async (_url: string) => response({}));
     const service = createTmdbExperienceService(fetcher, 'token', new MemoryCache());
-    await expect(service.detail('movie', '../1')).rejects.toBeInstanceOf(ProviderError);
-    await expect(service.feed({ kind: 'popular', mediaType: 'all', page: 1 })).rejects.toBeInstanceOf(ProviderError);
+    expect(() => service.detail('movie', '../1')).toThrow(ProviderError);
+    expect(() => service.feed({ kind: 'popular', mediaType: 'all', page: 1 })).toThrow(ProviderError);
     expect(fetcher).not.toHaveBeenCalled();
   });
 
