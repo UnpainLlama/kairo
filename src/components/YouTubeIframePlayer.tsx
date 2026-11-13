@@ -104,7 +104,7 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
         timerRef.current = null;
       }
     };
-    const report = (reason: ProgressReason, completed = false) => {
+    const report = (reason: YouTubeProgressReason, completed = false) => {
       const player = playerRef.current;
       if (!player) return;
       const seconds = player.getCurrentTime();
