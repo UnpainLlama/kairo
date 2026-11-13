@@ -46,7 +46,6 @@ import { DETAIL_BUTTON_COUNT, HERO_BUTTON_COUNT, KEYBOARD_GRID, KEYBOARD_COLS } 
 import { NAV_ITEMS } from '../data/pageConfigs';
 import { PAGE_CONFIGS } from '../data/pageConfigs';
 import { fetchRowsFromConfigs, fetchLogosProgressive, searchTmdb, getCachedSeasons, getCachedEpisodes } from '../data/tmdb';
-import { generateMockContent } from '../data/mockContent';
 import type { PageId } from '../state/slices/uiSlice';
 
 const KEYBOARD_ROW_COUNT = Math.ceil(KEYBOARD_GRID.length / KEYBOARD_COLS);
@@ -149,10 +148,10 @@ export function useInputNavigation() {
           }
         });
       } else {
-        dispatch(setContent(generateMockContent()));
+        dispatch(setContent([]));
       }
     } catch {
-      dispatch(setContent(generateMockContent()));
+      dispatch(setContent([]));
     }
   }, [dispatch]);
 
