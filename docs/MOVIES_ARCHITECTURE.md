@@ -10,6 +10,10 @@ Only shared account identity and low-level application infrastructure may be reu
 - Provider-neutral contracts: `worker/movies/types.ts`.
 - Initial catalogue adapter: `worker/movies/providers/tmdb.ts`.
 - Adapter tests: `worker/movies/providers/tmdb.test.ts`.
+- Cached request orchestration: `worker/movies/service.ts`.
+- D1 upsert and local search: `worker/movies/repository.ts`.
+- API routes: `worker/index.ts` under `/api/v1/movies/*`.
+- Repository/service tests: `worker/movies/repository.test.ts` and `worker/movies/service.test.ts`.
 
 The migration adds canonical movie records, namespaced external IDs, genres, credits,
 a standalone user movie library, and country-scoped availability offers. A movie remains
@@ -51,6 +55,33 @@ and partner token, and its partner docs require JustWatch-branded links next to 
 integrations. No JustWatch adapter is enabled until Kairo has partner access and the live
 response schema/contract has been reviewed.
 
+## Global search and ingestion
+
+The Movies API now exposes:
+
+- `GET /api/v1/movies/discover?kind=trending_week&page=1` for global discovery.
+- `GET /api/v1/movies/search?q=dune&page=1` for provider-backed global search.
+- `GET /api/v1/movies/genres?language=en-US` for genre metadata.
+- `GET /api/v1/movies/:externalId` for detail metadata.
+- `GET /api/v1/movies/catalogue/search?q=dune` for the locally ingested D1 catalogue.
+- `POST /api/v1/movies/ingest` for a bounded, admin-only page ingestion (one page, capped at page 10).
+- `POST /api/v1/movies/ingest/:externalId` for admin-only detail ingestion including genres and credits.
+
+The provider service uses short-lived KV/memory caching, provider timeouts and stale-on-error
+responses. Global catalogue endpoints omit country/watch-region filters. Country is relevant
+only to the separate availability data, not catalogue visibility.
+
+All provider endpoints require these server-side Wrangler vars to be explicitly enabled:
+`MOVIES_TMDB_ENABLED=true` and `MOVIES_TMDB_TERMS_APPROVED=true`. D1 persistence additionally
+requires `MOVIES_INGESTION_ENABLED=true` and an authenticated Kairo administrator session.
+All three flags default to false in local, staging and production configuration. The adapter
+is not activated by simply supplying a TMDB token.
+
+The initial ingestion operation is deliberately incremental: one selected discovery page
+per request, and one detail record per request. It is not a TMDB database mirror or unbounded
+background crawler. Search itself is live and cached; it does not silently persist search
+results. This keeps provider retention and data-licence review separate from read-only search.
+
 ## Persistence rules
 
 - Generate Kairo-owned IDs for `movies.id`; do not use a bare provider ID as the primary key.
@@ -62,9 +93,10 @@ response schema/contract has been reviewed.
   retention terms have been reviewed for Kairo's intended use.
 - Do not treat metadata or availability links as authorisation to play a movie.
 
-## Not wired yet
+## Current boundary
 
-This foundation intentionally does not add Movies routes or change `worker/index.ts`.
-The next step is to wire a Movies service and API routes, with provider activation gated by
-owner-approved configuration and cache/persistence rules. The Noir UI can then consume a
-stable Movies API without importing Anime catalogue types.
+The Movies API is wired independently into the Worker. It does not change Anime's route
+handlers or response contracts. Ingestion remains disabled by default and requires an
+administrator session plus explicit feature/licence approval. The next step after provider
+approval is to run the D1 migration in the intended environment, verify the live provider
+response contract, and connect the Noir Movies UI to these endpoints.
