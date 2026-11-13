@@ -1,7 +1,7 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import type { NavigationAction } from '../../engine/FocusEngine';
 
-interface TrailerState {
+export interface TrailerState {
   /** Global mute — applies to whichever trailer is active */
   trailerMuted: boolean;
   /** Global pause — stops all trailer playback */
