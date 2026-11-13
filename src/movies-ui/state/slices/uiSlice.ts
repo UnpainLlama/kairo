@@ -4,7 +4,7 @@ import type { TileData } from './contentSlice';
 export type PageId = 'home' | 'tvShows' | 'movies' | 'newPopular' | 'myList' | 'search' | 'settings';
 export type InteractionMode = 'web' | 'tv';
 
-interface UIState {
+export interface UIState {
   interactionMode: InteractionMode;
   activePage: PageId;
   navFocused: boolean;
