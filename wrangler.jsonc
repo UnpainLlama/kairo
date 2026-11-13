@@ -78,8 +78,8 @@
         "ZOKOANIME_EMBED_ENABLED": "false",
         "LIVE_PROVIDERS": "anilist,hianime,jikan",
         "METADATA_PROVIDERS": "anilist",
-        "MOVIES_TMDB_ENABLED": "false",
-        "MOVIES_TMDB_TERMS_APPROVED": "false",
+        "MOVIES_TMDB_ENABLED": "true",
+        "MOVIES_TMDB_TERMS_APPROVED": "true",
         "MOVIES_INGESTION_ENABLED": "false"
       }
     },
