@@ -103,13 +103,11 @@ export default function YouTubeFeedPage() {
   }, [error, loadMore, loading, loadingMore, nextCursor, videos.length]);
 
   const needsLogin = error?.code === 'AUTH_REQUIRED';
-  const needsConnection = error?.code === 'YOUTUBE_NOT_CONNECTED';
-  const needsReconnect = error?.code === 'YOUTUBE_REAUTH_REQUIRED';
 
   return (
     <section className="yt-page">
       <header className="yt-page-heading">
-        <div><span className="yt-eyebrow">YOUR VIDEO SPACE</span><h1>Home</h1><p>A feed built from the channels you choose.</p></div>
+        <div><span className="yt-eyebrow">YOUR VIDEO SPACE</span><h1>Home</h1><p>Public uploads from the channels you choose.</p></div>
         <div className="yt-heading-actions">
           <Link to="/youtube/search" className="yt-button yt-button-primary"><Plus size={15} /> Add channels</Link>
           <button className="yt-button yt-button-quiet" type="button" onClick={() => setRefreshKey(value => value + 1)} disabled={loading || loadingMore}><RefreshCw size={15} /> Refresh</button>
@@ -119,29 +117,12 @@ export default function YouTubeFeedPage() {
       {error && <div className="yt-notice" role="alert">
         <div><b>{error.message}</b>
           {needsLogin && <p><Link to="/login">Sign in</Link> to create your channel feed.</p>}
-          {needsConnection && <p><a href="/api/v1/auth/youtube">Connect YouTube</a> to search channels and fetch their latest uploads.</p>}
-          {needsReconnect && <p><a href="/api/v1/auth/youtube">Reconnect YouTube</a> to continue.</p>}
-          {!needsLogin && !needsConnection && !needsReconnect && <p><button type="button" className="yt-inline-action" onClick={() => error?.code === 'YOUTUBE_FEED_CURSOR_EXPIRED' || !nextCursor ? setRefreshKey(value => value + 1) : void loadMore()}>Try again</button></p>}
+          {!needsLogin && <p><button type="button" className="yt-inline-action" onClick={() => error?.code === 'YOUTUBE_FEED_CURSOR_EXPIRED' || !nextCursor ? setRefreshKey(value => value + 1) : void loadMore()}>Try again</button></p>}
         </div>
       </div>}
 
-      <section className="yt-channel-shelf" aria-label="Your selected channels">
-        <div className="yt-section-heading"><div><h2>Your channels</h2><p>{channels.length} {channels.length === 1 ? 'channel' : 'channels'} in your feed</p></div><Link to="/youtube/channels">Manage <ArrowUpRight size={14} /></Link></div>
-        {channels.length > 0 ? (
-          <div className="yt-channel-bubbles">
-            {channels.map(channel => <Link to="/youtube/channels" className="yt-channel-bubble" key={channel.channelId} title={channel.title}>
-              {channel.thumbnailUrl ? <img src={channel.thumbnailUrl} alt="" loading="lazy" /> : <span>{channel.title.slice(0, 1).toUpperCase()}</span>}
-              <small>{channel.title}</small>
-            </Link>)}
-            <Link to="/youtube/search" className="yt-channel-add"><Plus size={19} /><span>Add</span></Link>
-          </div>
-        ) : (
-          <div className="yt-channel-empty"><span className="yt-plus-orb"><Plus size={21} /></span><div><b>Your feed starts with a few good channels.</b><p>Find creators you like and add them to your Kairo feed.</p></div><Link to="/youtube/search" className="yt-button yt-button-primary">Find channels <ArrowUpRight size={15} /></Link></div>
-        )}
-      </section>
-
       <section className="yt-feed-section">
-        <div className="yt-section-heading"><div><h2>Latest videos</h2><p>{channels.length ? 'Recent uploads from your selected channels' : 'Your videos will show up here'}</p></div></div>
+        <div className="yt-section-heading"><div><h2>Latest videos</h2><p>{channels.length ? 'Recent public uploads from your selected channels' : 'Your videos will show up here'}</p></div></div>
         {loading && <div className="yt-loading" role="status">Loading your feed…</div>}
         {!loading && !error && channels.length > 0 && videos.length === 0 && !nextCursor && <div className="yt-empty"><Youtube size={28} /><h3>No recent uploads yet</h3><p>When your selected channels publish new videos, they’ll appear here.</p></div>}
         {!loading && videos.length > 0 && <>
@@ -164,6 +145,21 @@ export default function YouTubeFeedPage() {
           {loadingMore ? <div className="yt-loading" role="status">Loading more videos…</div> : nextCursor ? <button type="button" className="yt-button yt-button-quiet" onClick={() => void loadMore()}>Load more</button> : <p>You’re all caught up.</p>}
         </div>}
       </section>
+      <section className="yt-channel-shelf" aria-label="Your selected channels">
+        <div className="yt-section-heading"><div><h2>Your channels</h2><p>{channels.length} {channels.length === 1 ? 'channel' : 'channels'} in your feed</p></div><Link to="/youtube/channels">Manage <ArrowUpRight size={14} /></Link></div>
+        {channels.length > 0 ? (
+          <div className="yt-channel-bubbles">
+            {channels.map(channel => <Link to="/youtube/channels" className="yt-channel-bubble" key={channel.channelId} title={channel.title}>
+              {channel.thumbnailUrl ? <img src={channel.thumbnailUrl} alt="" loading="lazy" /> : <span>{channel.title.slice(0, 1).toUpperCase()}</span>}
+              <small>{channel.title}</small>
+            </Link>)}
+            <Link to="/youtube/search" className="yt-channel-add"><Plus size={19} /><span>Add</span></Link>
+          </div>
+        ) : (
+          <div className="yt-channel-empty"><span className="yt-plus-orb"><Plus size={21} /></span><div><b>Your feed starts with a few good channels.</b><p>Find creators you like and add them to your Kairo feed.</p></div><Link to="/youtube/search" className="yt-button yt-button-primary">Find channels <ArrowUpRight size={15} /></Link></div>
+        )}
+      </section>
+
     </section>
   );
 }
