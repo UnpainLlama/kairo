@@ -3,6 +3,7 @@ import { Link, useLocation, useParams } from 'react-router-dom';
 import YouTubeVideoCard, { type YouTubeCardVideo } from '../components/YouTubeVideoCard';
 import { ArrowLeft, ArrowUpRight, Bookmark, BookmarkCheck, ExternalLink, History, Youtube } from 'lucide-react';
 import UniversalPlayer from '../components/UniversalPlayer';
+import { YOUTUBE_EMBED_PLAYBACK_ENABLED } from '../lib/features';
 
 type VideoDetails = {
   videoId: string;
@@ -229,6 +230,13 @@ export default function YouTubeWatchPage() {
                 <p>The video owner or YouTube has disabled embedded playback. You can still watch it on YouTube.</p>
                 <a className="yt-button yt-button-primary" href={video.url} target="_blank" rel="noopener noreferrer">Watch on YouTube <ArrowUpRight size={14} /></a>
               </div>
+            ) : !YOUTUBE_EMBED_PLAYBACK_ENABLED ? (
+              <div className="kc-player-message" role="status">
+                <span className="kc-player-icon"><Youtube size={24} /></span>
+                <h2>Embedded playback is temporarily paused</h2>
+                <p>Kairo has temporarily disconnected its YouTube player while we investigate playback issues. You can still watch this video directly on YouTube.</p>
+                <a className="yt-button yt-button-primary" href={video.url} target="_blank" rel="noopener noreferrer">Watch on YouTube <ArrowUpRight size={14} /></a>
+              </div>
             ) : (
               <UniversalPlayer
                 source={{ kind: 'youtube', videoId: video.videoId }}
@@ -239,7 +247,7 @@ export default function YouTubeWatchPage() {
             )}
           </section>
           <div className="kc-player-toolbar">
-            <div className="kc-player-toolbar-left"><span className="kc-live-dot" /> <span>YouTube player</span><span className="kc-toolbar-divider" /><span>{video.durationSeconds ? Math.floor(video.durationSeconds / 60) + ' min' : 'Video'}</span></div>
+            <div className="kc-player-toolbar-left"><span className="kc-live-dot" /> <span>{YOUTUBE_EMBED_PLAYBACK_ENABLED ? 'YouTube player' : 'Embedded playback paused'}</span><span className="kc-toolbar-divider" /><span>{video.durationSeconds ? Math.floor(video.durationSeconds / 60) + ' min' : 'Video'}</span></div>
             <div className="kc-player-toolbar-actions">
               {video.madeForKids ? (
                 <span className="kc-player-tool" role="note">History is off for this video</span>
