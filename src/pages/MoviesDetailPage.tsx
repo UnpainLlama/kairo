@@ -15,12 +15,12 @@ export default function MoviesDetailPage() {
     setLoading(true);
     setError(null);
     apiGet<MovieDetail>('/movies/' + encodeURIComponent(externalId), controller.signal)
-      .then(setMovie)
+      .then(result => { if (!controller.signal.aborted) setMovie(result); })
       .catch(caught => {
-        if (caught instanceof DOMException && caught.name === 'AbortError') return;
+        if (controller.signal.aborted || (caught instanceof DOMException && caught.name === 'AbortError')) return;
         setError(caught instanceof ApiError ? caught : new ApiError(0, 'MOVIES_UNAVAILABLE', 'Could not load this film.'));
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [externalId]);
 
