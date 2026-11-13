@@ -128,12 +128,12 @@ export default function YouTubeFeedPage() {
         {!loading && videos.length > 0 && <>
           <div className="yt-video-grid">
             {videos.map(video => <article className="yt-video-card" key={video.videoId}>
-              <a className="yt-video-thumb" href={video.url} target="_blank" rel="noopener noreferrer" aria-label={'Watch ' + video.title + ' on YouTube'}>
+              <Link className="yt-video-thumb" to={'/youtube/watch/' + video.videoId} aria-label={'Watch ' + video.title + ' in Kairo'}>
                 {video.thumbnail ? <img src={video.thumbnail} alt="" loading="lazy" /> : <span><Youtube size={30} /></span>}
                 <i>Watch <ArrowUpRight size={13} /></i>
-              </a>
+              </Link>
               <div className="yt-video-copy">
-                <h3><a href={video.url} target="_blank" rel="noopener noreferrer">{video.title}</a></h3>
+                <h3><Link to={'/youtube/watch/' + video.videoId}>{video.title}</Link></h3>
                 <p>{video.channelTitle}</p>
                 <small>{video.publishedAt ? new Date(video.publishedAt).toLocaleDateString() : 'Recently uploaded'}</small>
               </div>
