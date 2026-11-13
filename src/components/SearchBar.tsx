@@ -32,8 +32,8 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
   const [movieResult, setMovieResult] = useState<MovieSuggestionState | null>(null);
   const [recentYouTubeQueries, setRecentYouTubeQueries] = useState<string[]>([]);
   const query = text.trim();
-  const mediaMode: MediaMode = location.pathname === '/browse/movies'
-    || (location.pathname === '/search' && new URLSearchParams(location.search).get('format') === 'movie')
+  const mediaMode: MediaMode = location.pathname === '/search'
+    && new URLSearchParams(location.search).get('format') === 'movie'
     ? 'movie'
     : 'anime';
   const mediaLabel = isYouTube ? 'YouTube videos' : isMovies || mediaMode === 'movie' ? 'movies' : 'anime';
