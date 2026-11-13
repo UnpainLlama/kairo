@@ -16,6 +16,8 @@ type FeedVideo = {
 };
 type FeedError = { code: string; message: string };
 
+const HOME_TOPICS = ['Music', 'Mixes', 'Gaming', 'Cooking', 'Podcasts', 'Technology', 'Science', 'Sports', 'Documentaries'];
+
 export default function YouTubeFeedPage() {
   const [channels, setChannels] = useState<SavedChannel[]>([]);
   const [videos, setVideos] = useState<FeedVideo[]>([]);
@@ -133,19 +135,16 @@ export default function YouTubeFeedPage() {
           <p>Fresh uploads from the creators you follow.</p>
         </div>
         <div className="yt-heading-actions">
-          <Link to="/youtube/search" className="yt-button yt-button-primary"><Plus size={15} /> Find videos</Link>
+          <Link to="/youtube/search" className="yt-button yt-button-primary"><Plus size={15} /> Search videos</Link>
           <button className="yt-button yt-button-quiet" type="button" onClick={() => setRefreshKey(value => value + 1)} disabled={loading || loadingMore}><RefreshCw size={15} /> Refresh</button>
         </div>
       </header>
 
-      <nav className="yt-home-chips" aria-label="Filter videos by channel">
-        <button type="button" className={selectedChannel === 'all' ? 'active' : ''} aria-pressed={selectedChannel === 'all'} onClick={() => setSelectedChannel('all')}>All</button>
-        {channels.map(channel => (
-          <button key={channel.channelId} type="button" className={selectedChannel === channel.channelId ? 'active' : ''} aria-pressed={selectedChannel === channel.channelId} onClick={() => setSelectedChannel(channel.channelId)}>
-            {channel.title}
-          </button>
+      <nav className="yt-home-chips" aria-label="Explore YouTube topics">
+        <Link to="/youtube" className="active" aria-current="page">All</Link>
+        {HOME_TOPICS.map(topic => (
+          <Link key={topic} to={'/youtube/search?q=' + encodeURIComponent(topic.toLowerCase())}>{topic}</Link>
         ))}
-        <Link to="/youtube/channels" className="yt-home-chip-manage"><ArrowUpRight size={13} /> Manage channels</Link>
       </nav>
 
       {error && <div className="yt-notice" role="alert">

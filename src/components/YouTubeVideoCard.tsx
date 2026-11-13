@@ -4,6 +4,7 @@ import { Clock3, Youtube } from 'lucide-react';
 export type YouTubeCardVideo = {
   videoId: string;
   title: string;
+  description?: string;
   thumbnailUrl: string | null;
   channelId?: string;
   channelTitle: string;
@@ -16,6 +17,7 @@ type YouTubeVideoCardProps = {
   relatedVideos?: YouTubeCardVideo[];
   channelAvatarUrl?: string | null;
   compact?: boolean;
+  layout?: 'grid' | 'list';
 };
 
 function formatDuration(seconds: number): string {
@@ -42,12 +44,13 @@ function publishedLabel(value: string | null): string {
   return Math.floor(seconds / 31536000) + ' years ago';
 }
 
-export default function YouTubeVideoCard({ video, relatedVideos = [], channelAvatarUrl, compact = false }: YouTubeVideoCardProps) {
+export default function YouTubeVideoCard({ video, relatedVideos = [], channelAvatarUrl, compact = false, layout = 'grid' }: YouTubeVideoCardProps) {
   const related = relatedVideos.filter(item => item.videoId !== video.videoId);
   const navigationState = { youtubeRelatedVideos: related };
+  const isList = layout === 'list';
 
   return (
-    <article className={'yt-video-card' + (compact ? ' yt-video-card-compact' : '')}>
+    <article className={'yt-video-card' + (compact ? ' yt-video-card-compact' : '') + (isList ? ' yt-video-card-list' : '')}>
       <Link
         className="yt-video-thumb"
         to={'/youtube/watch/' + video.videoId}
@@ -63,8 +66,10 @@ export default function YouTubeVideoCard({ video, relatedVideos = [], channelAva
         </span>
         <div className="yt-video-copy">
           <h3><Link to={'/youtube/watch/' + video.videoId} state={navigationState}>{video.title}</Link></h3>
-          <p>{video.channelTitle || 'YouTube'}</p>
-          <small>{publishedLabel(video.publishedAt)}</small>
+          <p>{video.channelTitle || 'YouTube'} · {publishedLabel(video.publishedAt)}</p>
+          {isList && video.description
+            ? <small className="yt-video-description-preview">{video.description}</small>
+            : !isList && <small>{publishedLabel(video.publishedAt)}</small>}
         </div>
       </div>
     </article>
