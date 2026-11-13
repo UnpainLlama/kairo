@@ -2,7 +2,7 @@
 
 KAIRO combines several metadata sources into one unified record. No provider is a permanent dependency: each one is an adapter that can be switched off, replaced or added without touching the frontend or the routes.
 
-**Separate services.** Catalogue metadata, episode discovery (`EpisodeProvider`) and playback (`worker/providers/playback.ts`) are independent. A metadata or artwork provider is never assumed to supply episode records or playable streams. TMDB's optional episode stills enrich thumbnails only. Kairo's `UniversalPlayer` is a frontend host that selects a capability-specific adapter; it does not make cross-origin embed controls programmable or turn an iframe into a re-streamed media source.
+**Separate services.** Catalogue metadata, episode discovery (`EpisodeProvider`) and playback (`worker/providers/playback.ts`) are independent. A metadata or artwork provider is never assumed to supply episode records or playable streams. TMDB's optional episode stills enrich thumbnails only.
 
 ## 1. Provider roles
 
