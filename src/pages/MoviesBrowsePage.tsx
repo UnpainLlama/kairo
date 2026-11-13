@@ -37,13 +37,13 @@ export default function MoviesBrowsePage() {
     const query = new URLSearchParams({ kind: details.kind, page: String(page) });
     if (validGenreId) query.set('genres', validGenreId);
     apiGet<MoviePageData>('/movies/discover?' + query.toString(), controller.signal)
-      .then(setData)
+      .then(result => { if (!controller.signal.aborted) setData(result); })
       .catch(caught => {
-        if (caught instanceof DOMException && caught.name === 'AbortError') return;
+        if (controller.signal.aborted || (caught instanceof DOMException && caught.name === 'AbortError')) return;
         setError(caught instanceof ApiError ? caught : new ApiError(0, 'MOVIES_UNAVAILABLE', 'Could not load this collection.'));
         setData(null);
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     if (validGenreId) {
       apiGet<{ items: MovieGenre[] }>('/movies/genres?language=en-US', controller.signal)
         .then(result => setGenres(result.items))
