@@ -111,7 +111,7 @@ function cleanText(value: unknown, max: number, fallback = ''): string {
   return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim().slice(0, max);
 }
 
-function parseVideoPayload(raw: unknown): Omit<YouTubeVideoRecord, 'embeddable' | 'url'> & { progressSeconds: number; completed: boolean } | null {
+function parseVideoPayload(raw: unknown): Omit<YouTubeVideoRecord, 'embeddable' | 'url' | 'madeForKids'> & { progressSeconds: number; completed: boolean } | null {
   if (!raw || typeof raw !== 'object') return null;
   const value = raw as Record<string, unknown>;
   if (!isYouTubeVideoId(value.videoId)) return null;
