@@ -64,7 +64,7 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams({ q: query, limit: '8', sort: 'relevance' });
       if (mediaMode === 'movie') params.set('format', 'movie');
-      apiGetWithMeta<ItemList<CatalogCard>>(\`/catalog/search?\${params.toString()}\`, controller.signal)
+      apiGetWithMeta<ItemList<CatalogCard>>(`/catalog/search?${params.toString()}`, controller.signal)
         .then(({ data, meta }) => setResult({ q: query, mode: mediaMode, status: 'ok', items: data.items, total: meta.total }))
         .catch((error: unknown) => { if (!isAbort(error)) setResult({ q: query, mode: mediaMode, status: 'error' }); });
     }, 250);
@@ -94,11 +94,11 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
 
   const resultsHref = (term = query): string => {
     const clean = term.trim().slice(0, maxLength);
-    if (isYouTube) return \`/youtube/search?q=\${encodeURIComponent(clean)}\`;
+    if (isYouTube) return `/youtube/search?q=${encodeURIComponent(clean)}`;
     const base = location.pathname === '/search' ? parseSearchState(new URLSearchParams(location.search)) : EMPTY_SEARCH;
     const format = mediaMode === 'movie' ? 'movie' : (base.format === 'movie' ? '' : base.format);
     const qs = toUrlParams({ ...base, q: clean, format, page: 1 }).toString();
-    return \`/search\${qs ? \`?\${qs}\` : ''}\`;
+    return `/search${qs ? `?${qs}` : ''}`;
   };
 
   const go = (path: string) => {
@@ -155,20 +155,20 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
 
   return (
     <div className="kc-search-wrap" ref={rootRef} role="search">
-      <div className={\`kc-top-search\${open ? ' focused' : ''}\`}>
+      <div className={`kc-top-search${open ? ' focused' : ''}`}>
         <input
           ref={inputRef}
           type="text"
           role="combobox"
-          aria-label={\`Search \${mediaLabel}\`}
+          aria-label={`Search ${mediaLabel}`}
           aria-expanded={showPanel}
           aria-controls={listId}
           aria-autocomplete="list"
-          aria-activedescendant={active >= 0 ? \`\${listId}-\${active}\` : undefined}
+          aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
           autoComplete="off"
           spellCheck={false}
           maxLength={maxLength}
-          placeholder={\`Search \${mediaLabel}...\`}
+          placeholder={`Search ${mediaLabel}...`}
           value={text}
           onChange={event => { setText(event.target.value); setActive(-1); setOpen(true); }}
           onFocus={() => setOpen(true)}
@@ -186,9 +186,9 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
               key={suggestion}
               type="button"
               role="option"
-              id={\`\${listId}-\${index}\`}
+              id={`${listId}-${index}`}
               aria-selected={index === active}
-              className={\`kc-yt-suggest-row\${index === active ? ' active' : ''}\`}
+              className={`kc-yt-suggest-row${index === active ? ' active' : ''}`}
               onMouseEnter={() => setActive(index)}
               onClick={() => submitYouTubeSearch(suggestion)}
             >
@@ -213,10 +213,10 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
           {items.map((item, index) => (
             <Link
               key={item.id}
-              id={\`\${listId}-\${index}\`}
+              id={`${listId}-${index}`}
               role="option"
               aria-selected={index === active}
-              className={\`kc-suggest-row\${index === active ? ' active' : ''}\`}
+              className={`kc-suggest-row${index === active ? ' active' : ''}`}
               to={animeHref(item)}
               onMouseEnter={() => setActive(index)}
               onClick={() => { setOpen(false); inputRef.current?.blur(); }}
@@ -224,13 +224,13 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
               <span className="kc-suggest-poster"><Poster item={item} /></span>
               <span className="kc-suggest-copy">
                 <b>{item.title}</b>
-                <small>{[formatLabel(item.format), item.releaseYear, item.episodeCount ? \`\${item.episodeCount} ep\` : null].filter(Boolean).join(' · ') || 'Anime'}</small>
+                <small>{[formatLabel(item.format), item.releaseYear, item.episodeCount ? `${item.episodeCount} ep` : null].filter(Boolean).join(' · ') || 'Anime'}</small>
               </span>
             </Link>
           ))}
           {current?.status === 'ok' && items.length > 0 && (
             <Link className="kc-suggest-all" to={resultsHref()} onClick={() => setOpen(false)}>
-              See all {mediaLabel} results{typeof current.total === 'number' ? \` (\${current.total})\` : ''} <ArrowRight size={14} aria-hidden="true" />
+              See all {mediaLabel} results{typeof current.total === 'number' ? ` (${current.total})` : ''} <ArrowRight size={14} aria-hidden="true" />
             </Link>
           )}
         </div>
