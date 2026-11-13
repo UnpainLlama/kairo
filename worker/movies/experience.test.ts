@@ -39,6 +39,7 @@ describe('TMDB experience provider', () => {
     await service.videos('movie', '456');
     await service.seasons('123');
     await service.episodes('123', 2);
+    await service.popularPeople(1);
     const urls = fetcher.mock.calls.map((call) => new URL(call[0] as string));
     expect(urls.map((url) => url.pathname)).toEqual([
       '/3/search/multi',
@@ -47,6 +48,7 @@ describe('TMDB experience provider', () => {
       '/3/movie/456/videos',
       '/3/tv/123',
       '/3/tv/123/season/2',
+      '/3/person/popular',
     ]);
     expect(urls[1].searchParams.get('append_to_response')).toContain('recommendations');
   });
