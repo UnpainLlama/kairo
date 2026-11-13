@@ -55,8 +55,3 @@ declare namespace YT {
     destroy(): void;
   }
 }
-
-interface Window {
-  onYouTubeIframeAPIReady?: () => void;
-  YT?: typeof YT;
-}
