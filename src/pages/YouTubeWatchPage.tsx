@@ -14,7 +14,7 @@ type VideoDetails = {
   channelAvatarUrl?: string | null;
   publishedAt: string | null;
   durationSeconds: number | null;
-  embeddable: boolean;
+  embeddable: boolean | null;
   madeForKids: boolean;
   url: string;
 };
@@ -188,7 +188,7 @@ export default function YouTubeWatchPage() {
       <div className="kc-watch-layout">
         <div className="kc-watch-main">
           <section className="kc-player yt-player-shell" aria-label="YouTube video player">
-            {!video.embeddable ? (
+            {video.embeddable === false ? (
               <div className="kc-player-message">
                 <span className="kc-player-icon"><Youtube size={24} /></span>
                 <h2>This video cannot be embedded</h2>

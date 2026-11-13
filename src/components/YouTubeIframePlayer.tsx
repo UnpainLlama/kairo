@@ -187,9 +187,9 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
               2: 'YouTube rejected this video ID.',
               5: 'This video could not be played in the embedded player.',
               100: 'This video is unavailable, private or deleted.',
-              101: 'The owner does not allow this video to be embedded.',
-              150: 'The owner does not allow this video to be embedded.',
-              153: 'YouTube could not verify the player origin. Open the video on YouTube instead.',
+              101: 'YouTube does not allow this video to play in an embedded player. This can be due to the owner’s setting or a YouTube platform/content restriction.',
+              150: 'YouTube does not allow this video to play in an embedded player. This can be due to the owner’s setting or a YouTube platform/content restriction.',
+              153: 'YouTube did not receive the required HTTP Referer identifying this site. Check the page referrer policy, then try again or open the video on YouTube.',
             };
             setError(messages[event.data] ?? 'YouTube could not play this video. Open it on YouTube instead.');
           },
