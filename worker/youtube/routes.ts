@@ -67,7 +67,7 @@ async function shaHex(value: string): Promise<string> {
 }
 
 async function bumpRateBucket(c: YouTubeContext, bucket: string, limit: number, windowMs: number, cost = 1): Promise<boolean> {
-  const bucketKey = await shaHex('youtube-media:' + bucket);
+  const bucketKey = await shaHex('youtube:quota:' + bucket);
   const now = Date.now();
   const row = await c.env.DB.prepare(
     'INSERT INTO auth_rate_limits (bucket_key,window_started_at,attempts) VALUES (?,?,?) ' +
@@ -141,11 +141,19 @@ async function youtubeApiVideo(c: YouTubeContext, videoId: string): Promise<YouT
 
   const url = new URL('https://www.googleapis.com/youtube/v3/videos');
   url.search = new URLSearchParams({ part: 'snippet,contentDetails,status', id: videoId, key: apiKey }).toString();
-  const response = await fetch(url.toString(), {
-    headers: { Accept: 'application/json' },
-    signal: AbortSignal.timeout(10000),
-  });
-  const payload = await response.json().catch(() => ({})) as any;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  let response: Response;
+  let payload: any;
+  try {
+    response = await fetch(url.toString(), {
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    payload = await response.json().catch(() => ({})) as any;
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!response.ok) {
     const reason = payload?.error?.errors?.[0]?.reason;
     if (reason === 'quotaExceeded' || reason === 'dailyLimitExceeded') throw new Error('YOUTUBE_QUOTA_EXCEEDED');

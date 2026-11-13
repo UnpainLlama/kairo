@@ -115,3 +115,12 @@ This plan describes the full provider roadmap. The current account-foundation wo
 - YouTube IFrame Player API: https://developers.google.com/youtube/iframe_api_reference
 - Google OAuth 2.0 for web server applications: https://developers.google.com/identity/protocols/oauth2/web-server
 - YouTube developer policies: https://developers.google.com/youtube/terms/developer-policies
+
+
+## Implementation note — Kairo-native watch view
+
+The YouTube channel-feed cards now open a Kairo watch page at `/youtube/watch/:videoId`. It requests public metadata from the official Data API, checks the embed-allowed flag, and plays through the official YouTube IFrame Player API. The anime watch-page layout is reused as the visual foundation.
+
+The Kairo watch view adds account-scoped playback history and a separate Watch Later list using `youtube_watch_history` and `youtube_watch_later`. Guest playback keeps local resume progress only. Signed-in playback syncs progress to D1. These features do not read, modify or claim to synchronize the viewer's YouTube account history.
+
+The additive schema is `migrations/0011_youtube_media_library.sql`. Apply it only after reviewing the migration for the intended environment. Public discovery beyond the current saved-channel feed and authorized YouTube subscription import remain separate roadmap work.

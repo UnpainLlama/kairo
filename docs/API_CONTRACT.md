@@ -175,3 +175,22 @@ The example is a schema illustration, not a live URL. Return only provider-autho
 - Use `Cache-Control: no-store` on authenticated responses.
 - Use explicit CORS origins only if the API is hosted on a separate origin. Same-origin deployment is preferred.
 - Retry only idempotent reads, with bounded timeouts and backoff.
+
+
+## 3b. YouTube playback and personal video library
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/youtube/videos/:videoId` | Retrieve public video metadata and the YouTube embed-allowed flag from the official Data API. |
+| GET | `/api/v1/youtube/history` | List the signed-in user's recent YouTube playback history. |
+| POST | `/api/v1/youtube/history` | Save or update playback progress for a video. |
+| DELETE | `/api/v1/youtube/history/:videoId` | Remove one video from the signed-in user's history. |
+| GET | `/api/v1/youtube/watch-later` | List the signed-in user's saved videos. |
+| POST | `/api/v1/youtube/watch-later` | Save a video to Kairo Watch Later. |
+| DELETE | `/api/v1/youtube/watch-later/:videoId` | Remove one video from Kairo Watch Later. |
+
+- Video metadata is public; the API key remains server-side. The endpoint returns a normalized record and whether YouTube allows embedding. It does not return extracted stream URLs.
+- History and Watch Later require a Kairo session and are scoped by the server-derived user ID. Write operations require a same-origin request, validate the video ID and bounded metadata/progress fields, and use per-user/IP write limits. Authenticated library responses are `Cache-Control: no-store`.
+- The browser uses the official YouTube IFrame Player API. Kairo does not proxy video bytes, collect YouTube cookies, or bypass embed restrictions. If a video cannot be embedded, the UI offers the original YouTube watch URL.
+- Playback progress is stored locally for guests and synced to D1 for signed-in Kairo users. This Kairo history is separate from the user's YouTube account history.
+- The additive D1 schema is in `migrations/0011_youtube_media_library.sql`. Apply it to each target environment before deploying this Worker version. No remote migration is run by this source change.

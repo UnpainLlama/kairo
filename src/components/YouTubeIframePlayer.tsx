@@ -45,6 +45,7 @@ function loadYouTubeIframeApi(): Promise<YouTubeApi> {
   apiPromise = new Promise<YouTubeApi>((resolve, reject) => {
     const previousReady = window.onYouTubeIframeAPIReady;
     let settled = false;
+    let timeout = 0;
     const finish = () => {
       if (settled) return;
       if (!window.YT?.Player) return;
@@ -56,6 +57,12 @@ function loadYouTubeIframeApi(): Promise<YouTubeApi> {
       try { previousReady?.(); } catch { /* preserve the player API callback */ }
       finish();
     };
+    timeout = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      apiPromise = null;
+      reject(new Error('The YouTube player took too long to load.'));
+    }, 15000);
     const existing = document.querySelector<HTMLScriptElement>('script[src="https://www.youtube.com/iframe_api"]');
     if (!existing) {
       const script = document.createElement('script');
@@ -70,12 +77,6 @@ function loadYouTubeIframeApi(): Promise<YouTubeApi> {
       };
       document.head.appendChild(script);
     }
-    const timeout = window.setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      apiPromise = null;
-      reject(new Error('The YouTube player took too long to load.'));
-    }, 15000);
     finish();
   });
   return apiPromise;
@@ -88,6 +89,7 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
   const startSecondsRef = useRef(startSeconds);
   const restoredRef = useRef(false);
   const timerRef = useRef<number | null>(null);
+  const resumeTimerRef = useRef<number | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
 
@@ -115,6 +117,15 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
       stopTimer();
       timerRef.current = window.setInterval(() => report('timeupdate'), 10000);
     };
+    const restorePosition = (target: YouTubePlayer): boolean => {
+      if (restoredRef.current) return true;
+      const duration = target.getDuration();
+      if (!Number.isFinite(duration) || duration <= 0) return false;
+      const saved = startSecondsRef.current;
+      if (saved > 15 && saved < duration - 15) target.seekTo(saved, true);
+      restoredRef.current = true;
+      return true;
+    };
 
     void loadYouTubeIframeApi().then((api) => {
       if (cancelled || !hostRef.current) return;
@@ -135,12 +146,16 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
             if (cancelled) return;
             playerRef.current = event.target;
             setReady(true);
-            const duration = event.target.getDuration();
-            const saved = startSecondsRef.current;
-            if (!restoredRef.current && saved > 15 && duration > 0 && saved < duration - 15) {
-              event.target.seekTo(saved, true);
+            if (!restorePosition(event.target)) {
+              let attempts = 0;
+              resumeTimerRef.current = window.setInterval(() => {
+                attempts += 1;
+                if (restorePosition(event.target) || attempts >= 20) {
+                  if (resumeTimerRef.current !== null) window.clearInterval(resumeTimerRef.current);
+                  resumeTimerRef.current = null;
+                }
+              }, 500);
             }
-            restoredRef.current = true;
           },
           onStateChange: (event) => {
             if (event.data === api.PlayerState.PLAYING) startTimer();
@@ -178,22 +193,16 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
     return () => {
       cancelled = true;
       stopTimer();
+      if (resumeTimerRef.current !== null) {
+        window.clearInterval(resumeTimerRef.current);
+        resumeTimerRef.current = null;
+      }
       report('pagehide');
       window.removeEventListener('pagehide', pageHide);
       playerRef.current?.destroy();
       playerRef.current = null;
     };
   }, [videoId]);
-
-  useEffect(() => {
-    if (!ready || restoredRef.current) return;
-    const player = playerRef.current;
-    const duration = player?.getDuration() ?? 0;
-    if (player && startSeconds > 15 && duration > 0 && startSeconds < duration - 15) {
-      player.seekTo(startSeconds, true);
-    }
-    restoredRef.current = true;
-  }, [ready, startSeconds]);
 
   return (
     <div className="yt-iframe-player">

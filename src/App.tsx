@@ -162,7 +162,7 @@ export default function App() {
                 </Link>
                 <div className="kc-menu-section-label">{isYouTubeMode ? 'Video' : 'Media'}</div>
                 <div className="kc-menu-grid">
-                  {activeMenuItems.slice(0, isYouTubeMode ? 3 : 4).map((item) => <MenuLink key={item.label} {...item} onNavigate={closeMenu} />)}
+                  {activeMenuItems.slice(0, isYouTubeMode ? 5 : 4).map((item) => <MenuLink key={item.label} {...item} onNavigate={closeMenu} />)}
                   <NavLink to={isYouTubeMode ? '/' : '/youtube'} className={({ isActive }) => `kc-menu-tile${isActive ? ' active' : ''}`} onClick={closeMenu}>
                     {isYouTubeMode
                       ? <Tv size={17} strokeWidth={1.8} aria-hidden="true" />

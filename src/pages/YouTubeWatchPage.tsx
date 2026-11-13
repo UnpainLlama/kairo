@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ArrowUpRight, Bookmark, BookmarkCheck, ExternalLink, History, Youtube } from 'lucide-react';
-import { ApiError } from '../lib/api';
 import YouTubeIframePlayer from '../components/YouTubeIframePlayer';
 
 type VideoDetails = {
@@ -30,7 +29,6 @@ export default function YouTubeWatchPage() {
   const { videoId = '' } = useParams();
   const [video, setVideo] = useState<VideoDetails | null>(null);
   const [accountId, setAccountId] = useState<string | null>(null);
-  const [accountResolved, setAccountResolved] = useState(false);
   const [startSeconds, setStartSeconds] = useState(0);
   const [isSaved, setIsSaved] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -44,7 +42,6 @@ export default function YouTubeWatchPage() {
       setLoading(true);
       setError('');
       setVideo(null);
-      setAccountResolved(false);
       setStartSeconds(0);
       try {
         const [videoResponse, accountResponse] = await Promise.all([
@@ -77,7 +74,6 @@ export default function YouTubeWatchPage() {
           setAccountId(userId);
           setStartSeconds(Number.isFinite(resume) && resume > 0 ? resume : 0);
           setIsSaved(saved);
-          setAccountResolved(true);
         }
       } catch (caught) {
         if (active) setError(caught instanceof Error ? caught.message : 'Could not load this YouTube video.');
