@@ -42,12 +42,10 @@ export default function App() {
           });
         } else {
           dispatch(setContent([]));
-          dispatch(setPageContent({ page: 'home', rows: [] }));
         }
       })
       .catch(() => {
         dispatch(setContent([]));
-        dispatch(setPageContent({ page: 'home', rows: [] }));
       });
   }, [dispatch, isAuthed, currentProfile?.id]);
 
