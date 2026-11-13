@@ -584,8 +584,9 @@ export function registerYouTubeAuthRoutes(app: any): void {
 
   app.get('/api/v1/youtube/videos/search', async (c: YouTubeContext) => {
     c.header('Cache-Control', 'no-store');
-    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
-    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to search YouTube videos.' } }, 401);
+    // Searching public videos does not require a Kairo or YouTube account.
+    // Guests are still rate-limited by client IP and the shared project quota.
+    const identity = (await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null))?.id ?? 'guest';
 
     const params = new URL(c.req.url).searchParams;
     const term = params.get('q')?.trim() ?? '';
@@ -605,7 +606,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
       return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'The search page token is invalid. Start a new search.' } }, 400);
     }
     if (!c.env.YOUTUBE_DATA_API_KEY?.trim()) return youtubeRouteError(c, 'youtube_video_search_config_unavailable', new Error('YOUTUBE_API_KEY_MISSING'));
-    if (!await allowYouTubeRequest(c, user.id, 'video-search', 8, { bucket: 'search-list-daily', limit: YOUTUBE_SEARCH_DAILY_LIMIT, windowMs: YOUTUBE_DAILY_WINDOW_MS })) {
+    if (!await allowYouTubeRequest(c, identity, 'video-search', 8, { bucket: 'search-list-daily', limit: YOUTUBE_SEARCH_DAILY_LIMIT, windowMs: YOUTUBE_DAILY_WINDOW_MS })) {
       return c.json({ success: false, error: { code: 'RATE_LIMITED', message: 'Too many YouTube video searches. Please try again in 15 minutes.' } }, 429);
     }
 

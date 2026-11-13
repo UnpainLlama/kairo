@@ -621,20 +621,27 @@ describe('YouTube keyword video search', () => {
     }
   });
 
-  it('requires a signed-in Kairo session', async () => {
+  it('allows public keyword search for guests without a Kairo or YouTube session', async () => {
     const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/videos/search');
-    const providerFetch = vi.fn();
+    const providerFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith('/search')) {
+        expect(url.searchParams.get('q')).toBe('Minecraft');
+        expect(url.searchParams.get('type')).toBe('video');
+        return new Response(JSON.stringify({ items: [{ id: { videoId: 'dQw4w9WgXcQ' }, snippet: { title: 'Minecraft video', channelTitle: 'Guest search result' } }] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ items: [] }), { status: 200 });
+    });
     vi.stubGlobal('fetch', providerFetch);
     try {
       const ctx = makeContext({
         url: canonicalOrigin + '/api/v1/youtube/videos/search?q=Minecraft',
-        cookie: 'kairo_session=' + 'a'.repeat(43),
         env: { DB: mockDb({ authenticated: false }), YOUTUBE_DATA_API_KEY: 'worker-test-key' },
       });
       const response = await handler(ctx.context);
-      expect(response.status).toBe(401);
-      expect(ctx.jsonBody).toMatchObject({ error: { code: 'AUTH_REQUIRED' } });
-      expect(providerFetch).not.toHaveBeenCalled();
+      expect(response.status).toBe(200);
+      expect(ctx.jsonBody).toMatchObject({ success: true, data: { videos: [{ videoId: 'dQw4w9WgXcQ', title: 'Minecraft video' }] } });
+      expect(providerFetch).toHaveBeenCalledTimes(2);
       expect(ctx.headers.get('cache-control')).toEqual(['no-store']);
     } finally {
       vi.unstubAllGlobals();
