@@ -19,6 +19,7 @@ interface UIState {
     zone: 'buttons' | 'seasons' | 'episodes';
     seasonIndex: number;
     episodeIndex: number;
+    detailTrailerPaused: boolean;
   };
   perfHudVisible: boolean;
   searchQuery: string;
@@ -49,6 +50,7 @@ const initialState: UIState = {
     zone: 'buttons',
     seasonIndex: 0,
     episodeIndex: 0,
+    detailTrailerPaused: false,
   },
   perfHudVisible: false,
   searchQuery: '',
@@ -68,6 +70,7 @@ export const uiSlice = createSlice({
       state.detailOverlay.zone = 'buttons';
       state.detailOverlay.seasonIndex = 0;
       state.detailOverlay.episodeIndex = 0;
+      state.detailOverlay.detailTrailerPaused = false;
     },
     closeDetail(state) {
       state.detailOverlay.open = false;
@@ -76,6 +79,7 @@ export const uiSlice = createSlice({
       state.detailOverlay.zone = 'buttons';
       state.detailOverlay.seasonIndex = 0;
       state.detailOverlay.episodeIndex = 0;
+      state.detailOverlay.detailTrailerPaused = false;
     },
     setDetailButtonIndex(state, action: PayloadAction<number>) {
       state.detailOverlay.buttonIndex = action.payload;
@@ -88,6 +92,9 @@ export const uiSlice = createSlice({
     },
     setDetailEpisodeIndex(state, action: PayloadAction<number>) {
       state.detailOverlay.episodeIndex = action.payload;
+    },
+    setDetailTrailerPaused(state, action: PayloadAction<boolean>) {
+      state.detailOverlay.detailTrailerPaused = action.payload;
     },
     togglePerfHud(state) {
       state.perfHudVisible = !state.perfHudVisible;
@@ -146,7 +153,7 @@ export const uiSlice = createSlice({
 
 export const {
   openDetail, closeDetail, setDetailButtonIndex, togglePerfHud,
-  setDetailZone, setDetailSeasonIndex, setDetailEpisodeIndex,
+  setDetailZone, setDetailSeasonIndex, setDetailEpisodeIndex, setDetailTrailerPaused,
   setActivePage, setNavFocused, setNavIndex,
   setSearchQuery, appendSearchChar, deleteSearchChar, clearSearchQuery,
   setHeroFocused, setHeroButtonIndex, setInteractionMode,
