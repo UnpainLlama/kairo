@@ -5,6 +5,7 @@ type YouTubeBindings = {
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   YOUTUBE_TOKEN_ENCRYPTION_KEY?: string;
+  YOUTUBE_DATA_API_KEY?: string;
   APP_BASE_URL?: string;
 };
 type YouTubeContext = {
@@ -133,53 +134,6 @@ function unavailable(c: YouTubeContext): Response {
 }
 
 
-type YouTubeConnectionRow = {
-  encrypted_access_token: string | null;
-  encrypted_refresh_token: string | null;
-  token_expires_at: number | null;
-};
-
-async function getYouTubeAccessToken(c: YouTubeContext, userId: string): Promise<string> {
-  const { DB, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, YOUTUBE_TOKEN_ENCRYPTION_KEY } = c.env;
-  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !YOUTUBE_TOKEN_ENCRYPTION_KEY || encryptionKeyProblem(YOUTUBE_TOKEN_ENCRYPTION_KEY)) {
-    throw new Error('YOUTUBE_UNAVAILABLE');
-  }
-  const connection = await DB.prepare(
-    "SELECT encrypted_access_token, encrypted_refresh_token, token_expires_at FROM provider_connections WHERE user_id=? AND provider='youtube' LIMIT 1"
-  ).bind(userId).first<YouTubeConnectionRow>();
-  if (!connection?.encrypted_refresh_token) throw new Error('YOUTUBE_NOT_CONNECTED');
-
-  let accessToken = '';
-  if (connection.encrypted_access_token) {
-    try { accessToken = await decryptToken(connection.encrypted_access_token, YOUTUBE_TOKEN_ENCRYPTION_KEY); }
-    catch { accessToken = ''; }
-  }
-  if (!accessToken || !connection.token_expires_at || connection.token_expires_at <= Date.now() + 60_000) {
-    const refreshResponse = await fetch(TOKEN_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
-      body: new URLSearchParams({
-        client_id: GOOGLE_CLIENT_ID,
-        client_secret: GOOGLE_CLIENT_SECRET,
-        refresh_token: await decryptToken(connection.encrypted_refresh_token, YOUTUBE_TOKEN_ENCRYPTION_KEY),
-        grant_type: 'refresh_token',
-      }),
-    });
-    const refreshed = await refreshResponse.json().catch(() => ({})) as { access_token?: string; expires_in?: number; error?: string };
-    if (!refreshResponse.ok || !refreshed.access_token || !Number.isFinite(Number(refreshed.expires_in)) || Number(refreshed.expires_in) <= 0) {
-      if (refreshed.error === 'invalid_grant') throw new Error('YOUTUBE_REAUTH_REQUIRED');
-      logYouTubeDiagnostic(c, 'youtube_token_refresh_failed', { httpStatus: refreshResponse.status, googleError: safeGoogleErrorCode(refreshed.error) });
-      throw new Error('YOUTUBE_PROVIDER_UNAVAILABLE');
-    }
-    accessToken = refreshed.access_token;
-    const encryptedAccess = await encryptToken(accessToken, YOUTUBE_TOKEN_ENCRYPTION_KEY);
-    await DB.prepare(
-      "UPDATE provider_connections SET encrypted_access_token=?, token_expires_at=?, updated_at=CURRENT_TIMESTAMP WHERE user_id=? AND provider='youtube'"
-    ).bind(encryptedAccess, Date.now() + Number(refreshed.expires_in) * 1000, userId).run();
-  }
-  return accessToken;
-}
-
 const YOUTUBE_RATE_WINDOW_MS = 15 * 60 * 1000;
 const YOUTUBE_DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const YOUTUBE_SEARCH_DAILY_LIMIT = 80; // Reserve 20 of the default 100 search.list calls for operational headroom.
@@ -220,17 +174,23 @@ async function allowYouTubeRequest(
     : true;
 }
 
-async function youtubeApiGet(accessToken: string, resource: string, params: Record<string, string>): Promise<any> {
+function youtubeApiKey(c: YouTubeContext): string {
+  const key = c.env.YOUTUBE_DATA_API_KEY?.trim();
+  if (!key) throw new Error('YOUTUBE_API_KEY_MISSING');
+  return key;
+}
+
+async function youtubeApiGet(apiKey: string, resource: string, params: Record<string, string>): Promise<any> {
   const url = new URL('https://www.googleapis.com/youtube/v3/' + resource);
   for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);
-  const response = await fetch(url.toString(), {
-    headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' },
-  });
+  // The API key stays in this server-side request only. Never return or log the URL.
+  url.searchParams.set('key', apiKey);
+  const response = await fetch(url.toString(), { headers: { Accept: 'application/json' } });
   const payload = await response.json().catch(() => ({})) as any;
   if (!response.ok) {
     const reason = payload?.error?.errors?.[0]?.reason;
-    if (response.status === 401) throw new Error('YOUTUBE_REAUTH_REQUIRED');
     if (reason === 'quotaExceeded' || reason === 'dailyLimitExceeded') throw new Error('YOUTUBE_QUOTA_EXCEEDED');
+    if (reason === 'keyInvalid' || reason === 'accessNotConfigured' || reason === 'ipRefererBlocked') throw new Error('YOUTUBE_API_KEY_INVALID');
     throw new Error('YOUTUBE_PROVIDER_UNAVAILABLE');
   }
   return payload;
@@ -239,6 +199,8 @@ async function youtubeApiGet(accessToken: string, resource: string, params: Reco
 function youtubeRouteError(c: YouTubeContext, event: string, error: unknown): Response {
   const code = error instanceof Error ? error.message : 'YOUTUBE_PROVIDER_UNAVAILABLE';
   const issues: Record<string, { status: number; message: string }> = {
+    YOUTUBE_API_KEY_MISSING: { status: 503, message: 'Public YouTube data is not configured for this environment yet.' },
+    YOUTUBE_API_KEY_INVALID: { status: 503, message: 'The public YouTube API key is not accepted. Check its API restrictions and Worker configuration.' },
     YOUTUBE_NOT_CONNECTED: { status: 403, message: 'Connect YouTube to search for channels and build your feed.' },
     YOUTUBE_REAUTH_REQUIRED: { status: 401, message: 'Your YouTube connection needs to be renewed. Reconnect YouTube in Settings.' },
     YOUTUBE_QUOTA_EXCEEDED: { status: 503, message: 'YouTube search is temporarily unavailable because its API quota has been reached.' },
@@ -564,8 +526,8 @@ export function registerYouTubeAuthRoutes(app: any): void {
   });
 
 
-  // Kairo-curated YouTube channels. The user's YouTube OAuth connection is used
-  // only for channel search and public upload lookup; Kairo keeps its own list.
+  // Kairo-curated YouTube channels. Public reads use a server-held API key;
+  // Kairo keeps each user's selected channel list and never exposes the key.
   app.get('/api/v1/youtube/channels', async (c: YouTubeContext) => {
     c.header('Cache-Control', 'no-store');
     const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
@@ -589,13 +551,14 @@ export function registerYouTubeAuthRoutes(app: any): void {
     if (term.length < 2 || term.length > 80 || /[\u0000-\u001F\u007F]/.test(term)) {
       return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Enter a channel name or topic between 2 and 80 characters.' } }, 400);
     }
+    if (!c.env.YOUTUBE_DATA_API_KEY?.trim()) return youtubeRouteError(c, 'youtube_channel_search_config_unavailable', new Error('YOUTUBE_API_KEY_MISSING'));
     if (!await allowYouTubeRequest(c, user.id, 'channel-search', 5, { bucket: 'search-list-daily', limit: YOUTUBE_SEARCH_DAILY_LIMIT, windowMs: YOUTUBE_DAILY_WINDOW_MS })) {
       return c.json({ success: false, error: { code: 'RATE_LIMITED', message: 'Too many channel searches. Please try again in 15 minutes.' } }, 429);
     }
     try {
-      const accessToken = await getYouTubeAccessToken(c, user.id);
+      const apiKey = youtubeApiKey(c);
       const [result, saved] = await Promise.all([
-        youtubeApiGet(accessToken, 'search', { part: 'snippet', type: 'channel', maxResults: '18', q: term }),
+        youtubeApiGet(apiKey, 'search', { part: 'snippet', type: 'channel', maxResults: '18', q: term }),
         c.env.DB.prepare('SELECT channel_id FROM youtube_feed_channels WHERE user_id=?').bind(user.id).all<{ channel_id: string }>(),
       ]);
       const savedIds = new Set((saved.results ?? []).map((row) => row.channel_id));
@@ -636,11 +599,12 @@ export function registerYouTubeAuthRoutes(app: any): void {
       const existing = await c.env.DB.prepare('SELECT channel_id FROM youtube_feed_channels WHERE user_id=? AND channel_id=? LIMIT 1')
         .bind(user.id, channelId).first() as { channel_id: string } | null;
       if (existing) return c.json({ success: true, data: { added: false, channelId } });
+      if (!c.env.YOUTUBE_DATA_API_KEY?.trim()) return youtubeRouteError(c, 'youtube_channel_add_config_unavailable', new Error('YOUTUBE_API_KEY_MISSING'));
       if (!await allowYouTubeRequest(c, user.id, 'channel-add', 10, { bucket: 'data-api-daily', limit: YOUTUBE_DATA_DAILY_LIMIT, windowMs: YOUTUBE_DAILY_WINDOW_MS })) {
         return c.json({ success: false, error: { code: 'RATE_LIMITED', message: 'YouTube API usage is temporarily limited. Please try again later.' } }, 429);
       }
-      const accessToken = await getYouTubeAccessToken(c, user.id);
-      const result = await youtubeApiGet(accessToken, 'channels', { part: 'snippet', id: channelId, maxResults: '1' });
+      const apiKey = youtubeApiKey(c);
+      const result = await youtubeApiGet(apiKey, 'channels', { part: 'snippet,contentDetails', id: channelId, maxResults: '1' });
       const channel = result.items?.[0];
       if (!channel || channel.id !== channelId) {
         return c.json({ success: false, error: { code: 'YOUTUBE_CHANNEL_NOT_FOUND', message: 'That channel could not be found.' } }, 404);
@@ -648,9 +612,13 @@ export function registerYouTubeAuthRoutes(app: any): void {
       const snippet = channel.snippet ?? {};
       const title = typeof snippet.title === 'string' ? snippet.title.slice(0, 180) : 'YouTube channel';
       const description = typeof snippet.description === 'string' ? snippet.description.slice(0, 1000) : '';
+      const uploadsPlaylistId = channel?.contentDetails?.relatedPlaylists?.uploads;
+      if (typeof uploadsPlaylistId !== 'string' || !/^[A-Za-z0-9_-]{6,128}$/.test(uploadsPlaylistId)) {
+        return c.json({ success: false, error: { code: 'YOUTUBE_CHANNEL_UNAVAILABLE', message: 'This channel does not currently expose a public uploads playlist.' } }, 422);
+      }
       await c.env.DB.prepare(
-        'INSERT INTO youtube_feed_channels (user_id,channel_id,channel_title,description,thumbnail_url) VALUES (?,?,?,?,?)'
-      ).bind(user.id, channelId, title, description, youtubeThumbnail(snippet.thumbnails)).run();
+        'INSERT INTO youtube_feed_channels (user_id,channel_id,channel_title,description,thumbnail_url,upload_playlist_id) VALUES (?,?,?,?,?,?)'
+      ).bind(user.id, channelId, title, description, youtubeThumbnail(snippet.thumbnails), uploadsPlaylistId).run();
       return c.json({ success: true, data: { added: true, channel: { channelId, title, description, thumbnailUrl: youtubeThumbnail(snippet.thumbnails) } } }, 201);
     } catch (error) {
       return youtubeRouteError(c, 'youtube_channel_add_failed', error);
@@ -693,7 +661,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
 
     try {
       const saved = await c.env.DB.prepare(
-        'SELECT channel_id AS channelId, channel_title AS title, thumbnail_url AS thumbnailUrl FROM youtube_feed_channels WHERE user_id=? ORDER BY added_at DESC, channel_title COLLATE NOCASE'
+        'SELECT channel_id AS channelId, channel_title AS title, thumbnail_url AS thumbnailUrl, upload_playlist_id AS uploadPlaylistId FROM youtube_feed_channels WHERE user_id=? ORDER BY added_at DESC, channel_title COLLATE NOCASE'
       ).bind(user.id).all<{ channelId: string; title: string; thumbnailUrl: string | null }>();
       const channels = saved.results ?? [];
       if (!channels.length) {
@@ -743,34 +711,47 @@ export function registerYouTubeAuthRoutes(app: any): void {
         return c.json({ success: true, data: { videos: [], channels, channelsChecked: 0, nextCursor: null }, meta: { requestId: requestId(c) } });
       }
 
-      const estimatedUnits = batchChannels.length + 1;
+      const channelsNeedingPlaylist = batchChannels.filter((channel: any) => !channel.uploadPlaylistId);
+      const estimatedUnits = batchChannels.length + (channelsNeedingPlaylist.length ? 1 : 0);
+      if (!c.env.YOUTUBE_DATA_API_KEY?.trim()) return youtubeRouteError(c, 'youtube_feed_config_unavailable', new Error('YOUTUBE_API_KEY_MISSING'));
       if (!await bumpYouTubeRateBucket(c, 'data-api-daily', YOUTUBE_DATA_DAILY_LIMIT, YOUTUBE_DAILY_WINDOW_MS, estimatedUnits)) {
         return c.json({ success: false, error: { code: 'RATE_LIMITED', message: 'YouTube API usage is temporarily limited. Please try again later.' } }, 429);
       }
 
-      const accessToken = await getYouTubeAccessToken(c, user.id);
-      const channelData = await youtubeApiGet(accessToken, 'channels', {
-        part: 'contentDetails',
-        id: batchChannelIds.join(','),
-        maxResults: String(batchChannelIds.length),
-      });
-      const uploads = (channelData.items ?? []).map((channel: any) => ({
-        id: channel.id,
-        playlistId: channel?.contentDetails?.relatedPlaylists?.uploads,
-      })).filter((item: any) => batchChannelIds.includes(item.id) && typeof item.playlistId === 'string');
+      const apiKey = youtubeApiKey(c);
+      const playlistIds = new Map<string, string>();
+      for (const channel of batchChannels) {
+        if (channel.uploadPlaylistId) playlistIds.set(channel.channelId, channel.uploadPlaylistId);
+      }
+      if (channelsNeedingPlaylist.length) {
+        const channelData = await youtubeApiGet(apiKey, 'channels', {
+          part: 'contentDetails',
+          id: channelsNeedingPlaylist.map((channel: any) => channel.channelId).join(','),
+          maxResults: String(channelsNeedingPlaylist.length),
+        });
+        for (const channel of channelData.items ?? []) {
+          const playlistId = channel?.contentDetails?.relatedPlaylists?.uploads;
+          if (typeof channel?.id !== 'string' || typeof playlistId !== 'string' || !/^[A-Za-z0-9_-]{6,128}$/.test(playlistId)) continue;
+          playlistIds.set(channel.id, playlistId);
+          await c.env.DB.prepare(
+            'UPDATE youtube_feed_channels SET upload_playlist_id=? WHERE user_id=? AND channel_id=? AND upload_playlist_id IS NULL'
+          ).bind(playlistId, user.id, channel.id).run();
+        }
+      }
+      const uploads = batchChannels.filter((channel: any) => playlistIds.has(channel.channelId));
 
       const batches = await Promise.all(uploads.map(async (channel: any) => {
-        const pageToken = loadingOlderUploads ? state.pageTokens[channel.id] : undefined;
-        const result = await youtubeApiGet(accessToken, 'playlistItems', {
+        const pageToken = loadingOlderUploads ? state.pageTokens[channel.channelId] : undefined;
+        const result = await youtubeApiGet(apiKey, 'playlistItems', {
           part: 'snippet,contentDetails',
-          playlistId: channel.playlistId,
+          playlistId: playlistIds.get(channel.channelId)!,
           maxResults: String(YOUTUBE_FEED_ITEMS_PER_CHANNEL),
           ...(pageToken ? { pageToken } : {}),
         });
         if (typeof result.nextPageToken === 'string' && result.nextPageToken.length <= 512) {
-          state.pageTokens[channel.id] = result.nextPageToken;
+          state.pageTokens[channel.channelId] = result.nextPageToken;
         } else {
-          delete state.pageTokens[channel.id];
+          delete state.pageTokens[channel.channelId];
         }
         return (result.items ?? []).map((item: any) => {
           const snippet = item?.snippet ?? {};
@@ -785,8 +766,8 @@ export function registerYouTubeAuthRoutes(app: any): void {
             title,
             description,
             thumbnail: youtubeThumbnail(snippet.thumbnails),
-            channelId: channel.id,
-            channelTitle: typeof snippet.channelTitle === 'string' ? snippet.channelTitle : '',
+            channelId: channel.channelId,
+            channelTitle: typeof snippet.channelTitle === 'string' ? snippet.channelTitle : channel.title,
             publishedAt: typeof publishedAt === 'string' ? publishedAt : null,
             url: 'https://www.youtube.com/watch?v=' + encodeURIComponent(videoId),
           };
