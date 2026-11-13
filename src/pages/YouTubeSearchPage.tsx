@@ -12,6 +12,7 @@ type VideoResult = {
   thumbnailUrl: string | null;
   channelId: string;
   channelTitle: string;
+  channelAvatarUrl?: string | null;
   publishedAt: string | null;
   durationSeconds: number | null;
   url: string;

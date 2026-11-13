@@ -1529,6 +1529,13 @@ img { display: block; }
 }
 
 
+.yt-watch-channel-avatar {
+  display: grid; flex: none; width: 42px; height: 42px; overflow: hidden; place-items: center;
+  border-radius: 50%; background: var(--surface-3); color: var(--muted); font-size: 15px; font-weight: 800;
+}
+.yt-watch-channel-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.yt-watch-channel-copy { min-width: 0; }
+
 /* YouTube search autocomplete and page layouts. Kairo's navigation shell remains unchanged. */
 .kc-yt-suggest { padding: 7px; }
 .kc-yt-suggest-heading { padding: 9px 10px 7px; color: var(--dim); font-size: 10px; font-weight: 800; letter-spacing: 1.1px; text-transform: uppercase; }

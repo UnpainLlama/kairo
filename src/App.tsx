@@ -58,6 +58,15 @@ const mobileNavItems: NavItem[] = [
   { to: '/profile', label: 'Profile', icon: UserRound },
 ];
 
+function YouTubeWatchRedirect() {
+  const { search } = useLocation();
+  const videoId = new URLSearchParams(search).get('v') ?? '';
+  const destination = /^[A-Za-z0-9_-]{11}$/.test(videoId)
+    ? '/youtube/watch/' + videoId
+    : '/youtube/search';
+  return <Navigate to={destination} replace />;
+}
+
 function RailLink({ to, label, icon: Icon, end, active }: NavItem) {
   return (
     <NavLink to={to} end={end} aria-label={label} className={({ isActive }) => `kc-rail-link${(active ?? isActive) ? ' active' : ''}`}>
@@ -202,6 +211,8 @@ export default function App() {
           <Route path="/youtube" element={<YouTubeFeedPage />} />
           <Route path="/youtube/search" element={<YouTubeSearchPage />} />
           <Route path="/youtube/channels" element={<YouTubeChannelsPage />} />
+          <Route path="/youtube/watch" element={<YouTubeWatchRedirect />} />
+          <Route path="/watch" element={<YouTubeWatchRedirect />} />
           <Route path="/youtube/watch/:videoId" element={<YouTubeWatchPage />} />
           <Route path="/youtube/watch-later" element={<YouTubeWatchLaterPage />} />
           <Route path="/youtube/history" element={<YouTubeHistoryPage />} />

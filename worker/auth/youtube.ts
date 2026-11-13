@@ -1,4 +1,5 @@
 import { findSessionUser, hasRecentSession, hashToken, readSessionCookie } from './session';
+import { youtubeChannelAvatarUrl } from '../youtube/routes';
 
 type YouTubeBindings = {
   DB: D1Database;
@@ -215,8 +216,7 @@ function youtubeRouteError(c: YouTubeContext, event: string, error: unknown): Re
 }
 
 function youtubeThumbnail(thumbnails: any): string | null {
-  const value = thumbnails?.high?.url ?? thumbnails?.medium?.url ?? thumbnails?.default?.url ?? null;
-  return typeof value === 'string' && value.startsWith('https://') ? value : null;
+  return youtubeChannelAvatarUrl(thumbnails);
 }
 
 export function isMarkedYouTubeShort(title: unknown, description: unknown): boolean {
@@ -637,12 +637,33 @@ export function registerYouTubeAuthRoutes(app: any): void {
           thumbnailUrl: youtubeThumbnail(snippet.thumbnails),
           channelId: typeof snippet.channelId === 'string' ? snippet.channelId.slice(0, 64) : '',
           channelTitle: typeof snippet.channelTitle === 'string' ? snippet.channelTitle.slice(0, 180) : 'YouTube',
+          channelAvatarUrl: null as string | null,
           publishedAt,
           durationSeconds: null as number | null,
           url: 'https://www.youtube.com/watch?v=' + videoId,
         };
       }).filter((item: any) => item !== null);
       
+      // Channel avatar enrichment is batched so search results show the actual creator artwork.
+      // It costs one channels.list unit for the whole page; results remain usable if it is unavailable.
+      const channelIds = Array.from(new Set(candidates
+        .map((video: any) => video.channelId as string)
+        .filter((id: string) => /^[A-Za-z0-9_-]{6,64}$/.test(id))));
+      if (channelIds.length && await bumpYouTubeRateBucket(c, 'data-api-daily', YOUTUBE_DATA_DAILY_LIMIT, YOUTUBE_DAILY_WINDOW_MS, 1)) {
+        try {
+          const channelDetails = await youtubeApiGet(apiKey, 'channels', { part: 'snippet', id: channelIds.join(',') });
+          const avatarByChannelId = new Map<string, string>();
+          for (const item of Array.isArray(channelDetails.items) ? channelDetails.items : []) {
+            const id = typeof item?.id === 'string' ? item.id : '';
+            const avatar = youtubeChannelAvatarUrl(item?.snippet?.thumbnails);
+            if (id && avatar) avatarByChannelId.set(id, avatar);
+          }
+          for (const video of candidates) video.channelAvatarUrl = avatarByChannelId.get(video.channelId) ?? null;
+        } catch (error) {
+          logYouTubeDiagnostic(c, 'youtube_video_search_channel_avatars_failed', { errorName: safeErrorName(error), reason: error instanceof Error ? error.message : 'unknown' });
+        }
+      }
+
       // Duration enrichment is a single inexpensive videos.list request for this result page.
       // Search results remain usable if metadata enrichment is temporarily unavailable.
       const videoIds = candidates.map((video: any) => video.videoId as string);

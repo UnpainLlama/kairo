@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Clock3, Youtube } from 'lucide-react';
 
@@ -8,6 +9,7 @@ export type YouTubeCardVideo = {
   thumbnailUrl: string | null;
   channelId?: string;
   channelTitle: string;
+  channelAvatarUrl?: string | null;
   publishedAt: string | null;
   durationSeconds?: number | null;
 };
@@ -46,8 +48,11 @@ function publishedLabel(value: string | null): string {
 
 export default function YouTubeVideoCard({ video, relatedVideos = [], channelAvatarUrl, compact = false, layout = 'grid' }: YouTubeVideoCardProps) {
   const related = relatedVideos.filter(item => item.videoId !== video.videoId);
-  const navigationState = { youtubeRelatedVideos: related };
+  const navigationState = { youtubeRelatedVideos: related, youtubeCurrentVideo: video };
   const isList = layout === 'list';
+  const [avatarFailed, setAvatarFailed] = useState(false);
+  const avatarUrl = channelAvatarUrl ?? video.channelAvatarUrl ?? null;
+  const avatarFallback = video.channelTitle.trim().slice(0, 1).toUpperCase() || 'Y';
 
   return (
     <article className={'yt-video-card' + (compact ? ' yt-video-card-compact' : '') + (isList ? ' yt-video-card-list' : '')}>
@@ -62,7 +67,9 @@ export default function YouTubeVideoCard({ video, relatedVideos = [], channelAva
       </Link>
       <div className="yt-video-meta">
         <span className="yt-video-avatar">
-          {channelAvatarUrl ? <img src={channelAvatarUrl} alt="" loading="lazy" /> : (video.channelTitle.trim().slice(0, 1).toUpperCase() || 'Y')}
+          {avatarUrl && !avatarFailed
+            ? <img src={avatarUrl} alt="" loading="lazy" onError={() => setAvatarFailed(true)} />
+            : avatarFallback}
         </span>
         <div className="yt-video-copy">
           <h3><Link to={'/youtube/watch/' + video.videoId} state={navigationState}>{video.title}</Link></h3>

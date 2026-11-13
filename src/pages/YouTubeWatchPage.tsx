@@ -11,6 +11,7 @@ type VideoDetails = {
   thumbnailUrl: string | null;
   channelId: string;
   channelTitle: string;
+  channelAvatarUrl?: string | null;
   publishedAt: string | null;
   durationSeconds: number | null;
   embeddable: boolean;
@@ -38,6 +39,7 @@ function relatedFromState(state: unknown, currentVideoId: string): YouTubeCardVi
       && video.videoId !== currentVideoId
       && typeof video.title === 'string'
       && typeof video.channelTitle === 'string'
+      && (video.channelAvatarUrl === undefined || video.channelAvatarUrl === null || typeof video.channelAvatarUrl === 'string')
       && (video.thumbnailUrl === null || typeof video.thumbnailUrl === 'string')
       && (video.publishedAt === null || typeof video.publishedAt === 'string')
       && (video.durationSeconds === undefined || video.durationSeconds === null || typeof video.durationSeconds === 'number');
@@ -92,7 +94,14 @@ export default function YouTubeWatchPage() {
         try { localProgress = madeForKids ? 0 : Number(localStorage.getItem(progressKey(userId, videoId)) ?? 0); } catch { /* storage may be disabled */ }
         const resume = history && Number.isFinite(history.progressSeconds) ? history.progressSeconds : localProgress;
         if (active) {
-          setVideo(videoPayload.data as VideoDetails);
+          const routeVideo = location.state && typeof location.state === 'object'
+            ? (location.state as { youtubeCurrentVideo?: YouTubeCardVideo }).youtubeCurrentVideo
+            : undefined;
+          const details = videoPayload.data as VideoDetails;
+          setVideo({
+            ...details,
+            channelAvatarUrl: details.channelAvatarUrl ?? routeVideo?.channelAvatarUrl ?? null,
+          });
           setAccountId(userId);
           setStartSeconds(Number.isFinite(resume) && resume > 0 ? resume : 0);
           setIsSaved(saved);
@@ -210,7 +219,12 @@ export default function YouTubeWatchPage() {
             </div>
           </div>
           <div className="kc-watch-bar yt-video-heading">
-            <div>
+            <span className="yt-watch-channel-avatar">
+              {video.channelAvatarUrl
+                ? <img src={video.channelAvatarUrl} alt="" loading="lazy" />
+                : (video.channelTitle.trim().slice(0, 1).toUpperCase() || 'Y')}
+            </span>
+            <div className="yt-watch-channel-copy">
               <h1>{video.title}</h1>
               <p>{video.channelTitle}{video.publishedAt ? ' · ' + new Date(video.publishedAt).toLocaleDateString() : ''}</p>
             </div>

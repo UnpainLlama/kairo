@@ -119,6 +119,7 @@ export default function YouTubeFeedPage() {
     thumbnailUrl: video.thumbnail,
     channelId: video.channelId,
     channelTitle: video.channelTitle,
+    channelAvatarUrl: channelById.get(video.channelId)?.thumbnailUrl ?? null,
     publishedAt: video.publishedAt,
     durationSeconds: null,
   })), [videos]);
