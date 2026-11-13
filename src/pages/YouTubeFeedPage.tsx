@@ -105,7 +105,11 @@ export default function YouTubeFeedPage() {
     return () => observer.disconnect();
   }, [error, loadMore, loading, loadingMore, nextCursor, videos.length]);
 
-  const channelById = useMemo(() => new Map(channels.map(channel => [channel.channelId, channel])), [channels]);
+  const channelById = useMemo(() => {
+    const index = new Map<string, SavedChannel>();
+    for (const channel of channels) index.set(channel.channelId, channel);
+    return index;
+  }, [channels]);
   const relatedVideos: YouTubeCardVideo[] = useMemo(() => videos.map(video => ({
     videoId: video.videoId,
     title: video.title,
