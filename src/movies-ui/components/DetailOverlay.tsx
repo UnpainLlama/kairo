@@ -361,7 +361,7 @@ export const DetailOverlay = memo(function DetailOverlay() {
             onClick={toggleDetailTrailer}
             aria-label="Play"
           >
-            <PlayIcon />
+            {detailPaused ? <PlayGlyph /> : <PauseGlyph />}
             <span>{detailPaused ? 'Play Trailer' : 'Pause Trailer'}</span>
           </button>
           {!settings.disableMyList && (
