@@ -65,7 +65,7 @@ export async function persistMovieSummary(db: MovieDatabase, summary: MovieSumma
   await db.prepare(
     `INSERT INTO movies (
        id, slug, title, original_title, overview, release_date, release_year,
-       original_language, adult, poster_path, backdrop_path, vote_average,
+       original_language, adult, poster_url, backdrop_url, vote_average,
        vote_count, popularity, metadata_provider, metadata_fetched_at, updated_at
      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
      ON CONFLICT(id) DO UPDATE SET
@@ -76,8 +76,8 @@ export async function persistMovieSummary(db: MovieDatabase, summary: MovieSumma
        release_year = excluded.release_year,
        original_language = excluded.original_language,
        adult = excluded.adult,
-       poster_path = excluded.poster_path,
-       backdrop_path = excluded.backdrop_path,
+       poster_url = excluded.poster_url,
+       backdrop_url = excluded.backdrop_url,
        vote_average = excluded.vote_average,
        vote_count = excluded.vote_count,
        popularity = excluded.popularity,
@@ -145,11 +145,11 @@ export async function persistMovieDetail(db: MovieDatabase, detail: MovieDetail,
     await db.prepare(
       `INSERT INTO movie_credits (
          id, movie_id, provider_id, external_person_id, name, credit_type,
-         department, job, character_name, profile_path, credit_order
+         department, job, character_name, profile_url, credit_order
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          name = excluded.name, department = excluded.department, job = excluded.job,
-         character_name = excluded.character_name, profile_path = excluded.profile_path,
+         character_name = excluded.character_name, profile_url = excluded.profile_url,
          credit_order = excluded.credit_order`
     ).bind(
       id, movieId, detail.providerId, credit.externalPersonId, credit.name,
@@ -197,7 +197,7 @@ export async function searchStoredMovies(
     db.prepare(
       `SELECT id, slug, title, original_title AS originalTitle, overview,
               release_date AS releaseDate, release_year AS releaseYear,
-              poster_path AS posterUrl, backdrop_path AS backdropUrl,
+              poster_url AS posterUrl, backdrop_url AS backdropUrl,
               vote_average AS voteAverage, vote_count AS voteCount, popularity
        FROM movies WHERE (${where})
        ORDER BY popularity DESC, vote_count DESC, title COLLATE NOCASE

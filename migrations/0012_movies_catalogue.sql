@@ -15,8 +15,8 @@ CREATE TABLE IF NOT EXISTS movies (
   original_language TEXT,
   release_status TEXT,
   adult INTEGER NOT NULL DEFAULT 0 CHECK (adult IN (0, 1)),
-  poster_path TEXT,
-  backdrop_path TEXT,
+  poster_url TEXT,
+  backdrop_url TEXT,
   homepage_url TEXT,
   vote_average REAL CHECK (vote_average IS NULL OR (vote_average >= 0 AND vote_average <= 10)),
   vote_count INTEGER NOT NULL DEFAULT 0 CHECK (vote_count >= 0),
@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS movie_credits (
   department TEXT,
   job TEXT,
   character_name TEXT,
-  profile_path TEXT,
+  profile_url TEXT,
   credit_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
