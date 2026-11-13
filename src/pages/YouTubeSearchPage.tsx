@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowUpRight, Check, Clock3, Plus, Search, Youtube } from 'lucide-react';
+import YouTubeVideoCard, { type YouTubeCardVideo } from '../components/YouTubeVideoCard';
+import { ArrowUpRight, Check, Plus, Search, Youtube } from 'lucide-react';
 
 type SearchMode = 'videos' | 'channels';
 type ChannelResult = { channelId: string; title: string; description: string; thumbnailUrl: string | null; url: string; isAdded: boolean };
@@ -16,22 +17,6 @@ type VideoResult = {
   url: string;
 };
 type SearchError = { code: string; message: string };
-
-function formatDuration(seconds: number): string {
-  const safe = Math.max(0, Math.floor(seconds));
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  const remainder = safe % 60;
-  return hours > 0
-    ? hours + ':' + String(minutes).padStart(2, '0') + ':' + String(remainder).padStart(2, '0')
-    : minutes + ':' + String(remainder).padStart(2, '0');
-}
-
-function publishedLabel(value: string | null): string {
-  if (!value) return 'YouTube';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? 'YouTube' : date.toLocaleDateString();
-}
 
 export default function YouTubeSearchPage() {
   const location = useLocation();
@@ -173,6 +158,7 @@ export default function YouTubeSearchPage() {
   };
 
   const needsLogin = error?.code === 'AUTH_REQUIRED';
+  const relatedVideos: YouTubeCardVideo[] = videos;
 
   return (
     <section className="yt-page">
@@ -241,18 +227,7 @@ export default function YouTubeSearchPage() {
           <div className="yt-section-heading"><div><h2>Video results</h2><p>{totalResults !== null ? totalResults.toLocaleString() + ' results' : videos.length + ' videos loaded'}</p></div></div>
           <div className="yt-video-grid">
             {videos.map(video => (
-              <article className="yt-video-card" key={video.videoId}>
-                <Link className="yt-video-thumb" to={'/youtube/watch/' + video.videoId} aria-label={'Watch ' + video.title + ' in Kairo'}>
-                  {video.thumbnailUrl ? <img src={video.thumbnailUrl} alt="" loading="lazy" /> : <span><Youtube size={30} /></span>}
-                  {video.durationSeconds !== null && <i className="yt-video-duration"><Clock3 size={11} />{formatDuration(video.durationSeconds)}</i>}
-                  <i className="yt-video-watch-label">Watch <ArrowUpRight size={13} /></i>
-                </Link>
-                <div className="yt-video-copy">
-                  <h3><Link to={'/youtube/watch/' + video.videoId}>{video.title}</Link></h3>
-                  <p>{video.channelTitle}</p>
-                  <small>{publishedLabel(video.publishedAt)}</small>
-                </div>
-              </article>
+              <YouTubeVideoCard key={video.videoId} video={video} relatedVideos={relatedVideos} />
             ))}
           </div>
           {nextPageToken && <div className="yt-scroll-sentinel">
