@@ -662,7 +662,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
     try {
       const saved = await c.env.DB.prepare(
         'SELECT channel_id AS channelId, channel_title AS title, thumbnail_url AS thumbnailUrl, upload_playlist_id AS uploadPlaylistId FROM youtube_feed_channels WHERE user_id=? ORDER BY added_at DESC, channel_title COLLATE NOCASE'
-      ).bind(user.id).all<{ channelId: string; title: string; thumbnailUrl: string | null }>();
+      ).bind(user.id).all<{ channelId: string; title: string; thumbnailUrl: string | null; uploadPlaylistId: string | null }>();
       const channels = saved.results ?? [];
       if (!channels.length) {
         if (requestedCursor) await c.env.DB.prepare('DELETE FROM youtube_feed_cursors WHERE id=? AND user_id=?').bind(requestedCursor, user.id).run();
@@ -803,7 +803,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
 
       return c.json({
         success: true,
-        data: { videos, channels: batchChannels, channelsChecked: uploads.length, nextCursor: hasMore ? cursorId : null },
+        data: { videos, channels: batchChannels.map(({ channelId, title, thumbnailUrl }) => ({ channelId, title, thumbnailUrl })), channelsChecked: uploads.length, nextCursor: hasMore ? cursorId : null },
         meta: { requestId: requestId(c) },
       });
     } catch (error) {
