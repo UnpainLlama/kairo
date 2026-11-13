@@ -236,13 +236,6 @@ export async function getEpisodePlayback(deps: Deps, ref: Ref, episodeNumber: nu
     throw new ProviderError('not_found', 'Invalid episode or server identifier.');
   }
   const title = (await getTitle(deps, ref)).value;
-  if (serverId.startsWith('z_')) {
-    if (!deps.zokoAnimeEmbedEnabled) throw new ProviderError('unavailable', 'ZokoAnime iframe playback is disabled until its terms and permissions are reviewed.');
-    const track = serverId.slice(2) as ZokoAnimeTrack;
-    const embedUrl = buildZokoAnimeEmbedUrl({ malId: title.malId, anilistId: title.anilistId, episodeNumber, track });
-    if (!embedUrl) throw new ProviderError('not_found', 'ZokoAnime does not have a usable external title id for this episode.');
-    return { provider: 'zokoanime', protocol: 'embed' as const, embedUrl };
-  }
   const lookup = {
     cacheKey: `${ref.kind}${ref.id}`,
     title: title.card.title,
@@ -253,6 +246,41 @@ export async function getEpisodePlayback(deps: Deps, ref: Ref, episodeNumber: nu
     },
     providerUrl: title.url,
   };
+  if (serverId.startsWith('z_')) {
+    if (!deps.zokoAnimeEmbedEnabled) throw new ProviderError('unavailable', 'ZokoAnime iframe playback is disabled until its terms and permissions are reviewed.');
+    const track = serverId.slice(2) as ZokoAnimeTrack;
+    const embedUrl = buildZokoAnimeEmbedUrl({ malId: title.malId, anilistId: title.anilistId, episodeNumber, track });
+    if (!embedUrl) throw new ProviderError('not_found', 'ZokoAnime does not have a usable external title id for this episode.');
+
+    // Re-confirm that this episode is in the configured episode catalogue before
+    // producing the external iframe URL. The browser still supplies only an opaque server id.
+    const episodeProvider = deps.episodeProviders.find((item) => typeof item.listServers === 'function');
+    if (!episodeProvider?.listServers) throw new ProviderError('unavailable', 'No episode discovery provider is enabled for ZokoAnime playback.');
+    const breakerKey = `episode:${episodeProvider.id}`;
+    if (!deps.breaker.canRequest(breakerKey, deps.now())) {
+      throw new ProviderError('unavailable', `${episodeProvider.displayName} is temporarily paused after repeated failures.`);
+    }
+    try {
+      for (let page = 1; page <= 20; page++) {
+        const episodes = await withTimeout(deps.timeoutMs ?? 8000, (signal) => episodeProvider.listEpisodes(lookup, page, signal));
+        const match = episodes.items.find((item) => item.episodeNumber === episodeNumber);
+        if (match?.providerEpisodeId) {
+          await withTimeout(deps.timeoutMs ?? 8000, (signal) => episodeProvider.listServers!(match.providerEpisodeId!, lookup, signal));
+          deps.breaker.recordSuccess(breakerKey);
+          return { provider: 'zokoanime', protocol: 'embed' as const, embedUrl };
+        }
+        if (!episodes.hasNextPage) break;
+      }
+      deps.breaker.recordSuccess(breakerKey);
+      throw new ProviderError('not_found', 'The selected episode is not listed by the configured episode provider.');
+    } catch (error) {
+      if (error instanceof ProviderError && error.kind === 'not_found') throw error;
+      const providerError = error instanceof ProviderError ? error : new ProviderError('unavailable', 'Unexpected episode validation failure.');
+      deps.breaker.recordFailure(breakerKey, deps.now(), providerError.retryAfterSeconds);
+      deps.onEpisodeError?.(episodeProvider.id, providerError);
+      throw providerError;
+    }
+  }
   const provider = deps.episodeProviders.find((item) => typeof item.listServers === 'function' && typeof item.resolveServer === 'function');
   if (!provider?.listServers || !provider.resolveServer) throw new ProviderError('unavailable', 'No approved playback resolver is configured.');
   const breakerKey = `episode:${provider.id}`;
