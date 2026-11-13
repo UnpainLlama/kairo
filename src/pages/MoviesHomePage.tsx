@@ -53,14 +53,14 @@ export default function MoviesHomePage() {
     setLoading(true);
     setError(null);
     loadHome(signal)
-      .then(result => setData(result))
+      .then(result => { if (!signal.aborted) setData(result); })
       .catch(caught => {
-        if (caught instanceof DOMException && caught.name === 'AbortError') return;
+        if (signal.aborted || (caught instanceof DOMException && caught.name === 'AbortError')) return;
         const issue = caught instanceof ApiError ? caught : new ApiError(0, 'MOVIES_UNAVAILABLE', 'Could not load the movie catalogue.');
         setError(issue);
         setData(EMPTY);
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (!signal.aborted) setLoading(false); });
   }, []);
 
   useEffect(() => {
