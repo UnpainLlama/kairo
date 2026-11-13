@@ -50,7 +50,7 @@ function youtubeDebug(event: string, details: Record<string, unknown> = {}): voi
     videoOrigin: window.location.origin,
     referrerPresent: Boolean(referrer),
     referrerOrigin,
-    referrerPolicy: document.referrerPolicy || null,
+    referrerPolicy: document.querySelector<HTMLMetaElement>('meta[name="referrer"]')?.content ?? null,
     metaReferrerPolicy: document.querySelector<HTMLMetaElement>('meta[name="referrer"]')?.content ?? null,
     ...details,
   });
