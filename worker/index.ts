@@ -121,8 +121,13 @@ app.get('/api/v1/movies/discover', async (c) => {
   if (!MOVIE_LIST_KINDS.includes(kindRaw as MovieListKind)) return fail(c, 400, 'VALIDATION_ERROR', 'kind must be trending_day, trending_week, popular, top_rated, upcoming, or now_playing.');
   const page = boundedInt(c.req.query('page'), 1, 1, 500);
   const yearRaw = c.req.query('year');
-  const year = yearRaw === undefined ? undefined : boundedInt(yearRaw, 2000, 1800, 2200);
-  if (page === null || (yearRaw !== undefined && year === null)) return fail(c, 400, 'VALIDATION_ERROR', 'page must be 1–500 and year must be 1800–2200.');
+  let year: number | undefined;
+  if (yearRaw !== undefined) {
+    const parsedYear = boundedInt(yearRaw, 2000, 1800, 2200);
+    if (parsedYear === null) return fail(c, 400, 'VALIDATION_ERROR', 'year must be 1800–2200.');
+    year = parsedYear;
+  }
+  if (page === null) return fail(c, 400, 'VALIDATION_ERROR', 'page must be 1–500.');
   const genreIds = (c.req.query('genres') ?? '').split(',').map((value) => value.trim()).filter((value) => /^\d{1,8}$/.test(value)).slice(0, 10);
   const language = c.req.query('language');
   if (language && !/^[a-z]{2,3}$/.test(language)) return fail(c, 400, 'VALIDATION_ERROR', 'language must be a 2–3 character ISO language code.');
@@ -148,9 +153,14 @@ app.get('/api/v1/movies/search', async (c) => {
   if (q.length < 1 || q.length > 120) return fail(c, 400, 'VALIDATION_ERROR', 'q must contain 1–120 characters.');
   const page = boundedInt(c.req.query('page'), 1, 1, 500);
   const yearRaw = c.req.query('year');
-  const year = yearRaw === undefined ? undefined : boundedInt(yearRaw, 2000, 1800, 2200);
+  let year: number | undefined;
+  if (yearRaw !== undefined) {
+    const parsedYear = boundedInt(yearRaw, 2000, 1800, 2200);
+    if (parsedYear === null) return fail(c, 400, 'VALIDATION_ERROR', 'year must be 1800–2200.');
+    year = parsedYear;
+  }
   const language = c.req.query('language');
-  if (page === null || (yearRaw !== undefined && year === null)) return fail(c, 400, 'VALIDATION_ERROR', 'page must be 1–500 and year must be 1800–2200.');
+  if (page === null) return fail(c, 400, 'VALIDATION_ERROR', 'page must be 1–500.');
   if (language && !/^[a-z]{2}-[A-Z]{2}$/.test(language)) return fail(c, 400, 'VALIDATION_ERROR', 'language must use the format en-US.');
   try {
     const result = await movieCatalog(c).search({
