@@ -27,9 +27,7 @@
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.9.5",
     "hls.js": "^1.6.15",
-    "youtubei.js": "18.3.0",
-    "@reduxjs/toolkit": "^2.11.2",
-    "react-redux": "^9.2.0"
+    "youtubei.js": "18.3.0"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.13.0",

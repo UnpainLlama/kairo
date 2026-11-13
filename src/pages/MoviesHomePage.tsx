@@ -122,6 +122,15 @@ export default function MoviesHomePage() {
           <Link to="/movies/browse/now-playing">Now playing</Link>
         </nav>
 
+        <header className="mv-catalog-intro">
+          <div>
+            <span className="mv-catalog-kicker">THE MOVIE COLLECTION</span>
+            <h2>Find your next favourite.</h2>
+            <p>Explore what is trending, revisit acclaimed films, and see what is coming next.</p>
+          </div>
+          <Link to="/movies/search" className="mv-catalog-search"><Search size={15} aria-hidden="true" /> Search the catalogue <ArrowRight size={14} aria-hidden="true" /></Link>
+        </header>
+
         {error && (
           <div className="mv-provider-notice" role="status">
             <div className="mv-provider-mark">M</div>

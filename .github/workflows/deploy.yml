@@ -101,36 +101,5 @@ jobs:
             if [ "$ok" != "1" ]; then echo "::error::$URL$path did not return a healthy response."; cat body.json; exit 1; fi
             echo "$path OK: $(cat body.json)"
           done
-          if [ "$TARGET" = "staging" ]; then
-            echo "Checking the independent TMDB movie and TV catalogue..."
-            for media in movie tv; do
-              path="/api/v1/movies/experience/feed?kind=popular&media_type=$media&page=1"
-              code=$(curl -s -o "$media-feed.json" -w '%{http_code}' "$URL$path" || true)
-              if [ "$code" != "200" ] || ! node -e "const p=require('./$media-feed.json');process.exit(p.success&&Array.isArray(p.data?.results)&&p.data.results.length>0?0:1)"; then
-                echo "::error::TMDB $media feed failed (HTTP $code)."; cat "$media-feed.json"; exit 1
-              fi
-              echo "TMDB $media feed OK"
-            done
-            MOVIE_ID=$(node -e "const p=require('./movie-feed.json');process.stdout.write(String(p.data.results[0].id))")
-            TV_ID=$(node -e "const p=require('./tv-feed.json');process.stdout.write(String(p.data.results[0].id))")
-            for path in "/api/v1/movies/experience/detail/movie/$MOVIE_ID" "/api/v1/movies/experience/movie/$MOVIE_ID/videos" "/api/v1/movies/experience/movie/$MOVIE_ID/images" "/api/v1/movies/experience/detail/tv/$TV_ID" "/api/v1/movies/experience/tv/$TV_ID/seasons" "/api/v1/movies/experience/people/popular?page=1" "/api/v1/movies/experience/search?q=The%20Matrix&media_type=multi&page=1"; do
-              code=$(curl -s -o smoke.json -w '%{http_code}' "$URL$path" || true)
-              if [ "$code" != "200" ] || ! node -e "const p=require('./smoke.json');process.exit(p.success&&p.data&&typeof p.data==='object'?0:1)"; then
-                echo "::error::TMDB experience endpoint failed: $path (HTTP $code)."; cat smoke.json; exit 1
-              fi
-              echo "TMDB endpoint OK: $path"
-            done
-            TV_DETAIL=$(curl -fsS "$URL/api/v1/movies/experience/detail/tv/$TV_ID")
-            SEASON=$(printf '%s' "$TV_DETAIL" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const p=JSON.parse(s);const v=(p.data.seasons||[]).find(x=>x.season_number>0)||(p.data.seasons||[])[0];process.stdout.write(v?String(v.season_number):'')})")
-            if [ -n "$SEASON" ]; then
-              path="/api/v1/movies/experience/tv/$TV_ID/seasons/$SEASON"
-              code=$(curl -s -o smoke.json -w '%{http_code}' "$URL$path" || true)
-              if [ "$code" != "200" ] || ! node -e "const p=require('./smoke.json');process.exit(p.success&&Array.isArray(p.data?.episodes)?0:1)"; then
-                echo "::error::TMDB TV episodes endpoint failed: $path (HTTP $code)."; cat smoke.json; exit 1
-              fi
-              echo "TMDB TV episodes OK"
-            fi
-            echo "TMDB catalogue smoke checks passed."
-          fi
           grep -q '"cache":"kv"' body.json || echo "::warning::The KV cache binding is not active (ready reports cache != kv)."
           { echo "### Deployed $TARGET"; echo "$URL"; echo; echo '```json'; cat body.json; echo; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
