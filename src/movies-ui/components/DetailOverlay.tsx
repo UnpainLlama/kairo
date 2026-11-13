@@ -424,14 +424,6 @@ function IconCircleButton({ active, ariaLabel, onClick, children }: IconCircleBu
 
 // --- Inline icons -----------------------------------------------------------
 
-function PlayIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M5 3.5v17a1 1 0 0 0 1.55.83l13-8.5a1 1 0 0 0 0-1.66l-13-8.5A1 1 0 0 0 5 3.5z" />
-    </svg>
-  );
-}
-
 function PlusIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
