@@ -21,6 +21,7 @@ export default function WatchPage() {
   const [episodePage, setEpisodePage] = useState(1);
   const [episodePages, setEpisodePages] = useState<Episode[]>([]);
   const [autoNext, setAutoNext] = useState(true);
+  const [shareStatus, setShareStatus] = useState('');
   useEffect(() => setSelectedServerId(null), [slug, rawEpisode]);
   useEffect(() => {
     try { setAutoNext(localStorage.getItem(accountPreferenceStorageKey(accountId, 'auto-next')) !== 'false'); }
@@ -194,6 +195,25 @@ export default function WatchPage() {
     } catch { return 0; }
   };
   const toggleAutoNext = () => setAutoNext((value) => { const nextValue = !value; try { localStorage.setItem(accountPreferenceStorageKey(accountId, 'auto-next'), String(nextValue)); } catch { /* storage may be unavailable */ } return nextValue; });
+  const shareEpisode = async () => {
+    setShareStatus('');
+    const shareData = { title: `${anime.title} · Episode ${parsedEpisode}`, url: window.location.href };
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+        setShareStatus('Share sheet opened.');
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareData.url);
+        setShareStatus('Episode link copied.');
+      } else {
+        window.prompt('Copy this episode link', shareData.url);
+        setShareStatus('Use the link above to share this episode.');
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      setShareStatus('Could not share automatically. Copy the page address to share this episode.');
+    }
+  };
 
   return (
     <div className="kc-watch">
@@ -227,9 +247,10 @@ export default function WatchPage() {
             <div className="kc-player-toolbar-left"><span className="kc-live-dot" /> <span>{selectedServer?.name ?? 'Select a source'}</span><span className="kc-toolbar-divider" /> <span>Episode {episodeNumberLabel(parsedEpisode)}</span></div>
             <div className="kc-player-toolbar-actions">
               <button type="button" className={`kc-player-tool${autoNext ? ' is-on' : ''}`} onClick={toggleAutoNext} aria-pressed={autoNext}>Auto next: {autoNext ? 'On' : 'Off'}</button>
-              <button type="button" className="kc-player-tool" onClick={() => { void navigator.clipboard?.writeText(window.location.href); }}><ExternalLink size={14}/> Share</button>
+              <button type="button" className="kc-player-tool" onClick={() => void shareEpisode()}><ExternalLink size={14}/> Share</button>
             </div>
           </div>
+          {shareStatus && <p className="kc-hint" role="status" aria-live="polite">{shareStatus}</p>}
 
           <div className="kc-watch-bar">
             <div>

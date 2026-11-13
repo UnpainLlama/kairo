@@ -5,19 +5,17 @@ import Select, { type SelectOption } from '../components/Select';
 import { useApi } from '../lib/useApi';
 import type { CatalogCard, ItemList } from '../lib/catalog';
 
-const SEASONS = ['winter', 'spring', 'summer', 'fall'] as const;
-type Season = (typeof SEASONS)[number];
+import { ANIME_SEASONS, currentAnimeSeason, type AnimeSeason } from '../lib/season';
+
+type Season = AnimeSeason;
+const SEASONS = ANIME_SEASONS;
 const isSeason = (v: string | null): v is Season => v !== null && (SEASONS as readonly string[]).includes(v);
 const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
-function currentSeason(): { season: Season; year: number } {
-  const now = new Date(); const m = now.getUTCMonth();
-  return { season: m <= 2 ? 'winter' : m <= 5 ? 'spring' : m <= 8 ? 'summer' : 'fall', year: now.getUTCFullYear() };
-}
 
 /** AniList trending score, optionally scoped to a season and year. */
 export default function TrendingPage() {
   const [params, setParams] = useSearchParams();
-  const now = currentSeason();
+  const now = currentAnimeSeason();
   const rawSeason = (params.get('season') ?? '').toLowerCase();
   const season: Season = isSeason(rawSeason) ? rawSeason : now.season;
   const rawYear = Number(params.get('year'));
