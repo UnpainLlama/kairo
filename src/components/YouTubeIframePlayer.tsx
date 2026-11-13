@@ -29,12 +29,12 @@ declare global {
   }
 }
 
-type ProgressReason = 'timeupdate' | 'pause' | 'ended' | 'pagehide';
+export type YouTubeProgressReason = 'timeupdate' | 'pause' | 'ended' | 'pagehide';
 type Props = {
   videoId: string;
   title: string;
   startSeconds?: number;
-  onProgress?: (seconds: number, duration: number, completed: boolean, reason: ProgressReason) => void;
+  onProgress?: (seconds: number, duration: number, completed: boolean, reason: YouTubeProgressReason) => void;
 };
 
 let apiPromise: Promise<YouTubeApi> | null = null;

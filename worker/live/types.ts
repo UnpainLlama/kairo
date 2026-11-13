@@ -72,6 +72,8 @@ export type LiveEnv = {
   HIANIME_BASE_URL?: string;
   /** Comma-separated exact HTTPS playback hosts approved for provider-returned URLs. */
   HIANIME_PLAYBACK_ALLOWED_HOSTS?: string;
+  /** Opt-in to ZokoAnime's documented iframe route. Off until terms and event contracts are reviewed. */
+  ZOKOANIME_EMBED_ENABLED?: string;
   /** TMDB API Read Access Token; configure as a Cloudflare Worker secret, never in vars or source. */
   TMDB_ACCESS_TOKEN?: string;
   METADATA_CACHE?: { get(key: string, type: 'json'): Promise<unknown>; put(key: string, value: string, options: { expirationTtl: number }): Promise<void> };

@@ -2,7 +2,7 @@
 
 KAIRO combines several metadata sources into one unified record. No provider is a permanent dependency: each one is an adapter that can be switched off, replaced or added without touching the frontend or the routes.
 
-**Separate services.** Catalogue metadata, episode discovery (`EpisodeProvider`) and playback (`worker/providers/playback.ts`) are independent. A metadata or artwork provider is never assumed to supply episode records or playable streams. TMDB's optional episode stills enrich thumbnails only.
+**Separate services.** Catalogue metadata, episode discovery (`EpisodeProvider`) and playback (`worker/providers/playback.ts`) are independent. A metadata or artwork provider is never assumed to supply episode records or playable streams. TMDB's optional episode stills enrich thumbnails only. Kairo's `UniversalPlayer` is a frontend host that selects a capability-specific adapter; it does not make cross-origin embed controls programmable or turn an iframe into a re-streamed media source.
 
 ## 1. Provider roles
 
@@ -100,7 +100,12 @@ The adapters were tested only against **hand-written fixtures** that follow each
 2. For TMDB, confirm the card fields are filled only where the catalogue had gaps, and that `sources[]`/`providers[]` include TMDB when it contributed. The full card route exposes `releaseYear`; the metadata route exposes synopsis, rating, episode count, genres and artwork.
 3. Check the other metadata providers' `providers[]`: `ok` is good; `failed` with `invalid_response` means a real response differs from the fixture. Adapters fail closed: an unexpected shape becomes an `invalid_response` outcome, never guessed data.
 
-## 8. Not built yet
+## 8. ZokoAnime iframe adapter (opt-in)
+The public ZokoAnime landing page documents an iframe route shaped as `/stream/{mal|anilist}/{id}/{episode}/{sub|hsub|dub}`, with an optional `color` query parameter. Kairo builds this URL from the already-resolved title's MAL/AniList ID and the requested episode/track. It does not call a private JSON API, fetch the iframe content, extract media URLs, proxy streams, or trust the provider's `postMessage` events.
+
+This adapter is gated by `ZOKOANIME_EMBED_ENABLED=true`; it is **off by default in every environment**. The public page describes progress/complete/error messages but does not publish a stable payload schema, and a separate provider terms/licensing document was not located during this review. Until the owner has reviewed the applicable terms and permission for the intended use, the route must remain disabled. Progress/history for this iframe is therefore not attributed to Kairo; the provider owns its player UI and state.
+
+## 9. Not built yet
 - The dataset import job (download a release, check its licence, map, load chunked SQL into D1). The mapper and the licence check exist in `providers/manami.ts`; D1's current bulk-load limits still need checking.
 - Dataset "tags" are not mapped to genres (they are not the same thing), so imported titles have no genres until a provider fills them in on demand.
 - Kitsu episode discovery (a separate `EpisodeProvider`, only after Kitsu's terms are verified).

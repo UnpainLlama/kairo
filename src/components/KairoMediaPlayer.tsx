@@ -57,10 +57,11 @@ export default function KairoMediaPlayer({ source, title, progressKey, introEnd,
       className="kc-player-frame"
       src={youtubeUrl ?? safeUrl.href}
       title={`${title} — ${youtubeUrl ? 'YouTube' : source.provider} player`}
+      sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
       allow="autoplay; encrypted-media; picture-in-picture; fullscreen; accelerometer; gyroscope"
       allowFullScreen
-      referrerPolicy="strict-origin-when-cross-origin"
+      loading="eager"
+      referrerPolicy="no-referrer"
     />
-    <span className="kc-external-provider-label">{youtubeUrl ? 'YouTube player' : `${source.provider} player`}</span>
   </div>;
 }

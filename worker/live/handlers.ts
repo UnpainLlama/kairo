@@ -186,7 +186,7 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
       const rawEpisodeNumber = req.param('episodeNumber');
       const episodeNumber = rawEpisodeNumber === undefined ? null : boundedInt(rawEpisodeNumber, 1, 1, 100_000);
       const serverId = req.param('serverId') ?? '';
-      if (t.bad || episodeNumber === null || !serverId || serverId.length > 1802 || !/^(?:\d{1,12}|h_[A-Za-z0-9_-]{1,1800})$/.test(serverId)) {
+      if (t.bad || episodeNumber === null || !serverId || serverId.length > 1802 || !/^(?:\d{1,12}|h_[A-Za-z0-9_-]{1,1800}|z_(?:sub|hsub|dub))$/.test(serverId)) {
         return failBody(req, 400, 'VALIDATION_ERROR', 'Invalid episode or playback server identifier.');
       }
       if (!t.ref) return failBody(req, 404, 'RESOURCE_NOT_FOUND', 'The requested title was not found.');
@@ -196,6 +196,7 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
         const candidate = raw as Record<string, unknown>;
         const provider = typeof candidate.provider === 'string' ? candidate.provider : '';
         const hosts = (req.env.HIANIME_PLAYBACK_ALLOWED_HOSTS ?? '').split(',').map((host) => host.trim()).filter(Boolean);
+        if (req.env.ZOKOANIME_EMBED_ENABLED === 'true') hosts.push('zokoanime.video');
         if (candidate.protocol === 'embed') {
           const url = parseAllowedUrl(candidate.embedUrl, hosts);
           if (!provider || !url) return failBody(req, 503, 'SOURCE_UNAVAILABLE', 'The provider returned an unapproved embed URL.');

@@ -29,7 +29,7 @@ export type Episode = {
   publishedAt: string | null;
 };
 
-export type EpisodeServer = { id: string; type: 'sub' | 'dub' | 'raw'; name: string };
+export type EpisodeServer = { id: string; type: 'sub' | 'hsub' | 'dub' | 'raw'; name: string };
 
 export type ItemList<T> = { items: T[] };
 export type GenreCount = { name: string; count: number };

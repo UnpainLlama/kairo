@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import YouTubeVideoCard, { type YouTubeCardVideo } from '../components/YouTubeVideoCard';
 import { ArrowLeft, ArrowUpRight, Bookmark, BookmarkCheck, ExternalLink, History, Youtube } from 'lucide-react';
-import YouTubeIframePlayer from '../components/YouTubeIframePlayer';
+import UniversalPlayer from '../components/UniversalPlayer';
 
 type VideoDetails = {
   videoId: string;
@@ -196,12 +196,11 @@ export default function YouTubeWatchPage() {
                 <a className="yt-button yt-button-primary" href={video.url} target="_blank" rel="noopener noreferrer">Watch on YouTube <ArrowUpRight size={14} /></a>
               </div>
             ) : (
-              <YouTubeIframePlayer
-                key={video.videoId}
-                videoId={video.videoId}
+              <UniversalPlayer
+                source={{ kind: 'youtube', videoId: video.videoId }}
                 title={video.title}
                 startSeconds={startSeconds}
-                onProgress={video.madeForKids ? undefined : onProgress}
+                onYouTubeProgress={video.madeForKids ? undefined : onProgress}
               />
             )}
           </section>

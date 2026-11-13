@@ -27,7 +27,8 @@
     "LIVE_PROVIDERS": "anilist,hianime,jikan",
     "EPISODE_PROVIDERS": "jikan",
     "HIANIME_BASE_URL": "https://hianimez.to",
-    "HIANIME_PLAYBACK_ALLOWED_HOSTS": ""
+    "HIANIME_PLAYBACK_ALLOWED_HOSTS": "",
+    "ZOKOANIME_EMBED_ENABLED": "false"
   },
 
   "env": {
@@ -71,6 +72,7 @@
         "GOOGLE_CLIENT_ID": "805356560035-p3ooq75mvr5cn02s0u98dv7k3vspt49k.apps.googleusercontent.com",
         "HIANIME_BASE_URL": "https://hianime.at",
         "HIANIME_PLAYBACK_ALLOWED_HOSTS": "zokoanime.video,megaplay.buzz,hls.dramahot.top,hls1.drama1.cfd,mysubsplay.com,emeralddrift.world,hianime.at,hls1drama1.cfd,mysubplay.com,emeralddrift.com",
+        "ZOKOANIME_EMBED_ENABLED": "false",
         "LIVE_PROVIDERS": "anilist,hianime,jikan",
         "METADATA_PROVIDERS": "anilist"
       }
@@ -96,6 +98,7 @@
 
       "vars": {
         "APP_ENV": "production",
+        "ZOKOANIME_EMBED_ENABLED": "false",
         "METADATA_PROVIDERS": "anilist",
         "CATALOG_SOURCE": "live",
         "LIVE_PROVIDERS": "anilist,jikan"
