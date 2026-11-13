@@ -12,7 +12,6 @@ import { useCursorHide } from './hooks/useCursorHide';
 import { useIsAuthenticated } from './hooks/useAuth';
 import { useCurrentProfile } from './hooks/useProfile';
 import { setContent, setPageContent } from './state/slices/contentSlice';
-import { generateMockContent } from './data/mockContent';
 import { fetchTmdbContent, fetchLogosProgressive } from './data/tmdb';
 import type { RootState } from './state/store';
 
@@ -42,15 +41,13 @@ export default function App() {
             dispatch(setPageContent({ page: 'home', rows: updated }));
           });
         } else {
-          const mock = generateMockContent();
-          dispatch(setContent(mock));
-          dispatch(setPageContent({ page: 'home', rows: mock }));
+          dispatch(setContent([]));
+          dispatch(setPageContent({ page: 'home', rows: [] }));
         }
       })
       .catch(() => {
-        const mock = generateMockContent();
-        dispatch(setContent(mock));
-        dispatch(setPageContent({ page: 'home', rows: mock }));
+        dispatch(setContent([]));
+        dispatch(setPageContent({ page: 'home', rows: [] }));
       });
   }, [dispatch, isAuthed, currentProfile?.id]);
 
