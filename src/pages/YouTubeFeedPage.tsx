@@ -109,8 +109,8 @@ export default function YouTubeFeedPage() {
       <header className="yt-page-heading">
         <div><span className="yt-eyebrow">YOUR VIDEO SPACE</span><h1>Home</h1><p>Public uploads from the channels you choose.</p></div>
         <div className="yt-heading-actions">
-          <Link to="/youtube/search" className="yt-button yt-button-primary"><Plus size={15} /> Add channels</Link>
-          <button className="yt-button yt-button-quiet" type="button" onClick={() => setRefreshKey(value => value + 1)} disabled={loading || loadingMore}><RefreshCw size={15} /> Refresh</button>
+          <Link to="/youtube/search" className="kc-btn kc-btn-primary"><Plus size={15} /> Add channels</Link>
+          <button className="kc-btn" type="button" onClick={() => setRefreshKey(value => value + 1)} disabled={loading || loadingMore}><RefreshCw size={15} /> Refresh</button>
         </div>
       </header>
 
@@ -142,7 +142,7 @@ export default function YouTubeFeedPage() {
 
         </>}
         {!loading && (videos.length > 0 || nextCursor) && <div className="yt-scroll-sentinel" ref={sentinelRef}>
-          {loadingMore ? <div className="yt-loading" role="status">Loading more videos…</div> : nextCursor ? <button type="button" className="yt-button yt-button-quiet" onClick={() => void loadMore()}>Load more</button> : <p>You’re all caught up.</p>}
+          {loadingMore ? <div className="yt-loading" role="status">Loading more videos…</div> : nextCursor ? <button type="button" className="kc-btn" onClick={() => void loadMore()}>Load more</button> : <p>You’re all caught up.</p>}
         </div>}
       </section>
       <section className="yt-channel-shelf" aria-label="Your selected channels">
@@ -156,7 +156,7 @@ export default function YouTubeFeedPage() {
             <Link to="/youtube/search" className="yt-channel-add"><Plus size={19} /><span>Add</span></Link>
           </div>
         ) : (
-          <div className="yt-channel-empty"><span className="yt-plus-orb"><Plus size={21} /></span><div><b>Your feed starts with a few good channels.</b><p>Find creators you like and add them to your Kairo feed.</p></div><Link to="/youtube/search" className="yt-button yt-button-primary">Find channels <ArrowUpRight size={15} /></Link></div>
+          <div className="yt-channel-empty"><span className="yt-plus-orb"><Plus size={21} /></span><div><b>Your feed starts with a few good channels.</b><p>Find creators you like and add them to your Kairo feed.</p></div><Link to="/youtube/search" className="kc-btn kc-btn-primary">Find channels <ArrowUpRight size={15} /></Link></div>
         )}
       </section>
 
