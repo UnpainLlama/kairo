@@ -26,13 +26,13 @@ export default function MoviesSearchPage() {
     setError(null);
     const search = new URLSearchParams({ q: query, page: String(page) });
     apiGet<MoviePage>('/movies/search?' + search.toString(), controller.signal)
-      .then(setData)
+      .then(result => { if (!controller.signal.aborted) setData(result); })
       .catch(caught => {
-        if (caught instanceof DOMException && caught.name === 'AbortError') return;
+        if (controller.signal.aborted || (caught instanceof DOMException && caught.name === 'AbortError')) return;
         setError(caught instanceof ApiError ? caught : new ApiError(0, 'MOVIES_UNAVAILABLE', 'Movie search is unavailable.'));
         setData(null);
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [query, page, retry]);
 
