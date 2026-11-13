@@ -6,8 +6,10 @@ import { EMPTY_SEARCH, MAX_QUERY, canSearch, parseSearchState, toUrlParams } fro
 import { buildYouTubeSearchSuggestions, normalizeRecentYouTubeSearches, YOUTUBE_RECENT_SEARCHES_KEY } from '../lib/youtubeSearchSuggestions';
 import { formatLabel, type CatalogCard, type ItemList } from '../lib/catalog';
 import { Poster, animeHref } from './catalog';
+import type { MoviePage, MovieSummary } from '../lib/movies';
 
 type MediaMode = 'anime' | 'movie';
+type MovieSuggestionState = { q: string; status: 'ok'; items: MovieSummary[]; total: number } | { q: string; status: 'error' };
 type Result = { q: string; mode: MediaMode; status: 'ok'; items: CatalogCard[]; total?: number } | { q: string; mode: MediaMode; status: 'error' };
 
 /**
@@ -15,8 +17,9 @@ type Result = { q: string; mode: MediaMode; status: 'ok'; items: CatalogCard[]; 
  * local recent searches and safe, curated query completions so typing does not spend Data API quota.
  * Enter or the search button always opens the dedicated results route.
  */
-export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtube' }) {
+export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtube' | 'movies' }) {
   const isYouTube = mode === 'youtube';
+  const isMovies = mode === 'movies';
   const navigate = useNavigate();
   const location = useLocation();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -26,14 +29,15 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const [result, setResult] = useState<Result | null>(null);
+  const [movieResult, setMovieResult] = useState<MovieSuggestionState | null>(null);
   const [recentYouTubeQueries, setRecentYouTubeQueries] = useState<string[]>([]);
   const query = text.trim();
   const mediaMode: MediaMode = location.pathname === '/browse/movies'
     || (location.pathname === '/search' && new URLSearchParams(location.search).get('format') === 'movie')
     ? 'movie'
     : 'anime';
-  const mediaLabel = isYouTube ? 'YouTube videos' : mediaMode === 'movie' ? 'movies' : 'anime';
-  const maxLength = isYouTube ? 80 : MAX_QUERY;
+  const mediaLabel = isYouTube ? 'YouTube videos' : isMovies || mediaMode === 'movie' ? 'movies' : 'anime';
+  const maxLength = isYouTube ? 80 : isMovies ? 120 : MAX_QUERY;
 
   const youtubeSuggestions = useMemo(
     () => buildYouTubeSearchSuggestions(query, recentYouTubeQueries),
@@ -41,11 +45,11 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
   );
 
   useEffect(() => {
-    const onSearchPage = location.pathname === (isYouTube ? '/youtube/search' : '/search');
+    const onSearchPage = isYouTube ? location.pathname === '/youtube/search' : isMovies ? location.pathname === '/movies/search' : location.pathname === '/search';
     setText(onSearchPage ? (new URLSearchParams(location.search).get('q') ?? '').slice(0, maxLength) : '');
     setOpen(false);
     setActive(-1);
-  }, [isYouTube, location.pathname, location.search, maxLength]);
+  }, [isYouTube, isMovies, location.pathname, location.search, maxLength]);
 
   useEffect(() => {
     if (!isYouTube) return;
@@ -59,7 +63,7 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
 
   // Debounced anime lookup. YouTube query completions remain local and do not consume API quota.
   useEffect(() => {
-    if (isYouTube || !canSearch(query) || !open || location.pathname === '/search') return;
+    if (isYouTube || isMovies || !canSearch(query) || !open || location.pathname === '/search') return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams({ q: query, limit: '8', sort: 'relevance' });
@@ -69,7 +73,25 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
         .catch((error: unknown) => { if (!isAbort(error)) setResult({ q: query, mode: mediaMode, status: 'error' }); });
     }, 250);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [isYouTube, query, mediaMode, open, location.pathname]);
+  }, [isYouTube, isMovies, query, mediaMode, open, location.pathname]);
+
+  // Movie suggestions use the independent Movies catalogue API, never the Anime catalogue.
+  useEffect(() => {
+    if (!isMovies || !canSearch(query) || !open || location.pathname === '/movies/search') {
+      setMovieResult(null);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams({ q: query, page: '1' });
+      apiGetWithMeta<MoviePage>('/movies/search?' + params.toString(), controller.signal)
+        .then(({ data, meta }) => setMovieResult({ q: query, status: 'ok', items: data.items, total: meta.total ?? data.totalResults }))
+        .catch((error: unknown) => {
+          if (!isAbort(error)) setMovieResult({ q: query, status: 'error' });
+        });
+    }, 250);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [isMovies, query, open, location.pathname]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -95,6 +117,7 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
   const resultsHref = (term = query): string => {
     const clean = term.trim().slice(0, maxLength);
     if (isYouTube) return `/youtube/search?q=${encodeURIComponent(clean)}`;
+    if (isMovies) return `/movies/search?q=${encodeURIComponent(clean)}`;
     const base = location.pathname === '/search' ? parseSearchState(new URLSearchParams(location.search)) : EMPTY_SEARCH;
     const format = mediaMode === 'movie' ? 'movie' : (base.format === 'movie' ? '' : base.format);
     const qs = toUrlParams({ ...base, q: clean, format, page: 1 }).toString();
@@ -128,11 +151,11 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
     if (event.key === 'ArrowDown') {
       event.preventDefault();
       setOpen(true);
-      const count = isYouTube ? youtubeSuggestions.length : items.length;
+      const count = isYouTube ? youtubeSuggestions.length : isMovies ? (movieResult?.q === query && movieResult.status === 'ok' ? movieResult.items.length : 0) : items.length;
       setActive(index => count ? (index + 1) % count : -1);
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
-      const count = isYouTube ? youtubeSuggestions.length : items.length;
+      const count = isYouTube ? youtubeSuggestions.length : isMovies ? (movieResult?.q === query && movieResult.status === 'ok' ? movieResult.items.length : 0) : items.length;
       setActive(index => count ? (index <= 0 ? count - 1 : index - 1) : -1);
     } else if (event.key === 'Escape') {
       setOpen(false);
@@ -142,6 +165,11 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
       event.preventDefault();
       if (isYouTube) {
         submitYouTubeSearch(active >= 0 ? (youtubeSuggestions[active] ?? query) : query);
+      } else if (isMovies) {
+        const movieItems = movieResult?.q === query && movieResult.status === 'ok' ? movieResult.items : [];
+        const movie = movieItems[active];
+        if (movie) go('/movies/' + encodeURIComponent(movie.externalId));
+        else if (searching) go(resultsHref());
       } else {
         const item = items[active];
         if (item) go(animeHref(item));
@@ -150,8 +178,10 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
     }
   };
 
-  const showAnimePanel = !isYouTube && showPanel;
+  const showAnimePanel = !isYouTube && !isMovies && showPanel;
   const showYouTubePanel = isYouTube && showPanel;
+  const showMoviePanel = isMovies && showPanel;
+  const movieItems = movieResult?.q === query && movieResult.status === 'ok' ? movieResult.items : [];
 
   return (
     <div className="kc-search-wrap" ref={rootRef} role="search">
@@ -202,6 +232,39 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
             <Search size={15} aria-hidden="true" />
             <span>Search for <b>{query}</b></span>
           </button>
+        </div>
+      )}
+
+      {showMoviePanel && (
+        <div className="kc-suggest kc-movie-suggest" id={listId} role="listbox" aria-label="Movie search suggestions">
+          {!movieResult || movieResult.q !== query ? <p className="kc-suggest-note" role="status">Searching movies…</p> : null}
+          {movieResult?.q === query && movieResult.status === 'error' && <p className="kc-suggest-note" role="alert">Movie search is unavailable right now.</p>}
+          {movieResult?.q === query && movieResult.status === 'ok' && movieItems.length === 0 && <p className="kc-suggest-note" role="status">No movies found for “{query}”.</p>}
+          {movieItems.map((movie, index) => (
+            <Link
+              key={movie.providerId + ':' + movie.externalId}
+              id={listId + '-' + index}
+              role="option"
+              aria-selected={index === active}
+              className={'kc-suggest-row' + (index === active ? ' active' : '')}
+              to={'/movies/' + encodeURIComponent(movie.externalId)}
+              onMouseEnter={() => setActive(index)}
+              onClick={() => { setOpen(false); inputRef.current?.blur(); }}
+            >
+              <span className="kc-suggest-poster">
+                {movie.posterUrl ? <img src={movie.posterUrl} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <span />}
+              </span>
+              <span className="kc-suggest-copy">
+                <b>{movie.title}</b>
+                <small>{[movie.releaseYear, movie.originalLanguage?.toUpperCase()].filter(Boolean).join(' · ') || 'Feature film'}</small>
+              </span>
+            </Link>
+          ))}
+          {movieResult?.q === query && movieResult.status === 'ok' && movieItems.length > 0 && (
+            <Link className="kc-suggest-all" to={resultsHref()} onClick={() => setOpen(false)}>
+              See all movie results ({movieResult.total}) <ArrowRight size={14} aria-hidden="true" />
+            </Link>
+          )}
         </div>
       )}
 

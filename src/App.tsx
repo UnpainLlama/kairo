@@ -8,6 +8,10 @@ import {
 import SearchBar from './components/SearchBar';
 import HomePage from './pages/HomePage';
 import YouTubeFeedPage from './pages/YouTubeFeedPage';
+import MoviesHomePage from './pages/MoviesHomePage';
+import MoviesBrowsePage from './pages/MoviesBrowsePage';
+import MoviesSearchPage from './pages/MoviesSearchPage';
+import MoviesDetailPage from './pages/MoviesDetailPage';
 import YouTubeSearchPage from './pages/YouTubeSearchPage';
 import YouTubeChannelsPage from './pages/YouTubeChannelsPage';
 import YouTubeWatchPage from './pages/YouTubeWatchPage';
@@ -35,7 +39,7 @@ const menuItems: NavItem[] = [
   { to: '/', label: 'Home', icon: Home, end: true },
   { to: '/browse/trending', label: 'Trending', icon: Flame },
   { to: '/browse/anime', label: 'Anime', icon: Tv },
-  { to: '/browse/movies', label: 'Movies', icon: Film },
+  { to: '/movies', label: 'Movies', icon: Film },
   { to: '/browse/anime', label: 'Discover', icon: Compass },
   { to: '/search', label: 'Search', icon: Search },
   { to: '/browse/seasonal', label: 'Seasonal', icon: CalendarDays },
@@ -48,6 +52,14 @@ const youtubeNavItems: NavItem[] = [
   { to: '/youtube/channels', label: 'Channels', icon: ListVideo },
   { to: '/youtube/watch-later', label: 'Watch Later', icon: Bookmark },
   { to: '/youtube/history', label: 'History', icon: History },
+];
+
+const moviesNavItems: NavItem[] = [
+  { to: '/movies', label: 'Home', icon: Film, end: true },
+  { to: '/movies/browse/trending', label: 'Trending', icon: Flame },
+  { to: '/movies/browse/popular', label: 'Discover', icon: Compass },
+  { to: '/movies/search', label: 'Search', icon: Search },
+  { to: '/movies/browse/upcoming', label: 'Coming soon', icon: CalendarDays },
 ];
 
 const mobileNavItems: NavItem[] = [
@@ -89,11 +101,10 @@ function MenuLink({ to, label, icon: Icon, end, onNavigate }: NavItem & { onNavi
 export default function App() {
   const { pathname, search } = useLocation();
   const isYouTubeMode = pathname.startsWith('/youtube');
-  const activeNavItems = isYouTubeMode ? youtubeNavItems : navItems;
-  const activeMenuItems = isYouTubeMode
-    ? [...youtubeNavItems, { to: '/', label: 'Anime', icon: Tv, end: true }]
-    : menuItems;
-  const activeMobileItems = isYouTubeMode ? youtubeNavItems : mobileNavItems;
+  const isMoviesMode = pathname === '/movies' || pathname.startsWith('/movies/');
+  const activeNavItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : navItems;
+  const activeMenuItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : menuItems;
+  const activeMobileItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : mobileNavItems;
   const [menuOpen, setMenuOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<{displayName:string;email:string|null}|null>(null);
   const [authBusy, setAuthBusy] = useState(false);
@@ -134,7 +145,7 @@ export default function App() {
   const closeMenu = (_event?: MouseEvent<HTMLAnchorElement>) => setMenuOpen(false);
 
   return (
-    <div className={`kc-app${pathname === '/' ? ' kc-home-view' : ''}${isYouTubeMode ? ' yt-app' : ''}`}>
+    <div className={`kc-app${pathname === '/' ? ' kc-home-view' : ''}${isYouTubeMode ? ' yt-app' : ''}${isMoviesMode ? ' mv-app' : ''}`}>
       <a className="kc-skip" href="#main">Skip to content</a>
 
       <aside className="kc-rail" aria-label="Primary">
@@ -150,7 +161,7 @@ export default function App() {
 
       <header className="kc-topbar">
         <div className="kc-topbar-inner">
-          <SearchBar mode={isYouTubeMode ? 'youtube' : 'anime'} />
+          <SearchBar mode={isYouTubeMode ? 'youtube' : isMoviesMode ? 'movies' : 'anime'} />
           <div className="kc-menu-wrap" ref={menuRef}>
             <button
               type="button"
@@ -169,18 +180,23 @@ export default function App() {
                   <span><b>{currentUser?.displayName ?? 'Profile'}</b><small>{currentUser?.email ?? 'Guest account'}</small></span>
                   <ChevronRight size={15} aria-hidden="true" />
                 </Link>
-                <div className="kc-menu-section-label">{isYouTubeMode ? 'Video' : 'Media'}</div>
+                <div className="kc-menu-section-label">{isYouTubeMode ? 'Video' : isMoviesMode ? 'Movies' : 'Media'}</div>
                 <div className="kc-menu-grid">
-                  {activeMenuItems.slice(0, isYouTubeMode ? 5 : 4).map((item) => <MenuLink key={item.label} {...item} onNavigate={closeMenu} />)}
-                  <NavLink to={isYouTubeMode ? '/' : '/youtube'} className={({ isActive }) => `kc-menu-tile${isActive ? ' active' : ''}`} onClick={closeMenu}>
-                    {isYouTubeMode
-                      ? <Tv size={17} strokeWidth={1.8} aria-hidden="true" />
-                      : <Youtube size={17} strokeWidth={1.8} aria-hidden="true" />}
-                    <span>{isYouTubeMode ? 'Anime' : 'YouTube'}</span>
-                    <ChevronRight size={13} className="kc-menu-chevron" aria-hidden="true" />
-                  </NavLink>
+                  {activeMenuItems.slice(0, isYouTubeMode || isMoviesMode ? 5 : 4).map((item) => <MenuLink key={item.label} {...item} onNavigate={closeMenu} />)}
+                  {isMoviesMode ? <>
+                    <MenuLink to="/browse/anime" label="Anime" icon={Tv} onNavigate={closeMenu} />
+                    <MenuLink to="/youtube" label="YouTube" icon={Youtube} onNavigate={closeMenu} />
+                  </> : (
+                    <NavLink to={isYouTubeMode ? '/' : '/youtube'} className={({ isActive }) => `kc-menu-tile${isActive ? ' active' : ''}`} onClick={closeMenu}>
+                      {isYouTubeMode
+                        ? <Tv size={17} strokeWidth={1.8} aria-hidden="true" />
+                        : <Youtube size={17} strokeWidth={1.8} aria-hidden="true" />}
+                      <span>{isYouTubeMode ? 'Anime' : 'YouTube'}</span>
+                      <ChevronRight size={13} className="kc-menu-chevron" aria-hidden="true" />
+                    </NavLink>
+                  )}
                 </div>
-                {!isYouTubeMode && <>
+                {!isYouTubeMode && !isMoviesMode && <>
                   <div className="kc-menu-section-label">Navigate</div>
                   <div className="kc-menu-grid">
                     {menuItems.slice(4).map((item) => <MenuLink key={item.label} {...item} onNavigate={closeMenu} />)}
@@ -209,6 +225,10 @@ export default function App() {
           <Route path="/verify-email" element={<AuthPage mode="register" />} />
           <Route path="/" element={<HomePage />} />
           <Route path="/youtube" element={<YouTubeFeedPage />} />
+          <Route path="/movies" element={<MoviesHomePage />} />
+          <Route path="/movies/search" element={<MoviesSearchPage />} />
+          <Route path="/movies/browse/:category" element={<MoviesBrowsePage />} />
+          <Route path="/movies/:externalId" element={<MoviesDetailPage />} />
           <Route path="/youtube/search" element={<YouTubeSearchPage />} />
           <Route path="/youtube/channels" element={<YouTubeChannelsPage />} />
           <Route path="/youtube/watch" element={<YouTubeWatchRedirect />} />
@@ -217,6 +237,7 @@ export default function App() {
           <Route path="/youtube/watch-later" element={<YouTubeWatchLaterPage />} />
           <Route path="/youtube/history" element={<YouTubeHistoryPage />} />
           <Route path="/search" element={<SearchPage />} />
+          <Route path="/browse/movies" element={<Navigate to="/movies" replace />} />
           <Route path="/browse" element={<Navigate to="/browse/anime" replace />} />
           <Route path="/browse/:category" element={<BrowsePage />} />
           <Route path="/anime/:slug" element={<AnimePage />} />
