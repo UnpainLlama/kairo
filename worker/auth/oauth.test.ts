@@ -203,6 +203,63 @@ describe('Google OAuth canonical callback', () => {
   });
 });
 
+
+describe('YouTube public channel search', () => {
+  it('uses the Worker API key without requiring per-user YouTube OAuth', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/channels/search');
+    const request = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      expect(url.origin).toBe('https://www.googleapis.com');
+      expect(url.pathname).toBe('/youtube/v3/search');
+      expect(url.searchParams.get('key')).toBe('worker-test-key');
+      expect(url.searchParams.get('type')).toBe('channel');
+      expect(new Headers(init?.headers).has('Authorization')).toBe(false);
+      return new Response(JSON.stringify({
+        items: [{
+          id: { channelId: 'UC1234567890' },
+          snippet: {
+            title: 'Public creator',
+            description: 'A public channel',
+            thumbnails: { default: { url: 'https://example.com/channel.jpg' } },
+          },
+        }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    vi.stubGlobal('fetch', request);
+    try {
+      const ctx = makeContext({
+        url: `${canonicalOrigin}/api/v1/youtube/channels/search?q=creator`,
+        cookie: `kairo_session=${'a'.repeat(43)}`,
+        env: { DB: mockDb(), YOUTUBE_DATA_API_KEY: 'worker-test-key' },
+      });
+      const response = await handler(ctx.context);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        success: true,
+        data: { channels: [{ channelId: 'UC1234567890', title: 'Public creator', isAdded: false }] },
+      });
+      expect(request).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('returns a safe configuration error when the Worker API key is missing', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/channels/search');
+    const ctx = makeContext({
+      url: `${canonicalOrigin}/api/v1/youtube/channels/search?q=creator`,
+      cookie: `kairo_session=${'a'.repeat(43)}`,
+      env: { DB: mockDb() },
+    });
+    const response = await handler(ctx.context);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      success: false,
+      error: { code: 'YOUTUBE_API_KEY_MISSING' },
+    });
+  });
+});
+
 describe('YouTube OAuth canonical callback', () => {
   it('uses APP_BASE_URL and requires a recent authenticated Kairo session', async () => {
     const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/auth/youtube');
@@ -398,25 +455,24 @@ describe('Kairo-curated YouTube channel access controls', () => {
     expect(ctx.headers.get('cache-control')).toEqual(['no-store']);
   });
 
-  it('requires a YouTube connection without calling the provider API', async () => {
+  it('uses the public API key and does not require a per-user YouTube connection', async () => {
     const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/channels/search');
-    const providerFetch = vi.fn();
+    const providerFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      expect(url.searchParams.get('key')).toBe('worker-test-key');
+      return new Response(JSON.stringify({ items: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
     vi.stubGlobal('fetch', providerFetch);
     try {
       const ctx = makeContext({
         url: `${canonicalOrigin}/api/v1/youtube/channels/search?q=creator`,
         cookie: `kairo_session=${'a'.repeat(43)}`,
-        env: {
-          DB: mockDb(),
-          GOOGLE_CLIENT_ID: 'google-client-id',
-          GOOGLE_CLIENT_SECRET: 'google-client-secret',
-          YOUTUBE_TOKEN_ENCRYPTION_KEY: 'A'.repeat(43),
-        },
+        env: { DB: mockDb(), YOUTUBE_DATA_API_KEY: 'worker-test-key' },
       });
       const response = await handler(ctx.context);
-      expect(response.status).toBe(403);
-      expect(ctx.jsonBody).toMatchObject({ error: { code: 'YOUTUBE_NOT_CONNECTED' } });
-      expect(providerFetch).not.toHaveBeenCalled();
+      expect(response.status).toBe(200);
+      expect(ctx.jsonBody).toMatchObject({ success: true, data: { channels: [] } });
+      expect(providerFetch).toHaveBeenCalledTimes(1);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -446,6 +502,7 @@ describe('Kairo-curated YouTube API quota protection', () => {
           GOOGLE_CLIENT_ID: 'google-client-id',
           GOOGLE_CLIENT_SECRET: 'google-client-secret',
           YOUTUBE_TOKEN_ENCRYPTION_KEY: 'A'.repeat(43),
+          YOUTUBE_DATA_API_KEY: 'worker-test-key',
         },
       });
       const response = await handler(ctx.context);
@@ -485,6 +542,7 @@ describe('Kairo YouTube shared quota budgets', () => {
           GOOGLE_CLIENT_ID: 'google-client-id',
           GOOGLE_CLIENT_SECRET: 'google-client-secret',
           YOUTUBE_TOKEN_ENCRYPTION_KEY: 'A'.repeat(43),
+          YOUTUBE_DATA_API_KEY: 'worker-test-key',
         },
       });
       const response = await handler(ctx.context);
