@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import YouTubeVideoCard, { type YouTubeCardVideo } from '../components/YouTubeVideoCard';
-import { ArrowUpRight, Check, Plus, Search } from 'lucide-react';
+import { ArrowUpRight, Check, Plus, Search, Youtube } from 'lucide-react';
 
 type SearchMode = 'videos' | 'channels';
 type ChannelResult = { channelId: string; title: string; description: string; thumbnailUrl: string | null; url: string; isAdded: boolean };
