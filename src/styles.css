@@ -1785,3 +1785,219 @@ img { display: block; }
   .mv-action { min-height: 40px; padding: 0 12px; font-size: 11px; }
   .mv-hero-meta { gap: 9px; font-size: 10px; }
 }
+
+
+
+/* --------------------------------------------------------------------------
+   Movies: grayscale cinematic catalogue. Scoped to .mv-app so Anime/YouTube
+   and Kairo's shared shell retain their own visual treatments.
+   -------------------------------------------------------------------------- */
+.mv-app {
+  --accent: #e5e5e5;
+  --accent-bg: #28282b;
+  --gold: #e5e5e5;
+  --surface: #171719;
+  --surface-2: #222225;
+  --surface-3: #2d2d31;
+  --line: #29292d;
+  --line-2: #3a3a40;
+}
+.mv-app .mv-eyebrow,
+.mv-app .mv-featured-label { color: #d4d4d8; }
+.mv-app .mv-eyebrow svg,
+.mv-app .mv-hero-meta svg { color: #e5e5e5; }
+.mv-app .mv-hero-current { border-left-color: #e5e5e5; }
+.mv-app .mv-action-light { background: #f4f4f5; color: #101012; }
+.mv-app .mv-action-glass { border-color: rgba(255,255,255,.2); background: rgba(18,18,20,.68); color: #f4f4f5; }
+.mv-app .mv-action-glass:hover { border-color: rgba(255,255,255,.42); background: rgba(42,42,45,.82); }
+.mv-app .mv-category-strip a { border-color: #303034; background: rgba(24,24,27,.88); color: #b8b8bd; }
+.mv-app .mv-category-strip a:hover { border-color: #66666c; background: #242427; color: #fff; }
+.mv-app .mv-category-strip a.active { border-color: #77777e; background: #e8e8ea; color: #111113; }
+.mv-app .mv-poster-fallback { background: radial-gradient(circle at 70% 20%, rgba(255,255,255,.12), transparent 55%), #1b1b1e; color: #d4d4d8; }
+.mv-app .mv-card-rating { border-color: rgba(255,255,255,.2); background: rgba(10,10,12,.82); color: #f0f0f1; }
+.mv-app .mv-section-heading > a,
+.mv-app .mv-section-view-all { color: #d4d4d8; }
+.mv-app .mv-section-heading > a:hover,
+.mv-app .mv-section-view-all:hover { color: #fff; }
+.mv-app .mv-genre-grid a { border-color: #353539; background: linear-gradient(120deg, #242427, #171719); color: #e5e5e7; }
+.mv-app .mv-genre-grid a:hover { border-color: #77777e; background: #29292d; }
+.mv-app .mv-genre-grid svg { color: #c4c4c9; }
+.mv-app .mv-provider-notice { border-color: #38383d; background: linear-gradient(110deg, rgba(44,44,49,.82), rgba(24,24,27,.94)); color: #e5e5e7; }
+.mv-app .mv-provider-mark { background: rgba(255,255,255,.1); color: #ededee; }
+.mv-app .mv-provider-notice p { color: #b8b8be; }
+.mv-app .mv-provider-notice button { border-color: #5a5a61; color: #ededee; }
+.mv-app .mv-provider-notice button:hover { background: rgba(255,255,255,.1); }
+.mv-app .mv-empty-state a { color: #e0e0e3; }
+.mv-app .mv-detail-facts .mv-detail-rating { color: #e5e5e5; }
+.mv-app .mv-detail-genres a { border-color: rgba(255,255,255,.22); background: rgba(30,30,33,.62); color: #e1e1e4; }
+.mv-app .mv-detail-genres a:hover { border-color: #77777e; background: #29292d; }
+.mv-app .mv-detail-backdrop span { background: linear-gradient(90deg, rgba(15,15,17,.96), rgba(15,15,17,.7) 52%, rgba(15,15,17,.48)), linear-gradient(0deg, #0f0f11 0%, transparent 72%); }
+
+.mv-app .mv-home-content { padding-bottom: 44px; }
+.mv-app .mv-catalog-intro {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 22px;
+  margin: 3px 0 30px;
+  padding: 0 0 22px;
+  border-bottom: 1px solid #29292d;
+}
+.mv-app .mv-catalog-kicker,
+.mv-app .mv-section-kicker {
+  display: block;
+  margin-bottom: 7px;
+  color: #85858d;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 1.7px;
+  text-transform: uppercase;
+}
+.mv-app .mv-catalog-intro h2 {
+  color: #f4f4f5;
+  font-size: clamp(20px, 2.4vw, 28px);
+  font-weight: 850;
+  letter-spacing: -.8px;
+  line-height: 1.1;
+}
+.mv-app .mv-catalog-intro p {
+  margin-top: 7px;
+  color: #a1a1aa;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.mv-app .mv-catalog-search {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 39px;
+  padding: 0 13px;
+  border: 1px solid #414146;
+  border-radius: 7px;
+  background: #1c1c1f;
+  color: #ededee;
+  font-size: 11px;
+  font-weight: 750;
+  transition: background .16s, border-color .16s, transform .16s;
+}
+.mv-app .mv-catalog-search:hover { border-color: #77777e; background: #29292d; transform: translateY(-1px); }
+.mv-app .mv-catalog-search svg:last-child { color: #a1a1aa; }
+
+.mv-app .mv-section { margin: 30px 0 38px; }
+.mv-app .mv-section-heading {
+  align-items: end;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.mv-app .mv-section-heading-copy { min-width: 0; }
+.mv-app .mv-section-heading-copy .mv-section-kicker { margin-bottom: 5px; }
+.mv-app .mv-section-heading h2 {
+  color: #f1f1f2;
+  font-size: clamp(17px, 1.8vw, 21px);
+  font-weight: 850;
+  letter-spacing: -.45px;
+}
+.mv-app .mv-section-heading p { color: #96969d; font-size: 11px; }
+.mv-app .mv-section-tools { display: flex; flex: 0 0 auto; align-items: center; gap: 13px; }
+.mv-app .mv-section-view-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  color: #d0d0d4;
+  font-size: 11px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+.mv-app .mv-rail-controls { display: flex; gap: 6px; }
+.mv-app .mv-rail-controls button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid #3b3b40;
+  border-radius: 6px;
+  background: #1c1c1f;
+  color: #dedee1;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.mv-app .mv-rail-controls button:hover { border-color: #77777e; background: #303034; color: #fff; }
+.mv-app .mv-rail {
+  grid-auto-columns: clamp(220px, 22vw, 310px);
+  gap: 15px;
+  padding: 2px 1px 15px;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 1px;
+  scrollbar-color: #48484e transparent;
+}
+.mv-app .mv-card-landscape { scroll-snap-align: start; }
+.mv-app .mv-card-landscape .mv-poster {
+  aspect-ratio: 16 / 9;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 7px;
+  background: #202023;
+  box-shadow: 0 8px 22px rgba(0,0,0,.25);
+}
+.mv-app .mv-card-landscape .mv-poster > img {
+  filter: saturate(.82);
+  transition: transform .32s ease, filter .32s ease;
+}
+.mv-app .mv-card-landscape .mv-card-image-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0,0,0,.12), transparent 35%, rgba(0,0,0,.45));
+  pointer-events: none;
+}
+.mv-app .mv-card-landscape .mv-card-rating { top: 9px; left: 9px; }
+.mv-app .mv-card-landscape .mv-card-open {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 35px;
+  padding: 0 10px;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 5px;
+  background: rgba(13,13,15,.82);
+  color: #f4f4f5;
+  opacity: 0;
+  transform: translateY(6px);
+  backdrop-filter: blur(10px);
+}
+.mv-app .mv-card-landscape .mv-card-open span { font-size: 10px; font-weight: 800; letter-spacing: .35px; text-transform: uppercase; }
+.mv-app .mv-card-landscape .mv-card-link:hover .mv-card-open,
+.mv-app .mv-card-landscape .mv-card-link:focus-visible .mv-card-open { opacity: 1; transform: none; }
+.mv-app .mv-card-landscape .mv-card-copy { gap: 4px; padding: 9px 1px 0; }
+.mv-app .mv-card-landscape .mv-card-copy b {
+  color: #ededee;
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 1.4;
+  transition: color .15s;
+}
+.mv-app .mv-card-landscape .mv-card-copy small { color: #85858d; font-size: 10px; }
+.mv-app .mv-card-landscape .mv-card-link:hover .mv-card-copy b { color: #fff; }
+.mv-app .mv-card-landscape .mv-card-link:hover .mv-poster > img,
+.mv-app .mv-card-landscape .mv-card-link:focus-visible .mv-poster > img { transform: scale(1.035); filter: saturate(.95) brightness(.88); }
+.mv-app .mv-card-link:focus-visible { outline: 2px solid #ededee; outline-offset: 4px; border-radius: 8px; }
+.mv-app .mv-loading-rails .mv-rail { grid-auto-columns: clamp(220px, 22vw, 310px); }
+.mv-app .mv-loading-rails .mv-skeleton > span { aspect-ratio: 16 / 9; border: 1px solid #29292d; }
+.mv-app .mv-skeleton > i { background: #29292d; }
+.mv-app .mv-genre-grid a { min-height: 56px; border-radius: 7px; }
+
+@media (max-width: 700px) {
+  .mv-app .mv-catalog-intro { align-items: flex-start; flex-direction: column; margin-bottom: 22px; padding-bottom: 18px; }
+  .mv-app .mv-catalog-search { min-height: 36px; }
+  .mv-app .mv-section { margin: 24px 0 30px; }
+  .mv-app .mv-section-tools { gap: 0; }
+  .mv-app .mv-rail-controls { display: none; }
+  .mv-app .mv-rail { grid-auto-columns: clamp(178px, 62vw, 235px); gap: 12px; }
+  .mv-app .mv-loading-rails .mv-rail { grid-auto-columns: clamp(178px, 62vw, 235px); }
+  .mv-app .mv-section-heading { align-items: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mv-app .mv-card-landscape .mv-poster > img,
+  .mv-app .mv-rail-controls button,
+  .mv-app .mv-catalog-search { transition: none; }
+}

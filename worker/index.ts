@@ -13,7 +13,6 @@ import { createLiveHandlers, isLiveMode, type LiveHandlers } from './live/handle
 import type { LiveRequest, LiveResult } from './live/types';
 import { createTmdbMovieProvider } from './movies/providers/tmdb';
 import { createMovieCatalogService } from './movies/service';
-import { createTmdbExperienceService, type TmdbFeedKind, type TmdbMediaType, type TmdbSearchType } from './movies/experience';
 import { movieIdentity, persistMovieDetail, persistMovieSummary, searchStoredMovies } from './movies/repository';
 import type { MovieDiscoverQuery, MovieListKind } from './movies/types';
 import { ProviderError } from './metadata/types';
@@ -97,10 +96,6 @@ function moviesProviderEnabled(c: AppContext): boolean {
 function movieCatalog(c: AppContext) {
   const provider = createTmdbMovieProvider(fetch, c.env.TMDB_ACCESS_TOKEN);
   return createMovieCatalogService(provider, createCache(c.env));
-}
-
-function movieExperience(c: AppContext) {
-  return createTmdbExperienceService(fetch, c.env.TMDB_ACCESS_TOKEN, createCache(c.env));
 }
 
 function movieProviderFailure(c: AppContext, error: unknown) {
@@ -188,134 +183,6 @@ app.get('/api/v1/movies/genres', async (c) => {
   try {
     const result = await movieCatalog(c).genres(language);
     return ok(c, { items: result.data }, { provider: 'tmdb', cache: result.cache });
-  } catch (error) {
-    return movieProviderFailure(c, error);
-  }
-});
-
-const EXPERIENCE_FEED_KINDS: TmdbFeedKind[] = ['trending', 'popular', 'top_rated', 'now_playing', 'upcoming', 'airing_today', 'on_the_air', 'discover'];
-
-app.get('/api/v1/movies/experience/feed', async (c) => {
-  if (!moviesProviderEnabled(c)) return fail(c, 503, 'MOVIES_DISABLED', 'Movies metadata is not enabled or its provider terms have not been approved.');
-  const kind = (c.req.query('kind') ?? 'trending') as TmdbFeedKind;
-  const mediaType = (c.req.query('media_type') ?? 'movie') as TmdbMediaType;
-  const windowRaw = c.req.query('window') ?? 'week';
-  const page = boundedInt(c.req.query('page'), 1, 1, 500);
-  if (!EXPERIENCE_FEED_KINDS.includes(kind)) return fail(c, 400, 'VALIDATION_ERROR', 'Invalid feed kind.');
-  if (!['movie', 'tv', 'all'].includes(mediaType)) return fail(c, 400, 'VALIDATION_ERROR', 'media_type must be movie, tv, or all.');
-  if (windowRaw !== 'day' && windowRaw !== 'week') return fail(c, 400, 'VALIDATION_ERROR', 'window must be day or week.');
-  if (page === null) return fail(c, 400, 'VALIDATION_ERROR', 'page must be 1–500.');
-  const genreIds = (c.req.query('genres') ?? '').split(',').map((v) => v.trim()).filter((v) => /^\d{1,8}$/.test(v)).slice(0, 10);
-  const yearRaw = c.req.query('year');
-  let year: number | undefined;
-  if (yearRaw !== undefined) {
-    const parsed = boundedInt(yearRaw, 2000, 1800, 2200);
-    if (parsed === null) return fail(c, 400, 'VALIDATION_ERROR', 'year must be 1800–2200.');
-    year = parsed;
-  }
-  try {
-    const data = await movieExperience(c).feed({
-      kind, mediaType, page, window: windowRaw,
-      ...(genreIds.length ? { genreIds } : {}),
-      ...(c.req.query('sort_by') ? { sortBy: c.req.query('sort_by')! } : {}),
-      ...(year === undefined ? {} : { year }),
-      includeAdult: c.req.query('include_adult') === 'true',
-    });
-    return ok(c, data, { provider: 'tmdb', catalogue: 'global', mediaType });
-  } catch (error) {
-    return movieProviderFailure(c, error);
-  }
-});
-
-app.get('/api/v1/movies/experience/search', async (c) => {
-  if (!moviesProviderEnabled(c)) return fail(c, 503, 'MOVIES_DISABLED', 'Movies metadata is not enabled or its provider terms have not been approved.');
-  const q = (c.req.query('q') ?? '').trim();
-  const mediaType = (c.req.query('media_type') ?? 'multi') as TmdbSearchType;
-  const page = boundedInt(c.req.query('page'), 1, 1, 500);
-  if (!q || q.length > 120) return fail(c, 400, 'VALIDATION_ERROR', 'q must contain 1–120 characters.');
-  if (!['movie', 'tv', 'multi'].includes(mediaType)) return fail(c, 400, 'VALIDATION_ERROR', 'media_type must be movie, tv, or multi.');
-  if (page === null) return fail(c, 400, 'VALIDATION_ERROR', 'page must be 1–500.');
-  try {
-    const data = await movieExperience(c).search({ query: q, mediaType, page, includeAdult: c.req.query('include_adult') === 'true' });
-    return ok(c, data, { provider: 'tmdb', catalogue: 'global', mediaType });
-  } catch (error) {
-    return movieProviderFailure(c, error);
-  }
-});
-
-app.get('/api/v1/movies/experience/genres', async (c) => {
-  if (!moviesProviderEnabled(c)) return fail(c, 503, 'MOVIES_DISABLED', 'Movies metadata is not enabled or its provider terms have not been approved.');
-  const mediaType = c.req.query('media_type') ?? 'movie';
-  const language = c.req.query('language') ?? 'en-US';
-  if (mediaType !== 'movie' && mediaType !== 'tv') return fail(c, 400, 'VALIDATION_ERROR', 'media_type must be movie or tv.');
-  if (!/^[a-z]{2}-[A-Z]{2}$/.test(language)) return fail(c, 400, 'VALIDATION_ERROR', 'language must use the format en-US.');
-  try {
-    return ok(c, await movieExperience(c).genres(mediaType, language), { provider: 'tmdb', mediaType });
-  } catch (error) {
-    return movieProviderFailure(c, error);
-  }
-});
-
-app.get('/api/v1/movies/experience/people/popular', async (c) => {
-  if (!moviesProviderEnabled(c)) return fail(c, 503, 'MOVIES_DISABLED', 'Movies metadata is not enabled or its provider terms have not been approved.');
-  const page = boundedInt(c.req.query('page'), 1, 1, 100);
-  if (page === null) return fail(c, 400, 'VALIDATION_ERROR', 'page must be 1–100.');
-  try {
-    return ok(c, await movieExperience(c).popularPeople(page), { provider: 'tmdb', catalogue: 'people' });
-  } catch (error) {
-    return movieProviderFailure(c, error);
-  }
-});
-
-app.get('/api/v1/movies/experience/detail/:mediaType/:externalId', async (c) => {
-  if (!moviesProviderEnabled(c)) return fail(c, 503, 'MOVIES_DISABLED', 'Movies metadata is not enabled or its provider terms have not been approved.');
-  const mediaType = c.req.param('mediaType');
-  if (mediaType !== 'movie' && mediaType !== 'tv') return fail(c, 400, 'VALIDATION_ERROR', 'mediaType must be movie or tv.');
-  try {
-    return ok(c, await movieExperience(c).detail(mediaType, c.req.param('externalId')), { provider: 'tmdb', mediaType });
-  } catch (error) {
-    return movieProviderFailure(c, error);
-  }
-});
-
-app.get('/api/v1/movies/experience/:mediaType/:externalId/videos', async (c) => {
-  if (!moviesProviderEnabled(c)) return fail(c, 503, 'MOVIES_DISABLED', 'Movies metadata is not enabled or its provider terms have not been approved.');
-  const mediaType = c.req.param('mediaType');
-  if (mediaType !== 'movie' && mediaType !== 'tv') return fail(c, 400, 'VALIDATION_ERROR', 'mediaType must be movie or tv.');
-  try {
-    return ok(c, await movieExperience(c).videos(mediaType, c.req.param('externalId')), { provider: 'tmdb', mediaType });
-  } catch (error) {
-    return movieProviderFailure(c, error);
-  }
-});
-
-app.get('/api/v1/movies/experience/:mediaType/:externalId/images', async (c) => {
-  if (!moviesProviderEnabled(c)) return fail(c, 503, 'MOVIES_DISABLED', 'Movies metadata is not enabled or its provider terms have not been approved.');
-  const mediaType = c.req.param('mediaType');
-  if (mediaType !== 'movie' && mediaType !== 'tv') return fail(c, 400, 'VALIDATION_ERROR', 'mediaType must be movie or tv.');
-  try {
-    return ok(c, await movieExperience(c).images(mediaType, c.req.param('externalId')), { provider: 'tmdb', mediaType });
-  } catch (error) {
-    return movieProviderFailure(c, error);
-  }
-});
-
-app.get('/api/v1/movies/experience/tv/:tvId/seasons', async (c) => {
-  if (!moviesProviderEnabled(c)) return fail(c, 503, 'MOVIES_DISABLED', 'Movies metadata is not enabled or its provider terms have not been approved.');
-  try {
-    const data = await movieExperience(c).seasons(c.req.param('tvId'));
-    return ok(c, data, { provider: 'tmdb', mediaType: 'tv' });
-  } catch (error) {
-    return movieProviderFailure(c, error);
-  }
-});
-
-app.get('/api/v1/movies/experience/tv/:tvId/seasons/:seasonNumber', async (c) => {
-  if (!moviesProviderEnabled(c)) return fail(c, 503, 'MOVIES_DISABLED', 'Movies metadata is not enabled or its provider terms have not been approved.');
-  const seasonNumber = boundedInt(c.req.param('seasonNumber'), 0, 0, 500);
-  if (seasonNumber === null) return fail(c, 400, 'VALIDATION_ERROR', 'seasonNumber must be 0–500.');
-  try {
-    return ok(c, await movieExperience(c).episodes(c.req.param('tvId'), seasonNumber), { provider: 'tmdb', mediaType: 'tv' });
   } catch (error) {
     return movieProviderFailure(c, error);
   }

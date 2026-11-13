@@ -6,7 +6,6 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import SearchBar from './components/SearchBar';
-import { MoviesWorkspace } from './movies-ui/MoviesWorkspace';
 import HomePage from './pages/HomePage';
 import YouTubeFeedPage from './pages/YouTubeFeedPage';
 import MoviesHomePage from './pages/MoviesHomePage';
@@ -144,8 +143,6 @@ export default function App() {
   }, [menuOpen]);
 
   const closeMenu = (_event?: MouseEvent<HTMLAnchorElement>) => setMenuOpen(false);
-
-  if (isMoviesMode) return <MoviesWorkspace />;
 
   return (
     <div className={`kc-app${pathname === '/' ? ' kc-home-view' : ''}${isYouTubeMode ? ' yt-app' : ''}${isMoviesMode ? ' mv-app' : ''}`}>
