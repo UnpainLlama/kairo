@@ -1,7 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectDetailOverlay, selectWatchlist, selectTrailerMuted, selectCurrentProfileId, selectIsLiked } from '../state/selectors';
-import { closeDetail } from '../state/slices/uiSlice';
+import { closeDetail, setDetailTrailerPaused } from '../state/slices/uiSlice';
 import { toggleWatchlist } from '../state/slices/watchlistSlice';
 import { toggleLike } from '../state/slices/likesSlice';
 import { setTrailerPaused, toggleTrailerMute } from '../state/slices/trailerSlice';
@@ -19,7 +19,7 @@ import type { CSSProperties } from 'react';
 
 export const DetailOverlay = memo(function DetailOverlay() {
   const dispatch = useDispatch();
-  const { open, tile, buttonIndex, zone, seasonIndex, episodeIndex } = useSelector(selectDetailOverlay);
+  const { open, tile, buttonIndex, zone, seasonIndex, episodeIndex, detailTrailerPaused } = useSelector(selectDetailOverlay);
   const watchlist = useSelector(selectWatchlist);
   const trailerMuted = useSelector(selectTrailerMuted);
   const currentProfileId = useSelector(selectCurrentProfileId);
@@ -29,17 +29,17 @@ export const DetailOverlay = memo(function DetailOverlay() {
   const inList = !!tile && watchlist.some((t) => t.id === tile.id);
   const isLiked = useSelector(selectIsLiked(tile?.id ?? ''));
   const BUTTONS = settings.disableMyList
-    ? ['Play', 'Like']
-    : ['Play', inList ? 'Remove from List' : 'Add to List', 'Like'];
+    ? [detailTrailerPaused ? 'Play Trailer' : 'Pause Trailer', 'Like']
+    : [detailTrailerPaused ? 'Play Trailer' : 'Pause Trailer', inList ? 'Remove from List' : 'Add to List', 'Like'];
 
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [, setVideoPlaying] = useState(false);
-  // Local pause state for the detail-view trailer. We don't reuse the global
-  // `trailerPaused` flag because that one suppresses tile/hero trailers and
-  // would default this player to paused on open. Reset to false whenever a
-  // new trailer key arrives so a freshly opened panel auto-plays.
-  const [detailPaused, setDetailPaused] = useState(false);
-  useEffect(() => { setDetailPaused(false); }, [trailerKey]);
+  // Detail trailer pause is separate from the hero/tile autoplay setting and
+  // lives in Redux so TV remote selection and web controls stay in sync.
+  const detailPaused = detailTrailerPaused;
+  const toggleDetailTrailer = useCallback(() => {
+    dispatch(setDetailTrailerPaused(!detailPaused));
+  }, [dispatch, detailPaused]);
 
   // TV mode: when focus climbs back up into the action-buttons zone (the
   // top of the page, inside the hero), restore the page scroll to 0 so the
@@ -209,6 +209,7 @@ export const DetailOverlay = memo(function DetailOverlay() {
                   key={label}
                   style={overlayStyles.button(zone === 'buttons' && i === buttonIndex)}
                   tabIndex={-1}
+                  onClick={i === 0 ? toggleDetailTrailer : undefined}
                 >
                   {label}
                 </button>
@@ -308,7 +309,7 @@ export const DetailOverlay = memo(function DetailOverlay() {
               <button
                 type="button"
                 className="detail-icon-btn detail-icon-btn--small"
-                onClick={() => setDetailPaused((p) => !p)}
+                onClick={toggleDetailTrailer}
                 aria-label={detailPaused ? 'Play trailer' : 'Pause trailer'}
                 title={detailPaused ? 'Play trailer' : 'Pause trailer'}
               >
@@ -357,11 +358,11 @@ export const DetailOverlay = memo(function DetailOverlay() {
             type="button"
             style={overlayStyles.playButton}
             tabIndex={0}
-            onClick={() => {/* play wiring TBD */}}
+            onClick={toggleDetailTrailer}
             aria-label="Play"
           >
             <PlayIcon />
-            <span>Play</span>
+            <span>{detailPaused ? 'Play Trailer' : 'Pause Trailer'}</span>
           </button>
           {!settings.disableMyList && (
             <IconCircleButton
