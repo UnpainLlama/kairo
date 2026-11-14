@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, ExternalLink, Globe2, Star } from 'lucide-react';
+import { ArrowLeft, Bookmark, Check, ExternalLink, Globe2, Heart, Star } from 'lucide-react';
 import { ApiError, apiGet } from '../lib/api';
 import { movieDate, movieRating, movieYear, type MovieDetail } from '../lib/movies';
+import { useAccountScope } from '../hooks/useAccountScope';
+import { readMovieLibrary, updateMovieLibraryEntry, type MovieLibraryEntry } from '../lib/movieLibraryStorage';
 
 export default function MoviesDetailPage() {
   const { externalId = '' } = useParams();
   const [movie, setMovie] = useState<MovieDetail | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [loading, setLoading] = useState(true);
+  const { accountId, resolved: accountResolved } = useAccountScope();
+  const [libraryEntry, setLibraryEntry] = useState<MovieLibraryEntry | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -26,6 +30,28 @@ export default function MoviesDetailPage() {
 
   if (loading) return <section className="mv-page"><div className="mv-detail-skeleton" role="status">Loading movie details…</div></section>;
   if (error || !movie) return <section className="mv-page"><Link to="/movies" className="mv-back-link"><ArrowLeft size={14} /> Movies home</Link><div className="mv-provider-notice" role="alert"><div><b>{error?.code === 'MOVIES_DISABLED' ? 'Movie metadata is not enabled yet' : 'Film details unavailable'}</b><p>{error?.message ?? 'This film could not be found.'}</p></div></div></section>;
+
+  useEffect(() => {
+    if (!accountResolved || !movie) return;
+    const refresh = () => {
+      const entry = readMovieLibrary(accountId).find((item) =>
+        item.providerId === movie.providerId && item.externalId === movie.externalId
+      ) ?? null;
+      setLibraryEntry(entry);
+    };
+    refresh();
+    window.addEventListener('storage', refresh);
+    window.addEventListener('kairo:movie-library-change', refresh);
+    return () => {
+      window.removeEventListener('storage', refresh);
+      window.removeEventListener('kairo:movie-library-change', refresh);
+    };
+  }, [accountId, accountResolved, movie]);
+
+  const saveLibraryChange = (patch: { status?: 'watchlist' | 'watched' | null; isFavorite?: boolean }) => {
+    if (!accountResolved || !movie) return;
+    setLibraryEntry(updateMovieLibraryEntry(accountId, movie, patch));
+  };
 
   const rating = movieRating(movie.voteAverage);
   return (
@@ -47,6 +73,20 @@ export default function MoviesDetailPage() {
             </div>
             {movie.overview && <p className="mv-detail-overview">{movie.overview}</p>}
             <div className="mv-detail-genres">{movie.genres.map(genre=><Link key={genre.externalId} to={'/movies/browse/genre-' + genre.externalId}>{genre.name}</Link>)}</div>
+            <div className="mv-detail-actions" aria-label="Save movie">
+              <button type="button" className={libraryEntry?.status === 'watchlist' ? 'mv-library-button active' : 'mv-library-button'} aria-pressed={libraryEntry?.status === 'watchlist'} disabled={!accountResolved} onClick={() => saveLibraryChange({ status: libraryEntry?.status === 'watchlist' ? null : 'watchlist' })}>
+                <Bookmark size={15} /> {libraryEntry?.status === 'watchlist' ? 'In watchlist' : 'Watchlist'}
+              </button>
+              <button type="button" className={libraryEntry?.status === 'watched' ? 'mv-library-button active' : 'mv-library-button'} aria-pressed={libraryEntry?.status === 'watched'} disabled={!accountResolved} onClick={() => saveLibraryChange({ status: libraryEntry?.status === 'watched' ? null : 'watched' })}>
+                <Check size={15} /> {libraryEntry?.status === 'watched' ? 'Watched' : 'Mark watched'}
+              </button>
+              <button type="button" className={libraryEntry?.isFavorite ? 'mv-library-button active' : 'mv-library-button'} aria-pressed={libraryEntry?.isFavorite ?? false} disabled={!accountResolved} onClick={() => saveLibraryChange({ isFavorite: !libraryEntry?.isFavorite })}>
+                <Heart size={15} fill={libraryEntry?.isFavorite ? 'currentColor' : 'none'} /> {libraryEntry?.isFavorite ? 'Favorite' : 'Favorite'}
+              </button>
+            </div>
+            {accountResolved
+              ? <p className="mv-library-note">Saved in this browser only. Your movie list does not sync across devices yet. <Link to="/movies/library">View My list</Link></p>
+              : <p className="mv-library-note" role="status">Checking your account before opening your local list…</p>}
             {movie.homepageUrl && <a className="mv-action mv-action-glass" href={movie.homepageUrl} target="_blank" rel="noreferrer">Official site <ExternalLink size={14} /></a>}
           </div>
         </div>
