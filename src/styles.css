@@ -2050,3 +2050,5 @@ img { display: block; }
 @media (prefers-reduced-motion: reduce) {
   .mv-app .mv-library-button { transition: none; }
 }
+
+.mv-app .mv-library-retry { margin-left: 5px; padding: 0; border: 0; background: transparent; color: #f0f0f0; font: inherit; font-weight: 850; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
