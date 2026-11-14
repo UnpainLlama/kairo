@@ -1,44 +1,41 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUpRight, Bookmark, History, Trash2, Youtube } from 'lucide-react';
+import { useAccountScope } from '../hooks/useAccountScope';
+import {
+  readGuestYouTubeHistory, readGuestYouTubeWatchLater,
+  removeGuestYouTubeHistory, removeGuestYouTubeWatchLater,
+  YOUTUBE_LOCAL_CHANGE, type YouTubeLocalVideo,
+} from '../lib/youtubeLocalLibrary';
 
-type LibraryVideo = {
-  videoId: string;
-  title: string;
-  description: string;
-  thumbnailUrl: string | null;
-  channelTitle: string;
-  publishedAt: string | null;
-  durationSeconds: number | null;
-  progressSeconds?: number;
-  completed?: number;
+type LibraryVideo = YouTubeLocalVideo & {
+  completed?: number | boolean;
   updatedAt?: number;
   savedAt?: number;
 };
-
 type LibraryKind = 'history' | 'watch-later';
 
 function YouTubeLibrary({ kind }: { kind: LibraryKind }) {
+  const { accountId, resolved, error: accountError } = useAccountScope();
   const [items, setItems] = useState<LibraryVideo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [signedOut, setSignedOut] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
   const path = kind === 'history' ? '/api/v1/youtube/history' : '/api/v1/youtube/watch-later';
   const title = kind === 'history' ? 'Watch history' : 'Watch Later';
 
   const load = useCallback(async () => {
+    if (!resolved || accountError) return;
     setLoading(true);
     setError('');
-    setSignedOut(false);
+    setItems([]);
     try {
-      const response = await fetch(path, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
-      const payload = await response.json().catch(() => null);
-      if (response.status === 401) {
-        setSignedOut(true);
-        setItems([]);
+      if (!accountId) {
+        setItems(kind === 'history' ? readGuestYouTubeHistory() : readGuestYouTubeWatchLater());
         return;
       }
+      const response = await fetch(path, { credentials: 'same-origin', headers: { Accept: 'application/json' }, cache: 'no-store' });
+      const payload = await response.json().catch(() => null);
       if (!response.ok || !payload?.success) throw new Error(payload?.error?.message ?? 'Could not load your videos.');
       setItems(payload.data?.items ?? []);
     } catch (caught) {
@@ -46,14 +43,29 @@ function YouTubeLibrary({ kind }: { kind: LibraryKind }) {
     } finally {
       setLoading(false);
     }
-  }, [path]);
+  }, [accountId, accountError, kind, path, resolved]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const refresh = () => { if (!accountId) void load(); };
+    window.addEventListener(YOUTUBE_LOCAL_CHANGE, refresh);
+    window.addEventListener('storage', refresh);
+    return () => {
+      window.removeEventListener(YOUTUBE_LOCAL_CHANGE, refresh);
+      window.removeEventListener('storage', refresh);
+    };
+  }, [accountId, load]);
 
   const remove = async (videoId: string) => {
     setRemoving(videoId);
     setError('');
     try {
+      if (!accountId) {
+        if (kind === 'history') removeGuestYouTubeHistory(videoId);
+        else removeGuestYouTubeWatchLater(videoId);
+        setItems(current => current.filter(item => item.videoId !== videoId));
+        return;
+      }
       const response = await fetch(path + '/' + encodeURIComponent(videoId), {
         method: 'DELETE',
         credentials: 'same-origin',
@@ -79,10 +91,13 @@ function YouTubeLibrary({ kind }: { kind: LibraryKind }) {
         </div>
         <Link to="/youtube" className="yt-button yt-button-quiet">YouTube Home <ArrowUpRight size={14} /></Link>
       </header>
-      {signedOut && <div className="yt-empty"><Bookmark size={28} /><h3>Sign in to use your library</h3><p>Your YouTube history and Watch Later list are stored with your Kairo account.</p><Link to="/login" className="yt-button yt-button-primary">Sign in</Link></div>}
+      {!resolved && !accountError && <div className="yt-loading" role="status">Checking your Kairo account…</div>}
+      {accountError && <div className="yt-notice" role="alert">Could not verify your Kairo account. Your local library is locked to avoid mixing guest and account data. Reload after reconnecting.</div>}
+      {resolved && !accountId && <div className="yt-notice" role="note">This guest list stays in this browser. After signing in, new YouTube activity is saved to your Kairo account and syncs across devices.</div>}
+      {resolved && accountId && <div className="yt-notice" role="note">This list is saved with your Kairo account and syncs across Anime, Movies and YouTube.</div>}
       {error && <div className="yt-notice" role="alert">{error}</div>}
-      {loading && <div className="yt-loading" role="status">Loading your videos…</div>}
-      {!loading && !signedOut && !error && items.length === 0 && (
+      {loading && resolved && <div className="yt-loading" role="status">Loading your videos…</div>}
+      {resolved && !accountError && !loading && !error && items.length === 0 && (
         <div className="yt-empty">
           {kind === 'history' ? <History size={28} /> : <Bookmark size={28} />}
           <h3>{kind === 'history' ? 'No watch history yet' : 'Your Watch Later list is empty'}</h3>
@@ -90,7 +105,7 @@ function YouTubeLibrary({ kind }: { kind: LibraryKind }) {
           <Link to="/youtube" className="yt-button yt-button-primary">Explore videos</Link>
         </div>
       )}
-      {!loading && items.length > 0 && (
+      {resolved && !accountError && !loading && items.length > 0 && (
         <div className="yt-library-list">
           {items.map(item => {
             const progress = item.durationSeconds && item.durationSeconds > 0
@@ -105,7 +120,7 @@ function YouTubeLibrary({ kind }: { kind: LibraryKind }) {
                 <div className="yt-library-copy">
                   <Link to={'/youtube/watch/' + item.videoId}><h2>{item.title}</h2></Link>
                   <p>{item.channelTitle || 'YouTube'}</p>
-                  <small>{kind === 'history' ? (Number(item.completed) === 1 ? 'Watched' : progress > 0 ? Math.round(progress) + '% watched' : 'Opened') : 'Saved to Watch Later'}</small>
+                  <small>{kind === 'history' ? (Number(item.completed) === 1 || item.completed === true ? 'Watched' : progress > 0 ? Math.round(progress) + '% watched' : 'Opened') : 'Saved to Watch Later'}</small>
                 </div>
                 <button type="button" className="yt-remove-button" onClick={() => void remove(item.videoId)} disabled={removing === item.videoId} aria-label={'Remove ' + item.title}>
                   <Trash2 size={16} />{removing === item.videoId ? 'Removing…' : 'Remove'}

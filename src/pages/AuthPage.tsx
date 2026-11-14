@@ -38,7 +38,7 @@ export default function AuthPage({mode}:{mode:Mode}){
  const switchPath=mode==='register'?'/login':'/register';
  const switchQuery=params.toString();
  return <section className="kc-auth"><div className="kc-auth-card"><Link to="/" className="kc-auth-brand"><img src="/kairo-k.svg" alt="" width="24" height="28"/>Kairo</Link>
- <h1>{mode==='register'?'Create your account':'Welcome back'}</h1><p className="kc-auth-copy">{mode==='register'?'Create a Kairo account to keep your anime library in sync.':'Sign in to continue to your Kairo account.'}</p>
+ <h1>{mode==='register'?'Create your account':'Welcome back'}</h1><p className="kc-auth-copy">{mode==='register'?'Create a Kairo account to sync your Anime, Movies and YouTube activity across devices.':'Sign in to continue to your Kairo account.'}</p>
  {googleMessage&&<p className="kc-auth-error" role="alert">{googleMessages[googleMessage]??'Google sign-in could not be completed.'}</p>}
  {youtubeMessage&&<p className="kc-auth-error" role="alert">{youtubeMessages[youtubeMessage]??'YouTube connection could not be completed.'}</p>}
  <a className="kc-auth-google" href="/api/v1/auth/google"><span aria-hidden="true">G</span>Continue with Google</a>

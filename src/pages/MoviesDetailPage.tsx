@@ -1,19 +1,37 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, ExternalLink, Globe2, Star } from 'lucide-react';
+import { ArrowLeft, Bookmark, Check, ExternalLink, Globe2, Heart, Star } from 'lucide-react';
 import { ApiError, apiGet } from '../lib/api';
 import { movieDate, movieRating, movieYear, type MovieDetail } from '../lib/movies';
+import { useAccountScope } from '../hooks/useAccountScope';
+import { readMovieLibrary, updateMovieLibraryEntry, type MovieLibraryEntry, type MovieLibraryPatch } from '../lib/movieLibraryStorage';
+
+type RemoteMovieEntry = {
+  providerId: string;
+  externalId: string;
+  status: 'watchlist' | 'watched' | null;
+  isFavorite: boolean;
+  rating: number | null;
+  addedAt: number;
+  updatedAt: number;
+};
 
 export default function MoviesDetailPage() {
   const { externalId = '' } = useParams();
   const [movie, setMovie] = useState<MovieDetail | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [loading, setLoading] = useState(true);
+  const { accountId, resolved: accountResolved, error: accountError, retry: retryAccount } = useAccountScope();
+  const [libraryEntry, setLibraryEntry] = useState<MovieLibraryEntry | null>(null);
+  const [libraryResolved, setLibraryResolved] = useState(false);
+  const [libraryError, setLibraryError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
+    setMovie(null);
     apiGet<MovieDetail>('/movies/' + encodeURIComponent(externalId), controller.signal)
       .then(result => { if (!controller.signal.aborted) setMovie(result); })
       .catch(caught => {
@@ -23,6 +41,77 @@ export default function MoviesDetailPage() {
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [externalId]);
+
+  useEffect(() => {
+    let active = true;
+    setLibraryResolved(false);
+    setLibraryError('');
+    setLibraryEntry(null);
+    if (!accountResolved || !movie || accountError) return () => { active = false; };
+    if (!accountId) {
+      const local = readMovieLibrary(null).find(entry => entry.providerId === movie.providerId && entry.externalId === movie.externalId) ?? null;
+      setLibraryEntry(local);
+      setLibraryResolved(true);
+      return () => { active = false; };
+    }
+    fetch('/api/v1/me/movies/library', { credentials: 'same-origin', headers: { Accept: 'application/json' }, cache: 'no-store' })
+      .then(async response => {
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.success || !Array.isArray(payload?.data?.items)) {
+          throw new Error(payload?.error?.message ?? 'Could not load your Movies library.');
+        }
+        const remote = (payload.data.items as RemoteMovieEntry[]).find(entry =>
+          entry.providerId === movie.providerId && entry.externalId === movie.externalId
+        );
+        if (!active) return;
+        if (remote) {
+          const cached = readMovieLibrary(accountId).find(entry => entry.providerId === movie.providerId && entry.externalId === movie.externalId);
+          setLibraryEntry({
+            ...movie,
+            status: remote.status,
+            isFavorite: (remote.isFavorite === true || Number(remote.isFavorite) === 1),
+            addedAt: Number(remote.addedAt) || cached?.addedAt || Date.now(),
+            updatedAt: Number(remote.updatedAt) || Date.now(),
+          });
+        } else {
+          setLibraryEntry(null);
+        }
+        setLibraryResolved(true);
+      })
+      .catch(caught => {
+        if (active) {
+          setLibraryError(caught instanceof Error ? caught.message : 'Could not load your Movies library.');
+          setLibraryResolved(true);
+        }
+      });
+    return () => { active = false; };
+  }, [accountId, accountResolved, accountError, movie]);
+
+  const saveLibraryChange = async (patch: MovieLibraryPatch) => {
+    if (!accountResolved || accountError || !movie || saving || !libraryResolved) return;
+    const status = patch.status === undefined ? libraryEntry?.status ?? null : patch.status;
+    const isFavorite = patch.isFavorite === undefined ? libraryEntry?.isFavorite ?? false : patch.isFavorite;
+    setSaving(true);
+    setLibraryError('');
+    try {
+      if (accountId) {
+        const response = await fetch('/api/v1/me/movies/library', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ providerId: movie.providerId, externalId: movie.externalId, status, isFavorite, rating: null }),
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.success) throw new Error(payload?.error?.message ?? 'Could not sync this movie to your Kairo account.');
+      }
+      const next = updateMovieLibraryEntry(accountId, movie, { status, isFavorite });
+      setLibraryEntry(next);
+    } catch (caught) {
+      setLibraryError(caught instanceof Error ? caught.message : 'Could not save this movie.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   if (loading) return <section className="mv-page"><div className="mv-detail-skeleton" role="status">Loading movie details…</div></section>;
   if (error || !movie) return <section className="mv-page"><Link to="/movies" className="mv-back-link"><ArrowLeft size={14} /> Movies home</Link><div className="mv-provider-notice" role="alert"><div><b>{error?.code === 'MOVIES_DISABLED' ? 'Movie metadata is not enabled yet' : 'Film details unavailable'}</b><p>{error?.message ?? 'This film could not be found.'}</p></div></div></section>;
@@ -47,6 +136,27 @@ export default function MoviesDetailPage() {
             </div>
             {movie.overview && <p className="mv-detail-overview">{movie.overview}</p>}
             <div className="mv-detail-genres">{movie.genres.map(genre=><Link key={genre.externalId} to={'/movies/browse/genre-' + genre.externalId}>{genre.name}</Link>)}</div>
+            <div className="mv-detail-actions" aria-label="Save movie">
+              <button type="button" className={libraryEntry?.status === 'watchlist' ? 'mv-library-button active' : 'mv-library-button'} aria-pressed={libraryEntry?.status === 'watchlist'} disabled={!libraryResolved || !!accountError || saving} onClick={() => void saveLibraryChange({ status: libraryEntry?.status === 'watchlist' ? null : 'watchlist' })}>
+                <Bookmark size={15} /> {libraryEntry?.status === 'watchlist' ? 'In watchlist' : 'Watchlist'}
+              </button>
+              <button type="button" className={libraryEntry?.status === 'watched' ? 'mv-library-button active' : 'mv-library-button'} aria-pressed={libraryEntry?.status === 'watched'} disabled={!libraryResolved || !!accountError || saving} onClick={() => void saveLibraryChange({ status: libraryEntry?.status === 'watched' ? null : 'watched' })}>
+                <Check size={15} /> {libraryEntry?.status === 'watched' ? 'Watched' : 'Mark watched'}
+              </button>
+              <button type="button" className={libraryEntry?.isFavorite ? 'mv-library-button active' : 'mv-library-button'} aria-pressed={libraryEntry?.isFavorite ?? false} disabled={!libraryResolved || !!accountError || saving} onClick={() => void saveLibraryChange({ isFavorite: !libraryEntry?.isFavorite })}>
+                <Heart size={15} fill={libraryEntry?.isFavorite ? 'currentColor' : 'none'} /> {libraryEntry?.isFavorite ? 'Favorited' : 'Add favorite'}
+              </button>
+            </div>
+            {accountError
+              ? <p className="mv-library-note" role="alert">Could not verify your account, so the list is locked to prevent mixing guest and account data. <button type="button" className="mv-library-retry" onClick={retryAccount}>Retry</button></p>
+              : !accountResolved
+                ? <p className="mv-library-note" role="status">Checking your Kairo account before opening your list…</p>
+                : libraryError
+                  ? <p className="mv-library-note" role="alert">{libraryError}</p>
+                  : accountId
+                    ? <p className="mv-library-note">Saved with your Kairo account and synced across Anime, Movies and YouTube. <Link to="/movies/library">View My list</Link></p>
+                    : <p className="mv-library-note">Saved in this browser only. It stays here when you return on this device. <Link to="/movies/library">View My list</Link></p>}
+            {saving && <p className="mv-library-note" role="status">Saving…</p>}
             {movie.homepageUrl && <a className="mv-action mv-action-glass" href={movie.homepageUrl} target="_blank" rel="noreferrer">Official site <ExternalLink size={14} /></a>}
           </div>
         </div>

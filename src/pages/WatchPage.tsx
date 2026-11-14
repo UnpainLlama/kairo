@@ -4,6 +4,7 @@ import { ArrowLeft, ListVideo, Play, Search, RefreshCw, ExternalLink } from 'luc
 import { ErrorState, LoadingState } from '../components/catalog';
 import KairoMediaPlayer, { type KairoPlaybackSource } from '../components/KairoMediaPlayer';
 import { useApi } from '../lib/useApi';
+import { useAccountScope } from '../hooks/useAccountScope';
 import { accountPreferenceStorageKey, historyPausedStorageKey, readWatchHistory, watchProgressIdentity, watchProgressStorageKey, writeWatchHistory } from '../lib/accountStorage';
 import { shouldSyncPlaybackProgress, type PlaybackSaveReason } from '../lib/playbackSync';
 import { dateLabel, durationLabel, episodeNumberLabel, safeImageUrl, type AnimeDetails, type Episode, type EpisodeServer, type ItemList } from '../lib/catalog';
@@ -14,8 +15,8 @@ type PlaybackResponse = { source: KairoPlaybackSource; urlValidated: boolean };
 export default function WatchPage() {
   const { slug = '', episodeNumber: rawEpisode = '1' } = useParams();
   const key = encodeURIComponent(slug);
-  const [accountId, setAccountId] = useState<string | null>(null);
-  const [accountResolved, setAccountResolved] = useState(false);
+  const { accountId, resolved: accountResolved, error: accountError } = useAccountScope();
+  const [resumeReady, setResumeReady] = useState(false);
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
   const [episodeFilter, setEpisodeFilter] = useState('');
   const [episodePage, setEpisodePage] = useState(1);
@@ -27,24 +28,6 @@ export default function WatchPage() {
     try { setAutoNext(localStorage.getItem(accountPreferenceStorageKey(accountId, 'auto-next')) !== 'false'); }
     catch { setAutoNext(true); }
   }, [accountId]);
-  useEffect(() => {
-    let active = true;
-    const refreshAccount = async () => {
-      setAccountResolved(false);
-      try {
-        const response = await fetch('/api/v1/me', { credentials: 'same-origin' });
-        const payload = response.ok ? await response.json() : null;
-        if (active) setAccountId(typeof payload?.data?.user?.id === 'string' ? payload.data.user.id : null);
-      } catch {
-        if (active) setAccountId(null);
-      } finally {
-        if (active) setAccountResolved(true);
-      }
-    };
-    void refreshAccount();
-    window.addEventListener('kairo:auth-change', refreshAccount);
-    return () => { active = false; window.removeEventListener('kairo:auth-change', refreshAccount); };
-  }, []);
   const parsedEpisode = Number(rawEpisode);
   const validEpisode = Number.isInteger(parsedEpisode) && parsedEpisode >= 1 && parsedEpisode <= 100000;
   const details = useApi<AnimeDetails>(`/anime/${key}`);
@@ -69,14 +52,115 @@ export default function WatchPage() {
     const syncedKey = watchProgressStorageKey(accountId, slug, parsedEpisode, 'sync');
     const serverKey = watchProgressStorageKey(accountId, slug, parsedEpisode, selectedServer.id);
     try {
-      if (!localStorage.getItem(serverKey)) {
-        const saved = localStorage.getItem(syncedKey);
-        if (saved) localStorage.setItem(serverKey, saved);
-      }
+      const saved = localStorage.getItem(syncedKey);
+      if (saved !== null) localStorage.setItem(serverKey, saved);
     } catch { /* browser storage may be unavailable */ }
   }, [accountId, slug, parsedEpisode, selectedServer?.id]);
   const playbackPath = selectedServer ? `/anime/${key}/episodes/${parsedEpisode}/servers/${encodeURIComponent(selectedServer.id)}/playback` : null;
   const playback = useApi<PlaybackResponse>(playbackPath);
+
+  // Restore signed-in progress before the player mounts. Guest progress remains browser-only.
+  useEffect(() => {
+    let active = true;
+    setResumeReady(false);
+    if (!accountResolved || accountError) return () => { active = false; };
+    if (!accountId || !validEpisode) {
+      setResumeReady(true);
+      return () => { active = false; };
+    }
+
+    const restore = async () => {
+      try {
+        const query = new URLSearchParams({ slug, episodeNumber: String(parsedEpisode) });
+        const response = await fetch('/api/v1/me/history/sync?' + query.toString(), {
+          credentials: 'same-origin',
+          headers: { Accept: 'application/json' },
+          cache: 'no-store',
+        });
+        const payload = response.ok ? await response.json() : null;
+        if (!response.ok || !payload?.success || !Array.isArray(payload?.data?.items)) {
+          throw new Error('Could not restore account playback progress.');
+        }
+        if (!active) return;
+        const remote = payload.data.items[0] as {
+          progressSeconds?: number; updatedAt?: number; durationSeconds?: number | null;
+          slug?: string; episodeNumber?: number; title?: string; posterUrl?: string | null; episodeTitle?: string;
+        } | undefined;
+        const allLocal = readWatchHistory<Record<string, unknown> & { slug?: string; episodeNumber?: number; updatedAt?: number }>(accountId);
+        const local = allLocal.find((item) => item.slug === slug && Number(item.episodeNumber) === parsedEpisode);
+        let localSeconds = Number(local?.progressSeconds ?? 0);
+        if (local && typeof local.progressKey === 'string') {
+          const fromKey = Number(localStorage.getItem(local.progressKey) ?? 0);
+          if (Number.isFinite(fromKey) && fromKey > 0) localSeconds = fromKey;
+        }
+        if (!local || localSeconds <= 0) {
+          const syncValue = Number(localStorage.getItem(watchProgressStorageKey(accountId, slug, parsedEpisode, 'sync')) ?? 0);
+          const selectedValue = selectedServer?.id
+            ? Number(localStorage.getItem(watchProgressStorageKey(accountId, slug, parsedEpisode, selectedServer.id)) ?? 0)
+            : 0;
+          localSeconds = Math.max(Number.isFinite(syncValue) ? syncValue : 0, Number.isFinite(selectedValue) ? selectedValue : 0);
+        }
+        if (!Number.isFinite(localSeconds) || localSeconds < 0) localSeconds = 0;
+        const remoteUpdatedAt = Number(remote?.updatedAt ?? 0);
+        const serverDeleteFloor = Math.max(Number(payload.data.deletedAt ?? 0), Number(payload.data.clearedAt ?? 0), remoteUpdatedAt);
+        const storedLocalUpdatedAt = Number(local?.updatedAt ?? 0);
+        const localUpdatedAt = storedLocalUpdatedAt || (localSeconds > 0 && serverDeleteFloor === 0 ? Date.now() : 0);
+        const localIsNewer = localSeconds > 0 && localUpdatedAt > serverDeleteFloor;
+        const chosenSeconds = localIsNewer
+          ? localSeconds
+          : remote && Number.isFinite(Number(remote.progressSeconds)) ? Math.max(0, Number(remote.progressSeconds)) : 0;
+        const chosenUpdatedAt = localIsNewer ? localUpdatedAt : remoteUpdatedAt;
+        const syncKey = watchProgressStorageKey(accountId, slug, parsedEpisode, 'sync');
+        const serverKey = selectedServer?.id
+          ? watchProgressStorageKey(accountId, slug, parsedEpisode, selectedServer.id)
+          : null;
+        if (chosenSeconds <= 0 && (Number(payload.data.deletedAt ?? 0) > 0 || Number(payload.data.clearedAt ?? 0) > 0)) {
+          const removedProgressKey = typeof local?.progressKey === 'string' ? local.progressKey : null;
+          if (removedProgressKey) localStorage.removeItem(removedProgressKey);
+          localStorage.removeItem(syncKey);
+          writeWatchHistory(accountId, allLocal.filter((item) => item.slug !== slug || Number(item.episodeNumber) !== parsedEpisode));
+        }
+        if (chosenSeconds > 0) {
+          localStorage.setItem(syncKey, String(chosenSeconds));
+          if (serverKey) localStorage.setItem(serverKey, String(chosenSeconds));
+          const row = {
+            slug,
+            title: String(remote?.title ?? local?.title ?? (details.status === 'ok' ? details.data.title : slug)),
+            posterUrl: typeof remote?.posterUrl === 'string' ? remote.posterUrl : typeof local?.posterUrl === 'string' ? local.posterUrl : null,
+            episodeNumber: parsedEpisode,
+            episodeTitle: typeof remote?.episodeTitle === 'string' ? remote.episodeTitle : typeof local?.episodeTitle === 'string' ? local.episodeTitle : '',
+            durationSeconds: Number.isFinite(Number(remote?.durationSeconds ?? local?.durationSeconds))
+              ? Number(remote?.durationSeconds ?? local?.durationSeconds) : null,
+            progressSeconds: chosenSeconds,
+            progressKey: serverKey ?? syncKey,
+            updatedAt: chosenUpdatedAt,
+          };
+          writeWatchHistory(accountId, [row, ...allLocal.filter((item) => item.slug !== slug || Number(item.episodeNumber) !== parsedEpisode)]);
+          if (localIsNewer) {
+            void fetch('/api/v1/me/history/sync', {
+              method: 'POST', credentials: 'same-origin',
+              headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                items: [{
+                  slug, title: row.title, posterUrl: row.posterUrl, episodeNumber: parsedEpisode,
+                  episodeTitle: row.episodeTitle, durationSeconds: row.durationSeconds,
+                  progressSeconds: chosenSeconds, updatedAt: chosenUpdatedAt,
+                }],
+                deleted: [],
+              }),
+            }).catch(() => { /* timestamped local progress will be retried on the next playback event */ });
+          }
+        }
+      } catch {
+        // Keep the browser copy usable; subsequent playback events retry the account write.
+      } finally {
+        if (active) setResumeReady(true);
+      }
+    };
+    void restore();
+    return () => { active = false; };
+  }, [accountResolved, accountError, accountId, slug, parsedEpisode, selectedServer?.id, validEpisode]);
+
   const lastProgressSyncAt = useRef(0);
   const lastProgressSyncSeconds = useRef(-1);
   const animeForProgress = details.status === 'ok' ? details.data : null;
@@ -121,7 +205,10 @@ export default function WatchPage() {
       progressKey,
     };
 
-    try { localStorage.setItem(progressKey, String(position)); } catch { /* local storage may be unavailable */ }
+    try {
+      localStorage.setItem(progressKey, String(position));
+      localStorage.setItem(watchProgressStorageKey(accountId, slug, parsedEpisode, 'sync'), String(position));
+    } catch { /* local storage may be unavailable */ }
     const previousItems = readWatchHistory<{ slug?: string; episodeNumber?: number } & Record<string, unknown>>(accountId);
     const nextItems = [item, ...previousItems.filter((entry) =>
       entry?.slug !== slug || Number(entry?.episodeNumber) !== parsedEpisode
@@ -162,9 +249,12 @@ export default function WatchPage() {
       const episode = episodePages.find((item) => item.episodeNumber === parsedEpisode);
       if (!episode) return;
       const items = readWatchHistory<{ slug?: string; episodeNumber?: number } & Record<string, unknown>>(accountId);
+      const previous = items.find((item) => item?.slug === slug && Number(item?.episodeNumber) === parsedEpisode) as Record<string, unknown> | undefined;
       const entry = { slug, title: anime.title, posterUrl: anime.posterUrl, episodeNumber: parsedEpisode,
-        episodeTitle: episode?.title || '', progressKey: watchProgressStorageKey(accountId, slug, parsedEpisode, selectedServer?.id ?? ''), durationSeconds: episode?.durationSeconds ?? null, updatedAt: Date.now() };
-      const next = [entry, ...items.filter((item) => item?.slug !== slug || item?.episodeNumber !== parsedEpisode)].slice(0, 100);
+        episodeTitle: episode?.title || '', progressKey: watchProgressStorageKey(accountId, slug, parsedEpisode, selectedServer?.id ?? ''),
+        durationSeconds: episode?.durationSeconds ?? null, progressSeconds: Number(previous?.progressSeconds ?? 0),
+        updatedAt: Number(previous?.updatedAt ?? Date.now()) };
+      const next = [entry, ...items.filter((item) => item?.slug !== slug || Number(item?.episodeNumber) !== parsedEpisode)].slice(0, 100);
       writeWatchHistory(accountId, next);
       window.dispatchEvent(new Event('kairo:history-change'));
     } catch { /* browser storage may be disabled or full */ }
@@ -222,8 +312,8 @@ export default function WatchPage() {
           <div className="kc-watch-topline"><Link to={`/anime/${key}`} className="kc-back-link"><ArrowLeft size={15} aria-hidden="true" /> Back to anime</Link><span className="kc-watch-breadcrumb">{anime.title} <span>/</span> Episode {episodeNumberLabel(parsedEpisode)}</span></div>
 
           <section className="kc-player" aria-label="Video player" key={`${slug}:${parsedEpisode}:${selectedServer?.id ?? 'none'}`}>
-            {!accountResolved && <div className="kc-player-message"><h2>Loading your playback state…</h2><p>Keeping this activity separate from other accounts on this browser.</p></div>}
-            {accountResolved && playback.status === 'ok' && (
+            {(!accountResolved || accountError || !resumeReady) && <div className="kc-player-message"><h2>{accountError ? 'Account status unavailable' : 'Loading your playback state…'}</h2><p>{accountError ? 'Retry after checking your connection. Your local data has not been opened under a guest scope.' : 'Restoring the latest progress for this account.'}</p></div>}
+            {accountResolved && resumeReady && playback.status === 'ok' && (
               <KairoMediaPlayer
                 source={playback.data.source}
                 title={`${anime.title} · Episode ${parsedEpisode}`}
@@ -234,7 +324,7 @@ export default function WatchPage() {
                 onProgress={persistPlaybackProgress}
               />
             )}
-            {accountResolved && playback.status !== 'ok' && (
+            {accountResolved && resumeReady && playback.status !== 'ok' && (
               <div className="kc-player-message">
                 <span className="kc-player-icon"><Play size={24} fill="currentColor" aria-hidden="true" /></span>
                 <h2>{playback.status === 'loading' && selectedServer ? 'Resolving stream…' : playback.status === 'error' ? 'Stream unavailable' : 'Choose a server'}</h2>
