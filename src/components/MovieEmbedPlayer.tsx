@@ -19,7 +19,7 @@ type SelectedServer = 'auto' | EmbedWaveServerId;
 const PLAYER_OPTIONS: { id: SelectedServer; label: string }[] = [
   { id: 'auto', label: 'Automatic' },
   ...EMBEDWAVE_SERVERS,
-};
+];
 
 /**
  * EmbedWave movie iframe.

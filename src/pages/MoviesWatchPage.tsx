@@ -92,7 +92,7 @@ export default function MoviesWatchPage() {
             />
           ) : (
             <div className="mv-player-message" role="alert">
-              <p>VidLink requires a TMDB movie ID. This title is not identified as a TMDB movie.</p>
+              <p>EmbedWave requires a TMDB movie ID. This title is not identified as a TMDB movie.</p>
             </div>
           )}
         </section>
