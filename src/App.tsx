@@ -11,6 +11,7 @@ import YouTubeFeedPage from './pages/YouTubeFeedPage';
 import MoviesHomePage from './pages/MoviesHomePage';
 import MoviesBrowsePage from './pages/MoviesBrowsePage';
 import MoviesSearchPage from './pages/MoviesSearchPage';
+import MoviesLibraryPage from './pages/MoviesLibraryPage';
 import MoviesDetailPage from './pages/MoviesDetailPage';
 import YouTubeSearchPage from './pages/YouTubeSearchPage';
 import YouTubeChannelsPage from './pages/YouTubeChannelsPage';
@@ -59,7 +60,7 @@ const moviesNavItems: NavItem[] = [
   { to: '/movies/browse/trending', label: 'Trending', icon: Flame },
   { to: '/movies/browse/popular', label: 'Discover', icon: Compass },
   { to: '/movies/search', label: 'Search', icon: Search },
-  { to: '/movies/browse/upcoming', label: 'Coming soon', icon: CalendarDays },
+  { to: '/movies/library', label: 'My list', icon: Bookmark },
 ];
 
 const mobileNavItems: NavItem[] = [
@@ -227,6 +228,7 @@ export default function App() {
           <Route path="/youtube" element={<YouTubeFeedPage />} />
           <Route path="/movies" element={<MoviesHomePage />} />
           <Route path="/movies/search" element={<MoviesSearchPage />} />
+          <Route path="/movies/library" element={<MoviesLibraryPage />} />
           <Route path="/movies/browse/:category" element={<MoviesBrowsePage />} />
           <Route path="/movies/:externalId" element={<MoviesDetailPage />} />
           <Route path="/youtube/search" element={<YouTubeSearchPage />} />
