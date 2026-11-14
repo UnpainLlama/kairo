@@ -26,7 +26,7 @@ export default function MoviesBrowsePage() {
   const genreId = category.startsWith('genre-') ? category.slice(6) : null;
   const validGenreId = genreId && /^\d{1,8}$/.test(genreId) ? genreId : null;
   const details = CATEGORIES[category] ?? (validGenreId
-    ? { title: 'Explore by genre', kind: 'popular', description: 'A collection selected by genre.' }
+    ? { title: 'Explore by genre', kind: 'popular', description: 'Movies selected by genre.' }
     : { title: 'Movie discovery', kind: 'popular', description: 'Explore movies from across the world.' });
   const selectedGenre = useMemo(() => genres.find(genre => genre.externalId === validGenreId), [genres, validGenreId]);
   const isTrending = category === 'trending';
@@ -42,7 +42,7 @@ export default function MoviesBrowsePage() {
       .then(result => { if (!controller.signal.aborted) setData(result); })
       .catch(caught => {
         if (controller.signal.aborted || (caught instanceof DOMException && caught.name === 'AbortError')) return;
-        setError(caught instanceof ApiError ? caught : new ApiError(0, 'MOVIES_UNAVAILABLE', 'Could not load this collection.'));
+        setError(caught instanceof ApiError ? caught : new ApiError(0, 'MOVIES_UNAVAILABLE', 'Could not load these movies.'));
         setData(null);
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -67,7 +67,7 @@ export default function MoviesBrowsePage() {
     <section className={'mv-page mv-browse-page' + (isTrending ? ' mv-trending-page' : '') + (isDiscover ? ' mv-discover-page' : '')}>
       <Link to="/movies" className="mv-back-link"><ArrowLeft size={14} /> Movies home</Link>
       <header className={'mv-page-heading' + (isTrending ? ' mv-trending-heading' : '') + (isDiscover ? ' mv-discover-heading' : '')}>
-        <span className="mv-eyebrow">{isTrending ? <><Flame size={12} /> WEEKLY MOVIE CHART</> : isDiscover ? <><Compass size={12} /> EXPLORE THE CATALOGUE</> : <>MOVIE COLLECTION</>}</span>
+        <span className="mv-eyebrow">{isTrending ? <><Flame size={12} /> TRENDING</> : isDiscover ? <><Compass size={12} /> DISCOVER MOVIES</> : <>MOVIES</>}</span>
         <h1>{title}</h1>
         <p>{selectedGenre?.name ? 'Discover ' + selectedGenre.name.toLowerCase() + ' films from around the world.' : details.description}</p>
       </header>
@@ -87,7 +87,7 @@ export default function MoviesBrowsePage() {
         </>
       )}
 
-      {error && <div className="mv-provider-notice" role="alert"><div><b>{error.code === 'MOVIES_DISABLED' ? 'Movie catalogue not enabled yet' : 'Could not load this collection'}</b><p>{error.message}</p></div><button type="button" onClick={() => setRetry(value => value + 1)}><RefreshCw size={14} /> Retry</button></div>}
+      {error && <div className="mv-provider-notice" role="alert"><div><b>{error.code === 'MOVIES_DISABLED' ? 'Movie browsing is not available yet' : 'Could not load these movies'}</b><p>{error.message}</p></div><button type="button" onClick={() => setRetry(value => value + 1)}><RefreshCw size={14} /> Retry</button></div>}
 
       {loading && (
         <div className="mv-browse-grid" role="status" aria-label="Loading movies">
@@ -132,9 +132,9 @@ export default function MoviesBrowsePage() {
                   </div>
                 ))}</div>
               : <div className="mv-browse-grid mv-discover-grid">{data.items.map(movie => <MovieCard key={movie.providerId + ':' + movie.externalId} movie={movie} />)}</div>
-            : <div className="mv-empty-state"><h2>No movies in this collection yet.</h2><p>Try another category or search for a specific title.</p><Link to="/movies/search">Search movies <ChevronRight size={14} /></Link></div>}
+            : <div className="mv-empty-state"><h2>No movies found here yet.</h2><p>Try another category or search for a specific title.</p><Link to="/movies/search">Search movies <ChevronRight size={14} /></Link></div>}
 
-          <nav className="mv-pager" aria-label="Movie collection pages">
+          <nav className="mv-pager" aria-label="Movie pages">
             <button type="button" disabled={page <= 1} onClick={() => setParams(current => { const next = new URLSearchParams(current); next.set('page', String(page - 1)); return next; })}><ChevronLeft size={16} /> Previous</button>
             <span>{page} / {totalPages}</span>
             <button type="button" disabled={page >= totalPages || !data.items.length} onClick={() => setParams(current => { const next = new URLSearchParams(current); next.set('page', String(page + 1)); return next; })}>Next <ChevronRight size={16} /></button>
