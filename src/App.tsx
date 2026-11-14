@@ -13,6 +13,7 @@ import MoviesBrowsePage from './pages/MoviesBrowsePage';
 import MoviesSearchPage from './pages/MoviesSearchPage';
 import MoviesLibraryPage from './pages/MoviesLibraryPage';
 import MoviesDetailPage from './pages/MoviesDetailPage';
+import MoviesWatchPage from './pages/MoviesWatchPage';
 import YouTubeSearchPage from './pages/YouTubeSearchPage';
 import YouTubeChannelsPage from './pages/YouTubeChannelsPage';
 import YouTubeWatchPage from './pages/YouTubeWatchPage';
@@ -104,6 +105,7 @@ export default function App() {
   const { pathname, search } = useLocation();
   const isYouTubeMode = pathname.startsWith('/youtube');
   const isMoviesMode = pathname === '/movies' || pathname.startsWith('/movies/');
+  const isMoviesWatchMode = /^\\/movies\\/[^/]+\\/watch$/.test(pathname);
   const activeNavItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : navItems;
   const activeMenuItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : menuItems;
   const activeMobileItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : mobileNavItems;
@@ -141,7 +143,7 @@ export default function App() {
   const closeMenu = (_event?: MouseEvent<HTMLAnchorElement>) => setMenuOpen(false);
 
   return (
-    <div className={`kc-app${pathname === '/' ? ' kc-home-view' : ''}${isYouTubeMode ? ' yt-app' : ''}${isMoviesMode ? ' mv-app' : ''}`}>
+    <div className={`kc-app${pathname === '/' ? ' kc-home-view' : ''}${isYouTubeMode ? ' yt-app' : ''}${isMoviesMode ? ' mv-app' : ''}${isMoviesWatchMode ? ' mv-watch-app' : ''}`}>
       <a className="kc-skip" href="#main">Skip to content</a>
 
       <aside className="kc-rail" aria-label="Primary">
@@ -225,6 +227,7 @@ export default function App() {
           <Route path="/movies/search" element={<MoviesSearchPage />} />
           <Route path="/movies/library" element={<MoviesLibraryPage />} />
           <Route path="/movies/browse/:category" element={<MoviesBrowsePage />} />
+          <Route path="/movies/:externalId/watch" element={<MoviesWatchPage />} />
           <Route path="/movies/:externalId" element={<MoviesDetailPage />} />
           <Route path="/youtube/search" element={<YouTubeSearchPage />} />
           <Route path="/youtube/channels" element={<YouTubeChannelsPage />} />
