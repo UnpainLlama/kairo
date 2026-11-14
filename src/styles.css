@@ -1736,7 +1736,7 @@ img { display: block; }
 .mv-detail-section { margin-top: 38px; }
 .mv-detail-section h2 { margin-bottom: 15px; color: #f4f2f7; font-size: 18px; font-weight: 850; }
 
-/* Movies embed player (VidLink iframe + future servers) */
+/* Movies embed player (official VidLink iframe) */
 .mv-detail-player-section { margin-top: 28px; }
 .mv-player-shell {
   overflow: hidden;

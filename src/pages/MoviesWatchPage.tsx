@@ -80,15 +80,21 @@ export default function MoviesWatchPage() {
 
         <section className="mv-watch-player-section" aria-label={`Watch ${movie.title}`}>
           <div className="mv-watch-player-heading">
-            <span>NOW STREAMING</span>
-            <span>SELECT A SOURCE BELOW</span>
+            <span>OFFICIAL VIDLINK PLAYER</span>
+            <span>VIDLINK OR JW PLAYER</span>
           </div>
-          <MovieEmbedPlayer
-            tmdbId={movie.externalId}
-            title={movie.title}
-            posterUrl={movie.posterUrl}
-            backdropUrl={movie.backdropUrl}
-          />
+          {movie.providerId === 'tmdb' ? (
+            <MovieEmbedPlayer
+              tmdbId={movie.externalId}
+              title={movie.title}
+              posterUrl={movie.posterUrl}
+              backdropUrl={movie.backdropUrl}
+            />
+          ) : (
+            <div className="mv-player-message" role="alert">
+              <p>VidLink requires a TMDB movie ID. This title is not identified as a TMDB movie.</p>
+            </div>
+          )}
         </section>
 
         <div className="mv-watch-info-grid">

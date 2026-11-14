@@ -1,80 +1,96 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Maximize2, Play, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ExternalLink, Maximize2, Play, RefreshCw } from 'lucide-react';
 import {
-  MOVIE_PLAYBACK_SERVERS,
-  moviePlaybackEmbedUrl,
-  type MoviePlaybackServerId,
+  VIDLINK_ORIGIN,
+  vidlinkMovieEmbedUrl,
+  type VidLinkPlayerType,
 } from '../lib/moviePlayback';
 
 type Props = {
-  /** TMDB numeric id (Movies catalogue externalId for provider tmdb). */
+  /** Numeric TMDB movie ID, supplied by the Movies catalogue. */
   tmdbId: string;
   title: string;
   posterUrl?: string | null;
   backdropUrl?: string | null;
-  /** Optional default server; falls back to first entry. */
-  initialServer?: MoviePlaybackServerId;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /**
- * Movies iframe player. The source is loaded only after an explicit Play click,
- * preserving the existing click-to-load protection against unwanted pop-ups.
+ * Official VidLink iframe integration.
+ *
+ * The iframe is created only after a user click. Messages are accepted only
+ * from the VidLink origin and this exact iframe; MEDIA_DATA is stored using
+ * the key and shape described by VidLink's Continue Watching documentation.
  */
-export default function MovieEmbedPlayer({ tmdbId, title, posterUrl, backdropUrl, initialServer }: Props) {
-  const servers = MOVIE_PLAYBACK_SERVERS;
-  const [serverId, setServerId] = useState<MoviePlaybackServerId>(
-    initialServer && servers.some((server) => server.id === initialServer)
-      ? initialServer
-      : servers[0].id,
-  );
+export default function MovieEmbedPlayer({ tmdbId, title, posterUrl, backdropUrl }: Props) {
+  const [playerType, setPlayerType] = useState<VidLinkPlayerType>('default');
   const [active, setActive] = useState(false);
+  const [frameLoaded, setFrameLoaded] = useState(false);
+  const [frameError, setFrameError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const frameWrapRef = useRef<HTMLDivElement>(null);
 
   const embedUrl = useMemo(() => {
     try {
-      return moviePlaybackEmbedUrl(serverId, tmdbId);
+      return vidlinkMovieEmbedUrl(tmdbId, playerType);
     } catch {
       return null;
     }
-  }, [serverId, tmdbId]);
+  }, [playerType, tmdbId]);
 
-  // Best-effort: while player is active, block window.open from this page context.
-  // Cross-origin frame scripts still control their own browsing context.
   useEffect(() => {
     if (!active) return;
-    const originalOpen = window.open;
-    window.open = function blockedOpen(..._args: Parameters<typeof window.open>) {
-      return null;
-    } as typeof window.open;
-    return () => {
-      window.open = originalOpen;
+
+    const handleMessage = (event: MessageEvent<unknown>) => {
+      if (event.origin !== VIDLINK_ORIGIN) return;
+      if (event.source !== frameRef.current?.contentWindow) return;
+      if (!isRecord(event.data) || event.data.type !== 'MEDIA_DATA') return;
+      if (!isRecord(event.data.data)) return;
+
+      try {
+        const serialized = JSON.stringify(event.data.data);
+        if (serialized && serialized.length <= 100_000) {
+          localStorage.setItem('vidLinkProgress', serialized);
+        }
+      } catch {
+        // Playback must continue even when browser storage is unavailable.
+      }
     };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
   }, [active]);
 
   const start = useCallback(() => {
     if (!embedUrl) return;
+    setFrameLoaded(false);
+    setFrameError(false);
     setActive(true);
   }, [embedUrl]);
 
   const reload = useCallback(() => {
+    setFrameLoaded(false);
+    setFrameError(false);
     setReloadKey((key) => key + 1);
     setActive(true);
   }, []);
 
-  const switchServer = useCallback((id: MoviePlaybackServerId) => {
-    setServerId(id);
-    setActive(false);
+  const selectPlayer = useCallback((next: VidLinkPlayerType) => {
+    setPlayerType(next);
+    setFrameLoaded(false);
+    setFrameError(false);
     setReloadKey((key) => key + 1);
+    setActive(false);
   }, []);
 
   const enterFullscreen = useCallback(() => {
     const target = frameWrapRef.current;
     if (target?.requestFullscreen) {
-      void target.requestFullscreen().catch(() => {
-        frameRef.current?.focus();
-      });
+      void target.requestFullscreen().catch(() => frameRef.current?.focus());
     } else {
       frameRef.current?.focus();
     }
@@ -85,7 +101,7 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl, backdropUrl
       <div className="mv-player-shell" role="alert">
         <div className="mv-player-message">
           <AlertTriangle size={18} />
-          <p>This film does not have a playable TMDB id for embeds.</p>
+          <p>VidLink requires a positive numeric TMDB movie ID. This title cannot be embedded.</p>
         </div>
       </div>
     );
@@ -93,24 +109,39 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl, backdropUrl
 
   return (
     <div className={`mv-player-shell${active ? ' is-active' : ''}`}>
-      <div className="mv-player-toolbar" role="toolbar" aria-label="Playback options">
+      <div className="mv-player-toolbar" role="toolbar" aria-label="VidLink playback options">
         <div className="mv-player-toolbar-source">
-          <span className="mv-player-toolbar-label">SOURCE</span>
+          <span className="mv-player-toolbar-label">PLAYER</span>
           <div className="mv-player-servers">
-            {servers.map((server) => (
-              <button
-                key={server.id}
-                type="button"
-                className={server.id === serverId ? 'mv-player-server active' : 'mv-player-server'}
-                aria-pressed={server.id === serverId}
-                onClick={() => switchServer(server.id)}
-              >
-                {server.label}
-              </button>
-            ))}
+            <button
+              type="button"
+              className={playerType === 'default' ? 'mv-player-server active' : 'mv-player-server'}
+              aria-pressed={playerType === 'default'}
+              onClick={() => selectPlayer('default')}
+            >
+              VidLink
+            </button>
+            <button
+              type="button"
+              className={playerType === 'jw' ? 'mv-player-server active' : 'mv-player-server'}
+              aria-pressed={playerType === 'jw'}
+              onClick={() => selectPlayer('jw')}
+            >
+              JW Player
+            </button>
           </div>
         </div>
+
         <div className="mv-player-toolbar-actions">
+          <a
+            className="mv-player-control"
+            href={embedUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open the official VidLink player in a new tab"
+          >
+            <ExternalLink size={14} /> <span>Open direct</span>
+          </a>
           {active && (
             <>
               <button type="button" className="mv-player-control" onClick={reload} title="Reload player">
@@ -126,38 +157,45 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl, backdropUrl
 
       <div className="mv-player-frame-wrap" ref={frameWrapRef}>
         {!active ? (
-          <button type="button" className="mv-player-start" onClick={start} aria-label={`Play ${title}`}>
+          <button type="button" className="mv-player-start" onClick={start} aria-label={`Play ${title} with VidLink`}>
             {(backdropUrl || posterUrl) && (
               <span className="mv-player-start-backdrop" aria-hidden="true">
                 <img src={backdropUrl || posterUrl || ''} alt="" />
               </span>
             )}
             <span className="mv-player-start-shade" aria-hidden="true" />
-            <span className="mv-player-start-kicker">KAIRO FILMS <i /> READY TO WATCH</span>
+            <span className="mv-player-start-kicker">KAIRO FILMS <i /> OFFICIAL VIDLINK PLAYER</span>
             <span className="mv-player-start-icon"><Play size={27} fill="currentColor" /></span>
             <span className="mv-player-start-copy">
               <b>Play {title}</b>
-              <small>Start playback on {servers.find((server) => server.id === serverId)?.label ?? 'the selected source'}</small>
+              <small>Start the {playerType === 'jw' ? 'JW Player' : 'VidLink'} embed</small>
             </span>
           </button>
         ) : (
           <iframe
-            key={`${serverId}-${reloadKey}`}
+            key={`${playerType}-${reloadKey}`}
             ref={frameRef}
             className="mv-player-frame"
             src={embedUrl}
-            title={`${title} — ${serverId} player`}
-            allow="fullscreen; picture-in-picture; encrypted-media"
+            title={`${title} — VidLink ${playerType === 'jw' ? 'JW' : 'player'}`}
+            allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
             allowFullScreen
             referrerPolicy="strict-origin-when-cross-origin"
             loading="eager"
+            onLoad={() => { setFrameLoaded(true); setFrameError(false); }}
+            onError={() => { setFrameError(true); setFrameLoaded(false); }}
           />
         )}
       </div>
 
-      <p className="mv-player-note">
-        Playback is hosted by {servers.find((server) => server.id === serverId)?.label ?? 'the selected source'}.
-        Available video, audio and subtitle options depend on the source.
+      <p className="mv-player-note" role="status">
+        {!active
+          ? 'Choose the VidLink player or JW Player, then press Play.'
+          : frameError
+            ? 'The embedded player reported a loading error. Use Open direct to test VidLink outside the embedded frame.'
+            : frameLoaded
+              ? 'The VidLink player frame loaded. Stream availability is controlled by VidLink and its sources.'
+              : 'Connecting to VidLink…'}
       </p>
     </div>
   );
