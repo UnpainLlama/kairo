@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Bookmark, Check, ExternalLink, Globe2, Heart, Star } from 'lucide-react';
+import { ArrowLeft, Bookmark, Check, ExternalLink, Globe2, Heart, Play, Star } from 'lucide-react';
 import { ApiError, apiGet } from '../lib/api';
 import { movieDate, movieRating, movieYear, type MovieDetail } from '../lib/movies';
 import { useAccountScope } from '../hooks/useAccountScope';
 import { readMovieLibrary, updateMovieLibraryEntry, type MovieLibraryEntry, type MovieLibraryPatch } from '../lib/movieLibraryStorage';
-import MovieEmbedPlayer from '../components/MovieEmbedPlayer';
 
 type RemoteMovieEntry = {
   providerId: string;
@@ -135,6 +134,9 @@ export default function MoviesDetailPage() {
               {movie.releaseDate && <span>{movieDate(movie.releaseDate)}</span>}
               {rating && <span className="mv-detail-rating"><Star size={13} fill="currentColor" /> {rating}</span>}
             </div>
+            <Link to={`/movies/${encodeURIComponent(movie.externalId)}/watch`} className="mv-action mv-action-light mv-detail-play">
+              <Play size={16} fill="currentColor" /> Play film
+            </Link>
             {movie.overview && <p className="mv-detail-overview">{movie.overview}</p>}
             <div className="mv-detail-genres">{movie.genres.map(genre=><Link key={genre.externalId} to={'/movies/browse/genre-' + genre.externalId}>{genre.name}</Link>)}</div>
             <div className="mv-detail-actions" aria-label="Save movie">
@@ -161,14 +163,6 @@ export default function MoviesDetailPage() {
             {movie.homepageUrl && <a className="mv-action mv-action-glass" href={movie.homepageUrl} target="_blank" rel="noreferrer">Official site <ExternalLink size={14} /></a>}
           </div>
         </div>
-
-        {/* Playback — client iframe only; no stream URLs stored in catalogue. */}
-        {/^\d+$/.test(movie.externalId) && (
-          <section className="mv-detail-section mv-detail-player-section" aria-label="Watch">
-            <h2>Watch</h2>
-            <MovieEmbedPlayer tmdbId={movie.externalId} title={movie.title} />
-          </section>
-        )}
 
         {movie.productionCountries.length > 0 && <p className="mv-detail-languages"><Globe2 size={15} /> {movie.productionCountries.map(country=>country.name).join(' · ')}</p>}
         {movie.cast.length > 0 && <section className="mv-detail-section"><h2>Cast</h2><div className="mv-people-grid">{movie.cast.slice(0,18).map((person,index)=><div className="mv-person" key={person.externalPersonId ?? person.name + index}>{person.profileUrl ? <img src={person.profileUrl} alt="" loading="lazy" /> : <span>{person.name.slice(0,1)}</span>}<b>{person.name}</b>{person.character && <small>{person.character}</small>}</div>)}</div></section>}
