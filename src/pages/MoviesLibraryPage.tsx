@@ -5,7 +5,7 @@ import MovieCard from '../components/MovieCard';
 import { readMovieLibrary, removeMovieFromLibrary, type MovieLibraryEntry } from '../lib/movieLibraryStorage';
 import { useAccountScope } from '../hooks/useAccountScope';
 import { apiGet } from '../lib/api';
-import type { MovieDetail } from '../lib/movies';
+import type { MovieDetail, MovieSummary } from '../lib/movies';
 
 type Filter = 'all' | 'watchlist' | 'watched' | 'favorites';
 type RemoteEntry = {
@@ -32,8 +32,24 @@ async function loadRemoteMovies(items: RemoteEntry[], signal: AbortSignal): Prom
     const loaded = await Promise.all(batch.map(async ref => {
       try {
         const movie = await apiGet<MovieDetail>('/movies/' + encodeURIComponent(ref.externalId), signal);
+        const summary: MovieSummary = {
+          providerId: movie.providerId,
+          externalId: movie.externalId,
+          title: movie.title,
+          originalTitle: movie.originalTitle,
+          overview: movie.overview,
+          releaseDate: movie.releaseDate,
+          releaseYear: movie.releaseYear,
+          originalLanguage: movie.originalLanguage,
+          posterUrl: movie.posterUrl,
+          backdropUrl: movie.backdropUrl,
+          voteAverage: movie.voteAverage,
+          voteCount: movie.voteCount,
+          popularity: movie.popularity,
+          adult: movie.adult,
+        };
         return {
-          ...movie,
+          ...summary,
           status: ref.status,
           isFavorite: ref.isFavorite === true || Number(ref.isFavorite) === 1,
           addedAt: Number(ref.addedAt) || Date.now(),
