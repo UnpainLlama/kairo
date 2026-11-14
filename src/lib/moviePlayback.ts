@@ -17,7 +17,7 @@ export function vidlinkMovieEmbedUrl(
   player: VidLinkPlayerType = 'default',
 ): string {
   const id = String(tmdbId).trim();
-  if (!/^[1-9]\\d{0,11}$/.test(id)) {
+  if (!/^[1-9]\d{0,11}$/.test(id)) {
     throw new Error('VidLink movie embeds require a positive numeric TMDB id.');
   }
   if (player !== 'default' && player !== 'jw') {
