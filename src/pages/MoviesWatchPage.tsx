@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, CalendarDays, ChevronRight, Clock3, Film, Globe2, Star } from 'lucide-react';
 import { ApiError, apiGet } from '../lib/api';
+import MovieEmbedPlayer from '../components/MovieEmbedPlayer';
 import { movieDate, movieRating, movieYear, type MovieDetail } from '../lib/movies';
 
 export default function MoviesWatchPage() {
