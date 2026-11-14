@@ -50,7 +50,6 @@ export function MovieRail({ title, subtitle, items, to }: {
     <section className="mv-section" aria-labelledby={headingId}>
       <div className="mv-section-heading">
         <div className="mv-section-heading-copy">
-          <span className="mv-section-kicker">MOVIE COLLECTION</span>
           <h2 id={headingId}>{title}</h2>
           {subtitle && <p>{subtitle}</p>}
         </div>
