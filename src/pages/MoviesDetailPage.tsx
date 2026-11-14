@@ -11,7 +11,7 @@ export default function MoviesDetailPage() {
   const [movie, setMovie] = useState<MovieDetail | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [loading, setLoading] = useState(true);
-  const { accountId, resolved: accountResolved } = useAccountScope();
+  const { accountId, resolved: accountResolved, error: accountError, retry: retryAccount } = useAccountScope();
   const [libraryEntry, setLibraryEntry] = useState<MovieLibraryEntry | null>(null);
 
   useEffect(() => {
@@ -81,12 +81,14 @@ export default function MoviesDetailPage() {
                 <Check size={15} /> {libraryEntry?.status === 'watched' ? 'Watched' : 'Mark watched'}
               </button>
               <button type="button" className={libraryEntry?.isFavorite ? 'mv-library-button active' : 'mv-library-button'} aria-pressed={libraryEntry?.isFavorite ?? false} disabled={!accountResolved} onClick={() => saveLibraryChange({ isFavorite: !libraryEntry?.isFavorite })}>
-                <Heart size={15} fill={libraryEntry?.isFavorite ? 'currentColor' : 'none'} /> {libraryEntry?.isFavorite ? 'Favorite' : 'Favorite'}
+                <Heart size={15} fill={libraryEntry?.isFavorite ? 'currentColor' : 'none'} /> {libraryEntry?.isFavorite ? 'Favorited' : 'Add favorite'}
               </button>
             </div>
             {accountResolved
               ? <p className="mv-library-note">Saved in this browser only. Your movie list does not sync across devices yet. <Link to="/movies/library">View My list</Link></p>
-              : <p className="mv-library-note" role="status">Checking your account before opening your local list…</p>}
+              : accountError
+                ? <p className="mv-library-note" role="alert">Could not verify your account, so the local list is locked to prevent mixing accounts. <button type="button" className="mv-library-retry" onClick={retryAccount}>Retry</button></p>
+                : <p className="mv-library-note" role="status">Checking your account before opening your local list…</p>}
             {movie.homepageUrl && <a className="mv-action mv-action-glass" href={movie.homepageUrl} target="_blank" rel="noreferrer">Official site <ExternalLink size={14} /></a>}
           </div>
         </div>
