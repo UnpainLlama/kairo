@@ -1,7 +1,7 @@
 import { useId, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react';
-import { movieHref, movieYear, type MovieSummary } from '../lib/movies';
+import { ArrowRight, ChevronLeft, ChevronRight, Star } from 'lucide-react';
+import { movieHref, movieRating, movieYear, type MovieSummary } from '../lib/movies';
 
 type MovieCardProps = {
   movie: MovieSummary;
@@ -9,6 +9,7 @@ type MovieCardProps = {
 
 export default function MovieCard({ movie }: MovieCardProps) {
   const year = movieYear(movie);
+  const rating = movieRating(movie.voteAverage);
   const image = movie.posterUrl || movie.backdropUrl;
 
   return (
@@ -18,6 +19,7 @@ export default function MovieCard({ movie }: MovieCardProps) {
           {image
             ? <img src={image} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" />
             : <span className="mv-poster-fallback" aria-hidden="true">{movie.title.slice(0, 1).toUpperCase()}</span>}
+          {rating && <span className="mv-card-rating"><Star size={11} fill="currentColor" aria-hidden="true" />{rating}</span>}
         </span>
         <span className="mv-card-copy">
           <b>{movie.title}</b>

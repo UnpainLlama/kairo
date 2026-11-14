@@ -30,7 +30,7 @@ export default function MoviesBrowsePage() {
     : { title: 'Movie discovery', kind: 'popular', description: 'Explore movies from across the world.' });
   const selectedGenre = useMemo(() => genres.find(genre => genre.externalId === validGenreId), [genres, validGenreId]);
   const isTrending = category === 'trending';
-  const isDiscover = category === 'popular' && !validGenreId;
+  const isDiscover = category === 'popular' || validGenreId !== null;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -81,7 +81,7 @@ export default function MoviesBrowsePage() {
           {genres.length > 0 && (
             <nav className="mv-discover-genres" aria-label="Browse movie genres">
               <Link to="/movies/browse/popular" className={!validGenreId ? 'active' : ''}>For everyone</Link>
-              {genres.map(genre => <Link key={genre.externalId} to={'/movies/browse/genre-' + genre.externalId}>{genre.name}</Link>)}
+              {genres.map(genre => <Link key={genre.externalId} className={genre.externalId === validGenreId ? 'active' : ''} to={'/movies/browse/genre-' + genre.externalId}>{genre.name}</Link>)}
             </nav>
           )}
         </>
@@ -125,9 +125,9 @@ export default function MoviesBrowsePage() {
 
           {data.items.length > 0
             ? isTrending
-              ? <div className="mv-browse-grid mv-trending-grid">{data.items.map((movie, index) => (
+              ? <div className="mv-browse-grid mv-trending-grid">{data.items.slice(1).map((movie, index) => (
                   <div className="mv-ranked-card" key={movie.providerId + ':' + movie.externalId}>
-                    <span className="mv-ranked-number" aria-label={'Rank ' + (index + 1)}>{String(index + 1).padStart(2, '0')}</span>
+                    <span className="mv-ranked-number" aria-hidden="true">{String(index + 2).padStart(2, '0')}</span>
                     <MovieCard movie={movie} />
                   </div>
                 ))}</div>

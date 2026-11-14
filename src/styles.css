@@ -1670,8 +1670,6 @@ img { display: block; }
 .mv-card-link:hover .mv-poster > img, .mv-card-link:focus-visible .mv-poster > img { transform: scale(1.055); filter: brightness(.72); }
 .mv-poster-fallback { position: absolute; inset: 0; display: grid; place-items: center; background: radial-gradient(circle at 70% 20%, rgba(167,139,250,.18), transparent 55%), #1b1921; color: #bdb0d4; font-size: 44px; font-weight: 900; }
 .mv-card-rating { position: absolute; top: 8px; left: 8px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 7px; border: 1px solid rgba(255,255,255,.12); border-radius: 5px; background: rgba(10,10,12,.78); color: #f4ca69; font-size: 10px; font-weight: 850; backdrop-filter: blur(7px); }
-.mv-card-open { position: absolute; right: 8px; bottom: 8px; left: 8px; display: flex; align-items: center; justify-content: center; min-height: 34px; border-radius: 5px; background: rgba(245,244,247,.94); color: #151319; font-size: 11px; font-weight: 850; opacity: 0; transform: translateY(5px); transition: opacity .18s, transform .18s; }
-.mv-card-link:hover .mv-card-open, .mv-card-link:focus-visible .mv-card-open { opacity: 1; transform: none; }
 .mv-card-copy { display: grid; gap: 4px; padding: 9px 1px 0; }
 .mv-card-copy b { display: -webkit-box; overflow: hidden; color: #eeedf1; font-size: 12px; font-weight: 750; line-height: 1.4; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .mv-card-link:hover .mv-card-copy b { color: #fff; }
@@ -1845,7 +1843,6 @@ img { display: block; }
 .mv-app .mv-poster { background: linear-gradient(145deg, #282828, #181818 64%); }
 .mv-app .mv-poster-fallback { background: radial-gradient(circle at 70% 20%, rgba(255, 255, 255, .12), transparent 55%), #1c1c1c; color: #d5d5d5; }
 .mv-app .mv-card-rating { border-color: rgba(255, 255, 255, .2); background: rgba(11, 11, 11, .82); color: #f0f0f0; }
-.mv-app .mv-card-open { background: rgba(245, 245, 245, .96); color: #151515; }
 .mv-app .mv-card-copy b { color: #eeeeee; }
 .mv-app .mv-card-copy small { color: #858585; }
 .mv-app .mv-section-heading > a,
@@ -1964,6 +1961,7 @@ img { display: block; }
 .mv-app .mv-skeleton > i { background: #2a2a2a; }
 .mv-app .mv-genre-grid a { min-height: 56px; border-radius: 7px; }
 
+.mv-app .mv-browse-grid { grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 28px 20px; }
 /* Discover and Trending are intentionally different destinations and layouts. */
 .mv-app .mv-discover-pitch {
   display: flex;
@@ -2010,6 +2008,7 @@ img { display: block; }
 .mv-app .mv-ranked-card .mv-card { padding-top: 14px; }
 
 @media (max-width: 760px) {
+  .mv-app .mv-browse-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 19px 11px; }
   .mv-app .mv-catalog-intro { align-items: flex-start; flex-direction: column; margin-bottom: 22px; padding-bottom: 18px; }
   .mv-app .mv-catalog-search { min-height: 36px; }
   .mv-app .mv-section { margin: 24px 0 30px; }
