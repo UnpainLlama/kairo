@@ -1,30 +1,23 @@
 import { useId, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, ArrowUpRight, ChevronLeft, ChevronRight, Star } from 'lucide-react';
-import { movieHref, movieRating, movieYear, type MovieSummary } from '../lib/movies';
+import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react';
+import { movieHref, movieYear, type MovieSummary } from '../lib/movies';
 
 type MovieCardProps = {
   movie: MovieSummary;
-  layout?: 'poster' | 'landscape';
 };
 
-export default function MovieCard({ movie, layout = 'poster' }: MovieCardProps) {
-  const rating = movieRating(movie.voteAverage);
+export default function MovieCard({ movie }: MovieCardProps) {
   const year = movieYear(movie);
-  const image = layout === 'landscape'
-    ? movie.backdropUrl || movie.posterUrl
-    : movie.posterUrl || movie.backdropUrl;
+  const image = movie.posterUrl || movie.backdropUrl;
 
   return (
-    <article className={'mv-card' + (layout === 'landscape' ? ' mv-card-landscape' : '')}>
+    <article className="mv-card">
       <Link to={movieHref(movie)} className="mv-card-link" aria-label={'View ' + movie.title}>
-        <span className={'mv-poster' + (layout === 'landscape' ? ' mv-poster-landscape' : '')}>
+        <span className="mv-poster">
           {image
             ? <img src={image} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" />
             : <span className="mv-poster-fallback" aria-hidden="true">{movie.title.slice(0, 1).toUpperCase()}</span>}
-          {layout === 'landscape' && <span className="mv-card-image-shade" aria-hidden="true" />}
-          {rating && <span className="mv-card-rating"><Star size={11} fill="currentColor" aria-hidden="true" />{rating}</span>}
-          <span className="mv-card-open"><span>View details</span><ArrowUpRight size={15} aria-hidden="true" /></span>
         </span>
         <span className="mv-card-copy">
           <b>{movie.title}</b>
@@ -68,7 +61,7 @@ export function MovieRail({ title, subtitle, items, to }: {
         </div>
       </div>
       <div className="mv-rail" ref={railRef} role="region" aria-label={title + ' movies'} tabIndex={0}>
-        {items.map(movie => <MovieCard key={movie.providerId + ':' + movie.externalId} movie={movie} layout="landscape" />)}
+        {items.map(movie => <MovieCard key={movie.providerId + ':' + movie.externalId} movie={movie} />)}
       </div>
     </section>
   );
