@@ -105,7 +105,7 @@ export default function App() {
   const { pathname, search } = useLocation();
   const isYouTubeMode = pathname.startsWith('/youtube');
   const isMoviesMode = pathname === '/movies' || pathname.startsWith('/movies/');
-  const isMoviesWatchMode = /^\\/movies\\/[^/]+\\/watch$/.test(pathname);
+  const isMoviesWatchMode = pathname.startsWith('/movies/') && pathname.endsWith('/watch');
   const activeNavItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : navItems;
   const activeMenuItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : menuItems;
   const activeMobileItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : mobileNavItems;
