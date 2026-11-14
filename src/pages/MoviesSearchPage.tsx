@@ -39,9 +39,9 @@ export default function MoviesSearchPage() {
   return (
     <section className="mv-page mv-search-page">
       <header className="mv-page-heading">
-        <span className="mv-eyebrow"><Search size={12} /> GLOBAL MOVIE SEARCH</span>
+        <span className="mv-eyebrow"><Search size={12} /> MOVIE SEARCH</span>
         <h1>{query ? 'Results for “' + query + '”' : 'Find your next film.'}</h1>
-        <p>{query ? 'Searching films from around the world.' : 'Use the persistent search bar above to find a title, actor or story.'}</p>
+        <p>{query ? 'Searching films from around the world.' : 'Search by movie title, actor or keyword using the search bar above.'}</p>
       </header>
       {loading && <div className="mv-browse-grid" role="status" aria-label="Searching movies">{Array.from({length:12},(_,index)=><div className="mv-skeleton" key={index}><span /><i /></div>)}</div>}
       {error && <div className="mv-provider-notice" role="alert"><div><b>{error.code === 'MOVIES_DISABLED' ? 'Global movie search is not enabled yet' : 'Search could not be completed'}</b><p>{error.message}</p></div><button type="button" onClick={() => setRetry(value => value + 1)}><RefreshCw size={14} /> Retry</button></div>}
@@ -58,7 +58,7 @@ export default function MoviesSearchPage() {
           </nav>
         </>
       )}
-      {!query && <div className="mv-empty-state"><h2>What are you in the mood for?</h2><p>Search by title from the bar at the top of every Kairo page.</p><Link to="/movies/browse/trending">Explore trending films <ArrowRight size={14} /></Link></div>}
+      {!query && <div className="mv-empty-state"><h2>What are you in the mood for?</h2><p>Search by movie title using the search bar above.</p><Link to="/movies/browse/trending">Explore trending films <ArrowRight size={14} /></Link></div>}
     </section>
   );
 }
