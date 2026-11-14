@@ -227,7 +227,6 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl, backdropUrl
             title={`${title} — CineSrc player`}
             allow="autoplay; fullscreen; picture-in-picture"
             allowFullScreen
-            referrerPolicy="no-referrer"
             loading="eager"
             onLoad={() => setStatus((current) => current === 'loading' ? 'ready' : current)}
             onError={() => {
