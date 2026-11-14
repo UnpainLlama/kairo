@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Play, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Maximize2, Play, RefreshCw } from 'lucide-react';
 import {
   MOVIE_PLAYBACK_SERVERS,
   moviePlaybackEmbedUrl,
@@ -10,34 +10,27 @@ type Props = {
   /** TMDB numeric id (Movies catalogue externalId for provider tmdb). */
   tmdbId: string;
   title: string;
+  posterUrl?: string | null;
+  backdropUrl?: string | null;
   /** Optional default server; falls back to first entry. */
   initialServer?: MoviePlaybackServerId;
 };
 
 /**
- * Movies iframe player.
- *
- * Mitigations (what actually helps without black-screening VidLink):
- * - Click-to-load: iframe is not mounted until the user presses Play, so
- *   popunders do not fire on mere page view.
- * - Tight allow= list (no top-navigation grants we can control from attrs).
- * - strict-origin-when-cross-origin referrer policy: sends the site origin to
- *   VidLink without exposing the full movie page URL.
- * - Parent-side window.open guard while the player is active (best-effort;
- *   cannot stop in-frame scripts that open new tabs after user gesture).
- *
- * Do not set sandbox — VidLink detects it and often refuses to play.
+ * Movies iframe player. The source is loaded only after an explicit Play click,
+ * preserving the existing click-to-load protection against unwanted pop-ups.
  */
-export default function MovieEmbedPlayer({ tmdbId, title, initialServer }: Props) {
+export default function MovieEmbedPlayer({ tmdbId, title, posterUrl, backdropUrl, initialServer }: Props) {
   const servers = MOVIE_PLAYBACK_SERVERS;
   const [serverId, setServerId] = useState<MoviePlaybackServerId>(
-    initialServer && servers.some((s) => s.id === initialServer)
+    initialServer && servers.some((server) => server.id === initialServer)
       ? initialServer
       : servers[0].id,
   );
   const [active, setActive] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const frameRef = useRef<HTMLIFrameElement>(null);
+  const frameWrapRef = useRef<HTMLDivElement>(null);
 
   const embedUrl = useMemo(() => {
     try {
@@ -66,14 +59,25 @@ export default function MovieEmbedPlayer({ tmdbId, title, initialServer }: Props
   }, [embedUrl]);
 
   const reload = useCallback(() => {
-    setReloadKey((k) => k + 1);
+    setReloadKey((key) => key + 1);
     setActive(true);
   }, []);
 
   const switchServer = useCallback((id: MoviePlaybackServerId) => {
     setServerId(id);
     setActive(false);
-    setReloadKey((k) => k + 1);
+    setReloadKey((key) => key + 1);
+  }, []);
+
+  const enterFullscreen = useCallback(() => {
+    const target = frameWrapRef.current;
+    if (target?.requestFullscreen) {
+      void target.requestFullscreen().catch(() => {
+        frameRef.current?.focus();
+      });
+    } else {
+      frameRef.current?.focus();
+    }
   }, []);
 
   if (!embedUrl) {
@@ -88,37 +92,52 @@ export default function MovieEmbedPlayer({ tmdbId, title, initialServer }: Props
   }
 
   return (
-    <div className="mv-player-shell">
-      <div className="mv-player-toolbar" role="toolbar" aria-label="Playback servers">
-        <div className="mv-player-servers">
-          {servers.map((server) => (
-            <button
-              key={server.id}
-              type="button"
-              className={server.id === serverId ? 'mv-player-server active' : 'mv-player-server'}
-              aria-pressed={server.id === serverId}
-              onClick={() => switchServer(server.id)}
-            >
-              {server.label}
-            </button>
-          ))}
+    <div className={`mv-player-shell${active ? ' is-active' : ''}`}>
+      <div className="mv-player-toolbar" role="toolbar" aria-label="Playback options">
+        <div className="mv-player-toolbar-source">
+          <span className="mv-player-toolbar-label">SOURCE</span>
+          <div className="mv-player-servers">
+            {servers.map((server) => (
+              <button
+                key={server.id}
+                type="button"
+                className={server.id === serverId ? 'mv-player-server active' : 'mv-player-server'}
+                aria-pressed={server.id === serverId}
+                onClick={() => switchServer(server.id)}
+              >
+                {server.label}
+              </button>
+            ))}
+          </div>
         </div>
-        {active && (
-          <button type="button" className="mv-player-reload" onClick={reload} title="Reload player">
-            <RefreshCw size={14} /> Reload
-          </button>
-        )}
+        <div className="mv-player-toolbar-actions">
+          {active && (
+            <>
+              <button type="button" className="mv-player-control" onClick={reload} title="Reload player">
+                <RefreshCw size={14} /> <span>Reload</span>
+              </button>
+              <button type="button" className="mv-player-control" onClick={enterFullscreen} title="Enter fullscreen">
+                <Maximize2 size={14} /> <span>Fullscreen</span>
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
-      <div className="mv-player-frame-wrap">
+      <div className="mv-player-frame-wrap" ref={frameWrapRef}>
         {!active ? (
           <button type="button" className="mv-player-start" onClick={start} aria-label={`Play ${title}`}>
-            <span className="mv-player-start-icon">
-              <Play size={28} fill="currentColor" />
-            </span>
+            {(backdropUrl || posterUrl) && (
+              <span className="mv-player-start-backdrop" aria-hidden="true">
+                <img src={backdropUrl || posterUrl || ''} alt="" />
+              </span>
+            )}
+            <span className="mv-player-start-shade" aria-hidden="true" />
+            <span className="mv-player-start-kicker">KAIRO FILMS <i /> READY TO WATCH</span>
+            <span className="mv-player-start-icon"><Play size={27} fill="currentColor" /></span>
             <span className="mv-player-start-copy">
-              <b>Play with {servers.find((s) => s.id === serverId)?.label ?? 'server'}</b>
-              <small>Player loads only after you press play — reduces auto pop-ups.</small>
+              <b>Play {title}</b>
+              <small>Start playback on {servers.find((server) => server.id === serverId)?.label ?? 'the selected source'}</small>
             </span>
           </button>
         ) : (
@@ -137,8 +156,8 @@ export default function MovieEmbedPlayer({ tmdbId, title, initialServer }: Props
       </div>
 
       <p className="mv-player-note">
-        Third-party embeds may still show in-player ads. Full redirect blocking needs a
-        same-origin proxy; sandbox is not used because it breaks this provider.
+        Playback is hosted by {servers.find((server) => server.id === serverId)?.label ?? 'the selected source'}.
+        Available video, audio and subtitle options depend on the source.
       </p>
     </div>
   );
