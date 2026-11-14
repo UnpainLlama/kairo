@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, ChevronRight, Play, RefreshCw, Search, Sparkles, Star } from 'lucide-react';
+import { ArrowRight, ChevronRight, Play, RefreshCw, Star } from 'lucide-react';
 import { apiGet, ApiError } from '../lib/api';
 import { movieHref, movieRating, movieYear, type MovieGenre, type MoviePage, type MovieSummary } from '../lib/movies';
 import { MovieRail } from '../components/MovieCard';
@@ -56,7 +56,7 @@ export default function MoviesHomePage() {
       .then(result => { if (!signal.aborted) setData(result); })
       .catch(caught => {
         if (signal.aborted || (caught instanceof DOMException && caught.name === 'AbortError')) return;
-        const issue = caught instanceof ApiError ? caught : new ApiError(0, 'MOVIES_UNAVAILABLE', 'Could not load the movie catalogue.');
+        const issue = caught instanceof ApiError ? caught : new ApiError(0, 'MOVIES_UNAVAILABLE', 'Could not load movies.');
         setError(issue);
         setData(EMPTY);
       })
@@ -77,40 +77,40 @@ export default function MoviesHomePage() {
 
   return (
     <section className="mv-home">
-      <header className={'mv-hero' + (featured?.backdropUrl ? ' has-art' : '')}>
-        {featured?.backdropUrl && <img className="mv-hero-art" src={featured.backdropUrl} alt="" fetchPriority="high" />}
-        <div className="mv-hero-shade" />
-        <div className="mv-hero-copy">
-          <span className="mv-eyebrow"><Sparkles size={13} /> KAIRO ORIGINAL EXPERIENCE · MOVIES</span>
-          {featured ? (
-            <>
-              <span className="mv-featured-label">FEATURED THIS WEEK</span>
-              <h1>{featured.title}</h1>
-              <div className="mv-hero-meta">
-                {featuredYear && <span>{featuredYear}</span>}
-                {rating && <span><Star size={13} fill="currentColor" /> {rating} rating</span>}
-                {featured.originalLanguage && <span>{featured.originalLanguage.toUpperCase()}</span>}
+      {(featured || loading) && (
+        <header className={'mv-hero' + (featured?.backdropUrl ? ' has-art' : '')}>
+          {featured?.backdropUrl && <img className="mv-hero-art" src={featured.backdropUrl} alt="" fetchPriority="high" />}
+          <div className="mv-hero-shade" />
+          <div className="mv-hero-copy">
+            {featured ? (
+              <>
+                <span className="mv-eyebrow">MOVIES</span>
+                <span className="mv-featured-label">FEATURED THIS WEEK</span>
+                <h1>{featured.title}</h1>
+                <div className="mv-hero-meta">
+                  {featuredYear && <span>{featuredYear}</span>}
+                  {rating && <span><Star size={13} fill="currentColor" /> {rating} rating</span>}
+                  {featured.originalLanguage && <span>{featured.originalLanguage.toUpperCase()}</span>}
+                </div>
+                {featured.overview && <p>{featured.overview}</p>}
+                <div className="mv-hero-actions">
+                  <Link to={movieHref(featured)} className="mv-action mv-action-light"><Play size={16} fill="currentColor" /> More details</Link>
+                  <Link to="/movies/browse/trending" className="mv-action mv-action-glass">Explore trending <ArrowRight size={15} /></Link>
+                </div>
+              </>
+            ) : (
+              <div className="mv-hero-loading" role="status" aria-label="Loading featured movie">
+                <span className="mv-hero-loading-label" />
+                <span className="mv-hero-loading-title" />
+                <span className="mv-hero-loading-line" />
+                <span className="mv-hero-loading-line short" />
+                <span className="mv-hero-loading-action" />
               </div>
-              {featured.overview && <p>{featured.overview}</p>}
-              <div className="mv-hero-actions">
-                <Link to={movieHref(featured)} className="mv-action mv-action-light"><Play size={16} fill="currentColor" /> More details</Link>
-                <Link to="/movies/browse/trending" className="mv-action mv-action-glass">Explore trending <ArrowRight size={15} /></Link>
-              </div>
-            </>
-          ) : (
-            <>
-              <span className="mv-featured-label">THE WORLD OF CINEMA</span>
-              <h1>Stories without borders.</h1>
-              <p>Discover films from every corner of the world. Explore new releases, timeless favourites and the stories everyone is talking about.</p>
-              <div className="mv-hero-actions">
-                <Link to="/movies/browse/popular" className="mv-action mv-action-light"><Play size={16} fill="currentColor" /> Explore movies</Link>
-                <Link to="/movies/search" className="mv-action mv-action-glass"><Search size={15} /> Search titles</Link>
-              </div>
-            </>
-          )}
-        </div>
-        {featured && <div className="mv-hero-current"><span>NOW SHOWING</span><b>{featured.title}</b></div>}
-      </header>
+            )}
+          </div>
+          {featured && <div className="mv-hero-current"><span>NOW SHOWING</span><b>{featured.title}</b></div>}
+        </header>
+      )}
 
       <div className="mv-home-content">
         <nav className="mv-category-strip" aria-label="Movie categories">
@@ -122,29 +122,18 @@ export default function MoviesHomePage() {
           <Link to="/movies/browse/now-playing">Now playing</Link>
         </nav>
 
-        <header className="mv-catalog-intro">
-          <div>
-            <span className="mv-catalog-kicker">THE MOVIE COLLECTION</span>
-            <h2>Find your next favourite.</h2>
-            <p>Explore what is trending, revisit acclaimed films, and see what is coming next.</p>
-          </div>
-          <Link to="/movies/search" className="mv-catalog-search"><Search size={15} aria-hidden="true" /> Search the catalogue <ArrowRight size={14} aria-hidden="true" /></Link>
-        </header>
-
         {error && (
           <div className="mv-provider-notice" role="status">
             <div className="mv-provider-mark">M</div>
             <div>
-              <b>{disabled ? 'The global movie catalogue is being connected.' : 'Movie discovery is temporarily unavailable.'}</b>
-              <p>{disabled
-                ? 'The Movies experience is ready. Metadata will appear here once the catalogue provider is approved and enabled.'
-                : error.message}</p>
+              <b>{disabled ? 'Movie listings are not available yet.' : 'Movie browsing is temporarily unavailable.'}</b>
+              <p>{disabled ? 'Please check back soon.' : error.message}</p>
             </div>
             {!disabled && <button type="button" onClick={() => setRefresh(value => value + 1)}><RefreshCw size={14} /> Retry</button>}
           </div>
         )}
 
-        {loading && <div className="mv-loading-rails" role="status" aria-label="Loading movie collections">
+        {loading && <div className="mv-loading-rails" role="status" aria-label="Loading movies">
           {['Trending this week', 'Popular movies', 'Top rated'].map(label => <section className="mv-section" key={label}><div className="mv-section-heading"><h2>{label}</h2></div><div className="mv-rail">{Array.from({length:7},(_,index)=><div className="mv-skeleton" key={index}><span /><i /></div>)}</div></section>)}
         </div>}
 
@@ -166,7 +155,7 @@ export default function MoviesHomePage() {
             </div>
           </section>
         )}
-        {!loading && !error && !featured && <div className="mv-empty-state"><h2>Your movie universe starts here.</h2><p>Search for a film or explore a collection to get started.</p><Link to="/movies/search">Search movies <ArrowRight size={14} /></Link></div>}
+        {!loading && !error && !featured && <div className="mv-empty-state"><h2>No movies available right now.</h2><p>Search for a film or choose another category.</p><Link to="/movies/search">Search movies <ArrowRight size={14} /></Link></div>}
       </div>
     </section>
   );
