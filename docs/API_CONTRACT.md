@@ -196,3 +196,20 @@ The example is a schema illustration, not a live URL. Return only provider-autho
 - Use explicit CORS origins only if the API is hosted on a separate origin. Same-origin deployment is preferred.
 - Retry only idempotent reads, with bounded timeouts and backoff.
 
+
+
+## 3c. Unified account media sync
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/me/history/sync?slug=:slug&episodeNumber=:number` | Restore one Anime episode's account-owned playback record before player initialization. Without the query pair, returns the latest account history. |
+| POST | `/api/v1/me/history/sync` | Upsert account-owned Anime progress/history; accepts bounded items, per-episode deletion requests, and an explicit clear operation. |
+| GET | `/api/v1/me/movies/library` | List the signed-in user's Movies provider references and saved-list state. |
+| POST | `/api/v1/me/movies/library` | Add/update a Movies Watchlist, Watched, Favorite or rating state. Send status=null, isFavorite=false and rating=null to remove the record. |
+
+- These routes derive user ownership exclusively from the validated HttpOnly Kairo session cookie. No user ID is accepted from the request body.
+- Movie library rows store provider_id and external_id with the user's status/favorite/rating state. They do not ingest or copy TMDB metadata into the account library.
+- Anime history deletes are recorded in tombstones, and history clear operations update a per-account clear marker. A stale offline client cannot recreate a row with an update timestamp older than the delete/clear marker.
+- Guest Anime, Movies and YouTube state is browser-only and is not sent to these routes. YouTube account history and Watch Later continue to use the routes in section 3b.
+- Account records are common across all three media domains because the same Kairo session resolves to the same user_profiles.id. Domain tables and provider metadata remain separate.
+- The additive schema is migrations/0013_unified_media_sync.sql. It is applied by the normal D1 migration step in the staging or production deployment workflow; PR verification does not modify a remote database.

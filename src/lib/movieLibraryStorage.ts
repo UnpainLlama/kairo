@@ -1,3 +1,4 @@
+import { readBrowserJson, writeBrowserJson, dispatchBrowserChange } from './browserPersistence';
 import type { MovieSummary } from './movies';
 
 export type MovieLibraryStatus = 'watchlist' | 'watched';
@@ -75,34 +76,23 @@ function normalizeEntry(value: unknown): MovieLibraryEntry | null {
 }
 
 function writeEntries(accountId: string | null, entries: MovieLibraryEntry[]): void {
-  try {
-    localStorage.setItem(storageKey(accountId), JSON.stringify(entries.slice(0, MAX_ENTRIES)));
-  } catch {
-    // Browser storage can be disabled or full; movie discovery must keep working.
-  }
+  // Browser storage can be disabled or full; movie discovery must keep working.
+  writeBrowserJson(storageKey(accountId), entries.slice(0, MAX_ENTRIES));
 }
 
 function notifyChanged(): void {
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new Event('kairo:movie-library-change'));
-  }
+  dispatchBrowserChange('kairo:movie-library-change');
 }
 
 /** Read the local Movies list for one signed-in account, or the isolated guest scope. */
 export function readMovieLibrary(accountId: string | null): MovieLibraryEntry[] {
-  try {
-    const raw = localStorage.getItem(storageKey(accountId));
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map(normalizeEntry)
-      .filter((entry): entry is MovieLibraryEntry => entry !== null)
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .slice(0, MAX_ENTRIES);
-  } catch {
-    return [];
-  }
+  const parsed = readBrowserJson<unknown>(storageKey(accountId), []);
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .map(normalizeEntry)
+    .filter((entry): entry is MovieLibraryEntry => entry !== null)
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, MAX_ENTRIES);
 }
 
 /** Add/update a Watchlist, Watched or Favorite state without relying on server persistence. */

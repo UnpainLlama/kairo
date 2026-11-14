@@ -116,3 +116,20 @@ Before calling sync complete, test all of these for each supported media feature
 ## Scope note
 
 This is a source-code audit of the repository at the baseline commit above. It does not claim that every staging/production environment has identical secrets, migration state, or deployed Worker code. Remote sync recommendations should be implemented with integration tests against the target D1 schema before being treated as production-ready.
+
+
+## Implementation update — unified account sync
+
+The follow-up implementation on feat/movies-guest-library adds:
+
+- A shared AccountProvider with explicit loading, guest, signed-in and unavailable states. A failed /api/v1/me lookup is not treated as a guest session.
+- Shared guarded browser persistence helpers.
+- Account-backed Movies library reference endpoints and a new user_movie_library_refs table. Only the provider namespace/external ID and user-owned list state are stored; provider metadata remains in the Movies provider flow.
+- A signed-in Anime history read path to restore direct-entry playback progress, plus server-side delete tombstones and clear markers.
+- Browser-only guest YouTube history and Watch Later, while signed-in YouTube history and Watch Later remain D1-backed.
+- Timestamped YouTube local progress retry when a newer local copy is found at the next video open.
+- Persistence helper and guest YouTube local-library tests.
+
+See docs/UNIFIED_MEDIA_SYNC.md for the user-visible data boundary and remaining limitations.
+
+This does not make every mutation fully offline-first: Movies account edits still require an API write, and a durable generic outbox for all media domains remains future work. Guest data is not automatically imported into an account.

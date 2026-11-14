@@ -78,6 +78,15 @@ app.use('/api/*', async (c, next) => {
   await next();
 });
 
+app.use('/api/v1/me', async (c, next) => {
+  c.header('Cache-Control', 'no-store');
+  await next();
+});
+app.use('/api/v1/me/*', async (c, next) => {
+  c.header('Cache-Control', 'no-store');
+  await next();
+});
+
 function ok<T>(c: Context<{ Bindings: Bindings; Variables: Variables }>, data: T, meta: Record<string, unknown> = {}) {
   return c.json({ success: true, data, meta: { requestId: c.get('requestId'), ...meta } });
 }
@@ -565,6 +574,54 @@ app.get('/api/v1/me', async (c) => {
   return ok(c, { user });
 });
 
+app.get('/api/v1/me/history/sync', async (c) => {
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to restore watch history.');
+  const slug = c.req.query('slug');
+  const episodeNumber = c.req.query('episodeNumber');
+  try {
+    const clearMarker = await c.env.DB.prepare(
+      'SELECT cleared_at AS clearedAt FROM user_watch_history_clear_markers WHERE user_id = ?'
+    ).bind(user.id).first<{ clearedAt: number }>();
+    let result;
+    if (slug && episodeNumber) {
+      const [rows, tombstone] = await Promise.all([
+        c.env.DB.prepare(`
+          SELECT anime_slug AS slug, title, poster_url AS posterUrl,
+                 episode_number AS episodeNumber, episode_title AS episodeTitle,
+                 duration_seconds AS durationSeconds, progress_seconds AS progressSeconds,
+                 updated_at AS updatedAt
+          FROM user_watch_history
+          WHERE user_id = ? AND anime_slug = ? AND episode_number = ?
+          LIMIT 1
+        `).bind(user.id, slug, Number(episodeNumber)).all(),
+        c.env.DB.prepare(`
+          SELECT deleted_at AS deletedAt FROM user_watch_history_tombstones
+          WHERE user_id = ? AND anime_slug = ? AND episode_number = ?
+        `).bind(user.id, slug, Number(episodeNumber)).first<{ deletedAt: number }>(),
+      ]);
+      result = rows;
+      return ok(c, {
+        items: result.results ?? [],
+        deletedAt: Number(tombstone?.deletedAt ?? 0),
+        clearedAt: Number(clearMarker?.clearedAt ?? 0),
+      }, { count: result.results?.length ?? 0 });
+    }
+    result = await c.env.DB.prepare(`
+      SELECT anime_slug AS slug, title, poster_url AS posterUrl,
+             episode_number AS episodeNumber, episode_title AS episodeTitle,
+             duration_seconds AS durationSeconds, progress_seconds AS progressSeconds,
+             updated_at AS updatedAt
+      FROM user_watch_history WHERE user_id = ?
+      ORDER BY updated_at DESC LIMIT 100
+    `).bind(user.id).all();
+    return ok(c, { items: result.results ?? [], clearedAt: Number(clearMarker?.clearedAt ?? 0) }, { count: result.results?.length ?? 0 });
+  } catch (error) {
+    logError(c, 'watch_history_read_failed', error);
+    return fail(c, 503, 'HISTORY_UNAVAILABLE', 'Watch history is temporarily unavailable.');
+  }
+});
+
 app.post('/api/v1/me/history/sync', async (c) => {
   const origin = c.req.header('Origin');
   if (origin && origin !== new URL(c.req.url).origin) {
@@ -581,13 +638,23 @@ app.post('/api/v1/me/history/sync', async (c) => {
   if (!Array.isArray(input) || input.length > 100 || deleted.length > 100 || input.length + deleted.length > 100) {
     return fail(c, 400, 'VALIDATION_ERROR', 'Watch history updates must contain at most 100 entries.');
   }
+  const now = Date.now();
   const statements: D1PreparedStatement[] = [];
   if (clear) {
+    statements.push(c.env.DB.prepare(`
+      INSERT INTO user_watch_history_tombstones (user_id, anime_slug, episode_number, deleted_at)
+      SELECT user_id, anime_slug, episode_number, ? FROM user_watch_history WHERE user_id = ?
+      ON CONFLICT(user_id, anime_slug, episode_number)
+      DO UPDATE SET deleted_at = MAX(user_watch_history_tombstones.deleted_at, excluded.deleted_at)
+    `).bind(now, user.id));
+    statements.push(c.env.DB.prepare(`
+      INSERT INTO user_watch_history_clear_markers (user_id, cleared_at) VALUES (?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET cleared_at = MAX(user_watch_history_clear_markers.cleared_at, excluded.cleared_at)
+    `).bind(user.id, now));
     statements.push(c.env.DB.prepare('DELETE FROM user_watch_history WHERE user_id = ?').bind(user.id));
   }
   for (const value of input) {
-    if (!value || typeof value !== 'object') continue;
-    if (clear) break;
+    if (!value || typeof value !== 'object' || clear) continue;
     const item = value as Record<string, unknown>;
     const slug = typeof item.slug === 'string' ? item.slug.trim() : '';
     const title = typeof item.title === 'string' ? item.title.trim() : '';
@@ -600,11 +667,15 @@ app.post('/api/v1/me/history/sync', async (c) => {
     const episodeTitle = typeof item.episodeTitle === 'string' ? item.episodeTitle.slice(0, 300) : '';
     const duration = Number(item.durationSeconds);
     const progress = Number(item.progressSeconds);
+    const timestamp = Math.floor(updatedAt);
     statements.push(c.env.DB.prepare(`
       INSERT INTO user_watch_history
         (user_id, anime_slug, episode_number, title, poster_url, episode_title,
          duration_seconds, progress_seconds, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+      WHERE ? > COALESCE((SELECT cleared_at FROM user_watch_history_clear_markers WHERE user_id = ?), -1)
+        AND ? > COALESCE((SELECT deleted_at FROM user_watch_history_tombstones
+                           WHERE user_id = ? AND anime_slug = ? AND episode_number = ?), -1)
       ON CONFLICT(user_id, anime_slug, episode_number) DO UPDATE SET
         title=excluded.title, poster_url=excluded.poster_url,
         episode_title=excluded.episode_title, duration_seconds=excluded.duration_seconds,
@@ -613,7 +684,7 @@ app.post('/api/v1/me/history/sync', async (c) => {
     `).bind(user.id, slug, episodeNumber, title, posterUrl, episodeTitle,
       Number.isFinite(duration) && duration > 0 ? Math.min(86400, Math.floor(duration)) : null,
       Number.isFinite(progress) && progress >= 0 ? Math.min(86400, progress) : 0,
-      Math.floor(updatedAt)));
+      timestamp, timestamp, user.id, timestamp, user.id, slug, episodeNumber));
   }
   if (!clear) {
     for (const value of deleted) {
@@ -621,9 +692,14 @@ app.post('/api/v1/me/history/sync', async (c) => {
       const item = value as Record<string, unknown>;
       const slug = typeof item.slug === 'string' ? item.slug.trim() : '';
       const episodeNumber = Number(item.episodeNumber);
-      if (slug && slug.length <= 128 && Number.isInteger(episodeNumber) && episodeNumber > 0 && episodeNumber <= 100000) {
-        statements.push(c.env.DB.prepare('DELETE FROM user_watch_history WHERE user_id = ? AND anime_slug = ? AND episode_number = ?').bind(user.id, slug, episodeNumber));
-      }
+      if (!slug || slug.length > 128 || !Number.isInteger(episodeNumber) || episodeNumber < 1 || episodeNumber > 100000) continue;
+      statements.push(c.env.DB.prepare(`
+        INSERT INTO user_watch_history_tombstones (user_id, anime_slug, episode_number, deleted_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(user_id, anime_slug, episode_number)
+        DO UPDATE SET deleted_at = MAX(user_watch_history_tombstones.deleted_at, excluded.deleted_at)
+      `).bind(user.id, slug, episodeNumber, now));
+      statements.push(c.env.DB.prepare('DELETE FROM user_watch_history WHERE user_id = ? AND anime_slug = ? AND episode_number = ? AND updated_at <= ?').bind(user.id, slug, episodeNumber, now));
     }
   }
   try {
@@ -640,6 +716,90 @@ app.post('/api/v1/me/history/sync', async (c) => {
   } catch (error) {
     logError(c, 'watch_history_sync_failed', error);
     return fail(c, 503, 'HISTORY_UNAVAILABLE', 'Watch history sync is temporarily unavailable.');
+  }
+});
+
+app.get('/api/v1/me/movies/library', async (c) => {
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your Movies library.');
+  try {
+    const result = await c.env.DB.prepare(`
+      SELECT provider_id AS providerId, external_id AS externalId, status,
+             is_favorite AS isFavorite, rating, added_at AS addedAt, updated_at AS updatedAt
+      FROM user_movie_library_refs WHERE user_id = ?
+      ORDER BY updated_at DESC LIMIT 200
+    `).bind(user.id).all();
+    return ok(c, { items: result.results ?? [] }, { count: result.results?.length ?? 0 });
+  } catch (error) {
+    logError(c, 'movie_library_read_failed', error);
+    return fail(c, 503, 'MOVIE_LIBRARY_UNAVAILABLE', 'Your Movies library is temporarily unavailable.');
+  }
+});
+
+app.post('/api/v1/me/movies/library', async (c) => {
+  const origin = c.req.header('Origin');
+  if (origin && origin !== new URL(c.req.url).origin) {
+    return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
+  }
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync your Movies library.');
+  let body: unknown;
+  try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
+  if (!body || typeof body !== 'object') return fail(c, 400, 'VALIDATION_ERROR', 'Provide a movie library entry.');
+  const value = body as Record<string, unknown>;
+  const providerId = typeof value.providerId === 'string' ? value.providerId.trim().toLowerCase() : '';
+  const externalId = typeof value.externalId === 'string' ? value.externalId.trim() : '';
+  const status = value.status === null || value.status === 'watchlist' || value.status === 'watched' ? value.status : undefined;
+  const isFavorite = value.isFavorite;
+  const rating = value.rating === null || value.rating === undefined ? null : Number(value.rating);
+  if (providerId !== 'tmdb' || !/^\d{1,12}$/.test(externalId) ||
+      status === undefined || typeof isFavorite !== 'boolean' ||
+      (rating !== null && (!Number.isFinite(rating) || rating < 0 || rating > 10))) {
+    return fail(c, 400, 'VALIDATION_ERROR', 'The movie library entry is invalid.');
+  }
+  const now = Date.now();
+  try {
+    if (status === null && !isFavorite && rating === null) {
+      await c.env.DB.prepare(
+        'DELETE FROM user_movie_library_refs WHERE user_id = ? AND provider_id = ? AND external_id = ?'
+      ).bind(user.id, providerId, externalId).run();
+      return ok(c, { removed: true, providerId, externalId });
+    }
+    await c.env.DB.prepare(`
+      INSERT INTO user_movie_library_refs
+        (user_id, provider_id, external_id, status, is_favorite, rating, added_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, provider_id, external_id) DO UPDATE SET
+        status=excluded.status, is_favorite=excluded.is_favorite,
+        rating=excluded.rating, updated_at=excluded.updated_at
+    `).bind(user.id, providerId, externalId, status, isFavorite ? 1 : 0, rating, now, now).run();
+    return ok(c, { saved: true, providerId, externalId, status, isFavorite, rating, updatedAt: now });
+  } catch (error) {
+    logError(c, 'movie_library_write_failed', error);
+    return fail(c, 503, 'MOVIE_LIBRARY_UNAVAILABLE', 'Could not save this movie to your account.');
+  }
+});
+
+app.delete('/api/v1/me/movies/library/:providerId/:externalId', async (c) => {
+  const origin = c.req.header('Origin');
+  if (origin && origin !== new URL(c.req.url).origin) {
+    return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
+  }
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to manage your Movies library.');
+  const providerId = c.req.param('providerId').trim().toLowerCase();
+  const externalId = c.req.param('externalId').trim();
+  if (providerId !== 'tmdb' || !/^\d{1,12}$/.test(externalId)) {
+    return fail(c, 400, 'VALIDATION_ERROR', 'The movie identifier is invalid.');
+  }
+  try {
+    await c.env.DB.prepare(
+      'DELETE FROM user_movie_library_refs WHERE user_id = ? AND provider_id = ? AND external_id = ?'
+    ).bind(user.id, providerId, externalId).run();
+    return ok(c, { removed: true });
+  } catch (error) {
+    logError(c, 'movie_library_delete_failed', error);
+    return fail(c, 503, 'MOVIE_LIBRARY_UNAVAILABLE', 'Could not remove this movie from your account.');
   }
 });
 

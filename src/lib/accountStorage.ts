@@ -1,3 +1,4 @@
+import { readBrowserJson, writeBrowserJson } from './browserPersistence';
 /**
  * Browser-side viewing state is partitioned by the authenticated Kairo user.
  * Guest activity stays in its own namespace and is never uploaded to an account.
@@ -53,21 +54,12 @@ export function watchProgressIdentity(
 }
 
 export function readWatchHistory<T = unknown>(userId: AccountScope): T[] {
-  const key = watchHistoryStorageKey(userId);
-  try {
-    const value = JSON.parse(localStorage.getItem(key) || '[]');
-    return Array.isArray(value) ? value as T[] : [];
-  } catch {
-    return [];
-  }
+  return readBrowserJson<T[]>(watchHistoryStorageKey(userId), [], Array.isArray);
 }
 
 export function writeWatchHistory(userId: AccountScope, items: unknown[]): void {
-  try {
-    localStorage.setItem(watchHistoryStorageKey(userId), JSON.stringify(items));
-  } catch {
-    // Browser storage can be unavailable or full; the API remains authoritative for signed-in users.
-  }
+  // Browser storage can be unavailable or full; the API remains authoritative for signed-in users.
+  writeBrowserJson(watchHistoryStorageKey(userId), items);
 }
 
 /**

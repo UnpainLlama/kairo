@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Clock, Heart, LogIn, LogOut, Search, Settings, Trash2, UserRound, Pause, Play, ArrowUpDown } from 'lucide-react';
 import { EmptyState, LoadingState } from '../components/catalog';
+import { useKairoAccount } from '../lib/AccountProvider';
 import { historyPausedStorageKey, readWatchHistory, watchProgressStorageKey, writeWatchHistory } from '../lib/accountStorage';
 
 type AccountUser = { id: string; displayName: string; email: string | null; emailVerifiedAt?: string | null };
@@ -14,9 +15,16 @@ function progressOf(entry: WatchEntry): number {
   catch { return 0; }
 }
 function useCurrentUser() {
-  const [user,setUser]=useState<AccountUser|null>(null); const [loaded,setLoaded]=useState(false);
-  useEffect(()=>{let active=true;fetch('/api/v1/me',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(p=>{if(active)setUser(p?.data?.user??null)}).catch(()=>{if(active)setUser(null)}).finally(()=>{if(active)setLoaded(true)});return()=>{active=false}},[]);
-  return {user,loaded};
+  const account = useKairoAccount();
+  const user: AccountUser | null = account.status === 'signed-in' && account.accountId
+    ? { id: account.accountId, displayName: account.displayName ?? 'Account', email: account.email }
+    : null;
+  return {
+    user,
+    loaded: account.status === 'guest' || account.status === 'signed-in',
+    unavailable: account.status === 'unavailable',
+    retry: account.retry,
+  };
 }
 async function signOut() {
   const response=await fetch('/api/v1/auth/logout',{method:'POST',credentials:'same-origin',headers:{Accept:'application/json'}});
@@ -65,7 +73,7 @@ async function syncWatchHistory(userId: string, options: { deleted?: Array<{ slu
   }
 }
 export function ProfilePage() {
-  const {user,loaded}=useCurrentUser(); const navigate=useNavigate();
+  const {user,loaded,unavailable,retry}=useCurrentUser(); const navigate=useNavigate();
   const [history,setHistory]=useState<WatchEntry[]>(()=>readHistory(null)); const [libraryCount,setLibraryCount]=useState<number|null>(null);
   const [error,setError]=useState(''); const [busy,setBusy]=useState(false);
   useEffect(()=>{let active=true;fetch('/api/v1/me/library',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(p=>{if(active)setLibraryCount(Array.isArray(p?.data?.items)?p.data.items.length:0)}).catch(()=>{if(active)setLibraryCount(null)});return()=>{active=false}},[user?.id]);
@@ -73,7 +81,8 @@ export function ProfilePage() {
   useEffect(()=>{const refresh=()=>setHistory(readHistory(user?.id??null));window.addEventListener('storage',refresh);window.addEventListener('kairo:history-change',refresh);return()=>{window.removeEventListener('storage',refresh);window.removeEventListener('kairo:history-change',refresh)}},[user?.id]);
   const watched=history.length; const completed=history.filter(x=>progressOf(x)>=95).length;
   async function logout(){setBusy(true);setError('');try{await signOut();navigate('/login',{replace:true})}catch(e){setError(e instanceof Error?e.message:'Sign out failed.')}finally{setBusy(false)}}
-  if(!loaded)return <LoadingState label="Loading profile"/>;
+  if(!loaded && !unavailable)return <LoadingState label="Loading profile"/>;
+  if(unavailable)return <section className="kc-profile-page"><EmptyState title="Account status unavailable">Reconnect to Kairo to load this profile without mixing it with guest data. <button type="button" className="kc-link" onClick={retry}>Retry</button></EmptyState></section>;
   if(!user)return <section className="kc-profile-page"><div className="kc-profile-hero"><div className="kc-profile-avatar"><UserRound size={34}/></div><div><span className="kc-section-kicker">KAIRO ACCOUNT</span><h1>Your profile</h1><p>Sign in to keep your Kairo account and viewing activity together.</p></div><Link className="kc-btn kc-btn-primary" to="/login"><LogIn size={15}/> Sign in</Link></div><EmptyState title="Your profile starts here">Create an account or sign in to manage your profile. Your local watch history remains available on this device.</EmptyState></section>;
   return <section className="kc-profile-page">
     <div className="kc-profile-hero"><div className="kc-profile-avatar"><UserRound size={34}/></div><div className="kc-profile-heading"><span className="kc-section-kicker">KAIRO ACCOUNT</span><h1>{user.displayName}</h1><p>{user.email??'Email not available'}</p></div><Link className="kc-btn" to="/settings"><Settings size={15}/> Account settings</Link></div>
@@ -91,7 +100,7 @@ export function ProfilePage() {
   </section>;
 }
 export function HistoryPage() {
-  const {user,loaded}=useCurrentUser();
+  const {user,loaded,unavailable,retry}=useCurrentUser();
   const userId=user?.id??null;
   const [items,setItems]=useState<WatchEntry[]>(()=>readHistory(null)); const [query,setQuery]=useState(''); const [sort,setSort]=useState('recent');
   const [paused,setPaused]=useState(()=>{try{return localStorage.getItem(historyPausedStorageKey(null))==='true'}catch{return false}});
@@ -103,7 +112,8 @@ export function HistoryPage() {
   function removeItem(item:WatchEntry){const next=items.filter(x=>x.slug!==item.slug||x.episodeNumber!==item.episodeNumber);writeWatchHistory(userId,next);setItems(next);window.dispatchEvent(new Event('kairo:history-change'));if(userId)void syncWatchHistory(userId,{deleted:[{slug:item.slug,episodeNumber:item.episodeNumber}]})}
   useEffect(()=>{window.addEventListener('storage',refresh);window.addEventListener('kairo:history-change',refresh);return()=>{window.removeEventListener('storage',refresh);window.removeEventListener('kairo:history-change',refresh)}},[userId]);
   useEffect(()=>{if(!loaded)return;setItems(readHistory(userId));try{setPaused(localStorage.getItem(historyPausedStorageKey(userId))==='true')}catch{setPaused(false)}if(userId){let active=true;syncWatchHistory(userId).then(items=>{if(active&&items)setItems(items)});return()=>{active=false}}},[loaded,userId]);
-  if(!loaded)return <LoadingState label="Loading history"/>;
+  if(!loaded && !unavailable)return <LoadingState label="Loading history"/>;
+  if(unavailable)return <section className="kc-history-page"><EmptyState title="Account status unavailable">Your history is locked until Kairo can verify the session, so account data cannot be mixed with guest data. <button type="button" className="kc-link" onClick={retry}>Retry</button></EmptyState></section>;
   return <section className="kc-history-page">
     <header className="kc-page-head"><span className="kc-section-kicker">YOUR ACTIVITY</span><h1>Watch history</h1><p>Pick up where you left off. Sign in to sync history across your devices.</p></header>
     <div className="kc-history-toolbar"><label className="kc-history-search"><Search size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search your history…" aria-label="Search watch history"/></label><label className="kc-history-sort"><ArrowUpDown size={15}/><select value={sort} onChange={e=>setSort(e.target.value)} aria-label="Sort history"><option value="recent">Last watched</option><option value="title">A–Z</option><option value="progress">Progress</option></select></label><button className={`kc-btn ${paused?'kc-btn-primary':''}`} onClick={togglePaused} type="button">{paused?<Play size={14}/>:<Pause size={14}/>} {paused?'Resume history':'Pause history'}</button><button className="kc-btn kc-btn-danger" type="button" onClick={()=>setConfirmClear(true)} disabled={!items.length}><Trash2 size={14}/> Clear</button></div>

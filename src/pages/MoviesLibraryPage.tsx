@@ -4,8 +4,18 @@ import { ArrowLeft, Bookmark, Heart, Trash2 } from 'lucide-react';
 import MovieCard from '../components/MovieCard';
 import { readMovieLibrary, removeMovieFromLibrary, type MovieLibraryEntry } from '../lib/movieLibraryStorage';
 import { useAccountScope } from '../hooks/useAccountScope';
+import { apiGet } from '../lib/api';
+import type { MovieDetail } from '../lib/movies';
 
 type Filter = 'all' | 'watchlist' | 'watched' | 'favorites';
+type RemoteEntry = {
+  providerId: string;
+  externalId: string;
+  status: 'watchlist' | 'watched' | null;
+  isFavorite: boolean;
+  addedAt: number;
+  updatedAt: number;
+};
 
 const FILTERS: { id: Filter; label: string }[] = [
   { id: 'all', label: 'All saved' },
@@ -14,22 +24,68 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: 'favorites', label: 'Favorites' },
 ];
 
+async function loadRemoteMovies(items: RemoteEntry[], signal: AbortSignal): Promise<{ entries: MovieLibraryEntry[]; missing: number }> {
+  const refs = items.filter(item => item.providerId === 'tmdb' && /^\d{1,12}$/.test(item.externalId)).slice(0, 100);
+  const results: MovieLibraryEntry[] = [];
+  for (let offset = 0; offset < refs.length; offset += 8) {
+    const batch = refs.slice(offset, offset + 8);
+    const loaded = await Promise.all(batch.map(async ref => {
+      try {
+        const movie = await apiGet<MovieDetail>('/movies/' + encodeURIComponent(ref.externalId), signal);
+        return {
+          ...movie,
+          status: ref.status,
+          isFavorite: ref.isFavorite === true || Number(ref.isFavorite) === 1,
+          addedAt: Number(ref.addedAt) || Date.now(),
+          updatedAt: Number(ref.updatedAt) || Date.now(),
+        } satisfies MovieLibraryEntry;
+      } catch {
+        return null;
+      }
+    }));
+    results.push(...loaded.filter((entry): entry is MovieLibraryEntry => entry !== null));
+    if (signal.aborted) break;
+  }
+  return { entries: results, missing: refs.length - results.length };
+}
+
 export default function MoviesLibraryPage() {
   const { accountId, resolved, error, retry } = useAccountScope();
   const [entries, setEntries] = useState<MovieLibraryEntry[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
-    if (!resolved) return;
-    const refresh = () => setEntries(readMovieLibrary(accountId));
-    refresh();
-    window.addEventListener('storage', refresh);
-    window.addEventListener('kairo:movie-library-change', refresh);
-    return () => {
-      window.removeEventListener('storage', refresh);
-      window.removeEventListener('kairo:movie-library-change', refresh);
-    };
-  }, [accountId, resolved]);
+    if (!resolved || error) return;
+    const controller = new AbortController();
+    setEntries([]);
+    setLoading(true);
+    setLoadError('');
+    if (!accountId) {
+      setEntries(readMovieLibrary(null));
+      setLoading(false);
+      return () => controller.abort();
+    }
+    fetch('/api/v1/me/movies/library', { credentials: 'same-origin', headers: { Accept: 'application/json' }, cache: 'no-store' })
+      .then(async response => {
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.success || !Array.isArray(payload?.data?.items)) {
+          throw new Error(payload?.error?.message ?? 'Could not load your Kairo Movies library.');
+        }
+        return loadRemoteMovies(payload.data.items as RemoteEntry[], controller.signal);
+      })
+      .then(result => {
+        if (controller.signal.aborted) return;
+        setEntries(result.entries);
+        if (result.missing > 0) setLoadError(`${result.missing} saved movie detail(s) could not be loaded. Your account list is still saved; retry when the Movies provider is available.`);
+      })
+      .catch(caught => {
+        if (!controller.signal.aborted) setLoadError(caught instanceof Error ? caught.message : 'Could not load your Movies library.');
+      })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [accountId, resolved, error]);
 
   const visible = useMemo(() => entries.filter((entry) => {
     if (filter === 'watchlist') return entry.status === 'watchlist';
@@ -38,9 +94,26 @@ export default function MoviesLibraryPage() {
     return true;
   }), [entries, filter]);
 
-  const remove = (entry: MovieLibraryEntry) => {
-    removeMovieFromLibrary(accountId, entry.providerId, entry.externalId);
-    setEntries(readMovieLibrary(accountId));
+  const remove = async (entry: MovieLibraryEntry) => {
+    if (!accountId) {
+      removeMovieFromLibrary(null, entry.providerId, entry.externalId);
+      setEntries(readMovieLibrary(null));
+      return;
+    }
+    setLoadError('');
+    try {
+      const response = await fetch('/api/v1/me/movies/library', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ providerId: entry.providerId, externalId: entry.externalId, status: null, isFavorite: false, rating: null }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.success) throw new Error(payload?.error?.message ?? 'Could not remove this movie.');
+      setEntries(current => current.filter(item => item.providerId !== entry.providerId || item.externalId !== entry.externalId));
+    } catch (caught) {
+      setLoadError(caught instanceof Error ? caught.message : 'Could not remove this movie.');
+    }
   };
 
   return (
@@ -57,14 +130,16 @@ export default function MoviesLibraryPage() {
 
       <p className="mv-library-note">
         {accountId
-          ? 'This list is saved in this browser for your account. It does not sync across devices yet.'
-          : 'Your list is saved on this device. Sign-in is not required, but it does not sync across devices.'}
+          ? 'Your list is saved with your Kairo account and syncs across devices.'
+          : 'Your list is saved in this browser. It remains here when you return on this device.'}
       </p>
 
-      {error && <div className="mv-provider-notice" role="alert"><div><b>Could not check your account</b><p>Your list has not been opened to avoid mixing guest and account data.</p></div><button type="button" onClick={retry}>Retry</button></div>}
+      {error && <div className="mv-provider-notice" role="alert"><div><b>Could not check your account</b><p>Your list is locked until account status is known, so guest and account data cannot mix.</p></div><button type="button" onClick={retry}>Retry</button></div>}
       {!resolved && !error && <div className="mv-detail-skeleton" role="status">Checking your local list…</div>}
+      {loading && <div className="mv-detail-skeleton" role="status">Loading your saved movies…</div>}
+      {loadError && <div className="mv-provider-notice" role="alert"><div>{loadError}</div></div>}
 
-      {resolved && (
+      {resolved && !error && !loading && (
         <>
           <div className="mv-library-filters" role="group" aria-label="Filter saved movies">
             {FILTERS.map((item) => (
@@ -84,7 +159,7 @@ export default function MoviesLibraryPage() {
                     {entry.status === 'watchlist' && <span><Bookmark size={12} /> Watchlist</span>}
                     {entry.status === 'watched' && <span>Watched</span>}
                     {entry.isFavorite && <span><Heart size={12} fill="currentColor" /> Favorite</span>}
-                    <button type="button" onClick={() => remove(entry)} aria-label={'Remove ' + entry.title + ' from My list'}><Trash2 size={14} /> Remove</button>
+                    <button type="button" onClick={() => void remove(entry)} aria-label={'Remove ' + entry.title + ' from My list'}><Trash2 size={14} /> Remove</button>
                   </div>
                 </div>
               ))}
