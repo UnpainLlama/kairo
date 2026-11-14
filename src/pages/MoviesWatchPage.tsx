@@ -80,8 +80,8 @@ export default function MoviesWatchPage() {
 
         <section className="mv-watch-player-section" aria-label={`Watch ${movie.title}`}>
           <div className="mv-watch-player-heading">
-            <span>OFFICIAL VIDLINK PLAYER</span>
-            <span>VIDLINK OR JW PLAYER</span>
+            <span>EMBEDWAVE PLAYER</span>
+            <span>AUTOMATIC OR MULTI-SERVER</span>
           </div>
           {movie.providerId === 'tmdb' ? (
             <MovieEmbedPlayer

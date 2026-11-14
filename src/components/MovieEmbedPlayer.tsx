@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ExternalLink, Maximize2, Play, RefreshCw } from 'lucide-react';
 import {
-  VIDLINK_ORIGIN,
-  vidlinkMovieEmbedUrl,
-  type VidLinkPlayerType,
+  EMBEDWAVE_SERVERS,
+  embedWaveMovieEmbedUrl,
+  type EmbedWaveServerId,
 } from '../lib/moviePlayback';
 
 type Props = {
@@ -14,19 +14,21 @@ type Props = {
   backdropUrl?: string | null;
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
+type SelectedServer = 'auto' | EmbedWaveServerId;
+
+const PLAYER_OPTIONS: { id: SelectedServer; label: string }[] = [
+  { id: 'auto', label: 'Automatic' },
+  ...EMBEDWAVE_SERVERS,
+};
 
 /**
- * Official VidLink iframe integration.
+ * EmbedWave movie iframe.
  *
- * The iframe is created only after a user click. Messages are accepted only
- * from the VidLink origin and this exact iframe; MEDIA_DATA is stored using
- * the key and shape described by VidLink's Continue Watching documentation.
+ * The iframe mounts only after an explicit Play click. No sandbox attribute is
+ * used: the embedded provider needs its own scripts and playback controls.
  */
 export default function MovieEmbedPlayer({ tmdbId, title, posterUrl, backdropUrl }: Props) {
-  const [playerType, setPlayerType] = useState<VidLinkPlayerType>('default');
+  const [server, setServer] = useState<SelectedServer>('auto');
   const [active, setActive] = useState(false);
   const [frameLoaded, setFrameLoaded] = useState(false);
   const [frameError, setFrameError] = useState(false);
@@ -36,34 +38,11 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl, backdropUrl
 
   const embedUrl = useMemo(() => {
     try {
-      return vidlinkMovieEmbedUrl(tmdbId, playerType);
+      return embedWaveMovieEmbedUrl(tmdbId, server === 'auto' ? undefined : server);
     } catch {
       return null;
     }
-  }, [playerType, tmdbId]);
-
-  useEffect(() => {
-    if (!active) return;
-
-    const handleMessage = (event: MessageEvent<unknown>) => {
-      if (event.origin !== VIDLINK_ORIGIN) return;
-      if (event.source !== frameRef.current?.contentWindow) return;
-      if (!isRecord(event.data) || event.data.type !== 'MEDIA_DATA') return;
-      if (!isRecord(event.data.data)) return;
-
-      try {
-        const serialized = JSON.stringify(event.data.data);
-        if (serialized && serialized.length <= 100_000) {
-          localStorage.setItem('vidLinkProgress', serialized);
-        }
-      } catch {
-        // Playback must continue even when browser storage is unavailable.
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [active]);
+  }, [server, tmdbId]);
 
   const start = useCallback(() => {
     if (!embedUrl) return;
@@ -79,8 +58,8 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl, backdropUrl
     setActive(true);
   }, []);
 
-  const selectPlayer = useCallback((next: VidLinkPlayerType) => {
-    setPlayerType(next);
+  const selectServer = useCallback((next: SelectedServer) => {
+    setServer(next);
     setFrameLoaded(false);
     setFrameError(false);
     setReloadKey((key) => key + 1);
@@ -101,7 +80,7 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl, backdropUrl
       <div className="mv-player-shell" role="alert">
         <div className="mv-player-message">
           <AlertTriangle size={18} />
-          <p>VidLink requires a positive numeric TMDB movie ID. This title cannot be embedded.</p>
+          <p>EmbedWave requires a positive numeric TMDB movie ID. This title cannot be embedded.</p>
         </div>
       </div>
     );
@@ -109,26 +88,21 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl, backdropUrl
 
   return (
     <div className={`mv-player-shell${active ? ' is-active' : ''}`}>
-      <div className="mv-player-toolbar" role="toolbar" aria-label="VidLink playback options">
+      <div className="mv-player-toolbar" role="toolbar" aria-label="EmbedWave playback options">
         <div className="mv-player-toolbar-source">
-          <span className="mv-player-toolbar-label">PLAYER</span>
+          <span className="mv-player-toolbar-label">SERVER</span>
           <div className="mv-player-servers">
-            <button
-              type="button"
-              className={playerType === 'default' ? 'mv-player-server active' : 'mv-player-server'}
-              aria-pressed={playerType === 'default'}
-              onClick={() => selectPlayer('default')}
-            >
-              VidLink
-            </button>
-            <button
-              type="button"
-              className={playerType === 'jw' ? 'mv-player-server active' : 'mv-player-server'}
-              aria-pressed={playerType === 'jw'}
-              onClick={() => selectPlayer('jw')}
-            >
-              JW Player
-            </button>
+            {PLAYER_OPTIONS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                className={option.id === server ? 'mv-player-server active' : 'mv-player-server'}
+                aria-pressed={option.id === server}
+                onClick={() => selectServer(option.id)}
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -138,7 +112,7 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl, backdropUrl
             href={embedUrl}
             target="_blank"
             rel="noopener noreferrer"
-            title="Open the official VidLink player in a new tab"
+            title="Open the EmbedWave player in a new tab"
           >
             <ExternalLink size={14} /> <span>Open direct</span>
           </a>
@@ -157,30 +131,30 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl, backdropUrl
 
       <div className="mv-player-frame-wrap" ref={frameWrapRef}>
         {!active ? (
-          <button type="button" className="mv-player-start" onClick={start} aria-label={`Play ${title} with VidLink`}>
+          <button type="button" className="mv-player-start" onClick={start} aria-label={`Play ${title} with EmbedWave`}>
             {(backdropUrl || posterUrl) && (
               <span className="mv-player-start-backdrop" aria-hidden="true">
                 <img src={backdropUrl || posterUrl || ''} alt="" />
               </span>
             )}
             <span className="mv-player-start-shade" aria-hidden="true" />
-            <span className="mv-player-start-kicker">KAIRO FILMS <i /> OFFICIAL VIDLINK PLAYER</span>
+            <span className="mv-player-start-kicker">KAIRO FILMS <i /> EMBEDWAVE PLAYER</span>
             <span className="mv-player-start-icon"><Play size={27} fill="currentColor" /></span>
             <span className="mv-player-start-copy">
               <b>Play {title}</b>
-              <small>Start the {playerType === 'jw' ? 'JW Player' : 'VidLink'} embed</small>
+              <small>Start with {PLAYER_OPTIONS.find((option) => option.id === server)?.label ?? 'Automatic'} server</small>
             </span>
           </button>
         ) : (
           <iframe
-            key={`${playerType}-${reloadKey}`}
+            key={`${server}-${reloadKey}`}
             ref={frameRef}
             className="mv-player-frame"
             src={embedUrl}
-            title={`${title} — VidLink ${playerType === 'jw' ? 'JW' : 'player'}`}
-            allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+            title={`${title} — EmbedWave player`}
+            allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
             allowFullScreen
-            referrerPolicy="strict-origin-when-cross-origin"
+            referrerPolicy="no-referrer"
             loading="eager"
             onLoad={() => { setFrameLoaded(true); setFrameError(false); }}
             onError={() => { setFrameError(true); setFrameLoaded(false); }}
@@ -190,12 +164,12 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl, backdropUrl
 
       <p className="mv-player-note" role="status">
         {!active
-          ? 'Choose the VidLink player or JW Player, then press Play.'
+          ? 'Choose a server or leave Automatic selected, then press Play.'
           : frameError
-            ? 'The embedded player reported a loading error. Use Open direct to test VidLink outside the embedded frame.'
+            ? 'The browser reported an iframe loading error. Use Open direct to test EmbedWave outside KAIRO.'
             : frameLoaded
-              ? 'The VidLink player frame loaded. Stream availability is controlled by VidLink and its sources.'
-              : 'Connecting to VidLink…'}
+              ? 'The EmbedWave frame loaded. Actual stream availability depends on its upstream sources.'
+              : 'Connecting to EmbedWave…'}
       </p>
     </div>
   );
