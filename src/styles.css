@@ -2179,3 +2179,458 @@ img { display: block; }
 }
 
 .mv-app .mv-library-retry { margin-left: 5px; padding: 0; border: 0; background: transparent; color: #f0f0f0; font: inherit; font-weight: 850; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+
+/* Dedicated Movies watch experience: Netflix-inspired hierarchy, rendered in grayscale. */
+.mv-app.mv-watch-app {
+  min-height: 100vh;
+  background: #080808;
+}
+.mv-app.mv-watch-app .kc-rail,
+.mv-app.mv-watch-app .kc-topbar,
+.mv-app.mv-watch-app .kc-mobile-nav { display: none !important; }
+.mv-app.mv-watch-app .kc-main {
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+.mv-watch-page {
+  min-height: 100vh;
+  min-height: 100svh;
+  background:
+    radial-gradient(ellipse at 50% -20%, rgba(255,255,255,.075), transparent 43%),
+    #080808;
+  color: #f4f4f4;
+}
+.mv-watch-topbar {
+  position: relative;
+  display: flex;
+  min-height: 68px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 0 clamp(18px, 4vw, 58px);
+  border-bottom: 1px solid #242424;
+  background: rgba(8,8,8,.92);
+}
+.mv-watch-back,
+.mv-watch-topbar-status,
+.mv-watch-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+.mv-watch-back {
+  color: #b7b7b7;
+  font-size: 12px;
+  font-weight: 700;
+  transition: color .15s;
+}
+.mv-watch-back:hover,
+.mv-watch-more:hover { color: #fff; }
+.mv-watch-brand {
+  position: absolute;
+  left: 50%;
+  color: #f5f5f5;
+  font-size: 13px;
+  font-weight: 950;
+  letter-spacing: 2px;
+  transform: translateX(-50%);
+}
+.mv-watch-brand svg { color: #dedede; }
+.mv-watch-brand span { color: #777; font-size: 9px; letter-spacing: 2.5px; }
+.mv-watch-topbar-status {
+  color: #9b9b9b;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 1.55px;
+}
+.mv-watch-topbar-status i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #e6e6e6;
+  box-shadow: 0 0 12px rgba(255,255,255,.5);
+}
+.mv-watch-content {
+  width: min(1450px, 100%);
+  margin: 0 auto;
+  padding: 34px clamp(18px, 4vw, 58px) 76px;
+}
+.mv-watch-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+.mv-watch-kicker,
+.mv-watch-section-label {
+  color: #929292;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 1.75px;
+}
+.mv-watch-heading h1 {
+  margin-top: 7px;
+  color: #f7f7f7;
+  font-size: clamp(25px, 3.2vw, 39px);
+  font-weight: 900;
+  letter-spacing: -1.1px;
+  line-height: 1.1;
+}
+.mv-watch-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px 16px;
+  margin-top: 11px;
+  color: #b4b4b4;
+  font-size: 11px;
+  font-weight: 700;
+}
+.mv-watch-facts span { display: inline-flex; align-items: center; gap: 5px; }
+.mv-watch-facts span + span { position: relative; }
+.mv-watch-facts span + span::before {
+  width: 3px;
+  height: 3px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: #646464;
+  content: "";
+}
+.mv-watch-quality {
+  padding: 3px 6px;
+  border: 1px solid #555;
+  border-radius: 3px;
+  color: #dedede;
+  font-size: 8px;
+  letter-spacing: .8px;
+}
+.mv-watch-more {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid #414141;
+  border-radius: 4px;
+  color: #c4c4c4;
+  font-size: 10px;
+  font-weight: 800;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.mv-watch-more:hover { border-color: #888; background: #191919; }
+.mv-watch-player-section { margin-top: 20px; }
+.mv-watch-player-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 1px 9px;
+  color: #777;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 1.5px;
+}
+.mv-watch-player-heading span:first-child { color: #d4d4d4; }
+.mv-watch-page .mv-player-shell {
+  overflow: hidden;
+  border: 1px solid #333;
+  border-radius: 5px;
+  background: #000;
+  box-shadow: 0 24px 70px rgba(0,0,0,.58);
+}
+.mv-watch-page .mv-player-toolbar {
+  min-height: 54px;
+  padding: 9px 14px;
+  border-bottom: 1px solid #292929;
+  background: #121212;
+}
+.mv-watch-page .mv-player-toolbar-source,
+.mv-watch-page .mv-player-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 11px;
+}
+.mv-watch-page .mv-player-toolbar-label {
+  color: #777;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 1.3px;
+}
+.mv-watch-page .mv-player-servers { gap: 6px; }
+.mv-watch-page .mv-player-server {
+  min-height: 31px;
+  padding: 0 13px;
+  border: 1px solid #414141;
+  border-radius: 3px;
+  color: #bdbdbd;
+  font-size: 10px;
+}
+.mv-watch-page .mv-player-server:hover { border-color: #888; color: #fff; }
+.mv-watch-page .mv-player-server.active {
+  border-color: #f0f0f0;
+  background: #ededed;
+  color: #090909;
+}
+.mv-watch-page .mv-player-control {
+  display: inline-flex;
+  min-height: 31px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid #3b3b3b;
+  border-radius: 3px;
+  background: #191919;
+  color: #c7c7c7;
+  font-size: 10px;
+  font-weight: 750;
+  cursor: pointer;
+}
+.mv-watch-page .mv-player-control:hover { border-color: #858585; color: #fff; }
+.mv-watch-page .mv-player-frame-wrap {
+  aspect-ratio: 16 / 9;
+  max-height: min(76vh, 820px);
+  background: #000;
+}
+.mv-watch-page .mv-player-start {
+  overflow: hidden;
+  gap: 13px;
+  background: #080808;
+}
+.mv-watch-page .mv-player-start-backdrop,
+.mv-watch-page .mv-player-start-shade {
+  position: absolute;
+  inset: 0;
+}
+.mv-watch-page .mv-player-start-backdrop img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 28%;
+  filter: grayscale(1) brightness(.52);
+  transform: scale(1.015);
+}
+.mv-watch-page .mv-player-start-shade {
+  background:
+    linear-gradient(90deg, rgba(0,0,0,.82), rgba(0,0,0,.3) 55%, rgba(0,0,0,.65)),
+    linear-gradient(0deg, rgba(0,0,0,.82), transparent 60%);
+}
+.mv-watch-page .mv-player-start-kicker,
+.mv-watch-page .mv-player-start-icon,
+.mv-watch-page .mv-player-start-copy { position: relative; z-index: 1; }
+.mv-watch-page .mv-player-start-kicker {
+  color: #ddd;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 2px;
+}
+.mv-watch-page .mv-player-start-kicker i {
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  margin: 0 7px 2px;
+  border-radius: 50%;
+  background: #9c9c9c;
+}
+.mv-watch-page .mv-player-start-icon {
+  width: 62px;
+  height: 62px;
+  border: 1px solid rgba(255,255,255,.72);
+  background: #f3f3f3;
+  color: #080808;
+  box-shadow: 0 5px 30px rgba(0,0,0,.3);
+}
+.mv-watch-page .mv-player-start:hover .mv-player-start-icon {
+  background: #fff;
+  transform: scale(1.07);
+}
+.mv-watch-page .mv-player-start-copy { gap: 6px; max-width: min(560px, 85%); }
+.mv-watch-page .mv-player-start-copy b {
+  overflow: hidden;
+  color: #fff;
+  font-size: clamp(15px, 2vw, 21px);
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mv-watch-page .mv-player-start-copy small { color: #d2d2d2; font-size: 10px; }
+.mv-watch-page .mv-player-note {
+  padding: 10px 13px 11px;
+  border-top: 1px solid #292929;
+  color: #777;
+  font-size: 9px;
+}
+.mv-watch-info-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(270px, .8fr);
+  gap: clamp(26px, 5vw, 72px);
+  margin-top: 36px;
+  padding-top: 28px;
+  border-top: 1px solid #292929;
+}
+.mv-watch-story h2 {
+  margin-top: 8px;
+  color: #ededed;
+  font-size: 19px;
+  font-weight: 850;
+  letter-spacing: -.3px;
+}
+.mv-watch-overview {
+  max-width: 78ch;
+  margin-top: 12px;
+  color: #b5b5b5;
+  font-size: 12px;
+  line-height: 1.85;
+}
+.mv-watch-genres { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 18px; }
+.mv-watch-genres a {
+  padding: 6px 10px;
+  border: 1px solid #414141;
+  border-radius: 3px;
+  background: #141414;
+  color: #d0d0d0;
+  font-size: 9px;
+  font-weight: 750;
+  transition: background .15s, border-color .15s;
+}
+.mv-watch-genres a:hover { border-color: #888; background: #222; color: #fff; }
+.mv-watch-countries {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 20px;
+  color: #898989;
+  font-size: 10px;
+}
+.mv-watch-side {
+  align-self: start;
+  padding: 17px;
+  border: 1px solid #303030;
+  border-radius: 4px;
+  background: #111;
+}
+.mv-watch-side-head { display: grid; grid-template-columns: 62px minmax(0,1fr); gap: 13px; align-items: center; }
+.mv-watch-side-head img {
+  width: 62px;
+  aspect-ratio: 2 / 3;
+  border-radius: 2px;
+  object-fit: cover;
+  filter: grayscale(1);
+}
+.mv-watch-side-head > div { display: grid; gap: 6px; min-width: 0; }
+.mv-watch-side-head b { overflow: hidden; color: #ededed; font-size: 12px; text-overflow: ellipsis; }
+.mv-watch-side-head span { color: #8e8e8e; font-size: 9px; line-height: 1.5; }
+.mv-watch-credit-block { margin-top: 19px; padding-top: 14px; border-top: 1px solid #2b2b2b; }
+.mv-watch-credit-block p + p { margin-top: 7px; color: #b0b0b0; font-size: 10px; line-height: 1.7; }
+.mv-watch-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 34px;
+  padding-top: 18px;
+  border-top: 1px solid #242424;
+}
+.mv-watch-footer a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #b8b8b8;
+  font-size: 10px;
+  font-weight: 800;
+}
+.mv-watch-footer a:hover { color: #fff; }
+.mv-watch-loading {
+  display: grid;
+  min-height: 60vh;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  color: #aaa;
+  font-size: 12px;
+}
+.mv-watch-loading span {
+  width: 22px;
+  height: 22px;
+  border: 2px solid #383838;
+  border-top-color: #eee;
+  border-radius: 50%;
+  animation: kc-spin .8s linear infinite;
+}
+.mv-watch-error {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  width: min(620px, calc(100% - 36px));
+  margin: 14vh auto;
+  padding: 25px;
+  border: 1px solid #333;
+  border-radius: 5px;
+  background: #111;
+}
+.mv-watch-error b { color: #f0f0f0; font-size: 17px; }
+.mv-watch-error p { color: #aaa; font-size: 12px; line-height: 1.6; }
+.mv-watch-outline {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 7px;
+  margin-top: 5px;
+  padding: 0 12px;
+  border: 1px solid #505050;
+  border-radius: 3px;
+  color: #eee;
+  font-size: 10px;
+  font-weight: 800;
+}
+.mv-watch-outline:hover { background: #222; }
+.mv-app .mv-detail-play { margin-top: 17px; }
+.mv-app .mv-detail-play:hover { background: #fff; }
+
+@media (max-width: 760px) {
+  .mv-watch-topbar { min-height: 58px; padding: 0 16px; }
+  .mv-watch-back { gap: 6px; font-size: 10px; }
+  .mv-watch-brand { font-size: 11px; letter-spacing: 1.4px; }
+  .mv-watch-brand span { font-size: 8px; letter-spacing: 1.5px; }
+  .mv-watch-topbar-status { font-size: 7px; letter-spacing: 1px; }
+  .mv-watch-content { padding: 25px 16px 50px; }
+  .mv-watch-heading { align-items: flex-start; }
+  .mv-watch-heading h1 { font-size: clamp(22px, 6vw, 30px); }
+  .mv-watch-more { min-height: 32px; padding: 0 8px; font-size: 9px; }
+  .mv-watch-player-heading { font-size: 7px; }
+  .mv-watch-page .mv-player-toolbar { min-height: 48px; padding: 7px 9px; }
+  .mv-watch-page .mv-player-toolbar-source,
+  .mv-watch-page .mv-player-toolbar-actions { gap: 7px; }
+  .mv-watch-page .mv-player-toolbar-label { font-size: 7px; }
+  .mv-watch-page .mv-player-server { min-height: 29px; padding: 0 9px; font-size: 9px; }
+  .mv-watch-page .mv-player-control { min-height: 29px; padding: 0 7px; }
+  .mv-watch-page .mv-player-control span { display: none; }
+  .mv-watch-page .mv-player-start-kicker { font-size: 7px; }
+  .mv-watch-page .mv-player-start-icon { width: 48px; height: 48px; }
+  .mv-watch-page .mv-player-start-copy small { font-size: 8px; }
+  .mv-watch-info-grid { grid-template-columns: 1fr; gap: 22px; margin-top: 27px; padding-top: 22px; }
+  .mv-watch-side { order: -1; }
+}
+@media (max-width: 420px) {
+  .mv-watch-topbar { gap: 6px; }
+  .mv-watch-back span { display: none; }
+  .mv-watch-brand { gap: 5px; }
+  .mv-watch-topbar-status { gap: 5px; font-size: 6px; }
+  .mv-watch-heading { display: block; }
+  .mv-watch-more { margin-top: 12px; }
+  .mv-watch-player-heading { display: none; }
+  .mv-watch-player-section { margin-top: 14px; }
+  .mv-watch-page .mv-player-toolbar-source { gap: 6px; }
+  .mv-watch-page .mv-player-toolbar-label { display: none; }
+  .mv-watch-page .mv-player-frame-wrap { aspect-ratio: 16 / 9; }
+  .mv-watch-page .mv-player-start-copy b { max-width: 260px; }
+  .mv-watch-facts { gap: 7px 9px; font-size: 9px; }
+  .mv-watch-facts span + span::before { margin-right: 4px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mv-watch-loading span { animation: none; }
+  .mv-watch-page .mv-player-start-icon { transition: none; }
+}
