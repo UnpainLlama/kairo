@@ -21,7 +21,8 @@ type Props = {
  * - Click-to-load: iframe is not mounted until the user presses Play, so
  *   popunders do not fire on mere page view.
  * - Tight allow= list (no top-navigation grants we can control from attrs).
- * - referrerPolicy=no-referrer.
+ * - strict-origin-when-cross-origin referrer policy: sends the site origin to
+ *   VidLink without exposing the full movie page URL.
  * - Parent-side window.open guard while the player is active (best-effort;
  *   cannot stop in-frame scripts that open new tabs after user gesture).
  *
@@ -129,7 +130,7 @@ export default function MovieEmbedPlayer({ tmdbId, title, initialServer }: Props
             title={`${title} — ${serverId} player`}
             allow="fullscreen; picture-in-picture; encrypted-media"
             allowFullScreen
-            referrerPolicy="no-referrer"
+            referrerPolicy="strict-origin-when-cross-origin"
             loading="eager"
           />
         )}
