@@ -1,37 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import {
-  embedWaveMovieEmbedUrl,
-  embedWaveTvEmbedUrl,
+  cinesrcMovieEmbedUrl,
+  cinesrcTvEmbedUrl,
 } from './moviePlayback';
 
-describe('EmbedWave embed URL builders', () => {
-  it('builds the documented movie URL from a TMDB movie ID', () => {
-    expect(embedWaveMovieEmbedUrl(533535)).toBe('https://embedwave.cc/embed/movie/533535');
+describe('CineSrc embed URL builders', () => {
+  it('builds the direct movie URL from a TMDB movie ID', () => {
+    expect(cinesrcMovieEmbedUrl(1084242)).toBe('https://cinesrc.st/embed/movie/1084242');
   });
 
-  it('pins a selected movie server only when requested', () => {
-    expect(embedWaveMovieEmbedUrl('533535', 'cinesrc')).toBe(
-      'https://embedwave.cc/embed/movie/533535?server=cinesrc',
-    );
+  it('builds the documented TV URL with 1-indexed season and episode query parameters', () => {
+    expect(cinesrcTvEmbedUrl(1396, 1, 1)).toBe('https://cinesrc.st/embed/tv/1396?s=1&e=1');
   });
 
-  it('builds the documented TV URL with 1-indexed season and episode numbers', () => {
-    expect(embedWaveTvEmbedUrl(1399, 1, 1)).toBe('https://embedwave.cc/embed/tv/1399/1/1');
+  it('accepts string IDs and string season/episode numbers', () => {
+    expect(cinesrcTvEmbedUrl('1396', '2', '5')).toBe('https://cinesrc.st/embed/tv/1396?s=2&e=5');
   });
 
-  it('supports pinning a TV episode to a selected server', () => {
-    expect(embedWaveTvEmbedUrl('1399', '2', '5', 'videasy')).toBe(
-      'https://embedwave.cc/embed/tv/1399/2/5?server=videasy',
-    );
-  });
-
-  it.each(['', '0', '-1', 'tt0133093', 'movie-123', '1234567890123'])(
+  it.each(['', '0', '-1', 'tt0133097', 'movie-123', '1234567890123'])(
     'rejects an invalid TMDB ID: %s',
-    (id) => expect(() => embedWaveMovieEmbedUrl(id)).toThrow(/positive numeric ID/),
+    (id) => expect(() => cinesrcMovieEmbedUrl(id)).toThrow(/positive numeric ID/),
   );
 
   it.each([[0, 1], [1, 0], [-1, 3], ['x', 1]])(
     'rejects invalid TV season and episode values',
-    (season, episode) => expect(() => embedWaveTvEmbedUrl(1399, season, episode)).toThrow(/positive numeric ID/),
+    (season, episode) => expect(() => cinesrcTvEmbedUrl(1396, season, episode)).toThrow(/positive numeric ID/),
   );
 });

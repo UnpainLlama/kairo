@@ -80,8 +80,8 @@ export default function MoviesWatchPage() {
 
         <section className="mv-watch-player-section" aria-label={`Watch ${movie.title}`}>
           <div className="mv-watch-player-heading">
-            <span>EMBEDWAVE PLAYER</span>
-            <span>AUTOMATIC OR MULTI-SERVER</span>
+            <span>CINESRC DIRECT PLAYER</span>
+            <span>TMDB STREAM EMBED</span>
           </div>
           {movie.providerId === 'tmdb' ? (
             <MovieEmbedPlayer
@@ -92,7 +92,7 @@ export default function MoviesWatchPage() {
             />
           ) : (
             <div className="mv-player-message" role="alert">
-              <p>EmbedWave requires a TMDB movie ID. This title is not identified as a TMDB movie.</p>
+              <p>CineSrc requires a TMDB movie ID. This title is not identified as a TMDB movie.</p>
             </div>
           )}
         </section>

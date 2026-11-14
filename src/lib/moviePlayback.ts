@@ -1,21 +1,10 @@
 /**
- * EmbedWave iframe URL builders.
+ * CineSrc iframe URL builders.
  *
- * The Movies catalogue supplies numeric TMDB IDs. URLs are built locally;
- * no EmbedWave API key or server-side proxy is required for iframe embeds.
+ * The Movies catalogue supplies numeric TMDB IDs. CineSrc resolves playback
+ * directly from those IDs; KAIRO does not use an intermediate provider router.
  */
-export const EMBEDWAVE_ORIGIN = 'https://embedwave.cc';
-
-export type EmbedWaveServerId = 'nxsha' | 'cinesrc' | 'videasy';
-
-export const EMBEDWAVE_SERVERS: ReadonlyArray<{
-  id: EmbedWaveServerId;
-  label: string;
-}> = [
-  { id: 'nxsha', label: 'Multi HD' },
-  { id: 'cinesrc', label: 'Cinesrc' },
-  { id: 'videasy', label: '4K' },
-];
+export const CINESRC_ORIGIN = 'https://cinesrc.st';
 
 function positiveId(value: string | number, label: string, maxDigits = 12): string {
   const id = String(value).trim();
@@ -25,35 +14,20 @@ function positiveId(value: string | number, label: string, maxDigits = 12): stri
   return id;
 }
 
-function withServer(url: URL, server?: EmbedWaveServerId): string {
-  if (server !== undefined && !EMBEDWAVE_SERVERS.some((entry) => entry.id === server)) {
-    throw new Error('Unsupported EmbedWave server.');
-  }
-  if (server) url.searchParams.set('server', server);
-  return url.toString();
-}
-
-/** Movie embed, addressed by TMDB movie ID. */
-export function embedWaveMovieEmbedUrl(
-  tmdbId: string | number,
-  server?: EmbedWaveServerId,
-): string {
+/** Direct movie embed, addressed by TMDB movie ID. */
+export function cinesrcMovieEmbedUrl(tmdbId: string | number): string {
   const id = positiveId(tmdbId, 'TMDB movie ID');
-  return withServer(new URL(`/embed/movie/${id}`, EMBEDWAVE_ORIGIN), server);
+  return `${CINESRC_ORIGIN}/embed/movie/${id}`;
 }
 
-/** TV episode embed, with 1-indexed season and episode numbers. */
-export function embedWaveTvEmbedUrl(
+/** Direct TV episode embed; season and episode numbers are 1-indexed. */
+export function cinesrcTvEmbedUrl(
   tmdbId: string | number,
   season: string | number,
   episode: string | number,
-  server?: EmbedWaveServerId,
 ): string {
   const id = positiveId(tmdbId, 'TMDB TV ID');
   const seasonNumber = positiveId(season, 'Season number', 3);
   const episodeNumber = positiveId(episode, 'Episode number', 4);
-  return withServer(
-    new URL(`/embed/tv/${id}/${seasonNumber}/${episodeNumber}`, EMBEDWAVE_ORIGIN),
-    server,
-  );
+  return `${CINESRC_ORIGIN}/embed/tv/${id}?s=${seasonNumber}&e=${episodeNumber}`;
 }
