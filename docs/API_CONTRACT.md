@@ -88,8 +88,6 @@ These routes require a valid identity-provider session/token and server-side own
 | GET | `/api/v1/me/library` | Read the signed-in user's Anime library, including live catalogue entries |
 | PUT | `/api/v1/me/library/:animeId` | Add/update a provider-backed Anime title's status and favourite flag |
 | DELETE | `/api/v1/me/library/:animeId` | Remove one Anime title from the signed-in user's library |
-| PUT | `/api/v1/me/library/:animeId` | Add or update a library item |
-| DELETE | `/api/v1/me/library/:animeId` | Remove a library item |
 | GET | `/api/v1/me/history` | Read recent viewing history |
 | DELETE | `/api/v1/me/history` | Clear history after explicit confirmation |
 | GET | `/api/v1/me/progress` | Read episode progress |
