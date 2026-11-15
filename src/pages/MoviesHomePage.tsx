@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, ChevronRight, Play, RefreshCw, Star } from 'lucide-react';
+import { Info, Play } from 'lucide-react';
 import { apiGet, ApiError } from '../lib/api';
-import { movieHref, movieRating, movieYear, type MovieGenre, type MoviePage, type MovieSummary } from '../lib/movies';
-import { MovieRail } from '../components/MovieCard';
+import { movieYear, type MovieGenre, type MoviePage, type MovieSummary } from '../lib/movies';
+import { MovieRail, RowSkeleton, useOpenTitle, watchHref } from '../components/MovieCard';
+import { TitleModal } from '../components/TitleDetail';
+import { MyListProvider } from '../lib/useMyList';
+import '../styles-netflix.css';
 
 type HomeData = {
   trending: MovieSummary[];
@@ -15,35 +18,71 @@ type HomeData = {
 };
 
 const EMPTY: HomeData = { trending: [], popular: [], topRated: [], upcoming: [], nowPlaying: [], genres: [] };
+const GENRE_ROWS = 8;
 
 async function loadHome(signal: AbortSignal): Promise<HomeData> {
-  const paths = [
-    '/movies/discover?kind=trending_week&page=1',
-    '/movies/discover?kind=popular&page=1',
-    '/movies/discover?kind=top_rated&page=1',
-    '/movies/discover?kind=upcoming&page=1',
-    '/movies/discover?kind=now_playing&page=1',
-    '/movies/genres?language=en-US',
-  ];
   const [trending, popular, topRated, upcoming, nowPlaying, genres] = await Promise.all([
-    apiGet<MoviePage>(paths[0], signal),
-    apiGet<MoviePage>(paths[1], signal),
-    apiGet<MoviePage>(paths[2], signal),
-    apiGet<MoviePage>(paths[3], signal),
-    apiGet<MoviePage>(paths[4], signal),
-    apiGet<{ items: MovieGenre[] }>(paths[5], signal),
+    apiGet<MoviePage>('/movies/discover?kind=trending_week&page=1', signal),
+    apiGet<MoviePage>('/movies/discover?kind=popular&page=1', signal),
+    apiGet<MoviePage>('/movies/discover?kind=top_rated&page=1', signal),
+    apiGet<MoviePage>('/movies/discover?kind=upcoming&page=1', signal),
+    apiGet<MoviePage>('/movies/discover?kind=now_playing&page=1', signal),
+    apiGet<{ items: MovieGenre[] }>('/movies/genres?language=en-US', signal),
   ]);
-  return {
-    trending: trending.items,
-    popular: popular.items,
-    topRated: topRated.items,
-    upcoming: upcoming.items,
-    nowPlaying: nowPlaying.items,
-    genres: genres.items,
-  };
+  return { trending: trending.items, popular: popular.items, topRated: topRated.items, upcoming: upcoming.items, nowPlaying: nowPlaying.items, genres: genres.items };
 }
 
-export default function MoviesHomePage() {
+/** A genre row that only loads once it scrolls near the viewport, like Netflix's lazy rows. */
+function GenreRow({ genre }: { genre: MovieGenre }) {
+  const holder = useRef<HTMLDivElement>(null);
+  const [items, setItems] = useState<MovieSummary[] | null>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const node = holder.current;
+    if (!node || typeof IntersectionObserver === 'undefined') { setVisible(true); return; }
+    const observer = new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) { setVisible(true); observer.disconnect(); } }, { rootMargin: '500px 0px' });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!visible) return;
+    const controller = new AbortController();
+    apiGet<MoviePage>('/movies/discover?kind=popular&page=1&genres=' + genre.externalId, controller.signal)
+      .then(page => { if (!controller.signal.aborted) setItems(page.items); })
+      .catch(() => { if (!controller.signal.aborted) setItems([]); });
+    return () => controller.abort();
+  }, [visible, genre.externalId]);
+
+  return (
+    <div ref={holder}>
+      {items === null ? <RowSkeleton title={genre.name + ' Movies'} /> : <MovieRail title={genre.name + ' Movies'} items={items} to={'/movies/browse/genre-' + genre.externalId} />}
+    </div>
+  );
+}
+
+function Billboard({ movie }: { movie: MovieSummary }) {
+  const open = useOpenTitle();
+  const year = movieYear(movie);
+  return (
+    <header className="nf-billboard">
+      {movie.backdropUrl && <img className="nf-bb-art" src={movie.backdropUrl} alt="" fetchPriority="high" referrerPolicy="no-referrer" />}
+      <div className="nf-bb-fade" />
+      <div className="nf-bb-info">
+        <h1 className="nf-bb-title">{movie.title}</h1>
+        {movie.overview && <p className="nf-bb-text">{movie.overview}</p>}
+        <div className="nf-bb-buttons">
+          <Link to={watchHref(movie)} className="nf-btn play"><Play size={26} fill="currentColor" aria-hidden="true" /> Play</Link>
+          <button type="button" className="nf-btn info" onClick={() => open(movie)}><Info size={26} aria-hidden="true" /> More Info</button>
+        </div>
+      </div>
+      {year && <div className="nf-bb-badge" aria-label={'Released ' + year}>{movie.adult ? '18+' : year}</div>}
+    </header>
+  );
+}
+
+function HomeContent() {
   const [data, setData] = useState<HomeData>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
@@ -56,8 +95,7 @@ export default function MoviesHomePage() {
       .then(result => { if (!signal.aborted) setData(result); })
       .catch(caught => {
         if (signal.aborted || (caught instanceof DOMException && caught.name === 'AbortError')) return;
-        const issue = caught instanceof ApiError ? caught : new ApiError(0, 'MOVIES_UNAVAILABLE', 'Could not load movies.');
-        setError(issue);
+        setError(caught instanceof ApiError ? caught : new ApiError(0, 'MOVIES_UNAVAILABLE', 'Could not load movies.'));
         setData(EMPTY);
       })
       .finally(() => { if (!signal.aborted) setLoading(false); });
@@ -69,94 +107,51 @@ export default function MoviesHomePage() {
     return () => controller.abort();
   }, [load, refresh]);
 
-  const featured = data.trending[0] ?? data.popular[0] ?? null;
-  const rating = featured ? movieRating(featured.voteAverage) : null;
-  const featuredYear = featured ? movieYear(featured) : null;
-  const genres = useMemo(() => data.genres.slice(0, 14), [data.genres]);
+  const featured = data.trending.find(movie => movie.backdropUrl) ?? data.popular.find(movie => movie.backdropUrl) ?? null;
   const disabled = error?.code === 'MOVIES_DISABLED';
 
   return (
-    <section className="mv-home">
-      {(featured || loading) && (
-        <header className={'mv-hero' + (featured?.backdropUrl ? ' has-art' : '')}>
-          {featured?.backdropUrl && <img className="mv-hero-art" src={featured.backdropUrl} alt="" fetchPriority="high" />}
-          <div className="mv-hero-shade" />
-          <div className="mv-hero-copy">
-            {featured ? (
-              <>
-                <span className="mv-eyebrow">MOVIES</span>
-                <span className="mv-featured-label">FEATURED THIS WEEK</span>
-                <h1>{featured.title}</h1>
-                <div className="mv-hero-meta">
-                  {featuredYear && <span>{featuredYear}</span>}
-                  {rating && <span><Star size={13} fill="currentColor" /> {rating} rating</span>}
-                  {featured.originalLanguage && <span>{featured.originalLanguage.toUpperCase()}</span>}
-                </div>
-                {featured.overview && <p>{featured.overview}</p>}
-                <div className="mv-hero-actions">
-                  <Link to={movieHref(featured)} className="mv-action mv-action-light"><Play size={16} fill="currentColor" /> More details</Link>
-                  <Link to="/movies/browse/trending" className="mv-action mv-action-glass">Explore trending <ArrowRight size={15} /></Link>
-                </div>
-              </>
-            ) : (
-              <div className="mv-hero-loading" role="status" aria-label="Loading featured movie">
-                <span className="mv-hero-loading-label" />
-                <span className="mv-hero-loading-title" />
-                <span className="mv-hero-loading-line" />
-                <span className="mv-hero-loading-line short" />
-                <span className="mv-hero-loading-action" />
-              </div>
-            )}
-          </div>
-          {featured && <div className="mv-hero-current"><span>NOW SHOWING</span><b>{featured.title}</b></div>}
-        </header>
+    <div className="nf nf-bleed nf-home">
+      {featured ? <Billboard movie={featured} /> : loading ? <div className="nf-billboard nf-skel" role="status" aria-label="Loading" /> : <div className="nf-top-space" />}
+
+      {error && (
+        <div className="nf-message" role="alert">
+          <h2>{disabled ? 'Movies are not available yet' : 'Something went wrong'}</h2>
+          <p>{disabled ? 'Please check back soon.' : error.message}</p>
+          {!disabled && <button type="button" className="nf-btn play" onClick={() => setRefresh(value => value + 1)}>Try again</button>}
+        </div>
       )}
 
-      <div className="mv-home-content">
-        <nav className="mv-category-strip" aria-label="Movie categories">
-          <Link to="/movies" className="active">For you</Link>
-          <Link to="/movies/browse/trending">Trending</Link>
-          <Link to="/movies/browse/popular">Popular</Link>
-          <Link to="/movies/browse/top-rated">Top rated</Link>
-          <Link to="/movies/browse/upcoming">Coming soon</Link>
-          <Link to="/movies/browse/now-playing">Now playing</Link>
-        </nav>
-
-        {error && (
-          <div className="mv-provider-notice" role="status">
-            <div className="mv-provider-mark">M</div>
-            <div>
-              <b>{disabled ? 'Movie listings are not available yet.' : 'Movie browsing is temporarily unavailable.'}</b>
-              <p>{disabled ? 'Please check back soon.' : error.message}</p>
-            </div>
-            {!disabled && <button type="button" onClick={() => setRefresh(value => value + 1)}><RefreshCw size={14} /> Retry</button>}
-          </div>
-        )}
-
-        {loading && <div className="mv-loading-rails" role="status" aria-label="Loading movies">
-          {['Trending this week', 'Popular movies', 'Top rated'].map(label => <section className="mv-section" key={label}><div className="mv-section-heading"><h2>{label}</h2></div><div className="mv-rail">{Array.from({length:7},(_,index)=><div className="mv-skeleton" key={index}><span /><i /></div>)}</div></section>)}
-        </div>}
-
+      <div className="nf-rows">
+        {loading && ['Top 10 Movies This Week', 'Popular Movies', 'Top Rated'].map(label => <RowSkeleton key={label} title={label} />)}
         {!loading && (
           <>
-            <MovieRail title="Trending this week" subtitle="The films drawing attention right now" items={data.trending} to="/movies/browse/trending" />
-            <MovieRail title="Popular movies" subtitle="Big stories. Global favourites." items={data.popular} to="/movies/browse/popular" />
-            <MovieRail title="Top rated" subtitle="Highly rated films worth your time" items={data.topRated} to="/movies/browse/top-rated" />
-            <MovieRail title="Coming soon" subtitle="What's on the horizon" items={data.upcoming} to="/movies/browse/upcoming" />
-            <MovieRail title="Now playing" subtitle="Recently released films" items={data.nowPlaying} to="/movies/browse/now-playing" />
+            <MovieRail title="Top 10 Movies This Week" items={data.trending.slice(0, 10)} to="/movies/browse/trending" topTen />
+            <MovieRail title="Popular Movies" items={data.popular} to="/movies/browse/popular" />
+            <MovieRail title="Trending Now" items={data.trending.slice(10)} to="/movies/browse/trending" />
+            <MovieRail title="Top Rated" items={data.topRated} to="/movies/browse/top-rated" />
+            <MovieRail title="New Releases" items={data.nowPlaying} to="/movies/browse/now-playing" />
+            <MovieRail title="Coming Soon" items={data.upcoming} to="/movies/browse/upcoming" />
+            {data.genres.slice(0, GENRE_ROWS).map(genre => <GenreRow key={genre.externalId} genre={genre} />)}
           </>
         )}
-
-        {genres.length > 0 && (
-          <section className="mv-section mv-genres-section">
-            <div className="mv-section-heading"><div><h2>Find your genre</h2><p>Choose a mood. Find your next film.</p></div></div>
-            <div className="mv-genre-grid">
-              {genres.map(genre => <Link key={genre.externalId} to={'/movies/browse/genre-' + genre.externalId}><span>{genre.name}</span><ChevronRight size={15} /></Link>)}
-            </div>
-          </section>
+        {!loading && !error && !featured && (
+          <div className="nf-message">
+            <h2>No movies available right now.</h2>
+            <p>Search for a title or try again later.</p>
+            <Link to="/movies/search" className="nf-btn play">Search</Link>
+          </div>
         )}
-        {!loading && !error && !featured && <div className="mv-empty-state"><h2>No movies available right now.</h2><p>Search for a film or choose another category.</p><Link to="/movies/search">Search movies <ArrowRight size={14} /></Link></div>}
       </div>
-    </section>
+    </div>
+  );
+}
+
+export default function MoviesHomePage() {
+  return (
+    <MyListProvider>
+      <HomeContent />
+      <TitleModal />
+    </MyListProvider>
   );
 }
