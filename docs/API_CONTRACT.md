@@ -1,5 +1,18 @@
 # API contract — `/api/v1`
 
+## Movies provider boundary
+
+The `/api/v1/movies/*` catalogue routes use TMDB for discovery, search, genres and detail
+metadata when the Movies feature is enabled. The returned numeric TMDB movie ID is also the
+identifier used for playback.
+
+Movie playback is not resolved by a Kairo API route. The client embeds
+`https://cinesrc.st/embed/movie/{tmdb_id}` through the official CineSrc iframe integration.
+CineSrc is the **only** Movie playback provider; there is no VidLink route, secondary player,
+or direct-stream extraction fallback. The iframe integration needs no additional Kairo
+Worker secret. See [docs/CINESRC_SETUP.md](CINESRC_SETUP.md).
+
+
 All routes are same-origin behind the Cloudflare Worker unless a deployment architecture explicitly separates the API. Use JSON and UTF-8. Query values must be validated and bounded. In live mode, when the `TMDB_ACCESS_TOKEN` Worker secret is configured, catalogue cards and anime details are enriched with TMDB poster/backdrop URLs and TMDB may fill missing synopsis, rating, genres, release year and total TV episode count. Existing non-empty catalogue metadata takes precedence. Episode rows may receive TMDB still thumbnails, but episode discovery and playback remain separate. The legacy `CATALOG_SOURCE=db` routes do not use this enrichment. Catalogue results remain available if TMDB is unavailable.
 
 ## 1. Response envelope

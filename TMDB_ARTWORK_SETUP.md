@@ -74,3 +74,11 @@ Official references:
 ## Episode stills
 
 The Worker also enriches live episode rows with TMDB season stills. It resolves the matched TV series, selects a season using an explicit season number in the catalogue title when available and otherwise the nearest season air year, then reads `still_path` from the TV season details response. The episode API returns these as `thumbnailUrl`. If an episode has no TMDB still, Kairo falls back to the series backdrop or poster. This is optional: a TMDB lookup failure never prevents episode discovery.
+
+
+## Movie playback boundary
+
+TMDB supplies Movies discovery and metadata; it is not a playback provider. CineSrc is
+Kairo's sole Movie playback provider and uses the numeric TMDB movie ID in its documented
+iframe embed. No CineSrc API key or Worker secret is required. See
+[docs/CINESRC_SETUP.md](docs/CINESRC_SETUP.md).

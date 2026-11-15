@@ -146,3 +146,17 @@ Settings:
 - API timeouts, cancellation, retries only for safe idempotent reads.
 - Accessible semantic structure and keyboard operation.
 - Respect user privacy and provider terms.
+
+
+## Movies playback provider
+
+- TMDB supplies the Movies catalogue, discovery, search and title metadata. Its numeric movie
+  ID is the identifier passed to the player.
+- CineSrc is the only Movie playback provider. Embed the official
+  `https://cinesrc.st/embed/movie/{tmdb_id}` iframe and validate messages by exact origin
+  and active iframe source.
+- Do not add VidLink, a secondary Movie player, a provider switcher, a direct-stream resolver
+  or a silent playback fallback. Show a clear unavailable/error state when CineSrc cannot
+  play a title.
+- CineSrc embed configuration and event handling are documented in
+  [CineSrc setup](CINESRC_SETUP.md).

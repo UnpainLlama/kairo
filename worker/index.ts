@@ -1,6 +1,5 @@
 /// <reference types="@cloudflare/workers-types" />
 import { Hono, type Context, type Next } from 'hono';
-import { Innertube } from 'youtubei.js';
 import { cors } from 'hono/cors';
 import { boundedInt, parseId, parsePagination, parseSearchParams } from './lib/validation';
 import { clearSessionCookie, findSessionUser, revokeSession } from './auth/session';
@@ -46,8 +45,6 @@ interface Bindings {
   ZOKOANIME_EMBED_ENABLED?: string;
   /** TMDB API Read Access Token stored as a Cloudflare Worker secret. */
   TMDB_ACCESS_TOKEN?: string;
-  /** Staging-only bearer secret for the experimental YouTube cookie-feed endpoint. */
-  YOUTUBE_STAGING_TOKEN?: string;
   /** Enable TMDB-powered Movies discovery/search only after credentials and provider terms are approved. */
   MOVIES_TMDB_ENABLED?: string;
   /** Explicit owner approval for the provider's applicable licence, caching, and attribution terms. */
@@ -482,92 +479,6 @@ app.get('/api/v1/anime/:id/metadata', async (c) => {
 });
 
 
-// Experimental YouTube.js subscriptions-feed probe. Staging only; cookie is request-scoped and never persisted or logged.
-app.post('/api/staging/youtube/feed', async (c) => {
-  if (c.env.APP_ENV !== 'staging') return fail(c, 404, 'RESOURCE_NOT_FOUND', 'The requested API route was not found.');
-  if (!c.env.YOUTUBE_STAGING_TOKEN) return fail(c, 503, 'FEATURE_NOT_CONFIGURED', 'The staging YouTube test is not configured.');
-  const origin = c.req.header('Origin');
-  if (origin && origin !== new URL(c.req.url).origin) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This test can only be used from the Kairo staging site.');
-  const authorization = c.req.header('Authorization') ?? '';
-  const suppliedToken = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
-  const expected = c.env.YOUTUBE_STAGING_TOKEN;
-  const encoder = new TextEncoder();
-  const [providedHash, expectedHash] = await Promise.all([
-    crypto.subtle.digest('SHA-256', encoder.encode(suppliedToken)),
-    crypto.subtle.digest('SHA-256', encoder.encode(expected)),
-  ]);
-  const a = new Uint8Array(providedHash);
-  const b = new Uint8Array(expectedHash);
-  let mismatch = 0;
-  for (let i = 0; i < a.length; i += 1) mismatch |= a[i] ^ b[i];
-  if (!suppliedToken || mismatch !== 0) return fail(c, 401, 'STAGING_AUTH_REQUIRED', 'The staging access token is missing or incorrect.');
-
-  let body: { cookie?: unknown; maxPages?: unknown };
-  try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid JSON request.'); }
-  const cookie = typeof body.cookie === 'string' ? body.cookie.trim() : '';
-  if (!cookie || cookie.length > 16000 || /[\r\n]/.test(cookie)) {
-    return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid YouTube Cookie header (maximum 16 KB).');
-  }
-  const maxPages = typeof body.maxPages === 'number' && Number.isFinite(body.maxPages)
-    ? Math.min(3, Math.max(1, Math.floor(body.maxPages))) : 1;
-
-  try {
-    const innertube = await Innertube.create({ cookie, enable_session_cache: false });
-    let feed = await innertube.getSubscriptionsFeed();
-    const videosById = new Map<string, Record<string, unknown>>();
-    for (let page = 1; page <= maxPages; page += 1) {
-      for (const video of feed.videos ?? []) {
-        // Feed.videos is a union of several YouTube.js renderer types. Some entries
-        // are not ordinary videos, so inspect the runtime shape instead of assuming
-        // every union member exposes the same properties.
-        const item = video as unknown as Record<string, unknown>;
-        const asRecord = (value: unknown): Record<string, unknown> | null =>
-          value !== null && typeof value === 'object' ? value as Record<string, unknown> : null;
-        const asText = (value: unknown): string => {
-          if (value == null) return '';
-          if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
-          const textValue = asRecord(value)?.text;
-          if (typeof textValue === 'string') return textValue;
-          const toString = asRecord(value)?.toString;
-          return typeof toString === 'function' ? String(toString.call(value)) : '';
-        };
-
-        const videoId = typeof item.video_id === 'string'
-          ? item.video_id
-          : typeof item.id === 'string' ? item.id : '';
-        if (!videoId) continue;
-
-        const author = asRecord(item.author);
-        const duration = asRecord(item.duration);
-        const bestThumbnail = asRecord(item.best_thumbnail);
-        const thumbnails = Array.isArray(item.thumbnails) ? item.thumbnails : [];
-        const firstThumbnail = asRecord(thumbnails[0]);
-        const thumbnail = bestThumbnail?.url ?? firstThumbnail?.url;
-
-        videosById.set(videoId, {
-          videoId,
-          title: asText(item.title),
-          channelTitle: asText(author?.name),
-          published: asText(item.published),
-          viewCount: asText(item.short_view_count ?? item.view_count),
-          duration: asText(duration?.text ?? item.length_text) || null,
-          isLive: Boolean(item.is_live),
-          thumbnail: typeof thumbnail === 'string' ? thumbnail : null,
-          url: `https://www.youtube.com/watch?v=${videoId}`,
-          embedUrl: `https://www.youtube-nocookie.com/embed/${videoId}`,
-        });
-      }
-      if (page === maxPages || !feed.has_continuation) break;
-      feed = await feed.getContinuation();
-    }
-    return ok(c, { count: videosById.size, videos: [...videosById.values()] }, { pagesRequested: maxPages });
-  } catch {
-    // Do not log request bodies, cookies, upstream response details, or authentication material.
-    return fail(c, 503, 'YOUTUBE_FEED_FAILED', 'YouTube did not return the subscriptions feed. The session may be expired, verification may be required, or the staging server IP may be blocked.');
-  }
-});
-
-// Session-backed account endpoints. User IDs always come from the validated session cookie.
 app.get('/api/v1/me', async (c) => {
   const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your profile.');

@@ -1,3 +1,20 @@
+# Metadata and playback providers
+
+## Movies provider boundary
+
+Kairo Movies has two distinct provider roles:
+
+| Role | Provider | Responsibility |
+|---|---|---|
+| Catalogue and metadata | TMDB | Discovery, search, movie details, genres, artwork and numeric TMDB identifiers |
+| Playback | CineSrc | The single Movie iframe player, addressed with the TMDB movie ID |
+
+CineSrc is the **only** Movie playback provider. Kairo does not configure VidLink, alternate
+Movie players, direct-stream resolvers, or provider fallback. CineSrc's documented iframe
+embed requires no Kairo Worker secret. It does not replace the TMDB catalogue API. See
+[docs/CINESRC_SETUP.md](CINESRC_SETUP.md) and
+[the official CineSrc docs](https://cinesrc.st/docs).
+
 # Metadata providers
 
 KAIRO combines several metadata sources into one unified record. No provider is a permanent dependency: each one is an adapter that can be switched off, replaced or added without touching the frontend or the routes.

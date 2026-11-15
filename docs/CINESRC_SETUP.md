@@ -1,28 +1,50 @@
-# CineSrc movie player setup
+# CineSrc Movie playback
 
-Kairo's Movies catalogue comes from TMDB, so playback uses the numeric TMDB movie ID (`MovieDetail.externalId`).
-This replaces the old VidLink player. `docs/VIDLINK_SETUP.md` is obsolete and can be deleted.
+CineSrc is Kairo's **sole Movie playback provider**. There is no VidLink integration, alternate
+Movie player, or playback fallback.
 
-## Embed format
+The Movies catalogue remains separate: TMDB supplies discovery, search, details, artwork and
+the numeric movie ID. CineSrc uses that numeric TMDB ID to identify the movie in its iframe.
+CineSrc is a playback provider, not Kairo's catalogue or metadata API.
 
-From the official docs (https://cinesrc.st/docs):
+## Official embed
 
-- Movie URL: `https://cinesrc.st/embed/movie/{tmdb_id}`
-- No API key is needed for the iframe embed.
-- Parameters used: `autoplay=true`, `back=close`, `color=%23e5e5e5`.
-- `back=close` makes the player's own back button send a `cinesrc:close` message to the page.
+Official documentation: https://cinesrc.st/docs
 
-## Implementation
+Movie embed URL:
 
-- `src/lib/moviePlayback.ts` validates the ID and builds the URL. Tests are in `moviePlayback.test.ts`.
-- `src/components/MovieEmbedPlayer.tsx` renders a full-screen iframe that starts when the watch page opens.
-  There is no source switcher, reload, open-in-tab or full-screen button of our own.
-- Messages are accepted only from `https://cinesrc.st` and only from this iframe.
-- Handled messages: `cinesrc:close` (go back), `cinesrc:ready`, `cinesrc:error`.
-- Esc also goes back when the page is not in full screen.
+```text
+https://cinesrc.st/embed/movie/{tmdb_id}
+```
+
+Kairo builds the URL with these documented parameters:
+
+- `autoplay=true`
+- `back=close` — CineSrc sends `cinesrc:close` when its back control is used.
+- `color=%23e5e5e5` — grayscale player accent.
+
+The documented iframe embed requires no CineSrc API key, no Worker secret, no Kairo playback
+proxy and no direct-stream resolver.
+
+## Kairo implementation
+
+- `src/lib/moviePlayback.ts` validates a positive numeric TMDB ID and builds the embed URL.
+- `src/components/MovieEmbedPlayer.tsx` renders the CineSrc iframe as the full-screen player.
+- `src/pages/MoviesWatchPage.tsx` loads the movie detail and passes the TMDB identifier to
+  the player.
+- `src/lib/moviePlayback.test.ts` covers URL construction and invalid ID rejection.
+- Message handling verifies both the exact `https://cinesrc.st` origin and the active iframe
+  source. Kairo currently handles `cinesrc:ready`, `cinesrc:error` and `cinesrc:close`.
+- The provider owns the internal stream/source selection and title availability. Kairo does
+  not scrape or extract stream URLs and does not silently switch to another movie provider.
 
 ## Troubleshooting
 
-1. Open `https://cinesrc.st/embed/movie/{id}` directly. If it does not play there, the title is unavailable at CineSrc.
-2. If it plays directly but not embedded, check the browser console for frame or CSP errors. The worker currently sends no CSP, only `X-Frame-Options: DENY` for Kairo's own pages.
-3. CineSrc controls its own sources and server list inside its player.
+1. Open the generated CineSrc embed URL directly. If the title is unavailable there, Kairo
+   cannot make it playable.
+2. If the direct embed works but the iframe does not, inspect browser console errors and
+   browser privacy/extension settings.
+3. Use Kairo's player retry control for a transient iframe/player error. There is no alternate
+   provider to switch to.
+4. CineSrc's player and source availability are controlled by CineSrc. Check its current
+   [documentation](https://cinesrc.st/docs) for changes to embed parameters or player events.
