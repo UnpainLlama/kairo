@@ -56,5 +56,5 @@ export default function MoviesWatchPage() {
     );
   }
 
-  return <MovieEmbedPlayer tmdbId={movie.externalId} title={movie.title} posterUrl={movie.posterUrl} backdropUrl={movie.backdropUrl} onBack={back} />;
+  return <MovieEmbedPlayer tmdbId={movie.externalId} title={movie.title} onBack={back} />;
 }

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Info, Play } from 'lucide-react';
+import { Check, Play, Plus } from 'lucide-react';
 import { apiGet, ApiError } from '../lib/api';
-import { movieYear, type MovieGenre, type MoviePage, type MovieSummary } from '../lib/movies';
+import type { MovieGenre, MoviePage, MovieSummary } from '../lib/movies';
 import { MovieRail, RowSkeleton, useOpenTitle, watchHref } from '../components/MovieCard';
 import { TitleModal } from '../components/TitleDetail';
-import { MyListProvider } from '../lib/useMyList';
+import { MyListProvider, useMyList } from '../lib/useMyList';
 import '../styles-netflix.css';
 
 type HomeData = {
@@ -64,20 +64,23 @@ function GenreRow({ genre }: { genre: MovieGenre }) {
 
 function Billboard({ movie }: { movie: MovieSummary }) {
   const open = useOpenTitle();
-  const year = movieYear(movie);
+  const list = useMyList();
+  const inList = list.get(movie).status === 'watchlist';
   return (
     <header className="nf-billboard">
       {movie.backdropUrl && <img className="nf-bb-art" src={movie.backdropUrl} alt="" fetchPriority="high" referrerPolicy="no-referrer" />}
       <div className="nf-bb-fade" />
       <div className="nf-bb-info">
-        <h1 className="nf-bb-title">{movie.title}</h1>
-        {movie.overview && <p className="nf-bb-text">{movie.overview}</p>}
+        <p className="nf-bb-tag"><i aria-hidden="true" />MOVIE</p>
+        <h1 className="nf-bb-title"><button type="button" onClick={() => open(movie)} aria-label={'More info: ' + movie.title}>{movie.title}</button></h1>
         <div className="nf-bb-buttons">
-          <Link to={watchHref(movie)} className="nf-btn play"><Play size={26} fill="currentColor" aria-hidden="true" /> Play</Link>
-          <button type="button" className="nf-btn info" onClick={() => open(movie)}><Info size={26} aria-hidden="true" /> More Info</button>
+          <Link to={watchHref(movie)} className="nf-btn play"><Play size={18} fill="currentColor" aria-hidden="true" /> Play</Link>
+          <button type="button" className="nf-btn list" aria-pressed={inList} disabled={!list.ready || list.busy} onClick={() => void list.update(movie, { status: inList ? null : 'watchlist' })}>
+            {inList ? <Check size={18} aria-hidden="true" /> : <Plus size={18} aria-hidden="true" />} My List
+          </button>
         </div>
+        {movie.overview && <p className="nf-bb-text">{movie.overview}</p>}
       </div>
-      {year && <div className="nf-bb-badge" aria-label={'Released ' + year}>{movie.adult ? '18+' : year}</div>}
     </header>
   );
 }
