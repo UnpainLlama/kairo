@@ -15,9 +15,9 @@ embed requires no Kairo Worker secret. It does not replace the TMDB catalogue AP
 [docs/CINESRC_SETUP.md](CINESRC_SETUP.md) and
 [the official CineSrc docs](https://cinesrc.st/docs).
 
-# Metadata providers
+## Anime metadata providers
 
-KAIRO combines several metadata sources into one unified record. No provider is a permanent dependency: each one is an adapter that can be switched off, replaced or added without touching the frontend or the routes.
+KAIRO's Anime catalogue metadata is assembled from adapters that can be disabled or extended independently. Movie playback is intentionally separate and remains CineSrc-only.
 
 **Separate services.** Catalogue metadata, episode discovery (`EpisodeProvider`) and playback (`worker/providers/playback.ts`) are independent. A metadata or artwork provider is never assumed to supply episode records or playable streams. TMDB's optional episode stills enrich thumbnails only.
 
