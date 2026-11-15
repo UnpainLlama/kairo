@@ -909,7 +909,7 @@ app.get('/api/v1/me/library', async (c) => {
          WHERE l.user_id = ? ORDER BY l.updated_at DESC LIMIT 200`
       ).bind(user.id).all(),
       c.env.DB.prepare(
-        `SELECT provider_id || external_id AS animeId, provider_id AS providerId, external_id AS externalId,
+        `SELECT CASE provider_id WHEN 'anilist' THEN 'a' WHEN 'mal' THEN 'm' ELSE 'h' END || external_id AS animeId, provider_id AS providerId, external_id AS externalId,
                 slug, title, poster_url AS posterUrl, banner_url AS bannerUrl, format,
                 release_year AS releaseYear, rating, episode_count AS episodeCount, status,
                 is_favorite AS isFavorite, added_at AS addedAt, updated_at AS updatedAt
