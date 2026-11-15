@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main, youtube, feat/youtube-video-search]
   push:
-    branches: [main, testing, feat/media-progress-library-and-home-continue-watching]
+    branches: [main, testing, feat/media-progress-library-and-home-continue-watching, fix/movies-netflix-ui-port]
   workflow_dispatch:
     inputs:
       target:
@@ -46,7 +46,7 @@ jobs:
     needs: verify
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.STAGING_DEPLOY_ENABLED == 'true') ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/feat/media-progress-library-and-home-continue-watching') ||
+      (github.event_name == 'push' && (github.ref == 'refs/heads/feat/media-progress-library-and-home-continue-watching' || github.ref == 'refs/heads/fix/movies-netflix-ui-port')) ||
       (github.event_name == 'workflow_dispatch' && (inputs.target == 'staging' || inputs.target == 'production'))
     runs-on: ubuntu-latest
     environment: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'staging' }}
