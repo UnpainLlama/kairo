@@ -29,11 +29,6 @@ export default function MoviesWatchPage() {
   }, [externalId]);
 
   const detailsHref = '/movies/' + encodeURIComponent(externalId);
-  const back = () => {
-    const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
-    if (idx > 0) navigate(-1); else navigate(detailsHref, { replace: true });
-  };
-
   const year = movie ? movieYear(movie) : null;
   const rating = movie ? movieRating(movie.voteAverage) : null;
   const runtime = movie?.runtimeMinutes
