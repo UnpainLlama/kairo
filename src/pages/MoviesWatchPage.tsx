@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, CalendarDays, Clock3, Globe2, Star } from 'lucide-react';
 import { ApiError, apiGet } from '../lib/api';
 import MovieEmbedPlayer from '../components/MovieEmbedPlayer';
@@ -8,7 +8,6 @@ import '../styles-netflix.css';
 
 export default function MoviesWatchPage() {
   const { externalId = '' } = useParams();
-  const navigate = useNavigate();
   const [movie, setMovie] = useState<MovieDetail | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [loading, setLoading] = useState(true);
