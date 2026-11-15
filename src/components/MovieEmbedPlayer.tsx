@@ -62,7 +62,7 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl, backdropUrl
   const frameRef = useRef<HTMLIFrameElement>(null);
   const frameWrapRef = useRef<HTMLDivElement>(null);
   const storageKey = useMemo(
-    () => `kairo-movie-progress:${account.status === 'signed-in' ? account.accountId : 'guest'}:${tmdbId}`,
+    () => `kairo-movie-progress:${account.status === 'signed-in' ? account.accountId : account.status === 'guest' ? 'guest' : 'account-unavailable'}:${tmdbId}`,
     [account.accountId, account.status, tmdbId],
   );
   const lastSyncAt = useRef(0);
@@ -128,7 +128,11 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl, backdropUrl
     setStartAt(0);
     lastSyncAt.current = 0;
     lastSyncedPosition.current = 0;
-    if (account.status === 'loading' || account.status === 'unavailable') return () => { current = false; };
+    if (account.status === 'loading') return () => { current = false; };
+    if (account.status === 'unavailable') {
+      setResumeLoaded(true);
+      return () => { current = false; };
+    }
     const local = readLocalProgress(storageKey);
     const load = async () => {
       let best = local;
