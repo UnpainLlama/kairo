@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight, Play } from 'lucide-react';
+import { Play } from 'lucide-react';
 import { useKairoAccount } from '../lib/AccountProvider';
 
 type MovieProgress = {
