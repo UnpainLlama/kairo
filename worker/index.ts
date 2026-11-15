@@ -719,6 +719,97 @@ app.post('/api/v1/me/history/sync', async (c) => {
   }
 });
 
+app.get('/api/v1/me/movies/history', async (c) => {
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to restore Movies playback progress.');
+  try {
+    const result = await c.env.DB.prepare(`
+      SELECT provider_id AS providerId, external_id AS externalId, title,
+             poster_url AS posterUrl, backdrop_url AS backdropUrl,
+             progress_seconds AS progressSeconds, duration_seconds AS durationSeconds,
+             updated_at AS updatedAt
+      FROM user_movie_watch_progress
+      WHERE user_id = ? AND progress_seconds > 0
+        AND (duration_seconds IS NULL OR duration_seconds <= 0 OR progress_seconds < duration_seconds * 0.95)
+      ORDER BY updated_at DESC LIMIT 50
+    `).bind(user.id).all();
+    return ok(c, { items: result.results ?? [] }, { count: result.results?.length ?? 0 });
+  } catch (error) {
+    logError(c, 'movie_watch_progress_read_failed', error);
+    return fail(c, 503, 'MOVIE_HISTORY_UNAVAILABLE', 'Movies playback history is temporarily unavailable.');
+  }
+});
+
+app.post('/api/v1/me/movies/history', async (c) => {
+  const origin = c.req.header('Origin');
+  if (!origin || origin !== new URL(c.req.url).origin) {
+    return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
+  }
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync Movies playback progress.');
+  let body: unknown;
+  try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return fail(c, 400, 'VALIDATION_ERROR', 'Provide a movie playback progress entry.');
+  }
+  const value = body as Record<string, unknown>;
+  const providerId = typeof value.providerId === 'string' ? value.providerId.trim().toLowerCase() : '';
+  const externalId = typeof value.externalId === 'string' ? value.externalId.trim() : '';
+  const title = typeof value.title === 'string' ? value.title.trim() : '';
+  const progress = Number(value.progressSeconds);
+  const duration = value.durationSeconds === null || value.durationSeconds === undefined ? null : Number(value.durationSeconds);
+  const safeArtwork = (raw: unknown): string | null => {
+    if (typeof raw !== 'string' || raw.length > 2048) return null;
+    try {
+      const parsed = new URL(raw);
+      return parsed.protocol === 'https:' && parsed.hostname === 'image.tmdb.org' && !parsed.username && !parsed.password && !parsed.port ? parsed.toString() : null;
+    } catch { return null; }
+  };
+  if (providerId !== 'tmdb' || !/^\d{1,12}$/.test(externalId) ||
+      !title || title.length > 300 || !Number.isFinite(progress) || progress < 0 || progress > 86400 ||
+      (duration !== null && (!Number.isFinite(duration) || duration <= 0 || duration > 86400))) {
+    return fail(c, 400, 'VALIDATION_ERROR', 'The movie playback progress entry is invalid.');
+  }
+  const now = Date.now();
+  try {
+    await c.env.DB.prepare(`
+      INSERT INTO user_movie_watch_progress
+        (user_id, provider_id, external_id, title, poster_url, backdrop_url, progress_seconds, duration_seconds, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, provider_id, external_id) DO UPDATE SET
+        title=excluded.title, poster_url=excluded.poster_url, backdrop_url=excluded.backdrop_url,
+        progress_seconds=excluded.progress_seconds, duration_seconds=excluded.duration_seconds,
+        updated_at=excluded.updated_at
+      WHERE excluded.updated_at >= user_movie_watch_progress.updated_at
+    `).bind(user.id, providerId, externalId, title, safeArtwork(value.posterUrl), safeArtwork(value.backdropUrl),
+      Math.min(progress, duration ?? 86400), duration, now).run();
+    return ok(c, { saved: true, providerId, externalId, updatedAt: now });
+  } catch (error) {
+    logError(c, 'movie_watch_progress_write_failed', error);
+    return fail(c, 503, 'MOVIE_HISTORY_UNAVAILABLE', 'Could not sync Movies playback progress.');
+  }
+});
+
+app.delete('/api/v1/me/movies/history/:externalId', async (c) => {
+  const origin = c.req.header('Origin');
+  if (!origin || origin !== new URL(c.req.url).origin) {
+    return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
+  }
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to manage Movies playback history.');
+  const externalId = c.req.param('externalId').trim();
+  if (!/^\d{1,12}$/.test(externalId)) return fail(c, 400, 'VALIDATION_ERROR', 'The movie identifier is invalid.');
+  try {
+    await c.env.DB.prepare(
+      "DELETE FROM user_movie_watch_progress WHERE user_id = ? AND provider_id = 'tmdb' AND external_id = ?"
+    ).bind(user.id, externalId).run();
+    return ok(c, { removed: true, externalId });
+  } catch (error) {
+    logError(c, 'movie_watch_progress_delete_failed', error);
+    return fail(c, 503, 'MOVIE_HISTORY_UNAVAILABLE', 'Could not remove this movie from playback history.');
+  }
+});
+
 app.get('/api/v1/me/movies/library', async (c) => {
   const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your Movies library.');
@@ -807,21 +898,129 @@ app.get('/api/v1/me/library', async (c) => {
   const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your library.');
   try {
-    const result = await c.env.DB.prepare(
-      `SELECT l.anime_id AS animeId, l.status, l.is_favorite AS isFavorite,
-              l.added_at AS addedAt, l.updated_at AS updatedAt,
-              a.slug, a.title, a.poster_url AS posterUrl, a.banner_url AS bannerUrl,
-              a.format, a.release_year AS releaseYear, a.rating, a.episode_count AS episodeCount
-       FROM user_library l
-       INNER JOIN anime a ON a.id = l.anime_id
-       WHERE l.user_id = ?
-       ORDER BY l.updated_at DESC
-       LIMIT 200`
-    ).bind(user.id).all();
-    return ok(c, { items: result.results ?? [] }, { count: result.results?.length ?? 0 });
+    const [legacy, references] = await Promise.all([
+      c.env.DB.prepare(
+        `SELECT l.anime_id AS animeId, l.status, l.is_favorite AS isFavorite,
+                l.added_at AS addedAt, l.updated_at AS updatedAt,
+                a.slug, a.title, a.poster_url AS posterUrl, a.banner_url AS bannerUrl,
+                a.format, a.release_year AS releaseYear, a.rating, a.episode_count AS episodeCount
+         FROM user_library l
+         INNER JOIN anime a ON a.id = l.anime_id
+         WHERE l.user_id = ? ORDER BY l.updated_at DESC LIMIT 200`
+      ).bind(user.id).all(),
+      c.env.DB.prepare(
+        `SELECT CASE provider_id WHEN 'anilist' THEN 'a' WHEN 'mal' THEN 'm' ELSE 'h' END || external_id AS animeId, provider_id AS providerId, external_id AS externalId,
+                slug, title, poster_url AS posterUrl, banner_url AS bannerUrl, format,
+                release_year AS releaseYear, rating, episode_count AS episodeCount, status,
+                is_favorite AS isFavorite, added_at AS addedAt, updated_at AS updatedAt
+         FROM user_anime_library_refs WHERE user_id = ? ORDER BY updated_at DESC LIMIT 200`
+      ).bind(user.id).all(),
+    ]);
+    const items = [...(references.results ?? []), ...(legacy.results ?? [])];
+    return ok(c, { items }, { count: items.length });
   } catch (error) {
     logError(c, 'user_library_failed', error);
     return fail(c, 503, 'LIBRARY_UNAVAILABLE', 'Your library is temporarily unavailable.');
+  }
+});
+
+app.put('/api/v1/me/library/:animeId', async (c) => {
+  const origin = c.req.header('Origin');
+  if (!origin || origin !== new URL(c.req.url).origin) {
+    return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
+  }
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to update your library.');
+  let body: unknown;
+  try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(c, 400, 'VALIDATION_ERROR', 'Provide a library entry.');
+  const value = body as Record<string, unknown>;
+  const animeId = c.req.param('animeId').trim();
+  const match = /^([amh])(\d{1,9})$/.exec(animeId);
+  const statuses = ['watching', 'plan_to_watch', 'completed', 'on_hold', 'dropped'];
+  const status = typeof value.status === 'string' && statuses.includes(value.status) ? value.status : null;
+  const isFavorite = value.isFavorite === true;
+  if (!status || typeof value.isFavorite !== 'boolean') return fail(c, 400, 'VALIDATION_ERROR', 'Choose a valid Anime library status.');
+  const now = Date.now();
+  try {
+    if (match) {
+      const providerId = match[1] === 'a' ? 'anilist' : match[1] === 'm' ? 'mal' : 'hianime';
+      const externalId = match[2];
+      const slug = typeof value.slug === 'string' ? value.slug.trim() : '';
+      const title = typeof value.title === 'string' ? value.title.trim() : '';
+      if (!title || title.length > 300 || !slug || slug.length > 180 ||
+          !(slug === animeId || slug.endsWith('-' + animeId))) {
+        return fail(c, 400, 'VALIDATION_ERROR', 'The Anime title details are invalid.');
+      }
+      const safeImage = (raw: unknown): string | null => {
+        if (typeof raw !== 'string' || raw.length > 2048) return null;
+        try {
+          const parsed = new URL(raw);
+          const host = parsed.hostname.toLowerCase();
+          const allowed = host === 's4.anilist.co' || host.endsWith('.myanimelist.net') ||
+            host.endsWith('.anilist.co') || host === 'image.tmdb.org' || host.endsWith('.hianime.to') ||
+            host.endsWith('.hianime.at') || host.endsWith('.hianimez.to');
+          return parsed.protocol === 'https:' && allowed && !parsed.username && !parsed.password && !parsed.port ? parsed.toString() : null;
+        } catch { return null; }
+      };
+      const releaseYear = Number(value.releaseYear);
+      const rating = value.rating === null || value.rating === undefined ? null : Number(value.rating);
+      const episodeCount = value.episodeCount === null || value.episodeCount === undefined ? null : Number(value.episodeCount);
+      await c.env.DB.prepare(`
+        INSERT INTO user_anime_library_refs
+          (user_id, provider_id, external_id, slug, title, poster_url, banner_url, format,
+           release_year, rating, episode_count, status, is_favorite, added_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, provider_id, external_id) DO UPDATE SET
+          slug=excluded.slug, title=excluded.title, poster_url=excluded.poster_url,
+          banner_url=excluded.banner_url, format=excluded.format, release_year=excluded.release_year,
+          rating=excluded.rating, episode_count=excluded.episode_count, status=excluded.status,
+          is_favorite=excluded.is_favorite, updated_at=excluded.updated_at
+      `).bind(user.id, providerId, externalId, slug, title, safeImage(value.posterUrl), safeImage(value.bannerUrl),
+        typeof value.format === 'string' ? value.format.slice(0, 50) : null,
+        Number.isInteger(releaseYear) && releaseYear >= 1800 && releaseYear <= 2200 ? releaseYear : null,
+        rating !== null && Number.isFinite(rating) && rating >= 0 && rating <= 10 ? rating : null,
+        episodeCount !== null && Number.isInteger(episodeCount) && episodeCount >= 0 && episodeCount <= 100000 ? episodeCount : null,
+        status, isFavorite ? 1 : 0, now, now).run();
+      return ok(c, { saved: true, animeId, status, isFavorite, updatedAt: now });
+    }
+
+    const exists = await c.env.DB.prepare('SELECT id FROM anime WHERE id = ? LIMIT 1').bind(animeId).first<{ id: string }>();
+    if (!exists) return fail(c, 404, 'RESOURCE_NOT_FOUND', 'This Anime title is not available in the local catalogue.');
+    await c.env.DB.prepare(`
+      INSERT INTO user_library (user_id, anime_id, status, is_favorite, added_at, updated_at)
+      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT(user_id, anime_id) DO UPDATE SET
+        status=excluded.status, is_favorite=excluded.is_favorite, updated_at=CURRENT_TIMESTAMP
+    `).bind(user.id, animeId, status, isFavorite ? 1 : 0).run();
+    return ok(c, { saved: true, animeId, status, isFavorite, updatedAt: now });
+  } catch (error) {
+    logError(c, 'user_library_write_failed', error);
+    return fail(c, 503, 'LIBRARY_UNAVAILABLE', 'Could not update your library.');
+  }
+});
+
+app.delete('/api/v1/me/library/:animeId', async (c) => {
+  const origin = c.req.header('Origin');
+  if (!origin || origin !== new URL(c.req.url).origin) {
+    return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
+  }
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to remove titles from your library.');
+  const animeId = c.req.param('animeId').trim();
+  const match = /^([amh])(\d{1,9})$/.exec(animeId);
+  try {
+    if (match) {
+      const providerId = match[1] === 'a' ? 'anilist' : match[1] === 'm' ? 'mal' : 'hianime';
+      await c.env.DB.prepare('DELETE FROM user_anime_library_refs WHERE user_id = ? AND provider_id = ? AND external_id = ?')
+        .bind(user.id, providerId, match[2]).run();
+    } else {
+      await c.env.DB.prepare('DELETE FROM user_library WHERE user_id = ? AND anime_id = ?').bind(user.id, animeId).run();
+    }
+    return ok(c, { removed: true, animeId });
+  } catch (error) {
+    logError(c, 'user_library_delete_failed', error);
+    return fail(c, 503, 'LIBRARY_UNAVAILABLE', 'Could not remove this title from your library.');
   }
 });
 

@@ -15,6 +15,7 @@ export type VidLinkPlayerType = 'default' | 'jw';
 export function vidlinkMovieEmbedUrl(
   tmdbId: string | number,
   player: VidLinkPlayerType = 'default',
+  startAt = 0,
 ): string {
   const id = String(tmdbId).trim();
   if (!/^[1-9]\d{0,11}$/.test(id)) {
@@ -24,7 +25,7 @@ export function vidlinkMovieEmbedUrl(
     throw new Error('Unsupported VidLink player type.');
   }
 
-  return player === 'jw'
-    ? `${VIDLINK_ORIGIN}/movie/${id}?player=jw`
-    : `${VIDLINK_ORIGIN}/movie/${id}`;
+  const url = new URL(player === 'jw' ? `${VIDLINK_ORIGIN}/movie/${id}?player=jw` : `${VIDLINK_ORIGIN}/movie/${id}`);
+  if (Number.isFinite(startAt) && startAt > 0) url.searchParams.set('startAt', String(Math.min(86400, Math.floor(startAt))));
+  return url.toString();
 }

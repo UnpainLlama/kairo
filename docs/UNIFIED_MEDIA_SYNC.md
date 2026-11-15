@@ -24,9 +24,9 @@ After the shared account provider resolves the current session, signed-in writes
 
 | Media | Account-owned server data | Browser copy |
 |---|---|---|
-| Anime | Episode history and playback progress in user_watch_history | Account-scoped progress/history cache |
-| Movies | Provider ID + external movie ID, Watchlist/Watched/Favorite flags and optional rating in user_movie_library_refs | Per-account display cache |
-| YouTube | Playback history and Watch Later in youtube_watch_history and youtube_watch_later | Timestamped local progress cache |
+| Anime | Episode history and progress in user_watch_history; live-catalogue list status and favourites in user_anime_library_refs | Account-scoped progress/history cache |
+| Movies | Provider ID + external movie ID, Watchlist/Watched/Favorite flags and optional rating in user_movie_library_refs; movie playback progress in user_movie_watch_progress | Per-account display/progress cache |
+| YouTube | Playback history and Watch Later in youtube_watch_history and youtube_watch_later; imported subscriptions in youtube_feed_channels | Timestamped local progress cache |
 
 The three media areas are separate data domains; they share account identity, not a common media metadata table. For example, Movies library state does not use Anime's user_library table.
 
@@ -56,7 +56,7 @@ This is account-backed cross-device sync, not a fully offline-first replication 
 
 - Anime progress retries on subsequent playback events and direct-entry restore; there is not yet a general background outbox for every media operation.
 - YouTube retries a newer local playback position when the same video is opened again, but does not yet have a durable general-purpose write queue for all YouTube mutations.
-- Movies account list edits require a successful API write. The list is not advertised as editable offline.
+- Movies account list edits require a successful API write. Playback is cached locally by account and retried on subsequent provider events, but there is not yet a durable background outbox for network outages.
 - Guest-to-account migration is not automatic and is not part of this initial sync implementation.
 - Browser-local caches can be cleared independently of the Kairo account's D1 records. Clearing site data does not delete server-side account data.
 

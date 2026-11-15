@@ -17,6 +17,7 @@ import MoviesWatchPage from './pages/MoviesWatchPage';
 import YouTubeSearchPage from './pages/YouTubeSearchPage';
 import YouTubeChannelsPage from './pages/YouTubeChannelsPage';
 import YouTubeWatchPage from './pages/YouTubeWatchPage';
+import AnimeLibraryPage from './pages/AnimeLibraryPage';
 import { YouTubeHistoryPage, YouTubeWatchLaterPage } from './pages/YouTubeLibraryPages';
 import SearchPage from './pages/SearchPage';
 import BrowsePage from './pages/BrowsePage';
@@ -35,6 +36,7 @@ const navItems: NavItem[] = [
   { to: '/search', label: 'Search', icon: Search },
   { to: '/browse/seasonal', label: 'Seasonal', icon: CalendarDays },
   { to: '/history', label: 'History', icon: History },
+  { to: '/library', label: 'Library', icon: Bookmark },
   { to: '/profile', label: 'Profile', icon: UserRound },
 ];
 
@@ -47,6 +49,7 @@ const menuItems: NavItem[] = [
   { to: '/search', label: 'Search', icon: Search },
   { to: '/browse/seasonal', label: 'Seasonal', icon: CalendarDays },
   { to: '/history', label: 'History', icon: History },
+  { to: '/library', label: 'Library', icon: Bookmark },
 ];
 
 const youtubeNavItems: NavItem[] = [
@@ -244,7 +247,7 @@ export default function App() {
           <Route path="/watch/:slug/:episodeNumber" element={<WatchPage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/library" element={<AccountPage title="My Library" />} />
+          <Route path="/library" element={<AnimeLibraryPage />} />
           <Route path="/favorites" element={<AccountPage title="Favorites" />} />
           <Route path="/settings" element={<AccountPage title="Settings" />} />
           <Route path="/about" element={<AboutPage />} />

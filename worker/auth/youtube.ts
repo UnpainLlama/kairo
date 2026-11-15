@@ -501,6 +501,151 @@ export function registerYouTubeAuthRoutes(app: any): void {
     }
   });
 
+  app.post('/api/v1/youtube/subscriptions/import', async (c: YouTubeContext) => {
+    const origin = c.req.header('Origin');
+    if (!origin || origin !== new URL(c.req.url).origin) {
+      return c.json({ success: false, error: { code: 'ORIGIN_FORBIDDEN', message: 'This request origin is not allowed.' } }, 403);
+    }
+    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to import your YouTube subscriptions.' } }, 401);
+    if (!c.env.GOOGLE_CLIENT_ID || !c.env.GOOGLE_CLIENT_SECRET || !c.env.YOUTUBE_TOKEN_ENCRYPTION_KEY) return unavailable(c);
+    if (!await allowYouTubeRequest(c, user.id, 'subscriptions-import', 2)) {
+      return c.json({ success: false, error: { code: 'RATE_LIMITED', message: 'You can import subscriptions twice every 15 minutes.' } }, 429);
+    }
+
+    try {
+      const connection = await c.env.DB.prepare(
+        "SELECT encrypted_access_token, encrypted_refresh_token, token_expires_at, scopes_json FROM provider_connections WHERE user_id=? AND provider='youtube' LIMIT 1"
+      ).bind(user.id).first<{
+        encrypted_access_token: string | null;
+        encrypted_refresh_token: string | null;
+        token_expires_at: number | null;
+        scopes_json: string;
+      }>();
+      if (!connection?.encrypted_refresh_token) {
+        return c.json({ success: false, error: { code: 'YOUTUBE_NOT_CONNECTED', message: 'Connect YouTube in Settings before importing subscriptions.' } }, 403);
+      }
+      let grantedScopes: string[] = [];
+      try {
+        const parsed: unknown = JSON.parse(connection.scopes_json || '[]');
+        if (Array.isArray(parsed)) grantedScopes = parsed.filter((item): item is string => typeof item === 'string');
+      } catch { /* invalid scope metadata is treated as not authorized */ }
+      if (!grantedScopes.includes(SCOPE)) {
+        return c.json({ success: false, error: { code: 'YOUTUBE_REAUTH_REQUIRED', message: 'Reconnect YouTube and grant read-only subscription access.' } }, 401);
+      }
+
+      const encryptionSecret = c.env.YOUTUBE_TOKEN_ENCRYPTION_KEY;
+      let accessToken: string;
+      if (connection.encrypted_access_token && connection.token_expires_at && connection.token_expires_at > Date.now() + 60_000) {
+        accessToken = await decryptToken(connection.encrypted_access_token, encryptionSecret);
+      } else {
+        const refreshToken = await decryptToken(connection.encrypted_refresh_token, encryptionSecret);
+        const refreshResponse = await fetch(TOKEN_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+          body: new URLSearchParams({
+            client_id: c.env.GOOGLE_CLIENT_ID,
+            client_secret: c.env.GOOGLE_CLIENT_SECRET,
+            refresh_token: refreshToken,
+            grant_type: 'refresh_token',
+          }),
+        });
+        if (!refreshResponse.ok) {
+          const payload = await refreshResponse.clone().json().catch(() => null) as { error?: unknown } | null;
+          const googleError = safeGoogleErrorCode(payload?.error);
+          logYouTubeDiagnostic(c, 'youtube_subscription_token_refresh_failed', { httpStatus: refreshResponse.status, googleError });
+          if (googleError === 'invalid_grant' || refreshResponse.status === 400 || refreshResponse.status === 401) {
+            return c.json({ success: false, error: { code: 'YOUTUBE_REAUTH_REQUIRED', message: 'Your YouTube connection has expired. Reconnect YouTube in Settings.' } }, 401);
+          }
+          return c.json({ success: false, error: { code: 'YOUTUBE_PROVIDER_UNAVAILABLE', message: 'Google could not refresh your YouTube connection. Please try again.' } }, 503);
+        }
+        const refreshed = await refreshResponse.json() as {
+          access_token?: string; refresh_token?: string; expires_in?: number; token_type?: string;
+        };
+        if (!refreshed.access_token || refreshed.access_token.length > 8192 ||
+            refreshed.token_type?.toLowerCase() !== 'bearer' ||
+            !Number.isFinite(Number(refreshed.expires_in)) || Number(refreshed.expires_in) <= 0 || Number(refreshed.expires_in) > 86400) {
+          return c.json({ success: false, error: { code: 'YOUTUBE_REAUTH_REQUIRED', message: 'Google returned an invalid refreshed connection. Reconnect YouTube in Settings.' } }, 401);
+        }
+        accessToken = refreshed.access_token;
+        const encryptedAccess = await encryptToken(accessToken, encryptionSecret);
+        const encryptedRefresh = refreshed.refresh_token
+          ? await encryptToken(refreshed.refresh_token, encryptionSecret)
+          : connection.encrypted_refresh_token;
+        await c.env.DB.prepare(
+          "UPDATE provider_connections SET encrypted_access_token=?, encrypted_refresh_token=?, token_expires_at=?, updated_at=CURRENT_TIMESTAMP WHERE user_id=? AND provider='youtube'"
+        ).bind(encryptedAccess, encryptedRefresh, Date.now() + Number(refreshed.expires_in) * 1000, user.id).run();
+      }
+
+      const channels = new Map<string, { title: string; description: string; thumbnailUrl: string | null }>();
+      let pageToken: string | null = null;
+      let pages = 0;
+      do {
+        if (!await bumpYouTubeRateBucket(c, 'data-api-daily', YOUTUBE_DATA_DAILY_LIMIT, YOUTUBE_DAILY_WINDOW_MS, 1)) {
+          return c.json({ success: false, error: { code: 'YOUTUBE_QUOTA_EXCEEDED', message: 'YouTube API usage is temporarily limited. Please try importing again tomorrow.' } }, 503);
+        }
+        const url = new URL('https://www.googleapis.com/youtube/v3/subscriptions');
+        url.search = new URLSearchParams({
+          part: 'snippet,contentDetails',
+          mine: 'true',
+          maxResults: '50',
+          ...(pageToken ? { pageToken } : {}),
+        }).toString();
+        const response = await fetch(url.toString(), {
+          headers: { Accept: 'application/json', Authorization: 'Bearer ' + accessToken },
+        });
+        const payload = await response.json().catch(() => ({})) as {
+          items?: Array<{ snippet?: { title?: unknown; description?: unknown; resourceId?: { channelId?: unknown }; thumbnails?: unknown } }>;
+          nextPageToken?: unknown;
+          error?: { errors?: Array<{ reason?: unknown }> };
+        };
+        if (!response.ok) {
+          const reason = payload.error?.errors?.[0]?.reason;
+          if (response.status === 401 || response.status === 403) {
+            logYouTubeDiagnostic(c, 'youtube_subscription_list_failed', { httpStatus: response.status, reason: safeGoogleErrorCode(reason) });
+            return c.json({ success: false, error: { code: 'YOUTUBE_REAUTH_REQUIRED', message: 'Google refused subscription access. Reconnect YouTube and grant read-only permission.' } }, 401);
+          }
+          logYouTubeDiagnostic(c, 'youtube_subscription_list_failed', { httpStatus: response.status, reason: safeGoogleErrorCode(reason) });
+          return c.json({ success: false, error: { code: 'YOUTUBE_PROVIDER_UNAVAILABLE', message: 'YouTube could not return your subscriptions. Please try again.' } }, 503);
+        }
+        for (const item of payload.items ?? []) {
+          const snippet = item.snippet ?? {};
+          const channelId = snippet.resourceId?.channelId;
+          if (typeof channelId !== 'string' || !/^[A-Za-z0-9_-]{6,64}$/.test(channelId)) continue;
+          const avatar = youtubeChannelAvatarUrl(snippet.thumbnails);
+          channels.set(channelId, {
+            title: typeof snippet.title === 'string' ? snippet.title.slice(0, 180) : 'YouTube channel',
+            description: typeof snippet.description === 'string' ? snippet.description.slice(0, 1000) : '',
+            thumbnailUrl: avatar,
+          });
+        }
+        pages += 1;
+        pageToken = typeof payload.nextPageToken === 'string' && payload.nextPageToken.length <= 512 ? payload.nextPageToken : null;
+      } while (pageToken && pages < 20 && channels.size < 1000);
+
+      if (channels.size) {
+        const statements = [...channels.entries()].map(([channelId, channel]) => c.env.DB.prepare(`
+          INSERT INTO youtube_feed_channels
+            (user_id, channel_id, channel_title, description, thumbnail_url, upload_playlist_id)
+          VALUES (?, ?, ?, ?, ?, NULL)
+          ON CONFLICT(user_id, channel_id) DO UPDATE SET
+            channel_title=excluded.channel_title,
+            description=excluded.description,
+            thumbnail_url=excluded.thumbnail_url
+        `).bind(user.id, channelId, channel.title, channel.description, channel.thumbnailUrl));
+        await c.env.DB.batch(statements);
+      }
+      return c.json({
+        success: true,
+        data: { imported: channels.size, pagesFetched: pages, truncated: Boolean(pageToken), source: 'youtube_subscriptions' },
+        meta: { requestId: requestId(c) },
+      });
+    } catch (error) {
+      logYouTubeDiagnostic(c, 'youtube_subscription_import_failed', { errorName: safeErrorName(error) });
+      return c.json({ success: false, error: { code: 'YOUTUBE_IMPORT_FAILED', message: 'Could not import your YouTube subscriptions. Please try again.' } }, 503);
+    }
+  });
+
   app.post('/api/v1/auth/youtube/disconnect', async (c: YouTubeContext) => {
     const origin = c.req.header('Origin');
     if (!origin || origin !== new URL(c.req.url).origin) {

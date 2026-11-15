@@ -4,6 +4,7 @@ import { ChevronDown, ChevronLeft, ChevronRight, Info, Play, Plus, Star } from '
 import { CardGrid, ErrorState, MetaChips, Poster, Section, SkeletonGrid, StatusDot, animeHref } from '../components/catalog';
 import { useApi, type ApiState } from '../lib/useApi';
 import { formatLabel, safeImageUrl, textList, type CatalogCard, type ItemList } from '../lib/catalog';
+import { useKairoAccount } from '../lib/AccountProvider';
 
 type CardsState = ApiState<ItemList<CatalogCard>> & { reload: () => void };
 const itemsOf = (state: CardsState): CatalogCard[] => (state.status === 'ok' ? state.data.items : []);
@@ -26,6 +27,7 @@ export default function HomePage() {
   return (
     <>
       {featuredItems.length > 0 ? <Hero items={featuredItems} /> : <div className="kc-hero-spacer" />}
+      <AnimeContinueWatching />
 
       {failed && failed.status === 'error' && <ErrorState error={failed.error} onRetry={() => main.forEach((s) => s.reload())} />}
       {nothing && <div className="kc-notice" role="status"><Info size={20} aria-hidden="true" /><div><h3>Nothing to show yet</h3><p>No titles are available right now. Try again in a moment.</p></div></div>}
@@ -42,6 +44,61 @@ export default function HomePage() {
         </aside>
       </div>
     </>
+  );
+}
+
+type AnimeProgressItem = {
+  slug: string;
+  title: string;
+  posterUrl: string | null;
+  episodeNumber: number;
+  episodeTitle: string;
+  durationSeconds: number | null;
+  progressSeconds: number;
+  updatedAt: number;
+};
+
+function AnimeContinueWatching() {
+  const account = useKairoAccount();
+  const [items, setItems] = useState<AnimeProgressItem[]>([]);
+  useEffect(() => {
+    let active = true;
+    setItems([]);
+    if (account.status !== 'signed-in') return () => { active = false; };
+    fetch('/api/v1/me/history/sync', {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+    }).then(async response => {
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.success) return [];
+      return Array.isArray(payload.data?.items) ? payload.data.items as AnimeProgressItem[] : [];
+    }).then(rows => {
+      if (!active) return;
+      setItems(rows
+        .filter(item => item && typeof item.slug === 'string' && Number(item.progressSeconds) > 0 &&
+          (!Number(item.durationSeconds) || Number(item.progressSeconds) < Number(item.durationSeconds) * 0.95))
+        .sort((a, b) => Number(b.updatedAt) - Number(a.updatedAt))
+        .slice(0, 12));
+    }).catch(() => { if (active) setItems([]); });
+    return () => { active = false; };
+  }, [account.accountId, account.status]);
+
+  if (account.status !== 'signed-in' || items.length === 0) return null;
+  return (
+    <section className="kc-section kc-continue-section" aria-labelledby="kc-continue-heading">
+      <div className="kc-section-head"><div><h2 id="kc-continue-heading">Continue watching</h2><p>Pick up where you left off</p></div><Link className="kc-more" to="/history">View history <ChevronRight size={14} aria-hidden="true" /></Link></div>
+      <div className="kc-continue-rail">
+        {items.map(item => {
+          const duration = Number(item.durationSeconds) || 0;
+          const progress = duration > 0 ? Math.max(0, Math.min(100, Number(item.progressSeconds) / duration * 100)) : 0;
+          return <Link className="kc-continue-card" key={item.slug + ':' + item.episodeNumber} to={`/watch/${encodeURIComponent(item.slug)}/${item.episodeNumber}`}>
+            <span className="kc-continue-art">{item.posterUrl ? <img src={safeImageUrl(item.posterUrl) ?? undefined} alt="" loading="lazy" /> : <span className="kc-continue-placeholder">K</span>}<span className="kc-continue-play"><Play size={17} fill="currentColor" /></span></span>
+            <span className="kc-continue-copy"><b>{item.title}</b><small>Episode {item.episodeNumber}{item.episodeTitle ? ' · ' + item.episodeTitle : ''}</small><span className="kc-continue-progress" role="progressbar" aria-label={`Episode ${item.episodeNumber} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)}><i style={{ width: progress + '%' }} /></span></span>
+          </Link>;
+        })}
+      </div>
+    </section>
   );
 }
 
