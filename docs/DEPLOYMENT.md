@@ -82,12 +82,13 @@ Open these in a browser (replace the host with your staging URL):
 | `GOOGLE_CLIENT_SECRET` | Worker secret | Cloudflare Worker environment | Required for Google sign-in and account linking |
 | `YOUTUBE_TOKEN_ENCRYPTION_KEY` | Worker secret | Cloudflare Worker environment | Required for YouTube token encryption; 32 random bytes, unpadded base64url |
 | `YOUTUBE_DATA_API_KEY` | Worker secret | Cloudflare Worker environment | Required for public YouTube video/channel search, uploads and watch metadata; restrict to YouTube Data API v3 |
-| `TMDB_ACCESS_TOKEN` | Worker secret, optional | Cloudflare Worker environment | Optional TMDB artwork enrichment |
-| `YOUTUBE_STAGING_TOKEN` | Worker secret, optional | Cloudflare staging environment only | Staging-only YouTube feed experiment; not a production feature |
+| `TMDB_ACCESS_TOKEN` | Worker secret | Cloudflare Worker environment | Required for TMDB Movies discovery/search/details where `MOVIES_TMDB_ENABLED=true`; also used for optional Anime artwork enrichment |
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | GitHub environment **secrets** | GitHub only | Deploying. Never in the repo or the Worker |
 | `STAGING_DEPLOY_ENABLED` | GitHub variable | GitHub | Auto-deploy staging on merge to main |
 | `STAGING_URL` | GitHub variable, optional | GitHub | Fallback if the deploy log URL cannot be read |
 | `PRODUCTION_DEPLOY_APPROVED` | GitHub variable | GitHub | Must be `true` for any production deploy. **Do not set.** |
+
+CineSrc is embedded directly by the Movies watch page and requires no Kairo Worker secret or additional Cloudflare binding. Movie playback is not routed through a Worker proxy.
 
 Authentication is already implemented. Set `GOOGLE_CLIENT_SECRET` and `YOUTUBE_TOKEN_ENCRYPTION_KEY` in Cloudflare's staging Worker **Secrets** before testing Google sign-in or YouTube connection. Keep `APP_BASE_URL` and `GOOGLE_CLIENT_ID` in the staging Worker variables. Generate the YouTube encryption key from 32 cryptographically random bytes and encode it as unpadded base64url. Do not put Worker secrets in GitHub Actions logs or source control. For the Kairo public YouTube feed, also add `YOUTUBE_DATA_API_KEY` as a **staging Worker secret**. Create the key in the Google Cloud project with YouTube Data API v3 enabled, restrict the key to YouTube Data API v3, and keep it server-side; this Worker calls Google from the server, so browser HTTP-referrer restrictions are not applicable. Never store the key in `wrangler.jsonc`, GitHub, or client-side code. The YouTube feed no longer requires a visitor to connect their YouTube account.
 

@@ -77,7 +77,7 @@ npx wrangler secret put PROVIDER_SERVER_TOKEN
 npx wrangler secret put TMDB_ACCESS_TOKEN
 ```
 
-Use names matching the integrations actually implemented. Do not add unused secret declarations. Never paste production secrets into Claude, source files, issue trackers, or GitHub commits. TMDB enrichment is optional: without `TMDB_ACCESS_TOKEN`, KAIRO keeps the catalogue provider's existing artwork and metadata. For local development put the token in `.dev.vars`; for staging use `npx wrangler secret put TMDB_ACCESS_TOKEN --env staging`; for production use `npx wrangler secret put TMDB_ACCESS_TOKEN --env production` only after confirming your TMDB licence permits that use.
+Use names matching the integrations actually implemented. Do not add unused secret declarations. Never paste production secrets into prompts, source files, issue trackers, or GitHub commits. `TMDB_ACCESS_TOKEN` is required in an environment where `MOVIES_TMDB_ENABLED=true` (Movies discovery/search/details) and is also used for optional Anime artwork enrichment. For local development put the token in `.dev.vars`; for staging use `npx wrangler secret put TMDB_ACCESS_TOKEN --env staging`; for production use `npx wrangler secret put TMDB_ACCESS_TOKEN --env production` only after confirming your TMDB licence permits that use. CineSrc is the sole Movie playback provider and its documented iframe embed requires no Worker secret or proxy.
 
 For local secret values, create `.dev.vars` in the project root. It is gitignored. Example structure only:
 

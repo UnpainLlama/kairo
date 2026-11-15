@@ -10,6 +10,7 @@ Only shared account identity and low-level application infrastructure may be reu
 - Provider-neutral contracts: `worker/movies/types.ts`.
 - Initial catalogue adapter: `worker/movies/providers/tmdb.ts`.
 - Adapter tests: `worker/movies/providers/tmdb.test.ts`.
+- Sole playback integration: `src/lib/moviePlayback.ts` and `src/components/MovieEmbedPlayer.tsx` (CineSrc).
 - Cached request orchestration: `worker/movies/service.ts`.
 - D1 upsert and local search: `worker/movies/repository.ts`.
 - API routes: `worker/index.ts` under `/api/v1/movies/*`.
@@ -44,6 +45,21 @@ TMDB commercial licence.
 
 The TMDB Read Access Token must be stored as a Cloudflare Worker secret named
 `TMDB_ACCESS_TOKEN`. It must never be shipped to the React client.
+
+### Playback
+
+CineSrc is Kairo's **only Movie playback provider**. The watch page uses CineSrc's documented
+iframe embed at `https://cinesrc.st/embed/movie/{tmdb_id}`, passing the numeric TMDB movie
+identifier returned by the catalogue. The configured player parameters are autoplay,
+`back=close`, and a grayscale accent color. The client accepts player messages only from
+`https://cinesrc.st` and from the active iframe.
+
+There is no VidLink integration, alternate Movie player, source switcher, or Kairo-side
+stream resolver. CineSrc manages the sources and availability inside its own player. The
+documented iframe integration requires no CineSrc API key and no Kairo Worker proxy or
+secret. CineSrc supplies playback only; it does not replace the TMDB discovery/search and
+metadata adapter described above. See [CineSrc setup](CINESRC_SETUP.md) and
+[the official CineSrc docs](https://cinesrc.st/docs).
 
 ### Availability
 
@@ -113,9 +129,10 @@ types use the independent Movies API contracts in `src/lib/movies.ts`.
 
 ## Current boundary
 
-The Movies API and frontend are wired independently of Anime and YouTube. Existing Anime
-route handlers and response contracts are unchanged. Staging enables read-only TMDB discovery
-for the owner's confirmed personal, non-commercial use and displays TMDB attribution on
-`/about`. The ingestion flag remains off pending a separate review of durable retention.
-The D1 migration is applied by the staging deployment workflow; production remains disabled
-and untouched.
+The Movies catalogue API and frontend are independent of Anime and YouTube. TMDB remains
+the catalogue/discovery and metadata source; CineSrc is the single Movie playback provider.
+The player embeds CineSrc directly using the TMDB movie ID, with no alternate provider or
+stream extraction fallback. Staging's TMDB discovery opt-in remains subject to the owner's
+confirmed personal, non-commercial use and TMDB attribution; production stays disabled until
+separately approved. Movie ingestion remains disabled pending a separate review of durable
+metadata retention.

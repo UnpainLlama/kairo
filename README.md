@@ -1,19 +1,43 @@
-# Kairo logo kit
+# Kairo
 
-All marks use the single gray Chinese character 地 (earth/ground), with no wordmark. PNGs have transparent backgrounds unless noted.
+Kairo is a React, TypeScript, Vite and Cloudflare Workers media-discovery application for Anime, Movies and YouTube.
 
-## Contents
-- `logo/`: transparent gray marks in 16–1024 px plus white alternatives for dark surfaces.
-- `favicon/`: 16, 32 and 48 px browser icons plus a multi-size ICO.
-- `app-icons/`: dark-background 180 px Apple touch icon, 192/512 px PWA icons, and a 512 px maskable PWA icon.
-- `social/`: square and circular 512 px dark-background avatars.
+## Project areas
 
-## Suggested website use
-- Navbar / sidebar: `logo/kairo-mark-64.png` or `kairo-mark-96.png`
-- Compact navigation: `logo/kairo-mark-32.png`
-- Browser tab: `favicon/favicon.ico` (or `favicon-32.png`)
-- PWA manifest: `app-icons/pwa-192.png`, `app-icons/pwa-512.png`; use `pwa-512-maskable.png` for the maskable purpose.
-- iOS home screen: `app-icons/apple-touch-icon-180.png`
-- Social preview/avatar: `social/kairo-social-avatar.png`
+- **Anime:** catalogue discovery, metadata enrichment, episode discovery and provider-gated playback.
+- **Movies:** TMDB-powered catalogue search and details, with **CineSrc as the only movie playback provider**.
+- **YouTube:** public video/channel discovery and the user's saved channel feed through the official YouTube Data API.
 
-The artwork is raster PNG, not a vector master. For production print or infinitely scalable UI, recreate/trace the approved mark as SVG.
+## Movie provider boundary
+
+TMDB supplies Movies discovery, search, metadata and the numeric movie IDs used by Kairo. CineSrc is the sole Movie playback provider and is embedded through its documented iframe URL:
+
+`https://cinesrc.st/embed/movie/{tmdb_id}`
+
+There is no VidLink integration, alternate Movie player, or Kairo-side stream extraction fallback. CineSrc's iframe embed does not require a Kairo Worker secret. See [docs/CINESRC_SETUP.md](docs/CINESRC_SETUP.md) and the [official CineSrc documentation](https://cinesrc.st/docs).
+
+## Local development
+
+Requirements: Node.js 22 and npm.
+
+```bash
+npm ci
+npm run dev
+```
+
+Useful checks:
+
+```bash
+npm run typecheck
+npm test
+npm run build
+```
+
+Cloudflare environments, D1 migrations, Worker secrets and release gates are documented in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Start with [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the wider system design.
+
+## Repository conventions
+
+- Keep secrets in Cloudflare Worker secrets or local git-ignored files; never commit credentials.
+- Keep migrations additive and versioned.
+- Keep provider integrations behind their current domain boundaries.
+- Retain automated tests and CI checks; remove scratch prototypes and one-off setup artifacts once superseded.
