@@ -8,8 +8,8 @@ function routeFor(register: (app: any) => void, path: string): RouteHandler {
   const routes = new Map<string, RouteHandler>();
   register({
     get: (route: string, handler: RouteHandler) => routes.set(route, handler),
-    post: () => {},
-    delete: () => {},
+    post: (route: string, handler: RouteHandler) => routes.set(route, handler),
+    delete: (route: string, handler: RouteHandler) => routes.set(route, handler),
   });
   const handler = routes.get(path);
   if (!handler) throw new Error(`Route not registered: ${path}`);
@@ -30,7 +30,7 @@ function makeContext(options: {
     get: (name: string) => name === 'requestId' ? 'test-request-id' : undefined,
     req: {
       url: options.url,
-      header: (name: string) => name.toLowerCase() === 'cookie' ? options.cookie : undefined,
+      header: (name: string) => name.toLowerCase() === 'cookie' ? options.cookie : name.toLowerCase() === 'origin' ? new URL(options.url).origin : undefined,
       query: (name: string) => new URL(options.url).searchParams.get(name) ?? undefined,
     },
     redirect: (url: string, status = 302) => {
@@ -203,6 +203,29 @@ describe('Google OAuth canonical callback', () => {
   });
 });
 
+
+describe('YouTube subscription import', () => {
+  it('requires an authenticated Kairo session before importing subscriptions', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/subscriptions/import');
+    const ctx = makeContext({
+      url: `${canonicalOrigin}/api/v1/youtube/subscriptions/import`,
+      env: {
+        DB: mockDb({ authenticated: false }),
+        APP_BASE_URL: canonicalOrigin,
+        GOOGLE_CLIENT_ID: 'google-client-id',
+        GOOGLE_CLIENT_SECRET: 'google-client-secret',
+        YOUTUBE_TOKEN_ENCRYPTION_KEY: 'A'.repeat(43),
+      },
+    });
+
+    const response = await handler(ctx.context);
+    expect(response.status).toBe(401);
+    expect(ctx.jsonBody).toMatchObject({
+      success: false,
+      error: { code: 'AUTH_REQUIRED' },
+    });
+  });
+});
 
 describe('YouTube public channel search', () => {
   it('uses the Worker API key without requiring per-user YouTube OAuth', async () => {
