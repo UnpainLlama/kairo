@@ -392,6 +392,7 @@ describe('service and handlers', () => {
       'anime_relations', 'anime_field_sources', 'auth_identities', 'password_credentials',
       'sessions', 'email_verification_tokens', 'password_reset_tokens', 'provider_connections',
       'auth_rate_limits', 'google_oauth_states', 'user_watch_history', 'youtube_oauth_states',
+  'user_movie_watch_progress', 'user_anime_library_refs',
     ];
     const readyDb = {
       prepare: () => ({
