@@ -2,9 +2,9 @@ name: Build and deploy KAIRO
 
 on:
   pull_request:
-    branches: [main, youtube, feat/youtube-video-search]
+    branches: [main]
   push:
-    branches: [main, testing]
+    branches: [main]
   workflow_dispatch:
     inputs:
       target:
