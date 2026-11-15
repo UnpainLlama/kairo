@@ -100,7 +100,7 @@ function useItemsPerPage(): number {
 export function MovieRail({ title, items, to, topTen = false }: { title: string; items: MovieSummary[]; to?: string; topTen?: boolean }) {
   const headingId = useId();
   const base = useItemsPerPage();
-  const per = topTen ? Math.max(2, Math.round(base * 0.7)) : base;
+  const per = base;
   const [page, setPage] = useState(0);
   const [moved, setMoved] = useState(false);
   useEffect(() => setPage(0), [per, items.length]);

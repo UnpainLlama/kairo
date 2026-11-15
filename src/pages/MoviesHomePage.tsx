@@ -75,13 +75,38 @@ function Billboard({ movie }: { movie: MovieSummary }) {
         <h1 className="nf-bb-title"><button type="button" onClick={() => open(movie)} aria-label={'More info: ' + movie.title}>{movie.title}</button></h1>
         <div className="nf-bb-buttons">
           <Link to={watchHref(movie)} className="nf-btn play"><Play size={18} fill="currentColor" aria-hidden="true" /> Play</Link>
-          <button type="button" className="nf-btn list" aria-pressed={inList} disabled={!list.ready || list.busy} onClick={() => void list.update(movie, { status: inList ? null : 'watchlist' })}>
+          <button type="button" className="nf-btn list" aria-pressed={inList} aria-busy={!list.ready || list.busy} onClick={() => void list.update(movie, { status: inList ? null : 'watchlist' })}>
             {inList ? <Check size={18} aria-hidden="true" /> : <Plus size={18} aria-hidden="true" />} My List
           </button>
         </div>
         {movie.overview && <p className="nf-bb-text">{movie.overview}</p>}
       </div>
     </header>
+  );
+}
+
+const FOOTER_LINKS: { label: string; to: string }[] = [
+  { label: 'Trending Now', to: '/movies/browse/trending' },
+  { label: 'Popular Movies', to: '/movies/browse/popular' },
+  { label: 'Top Rated', to: '/movies/browse/top-rated' },
+  { label: 'New Releases', to: '/movies/browse/now-playing' },
+  { label: 'Coming Soon', to: '/movies/browse/upcoming' },
+  { label: 'Search', to: '/movies/search' },
+  { label: 'My List', to: '/movies/library' },
+  { label: 'Settings', to: '/settings' },
+  { label: 'About', to: '/about' },
+];
+
+function MoviesFooter() {
+  return (
+    <footer className="nf-footer">
+      <div className="nf-footer-in">
+        <nav className="nf-footer-links" aria-label="Movies">
+          {FOOTER_LINKS.map(link => <Link key={link.to} to={link.to}>{link.label}</Link>)}
+        </nav>
+        <p className="nf-footer-note">Movie data and images are provided by TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
+      </div>
+    </footer>
   );
 }
 
@@ -146,6 +171,7 @@ function HomeContent() {
           </div>
         )}
       </div>
+      {!loading && <MoviesFooter />}
     </div>
   );
 }
