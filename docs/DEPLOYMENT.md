@@ -13,7 +13,7 @@ This is the authoritative deployment guide. It replaces the older steps in `READ
 
 Each environment has its own database and cache, so staging can never touch production data. The environment is chosen at build time with `CLOUDFLARE_ENV` (the Cloudflare Vite plugin's mechanism) and Wrangler's `--env` for migrations. Bindings and variables are not inherited between environments, so `wrangler.jsonc` declares them per environment.
 
-The deploy workflow (`.github/workflows/deploy.yml`) runs: typecheck, tests and build, then (only when requested) the guards, D1 migrations, build, deploy, and a health check that fails the run if `/api/health` or `/api/ready` is unhealthy.
+The deploy workflow (`.github/workflows/deploy.yml`) runs typecheck, tests and build before any deployment. A push to the isolated `feat/media-progress-library-and-home-continue-watching` branch deploys that exact revision to staging only; pushes to `main` still require `STAGING_DEPLOY_ENABLED=true`, and production remains separately gated. Deployments apply D1 migrations before publishing the Worker and fail if `/api/health` or `/api/ready` is unhealthy.
 
 IDs for D1 and KV are identifiers, not credentials, so they may be committed to the public repo. Cloudflare API tokens, OAuth client secrets, and encryption keys are credentials: keep them only in the appropriate GitHub or Cloudflare secret stores. Never paste a secret into chat, a file, or the repo.
 
@@ -47,7 +47,7 @@ Dashboard labels change occasionally; if one differs slightly, look for the near
 1. Repository > **Settings** > **Environments** > **New environment** > name it `staging`.
 2. In `staging` > **Environment secrets** > add `CLOUDFLARE_API_TOKEN` (the token) and `CLOUDFLARE_ACCOUNT_ID`.
 3. (Recommended now) Create a second environment named `production`, add yourself under **Required reviewers**, and add **no secrets yet**. This pre-builds the approval gate.
-4. (Optional) Settings > **Secrets and variables** > **Actions** > **Variables** > `STAGING_DEPLOY_ENABLED` = `true` makes every merge to `main` deploy to staging automatically. Skip it to deploy only by hand.
+4. (Optional) Settings > **Secrets and variables** > **Actions** > **Variables** > `STAGING_DEPLOY_ENABLED` = `true` makes every merge to `main` deploy to staging automatically. The active media-sync feature branch is also configured to deploy only to staging after checks pass.
 
 ### 2f. Deploy staging
 1. Repository > **Actions** > **Build and deploy KAIRO** > **Run workflow**.
@@ -93,7 +93,7 @@ Authentication is already implemented. Set `GOOGLE_CLIENT_SECRET` and `YOUTUBE_T
 
 The password verifier uses PBKDF2-HMAC-SHA-256 at 100,000 iterations because the Cloudflare Workers production WebCrypto runtime still enforces a 100,000-iteration cap (tracked in [workerd issue #1346](https://github.com/cloudflare/workerd/issues/1346)). This is the runtime ceiling, not a recommendation to reduce the cost further. It is below OWASP's 600,000-iteration recommendation and is a security compromise. Workers Free also has a 10 ms CPU budget per request. Measure actual staging registration/login invocations in Workers **Metrics → Errors → Invocation Statuses** and request logs; check for Error 1102 / exceeded CPU. Do not treat CI's Node-based password tests as proof that the Worker runtime has enough CPU. Before public launch, evaluate a memory-hard KDF or dedicated authentication runtime with target-plan benchmarking.
 
-Playback position is written locally at most once per second and synced to the signed-in account's D1 history row every 15 seconds while playing, plus on play, pause, seek, end and page exit. Guests stay local-only. A cross-origin iframe does not expose its playhead to Kairo unless its player API supports it, so remote resume tracking is limited to Kairo-controlled HLS/file playback.
+Anime playback position is written locally and synced to the signed-in account's D1 history row at bounded intervals and playback transitions; guests stay local-only. Movies progress is read from and written to the account's movie-progress table through VidLink's documented `PLAYER_EVENT` postMessage contract. The iframe is accepted only from VidLink's exact origin and expected window, and the player receives the saved position through the provider's `startAt` parameter. Providers that do not expose a supported progress event remain outside Kairo's remote-resume guarantee.
 
 ## 5. Troubleshooting
 
