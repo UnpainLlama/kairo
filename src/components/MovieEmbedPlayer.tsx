@@ -132,6 +132,7 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl, backdropUrl
     const local = readLocalProgress(storageKey);
     const load = async () => {
       let best = local;
+      let localNeedsSync = Boolean(local);
       if (account.status === 'signed-in') {
         try {
           const response = await fetch('/api/v1/me/movies/history', {
@@ -151,7 +152,10 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl, backdropUrl
                 posterUrl: typeof remote.posterUrl === 'string' ? remote.posterUrl : posterUrl ?? null,
                 backdropUrl: typeof remote.backdropUrl === 'string' ? remote.backdropUrl : backdropUrl ?? null,
               };
-              if (!best || serverEntry.updatedAt >= best.updatedAt) best = serverEntry;
+              if (!best || serverEntry.updatedAt >= best.updatedAt) {
+                best = serverEntry;
+                localNeedsSync = false;
+              }
             }
           }
         } catch {
@@ -162,7 +166,7 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl, backdropUrl
       if (best && best.progressSeconds > 0) {
         setStartAt(Math.min(86400, Math.floor(best.progressSeconds)));
         try { localStorage.setItem(storageKey, JSON.stringify(best)); } catch { /* optional browser cache */ }
-        if (account.status === 'signed-in' && local && local.updatedAt > best.updatedAt) {
+        if (account.status === 'signed-in' && local && localNeedsSync) {
           void fetch('/api/v1/me/movies/history', {
             method: 'POST',
             credentials: 'same-origin',
