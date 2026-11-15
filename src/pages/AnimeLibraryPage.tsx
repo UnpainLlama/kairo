@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Bookmark, Heart, RefreshCw, Trash2 } from 'lucide-react';
+import { Heart, RefreshCw, Trash2 } from 'lucide-react';
 import { EmptyState, LoadingState } from '../components/catalog';
 import { useKairoAccount } from '../lib/AccountProvider';
 import { safeImageUrl } from '../lib/catalog';
