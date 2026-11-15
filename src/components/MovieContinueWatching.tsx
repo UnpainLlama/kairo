@@ -50,23 +50,23 @@ export default function MovieContinueWatching() {
 
   if (account.status !== 'signed-in' || (!loading && items.length === 0)) return null;
   return (
-    <section className="mv-continue-section" aria-labelledby="mv-continue-title">
-      <div className="mv-section-heading">
+    <section className="nf-continue-section" aria-labelledby="mv-continue-title">
+      <div className="nf-continue-head">
         <div><h2 id="mv-continue-title">Continue watching</h2><p>Pick up where you left off</p></div>
-        <span className="mv-continue-account">SYNCED TO YOUR ACCOUNT</span>
+        <span className="nf-continue-account">SYNCED TO YOUR ACCOUNT</span>
       </div>
-      {loading ? <div className="mv-continue-loading" role="status">Restoring your watch list…</div> : (
-        <div className="mv-continue-rail">
+      {loading ? <div className="nf-continue-loading" role="status">Restoring your watch list…</div> : (
+        <div className="nf-continue-rail">
           {items.map(item => {
             const duration = Number(item.durationSeconds) || 0;
             const progress = duration > 0 ? Math.max(0, Math.min(100, Number(item.progressSeconds) / duration * 100)) : 0;
-            return <Link to={`/movies/${encodeURIComponent(item.externalId)}/watch`} className="mv-continue-card" key={item.externalId}>
-              <span className="mv-continue-poster">
-                {item.posterUrl ? <img src={item.posterUrl} alt={`Poster for ${item.title}`} loading="lazy" /> : <span className="mv-continue-poster-fallback">K</span>}
-                <span className="mv-continue-play"><Play size={18} fill="currentColor" /></span>
-                <span className="mv-continue-progress"><i style={{ width: progress + '%' }} /></span>
+            return <Link to={`/movies/${encodeURIComponent(item.externalId)}/watch`} className="nf-continue-card" key={item.externalId}>
+              <span className="nf-continue-poster">
+                {item.posterUrl ? <img src={item.posterUrl} alt={`Poster for ${item.title}`} loading="lazy" /> : <span className="nf-continue-poster-fallback">K</span>}
+                <span className="nf-continue-play"><Play size={18} fill="currentColor" /></span>
+                <span className="nf-continue-progress"><i style={{ width: progress + '%' }} /></span>
               </span>
-              <span className="mv-continue-copy"><b>{item.title}</b><small>{duration > 0 ? `${Math.floor(Number(item.progressSeconds) / 60)} min watched · ${Math.max(1, Math.ceil((duration - Number(item.progressSeconds)) / 60))} min left` : 'Resume film'}</small></span>
+              <span className="nf-continue-copy"><b>{item.title}</b><small>{duration > 0 ? `${Math.floor(Number(item.progressSeconds) / 60)} min watched · ${Math.max(1, Math.ceil((duration - Number(item.progressSeconds)) / 60))} min left` : 'Resume film'}</small></span>
             </Link>;
           })}
         </div>
