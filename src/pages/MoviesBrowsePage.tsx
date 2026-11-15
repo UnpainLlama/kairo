@@ -1,146 +1,130 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Compass, Flame, RefreshCw, Sparkles, Star } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { ChevronDown } from 'lucide-react';
 import { ApiError, apiGet } from '../lib/api';
-import { movieHref, movieRating, movieYear, type MovieGenre, type MoviePage as MoviePageData } from '../lib/movies';
-import MovieCard from '../components/MovieCard';
+import type { MovieGenre, MoviePage as MoviePageData, MovieSummary } from '../lib/movies';
+import { GridSkeleton, MovieGrid, useSentinel } from '../components/MovieCard';
+import { TitleModal } from '../components/TitleDetail';
+import { MyListProvider } from '../lib/useMyList';
+import '../styles-netflix.css';
 
-const CATEGORIES: Record<string, { title: string; kind: string; description: string }> = {
-  trending: { title: 'Trending movies', kind: 'trending_week', description: 'The films building momentum with audiences this week.' },
-  popular: { title: 'Discover movies', kind: 'popular', description: 'Find a new favourite from films watched around the world.' },
-  'top-rated': { title: 'Top rated movies', kind: 'top_rated', description: 'Highly rated films worth adding to your watchlist.' },
-  upcoming: { title: 'Coming soon', kind: 'upcoming', description: 'Films on the way to cinemas and screens.' },
-  'now-playing': { title: 'Now playing', kind: 'now_playing', description: 'Recent releases making their debut.' },
+const CATEGORIES: Record<string, { title: string; kind: string }> = {
+  trending: { title: 'Trending Now', kind: 'trending_week' },
+  popular: { title: 'Popular Movies', kind: 'popular' },
+  'top-rated': { title: 'Top Rated', kind: 'top_rated' },
+  upcoming: { title: 'Coming Soon', kind: 'upcoming' },
+  'now-playing': { title: 'New Releases', kind: 'now_playing' },
 };
 
-export default function MoviesBrowsePage() {
-  const { category = 'popular' } = useParams();
-  const [params, setParams] = useSearchParams();
-  const page = Math.max(1, Math.min(500, Number(params.get('page') ?? 1) || 1));
-  const [data, setData] = useState<MoviePageData | null>(null);
+function GenreMenu({ genres, activeId }: { genres: MovieGenre[]; activeId: string | null }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: MouseEvent) => { if (!ref.current?.contains(event.target as Node)) setOpen(false); };
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey); };
+  }, [open]);
+  if (!genres.length) return null;
+  return (
+    <div className="nf-genre" ref={ref}>
+      <button type="button" aria-haspopup="true" aria-expanded={open} onClick={() => setOpen(value => !value)}>
+        Genres <ChevronDown size={16} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="nf-genre-menu" role="menu">
+          <Link role="menuitem" to="/movies/browse/popular" className={!activeId ? 'on' : ''} onClick={() => setOpen(false)}>All Genres</Link>
+          {genres.map(genre => (
+            <Link role="menuitem" key={genre.externalId} to={'/movies/browse/genre-' + genre.externalId} className={genre.externalId === activeId ? 'on' : ''} onClick={() => setOpen(false)}>{genre.name}</Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BrowseContent({ category }: { category: string }) {
+  const genreRaw = category.startsWith('genre-') ? category.slice(6) : null;
+  const genreId = genreRaw && /^\d{1,8}$/.test(genreRaw) ? genreRaw : null;
+  const config = CATEGORIES[category] ?? { title: 'Popular Movies', kind: 'popular' };
+  const [items, setItems] = useState<MovieSummary[]>([]);
   const [genres, setGenres] = useState<MovieGenre[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [more, setMore] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [retry, setRetry] = useState(0);
 
-  const genreId = category.startsWith('genre-') ? category.slice(6) : null;
-  const validGenreId = genreId && /^\d{1,8}$/.test(genreId) ? genreId : null;
-  const details = CATEGORIES[category] ?? (validGenreId
-    ? { title: 'Explore by genre', kind: 'popular', description: 'Movies selected by genre.' }
-    : { title: 'Movie discovery', kind: 'popular', description: 'Explore movies from across the world.' });
-  const selectedGenre = useMemo(() => genres.find(genre => genre.externalId === validGenreId), [genres, validGenreId]);
-  const isTrending = category === 'trending';
-  const isDiscover = category === 'popular' || validGenreId !== null;
+  useEffect(() => {
+    const controller = new AbortController();
+    apiGet<{ items: MovieGenre[] }>('/movies/genres?language=en-US', controller.signal)
+      .then(result => { if (!controller.signal.aborted) setGenres(result.items); })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true);
+    if (page === 1) setLoading(true); else setMore(true);
     setError(null);
-    const query = new URLSearchParams({ kind: details.kind, page: String(page) });
-    if (validGenreId) query.set('genres', validGenreId);
+    const query = new URLSearchParams({ kind: config.kind, page: String(page) });
+    if (genreId) query.set('genres', genreId);
     apiGet<MoviePageData>('/movies/discover?' + query.toString(), controller.signal)
-      .then(result => { if (!controller.signal.aborted) setData(result); })
+      .then(result => {
+        if (controller.signal.aborted) return;
+        setTotalPages(Math.min(result.totalPages, 500));
+        setItems(previous => {
+          if (page === 1) return result.items;
+          const seen = new Set(previous.map(item => item.externalId));
+          return [...previous, ...result.items.filter(item => !seen.has(item.externalId))];
+        });
+      })
       .catch(caught => {
         if (controller.signal.aborted || (caught instanceof DOMException && caught.name === 'AbortError')) return;
         setError(caught instanceof ApiError ? caught : new ApiError(0, 'MOVIES_UNAVAILABLE', 'Could not load these movies.'));
-        setData(null);
       })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-
-    if (isDiscover || validGenreId) {
-      apiGet<{ items: MovieGenre[] }>('/movies/genres?language=en-US', controller.signal)
-        .then(result => { if (!controller.signal.aborted) setGenres(result.items.slice(0, 18)); })
-        .catch(() => { if (!controller.signal.aborted) setGenres([]); });
-    } else {
-      setGenres([]);
-    }
+      .finally(() => { if (!controller.signal.aborted) { setLoading(false); setMore(false); } });
     return () => controller.abort();
-  }, [details.kind, page, validGenreId, isDiscover, retry]);
+  }, [config.kind, genreId, page, retry]);
 
-  const title = selectedGenre?.name ? selectedGenre.name + ' movies' : details.title;
-  const totalPages = Math.max(1, Math.min(data?.totalPages ?? 1, 500));
-  const featured = isTrending ? data?.items[0] ?? null : null;
-  const featuredRating = featured ? movieRating(featured.voteAverage) : null;
-  const featuredYear = featured ? movieYear(featured) : null;
+  const genreName = useMemo(() => genres.find(genre => genre.externalId === genreId)?.name, [genres, genreId]);
+  const title = genreId ? (genreName ? genreName + ' Movies' : 'Movies') : config.title;
+  const sentinel = useSentinel(() => setPage(current => current + 1), !loading && !more && !error && page < totalPages && items.length > 0, items.length);
 
   return (
-    <section className={'mv-page mv-browse-page' + (isTrending ? ' mv-trending-page' : '') + (isDiscover ? ' mv-discover-page' : '')}>
-      <Link to="/movies" className="mv-back-link"><ArrowLeft size={14} /> Movies home</Link>
-      <header className={'mv-page-heading' + (isTrending ? ' mv-trending-heading' : '') + (isDiscover ? ' mv-discover-heading' : '')}>
-        <span className="mv-eyebrow">{isTrending ? <><Flame size={12} /> TRENDING</> : isDiscover ? <><Compass size={12} /> DISCOVER MOVIES</> : <>MOVIES</>}</span>
+    <div className="nf nf-bleed nf-page">
+      <header className="nf-page-head">
         <h1>{title}</h1>
-        <p>{selectedGenre?.name ? 'Discover ' + selectedGenre.name.toLowerCase() + ' films from around the world.' : details.description}</p>
+        <GenreMenu genres={genres} activeId={genreId} />
       </header>
 
-      {isDiscover && (
-        <>
-          <section className="mv-discover-pitch">
-            <div className="mv-discover-pitch-mark"><Sparkles size={19} aria-hidden="true" /></div>
-            <div><span>START SOMEWHERE NEW</span><h2>One good film leads to another.</h2><p>Browse by genre, follow a mood, or let a new story find you.</p></div>
-          </section>
-          {genres.length > 0 && (
-            <nav className="mv-discover-genres" aria-label="Browse movie genres">
-              <Link to="/movies/browse/popular" className={!validGenreId ? 'active' : ''}>For everyone</Link>
-              {genres.map(genre => <Link key={genre.externalId} className={genre.externalId === validGenreId ? 'active' : ''} to={'/movies/browse/genre-' + genre.externalId}>{genre.name}</Link>)}
-            </nav>
-          )}
-        </>
-      )}
-
-      {error && <div className="mv-provider-notice" role="alert"><div><b>{error.code === 'MOVIES_DISABLED' ? 'Movie browsing is not available yet' : 'Could not load these movies'}</b><p>{error.message}</p></div><button type="button" onClick={() => setRetry(value => value + 1)}><RefreshCw size={14} /> Retry</button></div>}
-
-      {loading && (
-        <div className="mv-browse-grid" role="status" aria-label="Loading movies">
-          {Array.from({ length: isTrending ? 12 : 18 }, (_, index) => <div className="mv-skeleton" key={index}><span /><i /></div>)}
+      {error && (
+        <div className="nf-message" role="alert">
+          <h2>{error.code === 'MOVIES_DISABLED' ? 'Movies are not available yet' : 'Something went wrong'}</h2>
+          <p>{error.message}</p>
+          <button type="button" className="nf-btn play" onClick={() => setRetry(value => value + 1)}>Try again</button>
         </div>
       )}
-
-      {!loading && data && (
-        <>
-          {isTrending && featured && (
-            <section className="mv-trending-feature" aria-label="Number one trending movie">
-              <div className="mv-trending-feature-copy">
-                <span className="mv-trending-feature-kicker">#01 · THIS WEEK'S MOMENTUM</span>
-                <h2>{featured.title}</h2>
-                <div className="mv-trending-feature-facts">
-                  {featuredYear && <span>{featuredYear}</span>}
-                  {featuredRating && <span><Star size={12} fill="currentColor" aria-hidden="true" /> {featuredRating}</span>}
-                  {featured.originalLanguage && <span>{featured.originalLanguage.toUpperCase()}</span>}
-                </div>
-                <p>{featured.overview || 'The title currently leading this week’s movie chart.'}</p>
-                <Link to={movieHref(featured)} className="mv-trending-feature-link">Explore film <ArrowRight size={14} aria-hidden="true" /></Link>
-              </div>
-              <Link to={movieHref(featured)} className="mv-trending-feature-art" aria-label={'Explore ' + featured.title}>
-                {featured.backdropUrl || featured.posterUrl
-                  ? <img src={featured.backdropUrl || featured.posterUrl || ''} alt="" loading="lazy" />
-                  : <span>{featured.title.slice(0, 1)}</span>}
-              </Link>
-            </section>
-          )}
-
-          <div className="mv-results-meta">
-            <span>{data.totalResults.toLocaleString()} titles</span>
-            <span>{isTrending ? 'Ranked by weekly popularity' : 'Page ' + data.page + ' of ' + Math.max(1, data.totalPages)}</span>
-          </div>
-
-          {data.items.length > 0
-            ? isTrending
-              ? <div className="mv-browse-grid mv-trending-grid">{data.items.slice(1).map((movie, index) => (
-                  <div className="mv-ranked-card" key={movie.providerId + ':' + movie.externalId}>
-                    <span className="mv-ranked-number" aria-hidden="true">{String(index + 2).padStart(2, '0')}</span>
-                    <MovieCard movie={movie} />
-                  </div>
-                ))}</div>
-              : <div className="mv-browse-grid mv-discover-grid">{data.items.map(movie => <MovieCard key={movie.providerId + ':' + movie.externalId} movie={movie} />)}</div>
-            : <div className="mv-empty-state"><h2>No movies found here yet.</h2><p>Try another category or search for a specific title.</p><Link to="/movies/search">Search movies <ChevronRight size={14} /></Link></div>}
-
-          <nav className="mv-pager" aria-label="Movie pages">
-            <button type="button" disabled={page <= 1} onClick={() => setParams(current => { const next = new URLSearchParams(current); next.set('page', String(page - 1)); return next; })}><ChevronLeft size={16} /> Previous</button>
-            <span>{page} / {totalPages}</span>
-            <button type="button" disabled={page >= totalPages || !data.items.length} onClick={() => setParams(current => { const next = new URLSearchParams(current); next.set('page', String(page + 1)); return next; })}>Next <ChevronRight size={16} /></button>
-          </nav>
-        </>
+      {loading && <GridSkeleton />}
+      {!loading && items.length > 0 && <MovieGrid items={items} />}
+      {!loading && !error && items.length === 0 && (
+        <div className="nf-message"><h2>No titles found here.</h2><p>Try another genre or search for a title.</p><Link to="/movies/search" className="nf-btn play">Search</Link></div>
       )}
-    </section>
+      {more && <GridSkeleton count={6} />}
+      <div ref={sentinel} className="nf-sentinel" />
+    </div>
+  );
+}
+
+export default function MoviesBrowsePage() {
+  const { category = 'popular' } = useParams();
+  return (
+    <MyListProvider>
+      <BrowseContent key={category} category={category} />
+      <TitleModal />
+    </MyListProvider>
   );
 }
