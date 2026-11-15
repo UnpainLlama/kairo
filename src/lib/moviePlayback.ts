@@ -1,30 +1,21 @@
 /**
- * Official VidLink movie embed URL builder.
+ * Official CineSrc movie embed URL builder.
  *
- * VidLink identifies movie playback by the numeric TMDB movie ID. No API key
- * or proxy endpoint is required for the documented iframe integration.
+ * CineSrc identifies movies by their numeric TMDB ID. The documented iframe embed needs no
+ * API key or proxy: https://cinesrc.st/docs
  */
-export const VIDLINK_ORIGIN = 'https://vidlink.pro';
-
-export type VidLinkPlayerType = 'default' | 'jw';
+export const CINESRC_ORIGIN = 'https://cinesrc.st';
 
 /**
- * Build the documented movie URL. The default player uses the bare endpoint;
- * the optional JW player is selected with VidLink's documented ?player=jw flag.
+ * Build the documented movie URL.
+ * - back=close makes the player's own back button post `cinesrc:close` to this page.
+ * - color sets the player accent (grayscale to match the Movies section).
  */
-export function vidlinkMovieEmbedUrl(
-  tmdbId: string | number,
-  player: VidLinkPlayerType = 'default',
-): string {
+export function cinesrcMovieEmbedUrl(tmdbId: string | number): string {
   const id = String(tmdbId).trim();
   if (!/^[1-9]\d{0,11}$/.test(id)) {
-    throw new Error('VidLink movie embeds require a positive numeric TMDB id.');
+    throw new Error('CineSrc movie embeds require a positive numeric TMDB id.');
   }
-  if (player !== 'default' && player !== 'jw') {
-    throw new Error('Unsupported VidLink player type.');
-  }
-
-  return player === 'jw'
-    ? `${VIDLINK_ORIGIN}/movie/${id}?player=jw`
-    : `${VIDLINK_ORIGIN}/movie/${id}`;
+  const params = new URLSearchParams({ autoplay: 'true', back: 'close', color: '#e5e5e5' });
+  return `${CINESRC_ORIGIN}/embed/movie/${id}?${params.toString()}`;
 }

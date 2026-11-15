@@ -1,64 +1,85 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Search, ArrowRight, RefreshCw } from 'lucide-react';
 import { ApiError, apiGet } from '../lib/api';
 import type { MoviePage, MovieSummary } from '../lib/movies';
-import MovieCard from '../components/MovieCard';
+import { GridSkeleton, MovieGrid, useSentinel } from '../components/MovieCard';
+import { TitleModal } from '../components/TitleDetail';
+import { MyListProvider } from '../lib/useMyList';
+import '../styles-netflix.css';
 
-export default function MoviesSearchPage() {
-  const [params, setParams] = useSearchParams();
-  const query = (params.get('q') ?? '').trim().slice(0, 120);
-  const page = Math.max(1, Math.min(500, Number(params.get('page') ?? 1) || 1));
-  const [data, setData] = useState<MoviePage | null>(null);
-  const [loading, setLoading] = useState(false);
+function SearchContent({ query }: { query: string }) {
+  const [items, setItems] = useState<MovieSummary[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [loading, setLoading] = useState(query.length > 0);
+  const [more, setMore] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [retry, setRetry] = useState(0);
 
   useEffect(() => {
-    if (query.length < 1) {
-      setData(null);
-      setError(null);
-      setLoading(false);
-      return;
-    }
+    if (!query) return;
     const controller = new AbortController();
-    setLoading(true);
+    if (page === 1) setLoading(true); else setMore(true);
     setError(null);
-    const search = new URLSearchParams({ q: query, page: String(page) });
-    apiGet<MoviePage>('/movies/search?' + search.toString(), controller.signal)
-      .then(result => { if (!controller.signal.aborted) setData(result); })
+    apiGet<MoviePage>('/movies/search?' + new URLSearchParams({ q: query, page: String(page) }).toString(), controller.signal)
+      .then(result => {
+        if (controller.signal.aborted) return;
+        setTotalPages(Math.min(result.totalPages, 500));
+        setItems(previous => {
+          if (page === 1) return result.items;
+          const seen = new Set(previous.map(item => item.externalId));
+          return [...previous, ...result.items.filter(item => !seen.has(item.externalId))];
+        });
+      })
       .catch(caught => {
         if (controller.signal.aborted || (caught instanceof DOMException && caught.name === 'AbortError')) return;
-        setError(caught instanceof ApiError ? caught : new ApiError(0, 'MOVIES_UNAVAILABLE', 'Movie search is unavailable.'));
-        setData(null);
+        setError(caught instanceof ApiError ? caught : new ApiError(0, 'MOVIES_UNAVAILABLE', 'Search is unavailable.'));
       })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+      .finally(() => { if (!controller.signal.aborted) { setLoading(false); setMore(false); } });
     return () => controller.abort();
   }, [query, page, retry]);
 
+  const sentinel = useSentinel(() => setPage(current => current + 1), !!query && !loading && !more && !error && page < totalPages && items.length > 0, items.length);
+
   return (
-    <section className="mv-page mv-search-page">
-      <header className="mv-page-heading">
-        <span className="mv-eyebrow"><Search size={12} /> MOVIE SEARCH</span>
-        <h1>{query ? 'Results for “' + query + '”' : 'Find your next film.'}</h1>
-        <p>{query ? 'Searching films from around the world.' : 'Search by movie title, actor or keyword using the search bar above.'}</p>
-      </header>
-      {loading && <div className="mv-browse-grid" role="status" aria-label="Searching movies">{Array.from({length:12},(_,index)=><div className="mv-skeleton" key={index}><span /><i /></div>)}</div>}
-      {error && <div className="mv-provider-notice" role="alert"><div><b>{error.code === 'MOVIES_DISABLED' ? 'Global movie search is not enabled yet' : 'Search could not be completed'}</b><p>{error.message}</p></div><button type="button" onClick={() => setRetry(value => value + 1)}><RefreshCw size={14} /> Retry</button></div>}
-      {!loading && data && (
-        <>
-          <div className="mv-results-meta"><span>{data.totalResults.toLocaleString()} results</span><span>Page {data.page} of {Math.max(1,data.totalPages)}</span></div>
-          {data.items.length > 0
-            ? <div className="mv-browse-grid">{data.items.map((movie: MovieSummary)=><MovieCard key={movie.providerId + ':' + movie.externalId} movie={movie} />)}</div>
-            : <div className="mv-empty-state"><h2>No films found for “{query}”.</h2><p>Try a different title or a broader search.</p><Link to="/movies">Back to Movies <ArrowRight size={14} /></Link></div>}
-          <nav className="mv-pager" aria-label="Movie search pages">
-            <button type="button" disabled={page <= 1} onClick={() => setParams(current => { const next=new URLSearchParams(current); next.set('page',String(page-1)); return next; })}>Previous</button>
-            <span>{page} / {Math.max(1,Math.min(data.totalPages,500))}</span>
-            <button type="button" disabled={page >= data.totalPages || !data.items.length} onClick={() => setParams(current => { const next=new URLSearchParams(current); next.set('page',String(page+1)); return next; })}>Next</button>
-          </nav>
-        </>
+    <div className="nf nf-bleed nf-page">
+      {query && !error && !loading && items.length > 0 && <p className="nf-search-line">Explore titles related to: <b>{query}</b></p>}
+      {!query && (
+        <div className="nf-message">
+          <h2>Search for movies</h2>
+          <p>Use the search bar above to find a title, an actor or a keyword.</p>
+          <Link to="/movies/browse/trending" className="nf-btn play">See what&apos;s trending</Link>
+        </div>
       )}
-      {!query && <div className="mv-empty-state"><h2>What are you in the mood for?</h2><p>Search by movie title using the search bar above.</p><Link to="/movies/browse/trending">Explore trending films <ArrowRight size={14} /></Link></div>}
-    </section>
+      {error && (
+        <div className="nf-message" role="alert">
+          <h2>Something went wrong</h2>
+          <p>{error.message}</p>
+          <button type="button" className="nf-btn play" onClick={() => setRetry(value => value + 1)}>Try again</button>
+        </div>
+      )}
+      {query && loading && <GridSkeleton count={12} />}
+      {query && !loading && !error && items.length > 0 && <MovieGrid items={items} />}
+      {query && !loading && !error && items.length === 0 && (
+        <div className="nf-message nf-nomatch">
+          <p>Your search for &ldquo;{query}&rdquo; did not have any matches.</p>
+          <p className="nf-sub">Suggestions:</p>
+          <ul><li>Try different keywords</li><li>Looking for a movie? Search by its title</li><li>Try an actor or a director</li></ul>
+        </div>
+      )}
+      {more && <GridSkeleton count={6} />}
+      <div ref={sentinel} className="nf-sentinel" />
+    </div>
+  );
+}
+
+export default function MoviesSearchPage() {
+  const [params] = useSearchParams();
+  const query = (params.get('q') ?? '').trim().slice(0, 120);
+  return (
+    <MyListProvider>
+      <SearchContent key={query} query={query} />
+      <TitleModal />
+    </MyListProvider>
   );
 }
