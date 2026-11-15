@@ -111,7 +111,13 @@ export default function AnimeLibraryActions({ anime }: { anime: AnimeDetails }) 
     }
   }
 
-  if (account.status !== 'signed-in') {
+  if (account.status === 'loading') {
+    return <div className="kc-library-action-note"><Bookmark size={15} /> <span>Checking your Kairo account…</span></div>;
+  }
+  if (account.status === 'unavailable') {
+    return <div className="kc-library-action-note"><Bookmark size={15} /> <span>Kairo could not verify your account. Retry before saving library changes.</span></div>;
+  }
+  if (account.status === 'guest') {
     return <div className="kc-library-action-note"><Bookmark size={15} /> <span><a href="/login" className="kc-link">Sign in</a> to save Anime to your account and sync it across devices.</span></div>;
   }
 
