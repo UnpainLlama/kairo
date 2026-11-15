@@ -4,6 +4,7 @@ import { ArrowRight, ChevronRight, Play, RefreshCw, Star } from 'lucide-react';
 import { apiGet, ApiError } from '../lib/api';
 import { movieHref, movieRating, movieYear, type MovieGenre, type MoviePage, type MovieSummary } from '../lib/movies';
 import { MovieRail } from '../components/MovieCard';
+import MovieContinueWatching from '../components/MovieContinueWatching';
 
 type HomeData = {
   trending: MovieSummary[];
@@ -111,6 +112,8 @@ export default function MoviesHomePage() {
           {featured && <div className="mv-hero-current"><span>NOW SHOWING</span><b>{featured.title}</b></div>}
         </header>
       )}
+
+      <MovieContinueWatching />
 
       <div className="mv-home-content">
         <nav className="mv-category-strip" aria-label="Movie categories">
