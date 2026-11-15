@@ -522,7 +522,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
         token_expires_at: number | null;
         scopes_json: string;
       }>();
-      if (!connection?.encrypted_refresh_token || !connection.encrypted_access_token) {
+      if (!connection?.encrypted_refresh_token) {
         return c.json({ success: false, error: { code: 'YOUTUBE_NOT_CONNECTED', message: 'Connect YouTube in Settings before importing subscriptions.' } }, 403);
       }
       let grantedScopes: string[] = [];
@@ -536,7 +536,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
 
       const encryptionSecret = c.env.YOUTUBE_TOKEN_ENCRYPTION_KEY;
       let accessToken: string;
-      if (connection.token_expires_at && connection.token_expires_at > Date.now() + 60_000) {
+      if (connection.encrypted_access_token && connection.token_expires_at && connection.token_expires_at > Date.now() + 60_000) {
         accessToken = await decryptToken(connection.encrypted_access_token, encryptionSecret);
       } else {
         const refreshToken = await decryptToken(connection.encrypted_refresh_token, encryptionSecret);
