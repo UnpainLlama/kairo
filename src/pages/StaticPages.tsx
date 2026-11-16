@@ -75,12 +75,13 @@ async function syncWatchHistory(userId: string, options: { deleted?: Array<{ slu
 }
 export function ProfilePage() {
   const {user,loaded,unavailable,retry}=useCurrentUser(); const navigate=useNavigate();
-  const [history,setHistory]=useState<WatchEntry[]>(()=>readHistory(null)); const [playbackItems,setPlaybackItems]=useState<MediaPlaybackSnapshot[]>([]); const [libraryCount,setLibraryCount]=useState<number|null>(null);
+  const [history,setHistory]=useState<WatchEntry[]>(()=>readHistory(null)); const [historyScope,setHistoryScope]=useState<string|null>(null); const [playbackItems,setPlaybackItems]=useState<MediaPlaybackSnapshot[]>([]); const [libraryCount,setLibraryCount]=useState<number|null>(null);
   const [error,setError]=useState(''); const [busy,setBusy]=useState(false);
   useEffect(()=>{let active=true;fetch('/api/v1/me/library',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(p=>{if(active)setLibraryCount(Array.isArray(p?.data?.items)?p.data.items.length:0)}).catch(()=>{if(active)setLibraryCount(null)});return()=>{active=false}},[user?.id]);
-  useEffect(()=>{let active=true;setHistory(readHistory(user?.id??null));if(user?.id)syncWatchHistory(user.id).then(items=>{if(active&&items)setHistory(items)});return()=>{active=false}},[user?.id]);
+  useEffect(()=>{let active=true;const scope=user?.id??null;setHistoryScope(scope);setHistory(readHistory(scope));if(user?.id)syncWatchHistory(user.id).then(items=>{if(active&&items)setHistory(items)});return()=>{active=false}},[user?.id]);
   useEffect(()=>{const refresh=()=>setHistory(readHistory(user?.id??null));window.addEventListener('storage',refresh);window.addEventListener('kairo:history-change',refresh);return()=>{window.removeEventListener('storage',refresh);window.removeEventListener('kairo:history-change',refresh)}},[user?.id]);
   useEffect(()=>{
+    if(historyScope!==(user?.id??null))return;
     let active=true;
     const mergePlayback=async()=>{
       const userId=user?.id??null;
@@ -137,7 +138,7 @@ export function ProfilePage() {
     };
     void mergePlayback();
     return()=>{active=false};
-  },[user?.id,history]);
+  },[user?.id,history,historyScope]);
   const watched=history.length; const completed=history.filter(x=>progressOf(x)>=95).length;
   async function logout(){setBusy(true);setError('');try{await signOut();navigate('/login',{replace:true})}catch(e){setError(e instanceof Error?e.message:'Sign out failed.')}finally{setBusy(false)}}
   if(!loaded && !unavailable)return <LoadingState label="Loading profile"/>;

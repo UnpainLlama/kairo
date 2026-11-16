@@ -76,9 +76,11 @@ export default function WatchPage() {
         if (!active) return;
         setInitialPlayerState(snapshot?.playerState ?? null);
         if (snapshot) {
-          const syncKey = watchProgressStorageKey(null, slug, parsedEpisode, 'sync');
-          localStorage.setItem(syncKey, String(snapshot.progressSeconds));
-          if (selectedServer?.id) localStorage.setItem(watchProgressStorageKey(null, slug, parsedEpisode, selectedServer.id), String(snapshot.progressSeconds));
+          try {
+            const syncKey = watchProgressStorageKey(null, slug, parsedEpisode, 'sync');
+            localStorage.setItem(syncKey, String(snapshot.progressSeconds));
+            if (selectedServer?.id) localStorage.setItem(watchProgressStorageKey(null, slug, parsedEpisode, selectedServer.id), String(snapshot.progressSeconds));
+          } catch { /* the shared snapshot still remains usable in memory */ }
         }
       }).finally(() => { if (active) setResumeReady(true); });
       return () => { active = false; };

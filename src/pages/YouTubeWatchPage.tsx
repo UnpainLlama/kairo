@@ -107,6 +107,7 @@ export default function YouTubeWatchPage() {
       setError('');
       setVideo(null);
       setStartSeconds(0);
+      setInitialPlayerState(null);
       try {
         const videoResponse = await fetch('/api/v1/youtube/videos/' + encodeURIComponent(videoId), { headers: { Accept: 'application/json' } });
         const videoPayload = await responsePayload(videoResponse);
