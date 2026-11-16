@@ -138,3 +138,53 @@ export async function loadMediaPlayback(
     return local;
   }
 }
+
+export function listLocalMediaPlayback(userId: string | null): MediaPlaybackSnapshot[] {
+  const scope = userId && userId.trim() ? userId.trim() : 'guest';
+  const prefix = LOCAL_PREFIX + scope + ':';
+  const items: MediaPlaybackSnapshot[] = [];
+  try {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (!key || !key.startsWith(prefix)) continue;
+      const parsed = parseMediaPlayback(JSON.parse(localStorage.getItem(key) ?? 'null'));
+      if (parsed) items.push(parsed);
+    }
+  } catch {
+    // Return the records already read if a browser storage operation fails.
+  }
+  return items.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+export async function deleteMediaPlayback(
+  userId: string | null,
+  mediaType: MediaPlaybackType,
+  mediaKey?: string,
+): Promise<boolean> {
+  const scope = userId && userId.trim() ? userId.trim() : 'guest';
+  const prefix = LOCAL_PREFIX + scope + ':' + mediaType + ':';
+  try {
+    if (mediaKey) localStorage.removeItem(mediaPlaybackStorageKey(userId, mediaType, mediaKey));
+    else {
+      const remove: string[] = [];
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index);
+        if (key?.startsWith(prefix)) remove.push(key);
+      }
+      remove.forEach(key => localStorage.removeItem(key));
+    }
+  } catch { /* local storage may be unavailable */ }
+  if (!userId) return true;
+  try {
+    const query = new URLSearchParams({ mediaType });
+    if (mediaKey) query.set('mediaKey', mediaKey);
+    const response = await fetch('/api/v1/me/playback?' + query.toString(), {
+      method: 'DELETE',
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
