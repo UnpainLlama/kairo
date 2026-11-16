@@ -35,6 +35,7 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl = null, init
   const frameRef = useRef<HTMLIFrameElement>(null);
   const onProgressRef = useRef(onProgress);
   const onBackRef = useRef(onBack);
+  const initialPlaybackRef = useRef(initialPlayback);
   const latestRef = useRef<MediaPlaybackSnapshot>({
     mediaType: 'movie',
     mediaKey: tmdbId,
@@ -53,11 +54,11 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl = null, init
   const embedUrl = useMemo(() => {
     try {
       return cinesrcMovieEmbedUrl(tmdbId, {
-        startSeconds: initialPlayback?.progressSeconds ?? 0,
-        sourceId: initialPlayback?.playerState.sourceId,
+        startSeconds: initialPlaybackRef.current?.progressSeconds ?? 0,
+        sourceId: initialPlaybackRef.current?.playerState.sourceId,
       });
     } catch { return null; }
-  }, [tmdbId, initialPlayback?.progressSeconds, initialPlayback?.playerState.sourceId]);
+  }, [tmdbId]);
 
   const sendCommand = (command: string, args: unknown[] = []) => {
     frameRef.current?.contentWindow?.postMessage({ type: 'cinesrc:command', command, args }, CINESRC_ORIGIN);
@@ -85,20 +86,8 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl = null, init
   };
 
   useEffect(() => {
-    latestRef.current = {
-      mediaType: 'movie',
-      mediaKey: tmdbId,
-      title,
-      artworkUrl: posterUrl,
-      progressSeconds: initialPlayback?.progressSeconds ?? 0,
-      durationSeconds: initialPlayback?.durationSeconds ?? null,
-      completed: initialPlayback?.completed ?? false,
-      playerState: initialPlayback?.playerState ?? {},
-      updatedAt: initialPlayback?.updatedAt ?? Date.now(),
-    };
-
     const applySavedState = () => {
-      const state = initialPlayback?.playerState;
+      const state = initialPlaybackRef.current?.playerState;
       if (!state) return;
       if (typeof state.volume === 'number') sendCommand('setVolume', [state.volume]);
       if (typeof state.muted === 'boolean') sendCommand('setMuted', [state.muted]);
@@ -215,7 +204,7 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl = null, init
       window.removeEventListener('pagehide', onPageHide);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [tmdbId, title, posterUrl, initialPlayback]);
+  }, [tmdbId]);
 
   const backButton = (
     <button type="button" className="nf-player-back" onClick={() => { requestFinalSnapshot('close'); onBack(); }} aria-label="Back to browse">

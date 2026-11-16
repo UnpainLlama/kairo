@@ -7,6 +7,7 @@ import { useAccountScope } from '../hooks/useAccountScope';
 import { addGuestYouTubeWatchLater, saveGuestYouTubeProgress, readGuestYouTubeHistory, readGuestYouTubeWatchLater } from '../lib/youtubeLocalLibrary';
 import { loadMediaPlayback, syncMediaPlayback, writeLocalMediaPlayback, type SavedPlayerState } from '../lib/mediaPlayback';
 import type { MediaPlaybackSnapshot } from '../lib/mediaPlayback';
+import type { PlaybackSaveReason } from '../lib/playbackSync';
 
 type VideoDetails = {
   videoId: string;
@@ -184,7 +185,7 @@ export default function YouTubeWatchPage() {
     return () => { active = false; };
   }, [videoId, accountResolved, accountError, accountId]);
 
-  const onProgress = useCallback((seconds: number, duration: number, completed: boolean, reason: 'timeupdate' | 'play' | 'pause' | 'seeked' | 'ended' | 'pagehide' | 'volumechange' | 'ratechange' | 'close', playerState: SavedPlayerState = {}) => {
+  const onProgress = useCallback((seconds: number, duration: number, completed: boolean, reason: PlaybackSaveReason, playerState: SavedPlayerState = {}) => {
     if (!video || video.madeForKids || !Number.isFinite(seconds) || !Number.isFinite(duration) || duration <= 0) return;
     const position = completed ? duration : Math.max(0, Math.min(duration, seconds));
     const now = Date.now();

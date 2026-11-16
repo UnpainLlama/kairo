@@ -56,13 +56,13 @@ function OpaqueProviderEmbed({ src, title, provider, progressKey, onProgress, pl
     const seconds = readSavedSeconds(progressKey);
     onProgress?.(seconds, 'open', playerState ?? {});
     const flush = () => onProgress?.(readSavedSeconds(progressKey), 'pagehide', playerState ?? {});
+    const onVisibilityChange = () => { if (document.visibilityState === 'hidden') flush(); };
     window.addEventListener('pagehide', flush);
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') flush();
-    });
+    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       flush();
       window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [progressKey, onProgress, playerState]);
 
