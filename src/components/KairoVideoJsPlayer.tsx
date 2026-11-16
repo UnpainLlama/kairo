@@ -1,5 +1,6 @@
 import { createElement, useEffect, useRef, useState } from 'react';
 import type { PlaybackSaveReason } from '../lib/playbackSync';
+import type { SavedPlayerState } from '../lib/mediaPlayback';
 
 type Subtitle = { language: string; label: string; url: string; format: 'vtt' };
 
@@ -12,12 +13,17 @@ type Props = {
   outroStart?: number | null;
   nextUrl?: string | null;
   mediaType?: 'hls' | 'file';
-  onProgress?: (seconds: number, reason: PlaybackSaveReason) => void;
+  onProgress?: (seconds: number, reason: PlaybackSaveReason, playerState?: SavedPlayerState) => void;
+  initialPlayerState?: SavedPlayerState | null;
 };
 
 type VideoJsMediaElement = HTMLElement & {
   currentTime: number;
   duration: number;
+  volume?: number;
+  muted?: boolean;
+  playbackRate?: number;
+  textTracks?: TextTrackList;
 };
 
 export default function KairoVideoJsPlayer({
@@ -30,6 +36,7 @@ export default function KairoVideoJsPlayer({
   nextUrl,
   mediaType = 'hls',
   onProgress,
+  initialPlayerState,
 }: Props) {
   const mediaRef = useRef<VideoJsMediaElement | null>(null);
   const [skip, setSkip] = useState<'intro' | 'outro' | null>(null);
@@ -41,19 +48,37 @@ export default function KairoVideoJsPlayer({
 
     const storageKey = `kairo-progress:${progressKey}`;
     let lastLocalSaveAt = 0;
+    const readPlayerState = (): SavedPlayerState => {
+      const state: SavedPlayerState = {};
+      if (typeof media.volume === 'number' && Number.isFinite(media.volume)) state.volume = Math.max(0, Math.min(1, media.volume));
+      if (typeof media.muted === 'boolean') state.muted = media.muted;
+      if (typeof media.playbackRate === 'number' && Number.isFinite(media.playbackRate)) state.playbackRate = Math.max(0.25, Math.min(2, media.playbackRate));
+      const tracks = media.textTracks;
+      if (tracks) {
+        const active = Array.from(tracks).find(track => track.mode === 'showing');
+        if (active?.language && /^[A-Za-z0-9_-]{1,40}$/.test(active.language)) state.subtitleLanguage = active.language;
+      }
+      return state;
+    };
     const saveProgress = (reason: PlaybackSaveReason) => {
       const time = media.currentTime;
       const duration = media.duration;
       if (!Number.isFinite(time) || time < 0) return;
       const position = reason === 'ended' && Number.isFinite(duration) && duration > 0 ? duration : time;
       try { localStorage.setItem(storageKey, String(position)); } catch { /* storage may be unavailable */ }
-      onProgress?.(position, reason);
+      onProgress?.(position, reason, readPlayerState());
     };
     const restore = () => {
       let saved = 0;
       try { saved = Number(localStorage.getItem(storageKey) || 0); } catch { /* storage may be unavailable */ }
-      if (saved > 0 && Number.isFinite(media.duration) && saved < media.duration - 15) {
-        media.currentTime = saved;
+      if (saved > 0 && Number.isFinite(media.duration) && saved < media.duration - 15) media.currentTime = saved;
+      if (initialPlayerState) {
+        if (typeof initialPlayerState.volume === 'number') media.volume = initialPlayerState.volume;
+        if (typeof initialPlayerState.muted === 'boolean') media.muted = initialPlayerState.muted;
+        if (typeof initialPlayerState.playbackRate === 'number') media.playbackRate = initialPlayerState.playbackRate;
+        if (initialPlayerState.subtitleLanguage && media.textTracks) {
+          Array.from(media.textTracks).forEach(track => { track.mode = track.language === initialPlayerState.subtitleLanguage ? 'showing' : 'disabled'; });
+        }
       }
     };
     const updateProgress = () => {
@@ -67,7 +92,7 @@ export default function KairoVideoJsPlayer({
         lastLocalSaveAt = now;
       }
       // The watch page throttles remote writes to one per 15 seconds.
-      onProgress?.(time, 'timeupdate');
+      onProgress?.(time, 'timeupdate', readPlayerState());
       setSkip(introEnd && time > 5 && time < introEnd ? 'intro' : outroStart && time >= outroStart ? 'outro' : null);
       setRemaining(nextUrl && Number.isFinite(duration) && duration - time <= 15 && duration - time > 0
         ? Math.ceil(duration - time)
@@ -78,6 +103,9 @@ export default function KairoVideoJsPlayer({
     const onSeeked = () => saveProgress('seeked');
     const onEnded = () => { saveProgress('ended'); if (nextUrl) window.location.assign(nextUrl); };
     const onPageHide = () => saveProgress('pagehide');
+    const onVolumeChange = () => saveProgress('volumechange');
+    const onRateChange = () => saveProgress('ratechange');
+    const onTextTrackChange = () => saveProgress('subtitlechange');
     const onVisibilityChange = () => {
       if (document.visibilityState === 'hidden') saveProgress('pagehide');
     };
@@ -87,6 +115,9 @@ export default function KairoVideoJsPlayer({
     media.addEventListener('play', onPlay);
     media.addEventListener('pause', onPause);
     media.addEventListener('seeked', onSeeked);
+    media.addEventListener('volumechange', onVolumeChange);
+    media.addEventListener('ratechange', onRateChange);
+    media.textTracks?.addEventListener('change', onTextTrackChange);
     media.addEventListener('ended', onEnded);
     window.addEventListener('pagehide', onPageHide);
     document.addEventListener('visibilitychange', onVisibilityChange);
@@ -98,11 +129,14 @@ export default function KairoVideoJsPlayer({
       media.removeEventListener('play', onPlay);
       media.removeEventListener('pause', onPause);
       media.removeEventListener('seeked', onSeeked);
+      media.removeEventListener('volumechange', onVolumeChange);
+      media.removeEventListener('ratechange', onRateChange);
+      media.textTracks?.removeEventListener('change', onTextTrackChange);
       media.removeEventListener('ended', onEnded);
       window.removeEventListener('pagehide', onPageHide);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [src, progressKey, introEnd, outroStart, nextUrl, onProgress]);
+  }, [src, progressKey, introEnd, outroStart, nextUrl, onProgress, initialPlayerState]);
 
   const seekTo = (target: 'intro' | 'outro') => {
     const media = mediaRef.current;

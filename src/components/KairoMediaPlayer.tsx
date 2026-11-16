@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import KairoVideoJsPlayer from './KairoVideoJsPlayer';
 import type { PlaybackSaveReason } from '../lib/playbackSync';
+import type { SavedPlayerState } from '../lib/mediaPlayback';
 
 type Subtitle = { language: string; label: string; url: string; format: 'vtt' };
 type Variant = { label: string; height?: number };
@@ -16,7 +17,8 @@ type Props = {
   introEnd?: number | null;
   outroStart?: number | null;
   nextUrl?: string | null;
-  onProgress?: (seconds: number, reason: PlaybackSaveReason) => void;
+  onProgress?: (seconds: number, reason: PlaybackSaveReason, playerState?: SavedPlayerState) => void;
+  initialPlayerState?: SavedPlayerState | null;
 };
 
 function safeHttpsUrl(value: string): URL | null {
@@ -37,17 +39,17 @@ function youtubeEmbed(url: URL): string | null {
   return /^[A-Za-z0-9_-]{11}$/.test(id) ? `https://www.youtube-nocookie.com/embed/${id}?enablejsapi=1&playsinline=1&rel=0` : null;
 }
 
-export default function KairoMediaPlayer({ source, title, progressKey, introEnd, outroStart, nextUrl, onProgress }: Props) {
+export default function KairoMediaPlayer({ source, title, progressKey, introEnd, outroStart, nextUrl, onProgress, initialPlayerState }: Props) {
   const rawUrl = source.protocol === 'hls' ? source.manifestUrl : source.protocol === 'file' ? source.mediaUrl : source.embedUrl;
   const safeUrl = useMemo(() => safeHttpsUrl(rawUrl), [rawUrl]);
   const youtubeUrl = useMemo(() => safeUrl ? youtubeEmbed(safeUrl) : null, [safeUrl]);
 
   if (!safeUrl) return <div className="kc-player-message" role="alert"><h2>Unsafe playback source</h2><p>Kairo only loads secure HTTPS media sources.</p></div>;
   if (source.protocol === 'hls') {
-    return <KairoVideoJsPlayer src={safeUrl.href} title={title} progressKey={progressKey} subtitles={source.subtitles ?? []} mediaType={source.protocol} introEnd={introEnd} outroStart={outroStart} nextUrl={nextUrl} onProgress={onProgress} />;
+    return <KairoVideoJsPlayer src={safeUrl.href} title={title} progressKey={progressKey} subtitles={source.subtitles ?? []} mediaType={source.protocol} initialPlayerState={initialPlayerState} introEnd={introEnd} outroStart={outroStart} nextUrl={nextUrl} onProgress={onProgress} />;
   }
   if (source.protocol === 'file') {
-    return <KairoVideoJsPlayer src={safeUrl.href} title={title} progressKey={progressKey} subtitles={source.subtitles ?? []} mediaType="file" onProgress={onProgress} />;
+    return <KairoVideoJsPlayer src={safeUrl.href} title={title} progressKey={progressKey} subtitles={source.subtitles ?? []} mediaType="file" initialPlayerState={initialPlayerState} onProgress={onProgress} />;
   }
 
   // Third-party providers keep their own playback engine. Kairo cannot control

@@ -1,4 +1,4 @@
-export type PlaybackSaveReason = 'play' | 'pause' | 'seeked' | 'ended' | 'pagehide' | 'timeupdate';
+export type PlaybackSaveReason = 'open' | 'play' | 'pause' | 'seeked' | 'ended' | 'pagehide' | 'timeupdate' | 'volumechange' | 'ratechange' | 'subtitlechange' | 'sourcechange' | 'close';
 
 export const PLAYBACK_SERVER_SYNC_INTERVAL_MS = 15_000;
 
@@ -13,8 +13,10 @@ export function shouldSyncPlaybackProgress(
   lastSyncedSeconds: number,
   currentSeconds: number,
   now: number,
+  stateChanged = false,
 ): boolean {
   if (!Number.isFinite(currentSeconds) || currentSeconds < 0) return false;
+  if (reason === 'pagehide' || reason === 'ended' || reason === 'close' || stateChanged) return true;
   if (reason === 'timeupdate') return now - lastSyncedAt >= PLAYBACK_SERVER_SYNC_INTERVAL_MS;
   return Math.abs(currentSeconds - lastSyncedSeconds) >= 1 ||
     now - lastSyncedAt >= PLAYBACK_SERVER_SYNC_INTERVAL_MS;
