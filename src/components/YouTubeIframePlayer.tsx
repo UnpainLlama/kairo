@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import type { SavedPlayerState } from '../lib/mediaPlayback';
+import type { PlaybackSaveReason } from '../lib/playbackSync';
 
 type PlayerStateEvent = { data: number; target: YouTubePlayer };
 type YouTubePlayer = {
@@ -6,6 +8,13 @@ type YouTubePlayer = {
   getCurrentTime(): number;
   getDuration(): number;
   seekTo(seconds: number, allowSeekAhead: boolean): void;
+  getVolume(): number;
+  isMuted(): boolean;
+  getPlaybackRate(): number;
+  setVolume(volume: number): void;
+  mute(): void;
+  unMute(): void;
+  setPlaybackRate(rate: number): void;
 };
 type YouTubeApi = {
   PlayerState: { UNSTARTED: number; ENDED: number; PLAYING: number; PAUSED: number; BUFFERING: number; CUED: number };
@@ -18,6 +27,7 @@ type YouTubeApi = {
       onReady?: (event: { target: YouTubePlayer }) => void;
       onStateChange?: (event: PlayerStateEvent) => void;
       onError?: (event: { data: number }) => void;
+      onPlaybackRateChange?: (event: { data: number; target: YouTubePlayer }) => void;
     };
   }) => YouTubePlayer;
 };
@@ -29,12 +39,13 @@ declare global {
   }
 }
 
-export type YouTubeProgressReason = 'timeupdate' | 'pause' | 'ended' | 'pagehide';
+export type YouTubeProgressReason = PlaybackSaveReason;
 type Props = {
   videoId: string;
   title: string;
   startSeconds?: number;
-  onProgress?: (seconds: number, duration: number, completed: boolean, reason: YouTubeProgressReason) => void;
+  onProgress?: (seconds: number, duration: number, completed: boolean, reason: YouTubeProgressReason, playerState?: SavedPlayerState) => void;
+  initialPlayerState?: SavedPlayerState | null;
 };
 
 
@@ -85,11 +96,12 @@ function loadYouTubeIframeApi(): Promise<YouTubeApi> {
   return apiPromise;
 }
 
-export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, onProgress }: Props) {
+export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, onProgress, initialPlayerState }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<YouTubePlayer | null>(null);
   const onProgressRef = useRef(onProgress);
   const startSecondsRef = useRef(startSeconds);
+  const playerStateRef = useRef(initialPlayerState);
   const restoredRef = useRef(false);
   const timerRef = useRef<number | null>(null);
   const resumeTimerRef = useRef<number | null>(null);
@@ -98,6 +110,7 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
 
   useEffect(() => { onProgressRef.current = onProgress; }, [onProgress]);
   useEffect(() => { startSecondsRef.current = startSeconds; }, [startSeconds]);
+  useEffect(() => { playerStateRef.current = initialPlayerState; }, [initialPlayerState]);
 
   useEffect(() => {
     let cancelled = false;
@@ -113,12 +126,18 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
       const seconds = player.getCurrentTime();
       const duration = player.getDuration();
       if (Number.isFinite(seconds) && Number.isFinite(duration) && duration > 0) {
-        onProgressRef.current?.(Math.max(0, seconds), duration, completed, reason);
+        const playerState: SavedPlayerState = {};
+        const volume = player.getVolume();
+        const playbackRate = player.getPlaybackRate();
+        if (Number.isFinite(volume)) playerState.volume = Math.max(0, Math.min(1, volume / 100));
+        playerState.muted = player.isMuted();
+        if (Number.isFinite(playbackRate)) playerState.playbackRate = Math.max(0.25, Math.min(2, playbackRate));
+        onProgressRef.current?.(Math.max(0, seconds), duration, completed, reason, playerState);
       }
     };
     const startTimer = () => {
       stopTimer();
-      timerRef.current = window.setInterval(() => report('timeupdate'), 10000);
+      timerRef.current = window.setInterval(() => report('timeupdate'), 1000);
     };
     const restorePosition = (target: YouTubePlayer): boolean => {
       if (restoredRef.current) return true;
@@ -149,6 +168,10 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
             if (cancelled) return;
             playerRef.current = event.target;
             setReady(true);
+            const savedState = playerStateRef.current;
+            if (typeof savedState?.volume === 'number') event.target.setVolume(Math.round(savedState.volume * 100));
+            if (typeof savedState?.muted === 'boolean') { if (savedState.muted) event.target.mute(); else event.target.unMute(); }
+            if (typeof savedState?.playbackRate === 'number') event.target.setPlaybackRate(savedState.playbackRate);
             if (!restorePosition(event.target)) {
               let attempts = 0;
               resumeTimerRef.current = window.setInterval(() => {
@@ -162,6 +185,7 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
           },
           onStateChange: (event) => {
             if (event.data === api.PlayerState.PLAYING) {
+              report('play');
               if (!restorePosition(event.target) && resumeTimerRef.current === null) {
                 let attempts = 0;
                 resumeTimerRef.current = window.setInterval(() => {
@@ -184,6 +208,7 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
               stopTimer();
             }
           },
+          onPlaybackRateChange: () => report('ratechange'),
           onError: (event) => {
             stopTimer();
             const messages: Record<number, string> = {
@@ -204,7 +229,9 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
     });
 
     const pageHide = () => report('pagehide');
+    const visibilityChange = () => { if (document.visibilityState === 'hidden') report('pagehide'); };
     window.addEventListener('pagehide', pageHide);
+    document.addEventListener('visibilitychange', visibilityChange);
     return () => {
       cancelled = true;
       stopTimer();
@@ -214,6 +241,7 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
       }
       report('pagehide');
       window.removeEventListener('pagehide', pageHide);
+      document.removeEventListener('visibilitychange', visibilityChange);
       playerRef.current?.destroy();
       playerRef.current = null;
     };
