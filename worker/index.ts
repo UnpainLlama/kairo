@@ -492,6 +492,7 @@ app.get('/api/v1/me/playback', async (c) => {
   const mediaKey = c.req.query('mediaKey');
   if (mediaType && !['anime', 'movie', 'youtube'].includes(mediaType)) return fail(c, 400, 'VALIDATION_ERROR', 'The media type is invalid.');
   if (mediaKey && (!mediaType || !mediaKey.trim() || mediaKey.length > 256)) return fail(c, 400, 'VALIDATION_ERROR', 'The media playback key is invalid.');
+  c.header('Cache-Control', 'no-store');
   const limit = boundedInt(c.req.query('limit'), 50, 1, 100);
   if (limit === null) return fail(c, 400, 'VALIDATION_ERROR', 'The playback list limit is invalid.');
   try {
@@ -499,11 +500,6 @@ app.get('/api/v1/me/playback', async (c) => {
       artwork_url AS artworkUrl, duration_seconds AS durationSeconds,
       progress_seconds AS progressSeconds, completed,
       player_state_json AS playerStateJson, updated_at AS updatedAt`;
-    const result = mediaKey
-      ? await c.env.DB.prepare(`SELECT ${columns} FROM user_media_playback WHERE user_id=? AND media_type=? AND media_key=? LIMIT 1`)
-          .bind(user.id, mediaType, mediaKey).first<Record<string, unknown>>()
-      : await c.env.DB.prepare(`SELECT ${columns} FROM user_media_playback WHERE user_id=? ${mediaType ? 'AND media_type=?' : ''} ORDER BY updated_at DESC LIMIT ?`)
-          .bind(...(mediaType ? [user.id, mediaType, limit] : [user.id, limit])).all<Record<string, unknown>>();
     const mapRow = (row: Record<string, unknown>) => {
       let playerState: unknown = {};
       try { playerState = JSON.parse(String(row.playerStateJson ?? '{}')); } catch { playerState = {}; }
@@ -514,8 +510,14 @@ app.get('/api/v1/me/playback', async (c) => {
         playerState, updatedAt: Number(row.updatedAt ?? 0),
       };
     };
-    if (mediaKey) return ok(c, { item: result ? mapRow(result) : null });
-    return ok(c, { items: (result?.results ?? []).map(mapRow) }, { count: result?.results?.length ?? 0 });
+    if (mediaKey) {
+      const row = await c.env.DB.prepare(`SELECT ${columns} FROM user_media_playback WHERE user_id=? AND media_type=? AND media_key=? LIMIT 1`)
+        .bind(user.id, mediaType, mediaKey).first<Record<string, unknown>>();
+      return ok(c, { item: row ? mapRow(row) : null });
+    }
+    const result = await c.env.DB.prepare(`SELECT ${columns} FROM user_media_playback WHERE user_id=? ${mediaType ? 'AND media_type=?' : ''} ORDER BY updated_at DESC LIMIT ?`)
+      .bind(...(mediaType ? [user.id, mediaType, limit] : [user.id, limit])).all<Record<string, unknown>>();
+    return ok(c, { items: (result.results ?? []).map(mapRow) }, { count: result.results?.length ?? 0 });
   } catch (error) {
     logError(c, 'media_playback_read_failed', error);
     return fail(c, 503, 'PLAYBACK_UNAVAILABLE', 'Your playback progress is temporarily unavailable.');
@@ -553,13 +555,13 @@ app.post('/api/v1/me/playback', async (c) => {
   try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
   if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(c, 400, 'VALIDATION_ERROR', 'Provide a playback progress record.');
   const item = body as Record<string, unknown>;
-  const mediaType = item.mediaType;
+  const mediaType = typeof item.mediaType === 'string' ? item.mediaType : '';
   const mediaKey = typeof item.mediaKey === 'string' ? item.mediaKey.trim() : '';
   const title = typeof item.title === 'string' ? item.title.trim() : '';
   const progress = Number(item.progressSeconds);
   const duration = item.durationSeconds === null || item.durationSeconds === undefined ? null : Number(item.durationSeconds);
   const clientTime = Number(item.updatedAt);
-  if (!['anime', 'movie', 'youtube'].includes(String(mediaType)) || !mediaKey || mediaKey.length > 256 ||
+  if (!['anime', 'movie', 'youtube'].includes(mediaType) || !mediaKey || mediaKey.length > 256 ||
       /[\u0000-\u001f]/.test(mediaKey) || !title || title.length > 300 ||
       !Number.isFinite(progress) || progress < 0 || progress > 86400 ||
       (duration !== null && (!Number.isFinite(duration) || duration <= 0 || duration > 86400)) ||
