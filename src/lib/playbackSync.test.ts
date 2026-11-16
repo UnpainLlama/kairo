@@ -18,7 +18,17 @@ describe('playback progress sync policy', () => {
     }
   });
 
-  it('does not resend unchanged event positions unnecessarily', () => {
+  it('flushes page exit and completed playback even when the playhead did not move', () => {
+    expect(shouldSyncPlaybackProgress('pagehide', 10_000, 35, 35, 10_100)).toBe(true);
+    expect(shouldSyncPlaybackProgress('ended', 10_000, 35, 35, 10_100)).toBe(true);
+  });
+
+  it('flushes player-setting changes even when the playhead did not move', () => {
+    expect(shouldSyncPlaybackProgress('volumechange', 10_000, 35, 35, 10_100, true)).toBe(true);
+    expect(shouldSyncPlaybackProgress('ratechange', 10_000, 35, 35, 10_100, true)).toBe(true);
+  });
+
+  it('does not resend unchanged pause positions unnecessarily', () => {
     expect(shouldSyncPlaybackProgress('pause', 10_000, 35, 35, 10_100)).toBe(false);
   });
 
