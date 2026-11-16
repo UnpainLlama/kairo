@@ -485,6 +485,105 @@ app.get('/api/v1/me', async (c) => {
   return ok(c, { user });
 });
 
+app.get('/api/v1/me/playback', async (c) => {
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to restore playback progress.');
+  const mediaType = c.req.query('mediaType');
+  const mediaKey = c.req.query('mediaKey');
+  if (mediaType && !['anime', 'movie', 'youtube'].includes(mediaType)) return fail(c, 400, 'VALIDATION_ERROR', 'The media type is invalid.');
+  if (mediaKey && (!mediaType || !mediaKey.trim() || mediaKey.length > 256)) return fail(c, 400, 'VALIDATION_ERROR', 'The media playback key is invalid.');
+  const limit = boundedInt(c.req.query('limit'), 50, 1, 100);
+  if (limit === null) return fail(c, 400, 'VALIDATION_ERROR', 'The playback list limit is invalid.');
+  try {
+    const columns = `media_type AS mediaType, media_key AS mediaKey, title,
+      artwork_url AS artworkUrl, duration_seconds AS durationSeconds,
+      progress_seconds AS progressSeconds, completed,
+      player_state_json AS playerStateJson, updated_at AS updatedAt`;
+    const result = mediaKey
+      ? await c.env.DB.prepare(`SELECT ${columns} FROM user_media_playback WHERE user_id=? AND media_type=? AND media_key=? LIMIT 1`)
+          .bind(user.id, mediaType, mediaKey).first<Record<string, unknown>>()
+      : await c.env.DB.prepare(`SELECT ${columns} FROM user_media_playback WHERE user_id=? ${mediaType ? 'AND media_type=?' : ''} ORDER BY updated_at DESC LIMIT ?`)
+          .bind(...(mediaType ? [user.id, mediaType, limit] : [user.id, limit])).all<Record<string, unknown>>();
+    const mapRow = (row: Record<string, unknown>) => {
+      let playerState: unknown = {};
+      try { playerState = JSON.parse(String(row.playerStateJson ?? '{}')); } catch { playerState = {}; }
+      return {
+        mediaType: row.mediaType, mediaKey: row.mediaKey, title: row.title,
+        artworkUrl: row.artworkUrl ?? null, durationSeconds: row.durationSeconds ?? null,
+        progressSeconds: Number(row.progressSeconds ?? 0), completed: Number(row.completed) === 1,
+        playerState, updatedAt: Number(row.updatedAt ?? 0),
+      };
+    };
+    if (mediaKey) return ok(c, { item: result ? mapRow(result) : null });
+    return ok(c, { items: (result?.results ?? []).map(mapRow) }, { count: result?.results?.length ?? 0 });
+  } catch (error) {
+    logError(c, 'media_playback_read_failed', error);
+    return fail(c, 503, 'PLAYBACK_UNAVAILABLE', 'Your playback progress is temporarily unavailable.');
+  }
+});
+
+app.post('/api/v1/me/playback', async (c) => {
+  const origin = c.req.header('Origin');
+  if (origin && origin !== new URL(c.req.url).origin) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync playback progress.');
+  let body: unknown;
+  try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(c, 400, 'VALIDATION_ERROR', 'Provide a playback progress record.');
+  const item = body as Record<string, unknown>;
+  const mediaType = item.mediaType;
+  const mediaKey = typeof item.mediaKey === 'string' ? item.mediaKey.trim() : '';
+  const title = typeof item.title === 'string' ? item.title.trim() : '';
+  const progress = Number(item.progressSeconds);
+  const duration = item.durationSeconds === null || item.durationSeconds === undefined ? null : Number(item.durationSeconds);
+  const clientTime = Number(item.updatedAt);
+  if (!['anime', 'movie', 'youtube'].includes(String(mediaType)) || !mediaKey || mediaKey.length > 256 ||
+      /[\u0000-\u001f]/.test(mediaKey) || !title || title.length > 300 ||
+      !Number.isFinite(progress) || progress < 0 || progress > 86400 ||
+      (duration !== null && (!Number.isFinite(duration) || duration <= 0 || duration > 86400)) ||
+      !Number.isFinite(clientTime) || clientTime <= 0) {
+    return fail(c, 400, 'VALIDATION_ERROR', 'The playback progress record is invalid.');
+  }
+  if (mediaType === 'movie' && !/^\d{1,12}$/.test(mediaKey)) return fail(c, 400, 'VALIDATION_ERROR', 'The movie playback key must be a TMDB ID.');
+  if (mediaType === 'youtube' && !/^[A-Za-z0-9_-]{11}$/.test(mediaKey)) return fail(c, 400, 'VALIDATION_ERROR', 'The YouTube playback key is invalid.');
+  if (mediaType === 'anime' && !/^.{1,220}:\d{1,6}$/.test(mediaKey)) return fail(c, 400, 'VALIDATION_ERROR', 'The Anime playback key is invalid.');
+  const artworkValue = typeof item.artworkUrl === 'string' ? item.artworkUrl : '';
+  let artworkUrl: string | null = null;
+  if (artworkValue && artworkValue.length <= 2048) {
+    try { const parsed = new URL(artworkValue); if (parsed.protocol === 'https:') artworkUrl = parsed.toString(); } catch { /* optional artwork */ }
+  }
+  const rawState = item.playerState && typeof item.playerState === 'object' && !Array.isArray(item.playerState)
+    ? item.playerState as Record<string, unknown> : {};
+  const playerState: Record<string, string | number | boolean> = {};
+  if (typeof rawState.volume === 'number' && Number.isFinite(rawState.volume)) playerState.volume = Math.max(0, Math.min(1, rawState.volume));
+  if (typeof rawState.muted === 'boolean') playerState.muted = rawState.muted;
+  if (typeof rawState.playbackRate === 'number' && Number.isFinite(rawState.playbackRate)) playerState.playbackRate = Math.max(0.25, Math.min(2, rawState.playbackRate));
+  if (typeof rawState.quality === 'string' && /^[A-Za-z0-9_-]{1,24}$/.test(rawState.quality)) playerState.quality = rawState.quality;
+  if (typeof rawState.subtitleLanguage === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(rawState.subtitleLanguage)) playerState.subtitleLanguage = rawState.subtitleLanguage;
+  if (typeof rawState.sourceId === 'string' && /^[A-Za-z0-9_-]{1,100}$/.test(rawState.sourceId)) playerState.sourceId = rawState.sourceId;
+  const now = Date.now();
+  const updatedAt = Math.min(Math.floor(clientTime), now + 60_000);
+  const progressSeconds = duration === null ? Math.min(86400, progress) : Math.min(duration, progress);
+  try {
+    await c.env.DB.prepare(`
+      INSERT INTO user_media_playback
+        (user_id, media_type, media_key, title, artwork_url, duration_seconds,
+         progress_seconds, completed, player_state_json, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, media_type, media_key) DO UPDATE SET
+        title=excluded.title, artwork_url=excluded.artwork_url, duration_seconds=excluded.duration_seconds,
+        progress_seconds=excluded.progress_seconds, completed=excluded.completed,
+        player_state_json=excluded.player_state_json, updated_at=excluded.updated_at
+      WHERE excluded.updated_at >= user_media_playback.updated_at
+    `).bind(user.id, mediaType, mediaKey, title, artworkUrl, duration, progressSeconds,
+      item.completed === true ? 1 : 0, JSON.stringify(playerState), updatedAt).run();
+    return ok(c, { saved: true, updatedAt });
+  } catch (error) {
+    logError(c, 'media_playback_sync_failed', error);
+    return fail(c, 503, 'PLAYBACK_UNAVAILABLE', 'Could not sync playback progress.');
+  }
+});
+
 app.get('/api/v1/me/history/sync', async (c) => {
   const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to restore watch history.');
