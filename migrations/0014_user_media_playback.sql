@@ -15,3 +15,22 @@ CREATE TABLE IF NOT EXISTS user_media_playback (
 );
 CREATE INDEX IF NOT EXISTS idx_user_media_playback_recent
   ON user_media_playback(user_id, updated_at DESC);
+
+-- Backfill the shared playback index from existing account-owned histories.
+INSERT INTO user_media_playback
+  (user_id, media_type, media_key, title, artwork_url, duration_seconds,
+   progress_seconds, completed, player_state_json, updated_at)
+SELECT user_id, 'anime', anime_slug || ':' || episode_number, title, poster_url,
+       duration_seconds, progress_seconds, 0, '{}', updated_at
+FROM user_watch_history
+WHERE 1
+ON CONFLICT(user_id, media_type, media_key) DO NOTHING;
+
+INSERT INTO user_media_playback
+  (user_id, media_type, media_key, title, artwork_url, duration_seconds,
+   progress_seconds, completed, player_state_json, updated_at)
+SELECT user_id, 'youtube', video_id, title, thumbnail_url, duration_seconds,
+       progress_seconds, completed, '{}', updated_at
+FROM youtube_watch_history
+WHERE 1
+ON CONFLICT(user_id, media_type, media_key) DO NOTHING;
