@@ -522,6 +522,28 @@ app.get('/api/v1/me/playback', async (c) => {
   }
 });
 
+app.delete('/api/v1/me/playback', async (c) => {
+  const origin = c.req.header('Origin');
+  if (origin && origin !== new URL(c.req.url).origin) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to delete playback progress.');
+  const mediaType = c.req.query('mediaType');
+  const mediaKey = c.req.query('mediaKey');
+  if (!mediaType || !['anime', 'movie', 'youtube'].includes(mediaType) ||
+      (mediaKey !== undefined && (!mediaKey.trim() || mediaKey.length > 256))) {
+    return fail(c, 400, 'VALIDATION_ERROR', 'The playback record to delete is invalid.');
+  }
+  try {
+    const result = mediaKey
+      ? await c.env.DB.prepare('DELETE FROM user_media_playback WHERE user_id=? AND media_type=? AND media_key=?').bind(user.id, mediaType, mediaKey).run()
+      : await c.env.DB.prepare('DELETE FROM user_media_playback WHERE user_id=? AND media_type=?').bind(user.id, mediaType).run();
+    return ok(c, { removed: true, changes: result.meta.changes ?? 0 });
+  } catch (error) {
+    logError(c, 'media_playback_delete_failed', error);
+    return fail(c, 503, 'PLAYBACK_UNAVAILABLE', 'Could not delete playback progress.');
+  }
+});
+
 app.post('/api/v1/me/playback', async (c) => {
   const origin = c.req.header('Origin');
   if (origin && origin !== new URL(c.req.url).origin) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
