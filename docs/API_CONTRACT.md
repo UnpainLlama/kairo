@@ -120,7 +120,7 @@ Progress request example:
 
 Validate finite non-negative numbers, enforce sensible duration/position bounds, and derive the subject ID from the authenticated context. Never accept `userId` from the request body.
 
-## 3a. Kairo-curated YouTube feed
+## 3a. Shared playback progress (Anime, Movies and YouTube)\n\n| Method | Path | Purpose |\n|---|---|---|\n| GET | `/api/v1/me/playback?mediaType=anime\\|movie\\|youtube&mediaKey=...` | Restore one shared playback snapshot. Omit `mediaKey` to list recent cross-media playback (optional `mediaType`, `limit`). |\n| POST | `/api/v1/me/playback` | Upsert the latest position and supported player settings for one media item. |\n| DELETE | `/api/v1/me/playback?mediaType=...&mediaKey=...` | Delete one resume record; omit `mediaKey` to clear that media type. |\n\nThe shared table is keyed by the server-derived Kairo user ID, media type and stable item key. `playerState` is restricted to supported values such as volume, mute, playback rate, quality, subtitle language and source ID. The browser keeps a separate guest/account snapshot and reconciles the newest timestamp on player open. Clients sync periodically while playing and flush on pause, seek, end, visibility loss and page exit. No user ID is accepted in the request body.\n\n## 3b. Kairo-curated YouTube feed
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -140,7 +140,7 @@ Validate finite non-negative numbers, enforce sensible duration/position bounds,
 - Errors include `AUTH_REQUIRED`, `YOUTUBE_API_KEY_MISSING`, `YOUTUBE_API_KEY_INVALID`, `YOUTUBE_QUOTA_EXCEEDED`, `YOUTUBE_FEED_CURSOR_EXPIRED`, `RATE_LIMITED`, and `YOUTUBE_PROVIDER_UNAVAILABLE`.
 - Kairo uses the official YouTube IFrame Player API for in-app playback and retains the official YouTube watch URL as a fallback. It does not proxy video streams.
 
-## 3b. YouTube playback and personal video library
+## 3c. YouTube playback and personal video library
 
 | Method | Path | Purpose |
 |---|---|---|

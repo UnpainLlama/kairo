@@ -50,6 +50,20 @@ Signed-in Watchlist, Watched and Favorite actions write to the account library A
 ### YouTube
 Signed-in watch history and Watch Later continue to use the authenticated YouTube media endpoints. Signed-out history and Watch Later use dedicated guest-only browser keys. Local progress is timestamped; if a signed-in browser has a newer unsynced copy when the video is opened again, Kairo retries that write rather than replacing it with an older server position. Made-for-Kids tracking remains disabled.
 
+## Unified player progress and settings (migration 0014)
+
+All three players now write a shared snapshot in `user_media_playback`, keyed by the same Kairo `user_id` plus media type and stable media key:
+
+- Anime: `anime slug:episode number`
+- Movies: numeric TMDB ID
+- YouTube: 11-character YouTube video ID
+
+The migration backfills Anime and YouTube resume positions from their existing account history tables. New player sessions save local progress and supported controls to the browser at approximately one-second intervals. Signed-in sessions also sync the shared snapshot to D1 at least every 15 seconds while playing and on user/lifecycle events. When a player opens, Kairo compares the local snapshot with the account snapshot, restores the newer position/settings and retries a newer local copy to the server. Exit requests use keepalive and the local snapshot is written before the network request.
+
+Captured state is provider-dependent. Kairo saves position, duration, volume, mute and playback rate where the player API exposes them. CineSrc also exposes its selected source ID, which Kairo persists and asks CineSrc to prefer on the next open. Anime HTML/HLS playback stores the active subtitle language when exposed by the media element. Quality/captions/source behavior that an external provider does not expose cannot be recreated by Kairo.
+
+The shared record supplements the existing per-media history and list endpoints; it does not combine the schemas for Anime history, Movies watchlist, or YouTube Watch Later. Deleting an Anime or YouTube history entry also removes its shared resume record.
+
 ## Important limitations
 
 This is account-backed cross-device sync, not a fully offline-first replication engine:
