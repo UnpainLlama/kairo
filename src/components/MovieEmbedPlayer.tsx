@@ -103,6 +103,7 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl = null, init
           setLoaded(true);
           setFailed(false);
           applySavedState();
+          publish('open');
           break;
         case 'cinesrc:timeupdate': {
           const currentTime = finite(data.currentTime);

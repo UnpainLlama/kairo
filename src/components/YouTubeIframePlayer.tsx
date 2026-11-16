@@ -177,10 +177,13 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
               resumeTimerRef.current = window.setInterval(() => {
                 attempts += 1;
                 if (restorePosition(event.target) || attempts >= 20) {
+                  if (restorePosition(event.target)) report('open');
                   if (resumeTimerRef.current !== null) window.clearInterval(resumeTimerRef.current);
                   resumeTimerRef.current = null;
                 }
               }, 500);
+            } else {
+              report('open');
             }
           },
           onStateChange: (event) => {

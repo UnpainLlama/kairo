@@ -215,7 +215,7 @@ export default function WatchPage() {
       Number.isFinite(duration) && duration > 0 ? duration : 86400,
       seconds,
     ));
-    if (position <= 0 && reason !== 'play' && Object.keys(playerState).length === 0) return;
+    if (position <= 0 && reason !== 'play' && reason !== 'open' && Object.keys(playerState).length === 0) return;
 
     const now = Date.now();
     const progressKey = watchProgressStorageKey(accountId, slug, parsedEpisode, selectedServer?.id ?? '');

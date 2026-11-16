@@ -80,6 +80,7 @@ export default function KairoVideoJsPlayer({
           Array.from(media.textTracks).forEach(track => { track.mode = track.language === initialPlayerState.subtitleLanguage ? 'showing' : 'disabled'; });
         }
       }
+      saveProgress('open');
     };
     const updateProgress = () => {
       const time = media.currentTime;
