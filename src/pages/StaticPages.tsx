@@ -4,6 +4,7 @@ import { Clock, Heart, LogIn, LogOut, Search, Settings, Trash2, UserRound, Pause
 import { EmptyState, LoadingState } from '../components/catalog';
 import { useKairoAccount } from '../lib/AccountProvider';
 import { historyPausedStorageKey, readWatchHistory, watchProgressStorageKey, writeWatchHistory } from '../lib/accountStorage';
+import { deleteMediaPlayback } from '../lib/mediaPlayback';
 
 type AccountUser = { id: string; displayName: string; email: string | null; emailVerifiedAt?: string | null };
 type WatchEntry = { slug: string; title: string; posterUrl: string | null; episodeNumber: number; episodeTitle: string; progressKey: string; durationSeconds: number | null; updatedAt: number };
@@ -108,8 +109,8 @@ export function HistoryPage() {
   const filtered=useMemo(()=>items.filter(x=>`${x.title} ${x.episodeTitle}`.toLowerCase().includes(query.toLowerCase())).sort((a,b)=>sort==='title'?a.title.localeCompare(b.title):sort==='progress'?progressOf(b)-progressOf(a):b.updatedAt-a.updatedAt),[items,query,sort]);
   function refresh(){setItems(readHistory(userId))}
   function togglePaused(){const next=!paused;setPaused(next);try{localStorage.setItem(historyPausedStorageKey(userId),String(next))}catch{}}
-  function clearHistory(){writeWatchHistory(userId,[]);setItems([]);setConfirmClear(false);window.dispatchEvent(new Event('kairo:history-change'));if(userId)void syncWatchHistory(userId,{clear:true})}
-  function removeItem(item:WatchEntry){const next=items.filter(x=>x.slug!==item.slug||x.episodeNumber!==item.episodeNumber);writeWatchHistory(userId,next);setItems(next);window.dispatchEvent(new Event('kairo:history-change'));if(userId)void syncWatchHistory(userId,{deleted:[{slug:item.slug,episodeNumber:item.episodeNumber}]})}
+  function clearHistory(){writeWatchHistory(userId,[]);setItems([]);setConfirmClear(false);window.dispatchEvent(new Event('kairo:history-change'));void deleteMediaPlayback(userId,'anime');if(userId)void syncWatchHistory(userId,{clear:true})}
+  function removeItem(item:WatchEntry){const next=items.filter(x=>x.slug!==item.slug||x.episodeNumber!==item.episodeNumber);writeWatchHistory(userId,next);setItems(next);window.dispatchEvent(new Event('kairo:history-change'));void deleteMediaPlayback(userId,'anime',`${item.slug}:${item.episodeNumber}`);if(userId)void syncWatchHistory(userId,{deleted:[{slug:item.slug,episodeNumber:item.episodeNumber}]})}
   useEffect(()=>{window.addEventListener('storage',refresh);window.addEventListener('kairo:history-change',refresh);return()=>{window.removeEventListener('storage',refresh);window.removeEventListener('kairo:history-change',refresh)}},[userId]);
   useEffect(()=>{if(!loaded)return;setItems(readHistory(userId));try{setPaused(localStorage.getItem(historyPausedStorageKey(userId))==='true')}catch{setPaused(false)}if(userId){let active=true;syncWatchHistory(userId).then(items=>{if(active&&items)setItems(items)});return()=>{active=false}}},[loaded,userId]);
   if(!loaded && !unavailable)return <LoadingState label="Loading history"/>;
