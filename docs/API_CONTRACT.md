@@ -120,7 +120,7 @@ Progress request example:
 
 Validate finite non-negative numbers, enforce sensible duration/position bounds, and derive the subject ID from the authenticated context. Never accept `userId` from the request body.
 
-## 3a. Kairo-curated YouTube feed
+| GET | `/api/v1/me/playback?mediaType=...&mediaKey=...` (mediaType: anime, movie or youtube) | Restore one shared playback snapshot. Omit `mediaKey` to list recent cross-media playback (optional `mediaType`, `limit`). |
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -140,7 +140,7 @@ Validate finite non-negative numbers, enforce sensible duration/position bounds,
 - Errors include `AUTH_REQUIRED`, `YOUTUBE_API_KEY_MISSING`, `YOUTUBE_API_KEY_INVALID`, `YOUTUBE_QUOTA_EXCEEDED`, `YOUTUBE_FEED_CURSOR_EXPIRED`, `RATE_LIMITED`, and `YOUTUBE_PROVIDER_UNAVAILABLE`.
 - Kairo uses the official YouTube IFrame Player API for in-app playback and retains the official YouTube watch URL as a fallback. It does not proxy video streams.
 
-## 3b. YouTube playback and personal video library
+## 3c. YouTube playback and personal video library
 
 | Method | Path | Purpose |
 |---|---|---|

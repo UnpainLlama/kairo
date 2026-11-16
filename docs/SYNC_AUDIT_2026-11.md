@@ -133,3 +133,18 @@ The follow-up implementation on feat/movies-guest-library adds:
 See docs/UNIFIED_MEDIA_SYNC.md for the user-visible data boundary and remaining limitations.
 
 This does not make every mutation fully offline-first: Movies account edits still require an API write, and a durable generic outbox for all media domains remains future work. Guest data is not automatically imported into an account.
+
+
+## Implementation update — shared cross-media player persistence (2026-11-16)
+
+The unified player progress implementation adds migration `0014_user_media_playback.sql` and the authenticated `/api/v1/me/playback` API.
+
+- A single `user_media_playback` table now stores Anime, Movies and YouTube resume snapshots under the same Kairo user ID.
+- Existing Anime and YouTube account history is backfilled by the migration; existing per-media lists and history APIs remain in place.
+- HLS/file Anime playback, the official YouTube IFrame API, and CineSrc Movies playback save local resume state and supported player settings. Local state is written before remote requests; signed-in state syncs periodically and on lifecycle events.
+- Player open reconciles local and account snapshots. The newest local snapshot is retried to D1; a newer account snapshot is cached locally and restored.
+- Anime and YouTube history deletion removes the matching shared resume record.
+- Arbitrary third-party Anime iframes without a documented player API still cannot expose their exact playhead or settings. Kairo can only flush the last position it previously knew; this is a provider capability limitation, not an account boundary.
+- YouTube tracking remains disabled for videos marked Made for Kids.
+
+The new table is additive. Apply migration 0014 to each environment before deploying this Worker version. See [UNIFIED_MEDIA_SYNC.md](UNIFIED_MEDIA_SYNC.md) and [CINESRC_SETUP.md](CINESRC_SETUP.md).

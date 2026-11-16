@@ -21,7 +21,7 @@ Kairo builds the URL with these documented parameters:
 
 - `autoplay=true`
 - `back=close` — CineSrc sends `cinesrc:close` when its back control is used.
-- `color=%23e5e5e5` — grayscale player accent.
+- `color=%23e5e5e5` — grayscale player accent.\n- `t={seconds}` and `continueprompt=false` — resume at the saved position without asking the viewer to confirm.\n- `lastserver={sourceId}` — ask CineSrc to prioritize the source used last time.
 
 The documented iframe embed requires no CineSrc API key, no Worker secret, no Kairo playback
 proxy and no direct-stream resolver.

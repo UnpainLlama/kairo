@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUpRight, Bookmark, History, Trash2, Youtube } from 'lucide-react';
 import { useAccountScope } from '../hooks/useAccountScope';
+import { deleteMediaPlayback } from '../lib/mediaPlayback';
 import {
   readGuestYouTubeHistory, readGuestYouTubeWatchLater,
   removeGuestYouTubeHistory, removeGuestYouTubeWatchLater,
@@ -61,7 +62,7 @@ function YouTubeLibrary({ kind }: { kind: LibraryKind }) {
     setError('');
     try {
       if (!accountId) {
-        if (kind === 'history') removeGuestYouTubeHistory(videoId);
+        if (kind === 'history') { removeGuestYouTubeHistory(videoId); void deleteMediaPlayback(null, 'youtube', videoId); }
         else removeGuestYouTubeWatchLater(videoId);
         setItems(current => current.filter(item => item.videoId !== videoId));
         return;
@@ -74,6 +75,7 @@ function YouTubeLibrary({ kind }: { kind: LibraryKind }) {
       const payload = await response.json().catch(() => null);
       if (!response.ok || !payload?.success) throw new Error(payload?.error?.message ?? 'Could not remove this video.');
       setItems(current => current.filter(item => item.videoId !== videoId));
+      if (kind === 'history') void deleteMediaPlayback(accountId, 'youtube', videoId);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not remove this video.');
     } finally {

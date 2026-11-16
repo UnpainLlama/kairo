@@ -5,6 +5,9 @@ import { ArrowLeft, Bookmark, BookmarkCheck, ExternalLink, History, Youtube } fr
 import YouTubeIframePlayer from '../components/YouTubeIframePlayer';
 import { useAccountScope } from '../hooks/useAccountScope';
 import { addGuestYouTubeWatchLater, saveGuestYouTubeProgress, readGuestYouTubeHistory, readGuestYouTubeWatchLater } from '../lib/youtubeLocalLibrary';
+import { loadMediaPlayback, syncMediaPlayback, writeLocalMediaPlayback, type SavedPlayerState } from '../lib/mediaPlayback';
+import type { MediaPlaybackSnapshot } from '../lib/mediaPlayback';
+import type { PlaybackSaveReason } from '../lib/playbackSync';
 
 type VideoDetails = {
   videoId: string;
@@ -82,11 +85,13 @@ export default function YouTubeWatchPage() {
   const [video, setVideo] = useState<VideoDetails | null>(null);
   const { accountId, resolved: accountResolved, error: accountError } = useAccountScope();
   const [startSeconds, setStartSeconds] = useState(0);
+  const [initialPlayerState, setInitialPlayerState] = useState<SavedPlayerState | null>(null);
   const [isSaved, setIsSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const lastRemoteSave = useRef(0);
+  const lastLocalSnapshotSave = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -102,6 +107,7 @@ export default function YouTubeWatchPage() {
       setError('');
       setVideo(null);
       setStartSeconds(0);
+      setInitialPlayerState(null);
       try {
         const videoResponse = await fetch('/api/v1/youtube/videos/' + encodeURIComponent(videoId), { headers: { Accept: 'application/json' } });
         const videoPayload = await responsePayload(videoResponse);
@@ -122,21 +128,35 @@ export default function YouTubeWatchPage() {
           saved = (laterPayload?.data?.items ?? []).some((item: { videoId: string }) => item.videoId === videoId);
         } else if (!accountId && !madeForKids) {
           const localHistory = readGuestYouTubeHistory().find(item => item.videoId === videoId);
-          history = localHistory ? { videoId, progressSeconds: Number(localHistory.progressSeconds ?? 0), durationSeconds: localHistory.durationSeconds } : null;
+          history = localHistory ? { videoId, progressSeconds: Number(localHistory.progressSeconds ?? 0), durationSeconds: localHistory.durationSeconds, updatedAt: localHistory.updatedAt } : null;
           saved = readGuestYouTubeWatchLater().some(item => item.videoId === videoId);
         }
+        const unified = madeForKids ? null : await loadMediaPlayback(accountId, 'youtube', videoId);
         const localRecord = madeForKids ? { seconds: 0, updatedAt: 0 } : readLocalProgress(accountId, videoId);
         const remoteUpdatedAt = Number(history?.updatedAt ?? 0);
-        const preferLocal = Boolean(accountId && localRecord.seconds > 0 && localRecord.updatedAt > remoteUpdatedAt);
-        const resume = preferLocal
-          ? localRecord.seconds
-          : history && Number.isFinite(history.progressSeconds) ? history.progressSeconds : localRecord.seconds;
+        const unifiedUpdatedAt = Number(unified?.updatedAt ?? 0);
+        let resume = history && Number.isFinite(history.progressSeconds) ? history.progressSeconds : 0;
+        let chosenUpdatedAt = remoteUpdatedAt;
+        if (unified && unified.updatedAt >= chosenUpdatedAt) { resume = unified.progressSeconds; chosenUpdatedAt = unified.updatedAt; }
+        const preferLegacyLocal = Boolean(localRecord.seconds > 0 && localRecord.updatedAt > chosenUpdatedAt);
+        if (preferLegacyLocal) { resume = localRecord.seconds; chosenUpdatedAt = localRecord.updatedAt; }
         if (active) {
           const routeVideo = location.state && typeof location.state === 'object'
             ? (location.state as { youtubeCurrentVideo?: YouTubeCardVideo }).youtubeCurrentVideo
             : undefined;
           const details = videoPayload.data as VideoDetails;
-          if (accountId && preferLocal && !madeForKids) {
+          setInitialPlayerState(unified?.playerState ?? null);
+          const snapshot: MediaPlaybackSnapshot | null = madeForKids ? null : {
+            mediaType: 'youtube', mediaKey: videoId, title: details.title, artworkUrl: details.thumbnailUrl,
+            progressSeconds: Math.max(0, resume), durationSeconds: details.durationSeconds,
+            completed: Boolean(details.durationSeconds && resume >= details.durationSeconds - 2),
+            playerState: unified?.playerState ?? {}, updatedAt: Math.max(Date.now(), chosenUpdatedAt),
+          };
+          if (snapshot) {
+            writeLocalMediaPlayback(accountId, snapshot);
+            if (accountId) void syncMediaPlayback(accountId, snapshot);
+          }
+          if (accountId && (preferLegacyLocal || unifiedUpdatedAt > remoteUpdatedAt) && !madeForKids) {
             void fetch('/api/v1/youtube/history', {
               method: 'POST', credentials: 'same-origin',
               headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
@@ -144,8 +164,8 @@ export default function YouTubeWatchPage() {
                 videoId, title: details.title, description: details.description,
                 thumbnailUrl: details.thumbnailUrl, channelId: details.channelId,
                 channelTitle: details.channelTitle, publishedAt: details.publishedAt,
-                durationSeconds: details.durationSeconds, progressSeconds: localRecord.seconds,
-                completed: details.durationSeconds !== null && localRecord.seconds >= details.durationSeconds,
+                durationSeconds: details.durationSeconds, progressSeconds: resume,
+                completed: details.durationSeconds !== null && resume >= details.durationSeconds,
               }),
             }).catch(() => { /* local timestamped progress is retried on the next visit or player event */ });
           }
@@ -166,11 +186,20 @@ export default function YouTubeWatchPage() {
     return () => { active = false; };
   }, [videoId, accountResolved, accountError, accountId]);
 
-  const onProgress = useCallback((seconds: number, duration: number, completed: boolean, reason: 'timeupdate' | 'pause' | 'ended' | 'pagehide') => {
+  const onProgress = useCallback((seconds: number, duration: number, completed: boolean, reason: PlaybackSaveReason, playerState: SavedPlayerState = {}) => {
     if (!video || video.madeForKids || !Number.isFinite(seconds) || !Number.isFinite(duration) || duration <= 0) return;
     const position = completed ? duration : Math.max(0, Math.min(duration, seconds));
     const now = Date.now();
     writeLocalProgress(accountId, video.videoId, position, now);
+    const unifiedSnapshot: MediaPlaybackSnapshot = {
+      mediaType: 'youtube', mediaKey: video.videoId, title: video.title, artworkUrl: video.thumbnailUrl,
+      progressSeconds: position, durationSeconds: duration, completed,
+      playerState, updatedAt: now,
+    };
+    if (reason !== 'timeupdate' || now - lastLocalSnapshotSave.current >= 1000) {
+      writeLocalMediaPlayback(accountId, unifiedSnapshot);
+      lastLocalSnapshotSave.current = now;
+    }
     if (!accountId) {
       saveGuestYouTubeProgress({
         videoId: video.videoId,
@@ -188,6 +217,7 @@ export default function YouTubeWatchPage() {
     }
     if (reason === 'timeupdate' && now - lastRemoteSave.current < 15000) return;
     lastRemoteSave.current = now;
+    void syncMediaPlayback(accountId, unifiedSnapshot, reason === 'pagehide' || reason === 'ended' || reason === 'close');
     const body = {
       videoId: video.videoId,
       title: video.title,
@@ -205,7 +235,7 @@ export default function YouTubeWatchPage() {
       credentials: 'same-origin',
       headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      keepalive: reason === 'pagehide' || reason === 'ended',
+      keepalive: reason === 'pagehide' || reason === 'ended' || reason === 'close',
     }).catch(() => { /* local resume point remains available */ });
   }, [accountId, video]);
 
@@ -266,6 +296,7 @@ export default function YouTubeWatchPage() {
               videoId={video.videoId}
               title={video.title}
               startSeconds={startSeconds}
+              initialPlayerState={initialPlayerState}
               onProgress={video.madeForKids ? undefined : onProgress}
             />
           </section>
