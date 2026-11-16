@@ -158,6 +158,19 @@ export default function WatchPage() {
             updatedAt: chosenUpdatedAt,
           };
           writeWatchHistory(accountId, [row, ...allLocal.filter((item) => item.slug !== slug || Number(item.episodeNumber) !== parsedEpisode)]);
+          const sharedSnapshot = {
+            mediaType: 'anime' as const,
+            mediaKey: `${slug}:${parsedEpisode}`,
+            title: row.title,
+            artworkUrl: row.posterUrl,
+            progressSeconds: chosenSeconds,
+            durationSeconds: row.durationSeconds,
+            completed: Boolean(row.durationSeconds && chosenSeconds >= row.durationSeconds - 2),
+            playerState: unified?.playerState ?? {},
+            updatedAt: chosenUpdatedAt || Date.now(),
+          };
+          writeLocalMediaPlayback(accountId, sharedSnapshot);
+          if (!unified || sharedSnapshot.updatedAt > unified.updatedAt) void syncMediaPlayback(accountId, sharedSnapshot);
           if (localIsNewer) {
             void fetch('/api/v1/me/history/sync', {
               method: 'POST', credentials: 'same-origin',
