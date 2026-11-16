@@ -4,7 +4,7 @@ import { Clock, Heart, LogIn, LogOut, Search, Settings, Trash2, UserRound, Pause
 import { EmptyState, LoadingState } from '../components/catalog';
 import { useKairoAccount } from '../lib/AccountProvider';
 import { historyPausedStorageKey, readWatchHistory, watchProgressStorageKey, writeWatchHistory } from '../lib/accountStorage';
-import { deleteMediaPlayback } from '../lib/mediaPlayback';
+import { deleteMediaPlayback, listLocalMediaPlayback, syncMediaPlayback, writeLocalMediaPlayback, type MediaPlaybackSnapshot } from '../lib/mediaPlayback';
 
 type AccountUser = { id: string; displayName: string; email: string | null; emailVerifiedAt?: string | null };
 type WatchEntry = { slug: string; title: string; posterUrl: string | null; episodeNumber: number; episodeTitle: string; progressKey: string; durationSeconds: number | null; updatedAt: number };
@@ -75,11 +75,69 @@ async function syncWatchHistory(userId: string, options: { deleted?: Array<{ slu
 }
 export function ProfilePage() {
   const {user,loaded,unavailable,retry}=useCurrentUser(); const navigate=useNavigate();
-  const [history,setHistory]=useState<WatchEntry[]>(()=>readHistory(null)); const [libraryCount,setLibraryCount]=useState<number|null>(null);
+  const [history,setHistory]=useState<WatchEntry[]>(()=>readHistory(null)); const [playbackItems,setPlaybackItems]=useState<MediaPlaybackSnapshot[]>([]); const [libraryCount,setLibraryCount]=useState<number|null>(null);
   const [error,setError]=useState(''); const [busy,setBusy]=useState(false);
   useEffect(()=>{let active=true;fetch('/api/v1/me/library',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(p=>{if(active)setLibraryCount(Array.isArray(p?.data?.items)?p.data.items.length:0)}).catch(()=>{if(active)setLibraryCount(null)});return()=>{active=false}},[user?.id]);
   useEffect(()=>{let active=true;setHistory(readHistory(user?.id??null));if(user?.id)syncWatchHistory(user.id).then(items=>{if(active&&items)setHistory(items)});return()=>{active=false}},[user?.id]);
   useEffect(()=>{const refresh=()=>setHistory(readHistory(user?.id??null));window.addEventListener('storage',refresh);window.addEventListener('kairo:history-change',refresh);return()=>{window.removeEventListener('storage',refresh);window.removeEventListener('kairo:history-change',refresh)}},[user?.id]);
+  useEffect(()=>{
+    let active=true;
+    const mergePlayback=async()=>{
+      const userId=user?.id??null;
+      const local=listLocalMediaPlayback(userId);
+      const byKey=new Map<string,MediaPlaybackSnapshot>();
+      const remoteVersions=new Map<string,number>();
+      for(const item of local)byKey.set(item.mediaType+':'+item.mediaKey,item);
+      if(userId){
+        try{
+          const response=await fetch('/api/v1/me/playback?limit=100',{credentials:'same-origin',headers:{Accept:'application/json'},cache:'no-store'});
+          const payload=response.ok?await response.json():null;
+          if(payload?.success&&Array.isArray(payload?.data?.items)){
+            for(const raw of payload.data.items){
+              if(!raw||!['anime','movie','youtube'].includes(raw.mediaType)||typeof raw.mediaKey!=='string')continue;
+              const remote:MediaPlaybackSnapshot={
+                mediaType:raw.mediaType,mediaKey:raw.mediaKey,title:String(raw.title??''),
+                artworkUrl:typeof raw.artworkUrl==='string'?raw.artworkUrl:null,
+                progressSeconds:Number(raw.progressSeconds??0),
+                durationSeconds:Number.isFinite(Number(raw.durationSeconds))&&Number(raw.durationSeconds)>0?Number(raw.durationSeconds):null,
+                completed:raw.completed===true||Number(raw.completed)===1,
+                playerState:raw.playerState&&typeof raw.playerState==='object'?raw.playerState:{},
+                updatedAt:Number(raw.updatedAt??0),
+              };
+              const key=remote.mediaType+':'+remote.mediaKey;
+              remoteVersions.set(key,remote.updatedAt);
+              const previous=byKey.get(key);
+              if(!previous||remote.updatedAt>=previous.updatedAt)byKey.set(key,remote);
+            }
+          }
+        }catch{/* the local snapshot remains available */}
+      }
+      // Preserve older Anime history rows even if they predate the shared playback migration.
+      for(const entry of history){
+        let seconds=0;
+        try{seconds=Number(localStorage.getItem(entry.progressKey)||0)}catch{/* storage may be unavailable */}
+        if(!Number.isFinite(seconds)||seconds<0)seconds=0;
+        const legacy:MediaPlaybackSnapshot={
+          mediaType:'anime',mediaKey:`${entry.slug}:${entry.episodeNumber}`,title:entry.title,
+          artworkUrl:entry.posterUrl,progressSeconds:seconds,durationSeconds:entry.durationSeconds,
+          completed:Boolean(entry.durationSeconds&&seconds>=entry.durationSeconds-2),playerState:{},updatedAt:entry.updatedAt||0,
+        };
+        const key='anime:'+legacy.mediaKey;
+        const previous=byKey.get(key);
+        if(!previous||legacy.updatedAt>previous.updatedAt)byKey.set(key,legacy);
+      }
+      const merged=[...byKey.values()].filter(item=>item.title&&Number.isFinite(item.progressSeconds)).sort((a,b)=>b.updatedAt-a.updatedAt).slice(0,100);
+      if(!active)return;
+      setPlaybackItems(merged);
+      for(const item of merged){
+        writeLocalMediaPlayback(userId,item);
+        const remoteTime=remoteVersions.get(item.mediaType+':'+item.mediaKey)??0;
+        if(userId&&item.updatedAt>remoteTime)void syncMediaPlayback(userId,item);
+      }
+    };
+    void mergePlayback();
+    return()=>{active=false};
+  },[user?.id,history]);
   const watched=history.length; const completed=history.filter(x=>progressOf(x)>=95).length;
   async function logout(){setBusy(true);setError('');try{await signOut();navigate('/login',{replace:true})}catch(e){setError(e instanceof Error?e.message:'Sign out failed.')}finally{setBusy(false)}}
   if(!loaded && !unavailable)return <LoadingState label="Loading profile"/>;
@@ -93,8 +151,16 @@ export function ProfilePage() {
       <article><span><Heart size={17}/></span><b>{libraryCount===null?'—':libraryCount}</b><small>Library titles</small></article>
     </div>
     <div className="kc-profile-content">
-      <div className="kc-profile-section-head"><div><span className="kc-section-kicker">YOUR ACTIVITY</span><h2>Continue watching</h2></div><Link className="kc-more" to="/history">View history <ArrowUpDown size={14}/></Link></div>
-      {history.length? <div className="kc-profile-history">{history.slice(0,4).map(item=><Link key={item.progressKey} to={`/watch/${encodeURIComponent(item.slug)}/${item.episodeNumber}`} className="kc-profile-history-item"><span className="kc-history-art">{item.posterUrl?<img src={item.posterUrl} alt="" loading="lazy"/>:<UserRound size={20}/>}</span><span><b>{item.title}</b><small>Episode {item.episodeNumber}{item.episodeTitle? ` · ${item.episodeTitle}`:''}</small><i><span style={{width:`${progressOf(item)}%`}}/></i></span></Link>)}</div>:<EmptyState title="Nothing watched yet">Start an episode and it will appear here.</EmptyState>}
+      <div className="kc-profile-section-head"><div><span className="kc-section-kicker">YOUR ACTIVITY</span><h2>Continue watching</h2></div><Link className="kc-more" to="/history">Anime history <ArrowUpDown size={14}/></Link></div>
+      {playbackItems.length? <div className="kc-profile-history">{playbackItems.slice(0,8).map(item=>{
+        const href=item.mediaType==='anime'?'/watch/'+encodeURIComponent(item.mediaKey.slice(0,item.mediaKey.lastIndexOf(':'))) + '/' + item.mediaKey.slice(item.mediaKey.lastIndexOf(':')+1)
+          :item.mediaType==='movie'?'/movies/'+encodeURIComponent(item.mediaKey)+'/watch':'/youtube/watch/'+encodeURIComponent(item.mediaKey);
+        const percent=item.durationSeconds&&item.durationSeconds>0?Math.max(0,Math.min(100,item.progressSeconds/item.durationSeconds*100)):0;
+        const label=item.mediaType==='anime'?'Anime':item.mediaType==='movie'?'Movie':'YouTube';
+        const resume=Math.floor(item.progressSeconds);
+        const stamp=`${Math.floor(resume/60)}:${String(resume%60).padStart(2,'0')}`;
+        return <Link key={item.mediaType+':'+item.mediaKey} to={href} className="kc-profile-history-item"><span className="kc-history-art">{item.artworkUrl?<img src={item.artworkUrl} alt="" loading="lazy"/>:<UserRound size={20}/>}</span><span><b>{item.title}</b><small>{label} · {item.completed?'Completed':item.progressSeconds>0?'Resume at '+stamp:'Not started'}</small><i><span style={{width:`${percent}%`}}/></i></span></Link>
+      })}</div>:<EmptyState title="Nothing watched yet">Start watching in Anime, Movies or YouTube and your progress will appear here.</EmptyState>}
     </div>
     {error&&<p className="kc-auth-error" role="alert">{error}</p>}
     <div className="kc-profile-actions"><Link className="kc-btn" to="/settings"><Settings size={15}/> Settings</Link><button className="kc-btn kc-btn-danger" type="button" onClick={()=>void logout()} disabled={busy}><LogOut size={15}/>{busy?'Signing out…':'Sign out'}</button></div>
