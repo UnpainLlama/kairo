@@ -130,6 +130,9 @@ export default function WatchPage() {
         const unified = await loadMediaPlayback(accountId, 'anime', `${slug}:${parsedEpisode}`);
         if (!active) return;
         setInitialPlayerState(unified?.playerState ?? null);
+        if (unified?.playerState.sourceId && serverItems.some(server => server.id === unified.playerState.sourceId)) {
+          setSelectedServerId(unified.playerState.sourceId);
+        }
         if (unified && unified.updatedAt > Math.max(chosenUpdatedAt, Number(payload.data.deletedAt ?? 0), Number(payload.data.clearedAt ?? 0))) {
           chosenSeconds = unified.progressSeconds;
           chosenUpdatedAt = unified.updatedAt;
@@ -227,7 +230,7 @@ export default function WatchPage() {
       progressSeconds: position,
       durationSeconds: Number.isFinite(duration) && duration > 0 ? duration : null,
       completed: Number.isFinite(duration) && duration > 0 && position >= duration - 2,
-      playerState,
+      playerState: { ...playerState, sourceId: selectedServer?.id ?? playerState.sourceId },
       updatedAt: now,
     };
     if (reason !== 'timeupdate' || now - lastLocalSnapshotAt.current >= 1000) {
