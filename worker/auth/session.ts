@@ -6,6 +6,7 @@ export type SessionUser = {
   id: string;
   displayName: string;
   email: string | null;
+  username: string | null;
   emailVerifiedAt: string | null;
   role: 'user' | 'admin';
 };
@@ -14,6 +15,7 @@ type SessionRow = {
   userId: string;
   displayName: string;
   email: string | null;
+  username: string | null;
   emailVerifiedAt: string | null;
   role: 'user' | 'admin';
 };
@@ -87,7 +89,7 @@ export async function findSessionUser(db: D1Database, cookieHeader: string | nul
   if (!token) return null;
   const row = await db.prepare(
     `SELECT s.user_id AS userId, p.display_name AS displayName,
-            p.email, p.email_verified_at AS emailVerifiedAt, p.role
+            p.email, p.username, p.email_verified_at AS emailVerifiedAt, p.role
      FROM sessions s
      INNER JOIN user_profiles p ON p.id = s.user_id
      WHERE s.token_hash = ? AND s.expires_at > ?
@@ -99,6 +101,7 @@ export async function findSessionUser(db: D1Database, cookieHeader: string | nul
     id: row.userId,
     displayName: row.displayName,
     email: row.email,
+    username: row.username,
     emailVerifiedAt: row.emailVerifiedAt,
     role: row.role,
   };
