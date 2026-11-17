@@ -150,12 +150,13 @@ export default function App() {
         .catch(() => { if (active) setAdminPath(null); });
     };
     refreshPath();
-    window.addEventListener('focus', refreshPath);
-    const interval = window.setInterval(refreshPath, 60_000);
+    const isOnConsolePath = Boolean(adminPath && pathname === adminPath);
+    if (isOnConsolePath) window.addEventListener('focus', refreshPath);
+    const interval = isOnConsolePath ? window.setInterval(refreshPath, 60_000) : null;
     return () => {
       active = false;
-      window.removeEventListener('focus', refreshPath);
-      window.clearInterval(interval);
+      if (isOnConsolePath) window.removeEventListener('focus', refreshPath);
+      if (interval !== null) window.clearInterval(interval);
     };
   }, [isAdmin, pathname, adminPath, navigate]);
 
