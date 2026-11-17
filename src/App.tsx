@@ -130,13 +130,36 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    if (!isAdmin) { setAdminPath(null); return; }
-    fetch('/api/v1/admin/console-path', { credentials: 'same-origin', headers: { Accept: 'application/json' }, cache: 'no-store' })
-      .then(response => response.ok ? response.json() : null)
-      .then(payload => { if (active && typeof payload?.data?.path === 'string' && /^\/[A-Za-z0-9_-]{32,128}$/.test(payload.data.path)) setAdminPath(payload.data.path); })
-      .catch(() => { if (active) setAdminPath(null); });
-    return () => { active = false; };
-  }, [isAdmin]);
+    if (!isAdmin) {
+      setAdminPath(null);
+      return () => { active = false; };
+    }
+    const refreshPath = () => {
+      fetch('/api/v1/admin/console-path', {
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+      })
+        .then(response => response.ok ? response.json() : null)
+        .then(payload => {
+          const nextPath = payload?.data?.path;
+          if (!active || typeof nextPath !== 'string' || !/^\/[A-Za-z0-9_-]{32,128}$/.test(nextPath)) return;
+          setAdminPath(currentPath => {
+            if (pathname === currentPath && currentPath !== nextPath) navigate(nextPath, { replace: true });
+            return nextPath;
+          });
+        })
+        .catch(() => { if (active) setAdminPath(null); });
+    };
+    refreshPath();
+    window.addEventListener('focus', refreshPath);
+    const interval = window.setInterval(refreshPath, 60_000);
+    return () => {
+      active = false;
+      window.removeEventListener('focus', refreshPath);
+      window.clearInterval(interval);
+    };
+  }, [isAdmin, pathname, navigate]);
 
   useEffect(() => { window.scrollTo({ top: 0, left: 0, behavior: 'auto' }); }, [pathname, search]);
 
