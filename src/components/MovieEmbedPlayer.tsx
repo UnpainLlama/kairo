@@ -36,6 +36,7 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl = null, init
   const onProgressRef = useRef(onProgress);
   const onBackRef = useRef(onBack);
   const initialPlaybackRef = useRef(initialPlayback);
+  const isPlayingRef = useRef(false);
   const latestRef = useRef<MediaPlaybackSnapshot>({
     mediaType: 'movie',
     mediaKey: tmdbId,
@@ -100,12 +101,14 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl = null, init
       const data = event.data;
       switch (data.type) {
         case 'cinesrc:ready':
+          isPlayingRef.current = false;
           setLoaded(true);
           setFailed(false);
           applySavedState();
           publish('open');
           break;
         case 'cinesrc:timeupdate': {
+          if (!isPlayingRef.current) break;
           const currentTime = finite(data.currentTime);
           const duration = finite(data.duration);
           if (currentTime !== null) publish('timeupdate', {
@@ -120,11 +123,12 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl = null, init
           if (duration && duration > 0) publish('timeupdate', { durationSeconds: duration });
           break;
         }
-        case 'cinesrc:play': publish('play'); break;
-        case 'cinesrc:pause': publish('pause'); break;
+        case 'cinesrc:play': isPlayingRef.current = true; publish('play'); break;
+        case 'cinesrc:pause': isPlayingRef.current = false; publish('pause'); break;
         case 'cinesrc:seeking': publish('seeked', { progressSeconds: finite(data.currentTime) ?? latestRef.current.progressSeconds }); break;
         case 'cinesrc:seeked': publish('seeked', { progressSeconds: finite(data.currentTime) ?? latestRef.current.progressSeconds }); break;
         case 'cinesrc:ended': {
+          isPlayingRef.current = false;
           const duration = finite(data.duration) ?? latestRef.current.durationSeconds;
           publish('ended', { progressSeconds: duration ?? latestRef.current.progressSeconds, durationSeconds: duration, completed: true });
           break;
