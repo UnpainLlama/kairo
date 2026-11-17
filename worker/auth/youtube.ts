@@ -261,6 +261,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
       c.header('Cache-Control', 'no-store');
       return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Not found.' } }, 404);
     }
+    c.header('Cache-Control', 'private, no-store');
     await next();
   };
   app.use('/api/v1/auth/youtube', adminOnly);
