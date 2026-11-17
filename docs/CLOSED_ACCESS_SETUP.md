@@ -23,15 +23,21 @@ Do not run these steps against production.
 
    npx wrangler secret put ADMIN_BOOTSTRAP_TOKEN --env staging
 
-4. Provision the first administrator by POSTing to the staging Worker endpoint /api/v1/admin/bootstrap, sending the bootstrap token in the X-Kairo-Bootstrap header and a JSON body containing username, displayName, and a newly generated password. Do not put the token or password in source control, issue comments, or shell history.
-5. Verify that the administrator can sign in, reach the private console, create a standard account, suspend/reactivate it, and reset its password.
-6. Verify that anonymous visitors and standard accounts cannot open YouTube pages or call any YouTube API route.
+4. Generate a new private console path with at least 32 random bytes of entropy. The path previously supplied was included in public branch history and must not be reused. Store the replacement path (including its leading slash) as a Cloudflare Worker secret:
+
+   npx wrangler secret put ADMIN_CONSOLE_PATH --env staging
+
+   The frontend retrieves this path only from an admin-authenticated endpoint; it is not embedded in the public source bundle.
+
+5. Provision the first administrator by POSTing to the staging Worker endpoint /api/v1/admin/bootstrap, sending the bootstrap token in the X-Kairo-Bootstrap header and a JSON body containing username, displayName, and a newly generated password. Do not put the token or password in source control, issue comments, or shell history.
+6. Verify that the administrator can sign in, reach the private console, create a standard account, suspend/reactivate it, and reset its password.
+7. Verify that anonymous visitors and standard accounts cannot open YouTube pages or call any YouTube API route.
 7. Remove the ADMIN_BOOTSTRAP_TOKEN staging secret after the administrator is created. The endpoint is already disabled once an admin exists, but removing the bootstrap secret is good hygiene.
-8. Deploy to staging only after the migration and security tests have been explicitly approved. Do not deploy production as part of this work.
+9. Deploy to staging only after the migration and security tests have been explicitly approved. Do not deploy production as part of this work.
 
 ## Security notes
 
-- The private path is not a secret once it is included in a public client bundle or shared with a browser. Every admin API request independently checks the server-side session role.
+- The private path is an obscurity measure, not authentication. It is held in a staging Worker secret and revealed only to a signed-in administrator. Every admin API request independently checks the server-side session role.
 - noindex is a crawler hint, not access control. Robots rules and bot-user-agent redirects must never be treated as protection.
 - Admin credentials are never hardcoded in this repository. Passwords are stored only as password hashes.
 - The bootstrap route requires the staging-only secret and becomes unavailable after the first admin account exists.
