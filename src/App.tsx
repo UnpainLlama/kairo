@@ -140,7 +140,13 @@ export default function App() {
         headers: { Accept: 'application/json' },
         cache: 'no-store',
       })
-        .then(response => response.ok ? response.json() : null)
+        .then(response => {
+          if (response.status === 401 || response.status === 404) {
+            window.dispatchEvent(new Event('kairo:auth-change'));
+            return null;
+          }
+          return response.ok ? response.json() : null;
+        })
         .then(payload => {
           const nextPath = payload?.data?.path;
           if (!active || typeof nextPath !== 'string' || !/^\/[A-Za-z0-9_-]{32,128}$/.test(nextPath)) return;
