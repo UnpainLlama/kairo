@@ -11,6 +11,7 @@ type YouTubeContext = {
   };
   json(body: unknown, status?: number): Response;
   header(name: string, value: string): void;
+  get?(name: string): unknown;
 };
 
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
