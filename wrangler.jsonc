@@ -67,6 +67,10 @@
         }
       ],
 
+      "triggers": {
+        "crons": ["*/30 * * * *"]
+      },
+
       "vars": {
         "APP_ENV": "staging",
         "APP_BASE_URL": "https://kairo-anime-platform-staging.unpainllama.workers.dev",
