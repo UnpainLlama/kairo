@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 type Account = { id: string; username: string; displayName: string; status: 'active' | 'suspended'; createdAt: string };
@@ -98,7 +98,7 @@ export default function AdminPage() {
     finally { setBusy(false); }
   }
 
-  const panel: React.CSSProperties = { width: 'min(1080px, calc(100% - 32px))', margin: '40px auto', color: '#f4f4f5', fontFamily: 'system-ui, sans-serif' };
+  const panel: CSSProperties = { width: 'min(1080px, calc(100% - 32px))', margin: '40px auto', color: '#f4f4f5', fontFamily: 'system-ui, sans-serif' };
   const surface: React.CSSProperties = { background: '#171719', border: '1px solid #303034', borderRadius: 14, padding: 22, marginBottom: 18 };
   const field: React.CSSProperties = { display: 'block', width: '100%', boxSizing: 'border-box', padding: '11px 12px', marginTop: 6, background: '#101012', color: '#fff', border: '1px solid #44444a', borderRadius: 8 };
   const button: React.CSSProperties = { padding: '10px 14px', borderRadius: 8, border: '1px solid #55555c', background: '#29292e', color: '#fff', cursor: 'pointer' };
