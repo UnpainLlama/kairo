@@ -20,18 +20,14 @@ import { ProviderError } from './metadata/types';
 interface Bindings {
   DB: D1Database;
   ADMIN_BOOTSTRAP_TOKEN?: string;
-  ADMIN_EMAIL?: string;
-  ADMIN_OTP_PEPPER?: string;
   APP_ENV?: string;
   APP_BASE_URL?: string;
-  RESEND_API_KEY?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   /** Base64url-encoded 32-byte AES-GCM key used only for YouTube OAuth token encryption. */
   YOUTUBE_TOKEN_ENCRYPTION_KEY?: string;
   /** Server-only Google API key for administrator-only YouTube Data API reads. */
   YOUTUBE_DATA_API_KEY?: string;
-  AUTH_EMAIL_FROM?: string;
   ALLOWED_ORIGIN?: string;
   /** Comma-separated metadata provider ids to enable, e.g. "anilist". Empty = none. */
   METADATA_PROVIDERS?: string;
