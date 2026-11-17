@@ -38,7 +38,7 @@ function createOtpCode():string{
  do{crypto.getRandomValues(values);value=values[0]}while(value>=limit);
  return String(value%modulus).padStart(8,'0');
 }
-async function sendAdminLoginCode(c:any,code:string):Promise<void>{
+async function sendAdminLoginCode(c:any,code:string,challengeId:string):Promise<void>{
  const apiKey=c.env.RESEND_API_KEY;
  const recipient=c.env.ADMIN_EMAIL;
  const sender=c.env.AUTH_EMAIL_FROM||'Kairo Security <onboarding@resend.dev>';
@@ -47,7 +47,8 @@ async function sendAdminLoginCode(c:any,code:string):Promise<void>{
  }
  const response=await fetch('https://api.resend.com/emails',{
   method:'POST',
-  headers:{Authorization:'Bearer '+apiKey,'Content-Type':'application/json',Accept:'application/json'},
+  headers:{Authorization:'Bearer '+apiKey,'Content-Type':'application/json',Accept:'application/json','Idempotency-Key':'kairo-admin-otp/'+challengeId},
+  signal:AbortSignal.timeout(10_000),
   body:JSON.stringify({
    from:sender,to:[recipient],subject:'Your Kairo administrator sign-in code',
    text:'Your Kairo administrator sign-in code is '+code+'. It expires in five minutes and can only be used once. If you did not request this code, ignore this message.'
@@ -91,7 +92,7 @@ export function registerAuthRoutes(app:Hono<any>){
      c.env.DB.prepare('INSERT INTO admin_login_challenges (id,user_id,code_hash,expires_at,attempts,created_at) VALUES (?,?,?,?,0,?)')
       .bind(challengeId,row.userId,codeHash,Date.now()+300_000,Date.now()),
     ]);
-    try{await sendAdminLoginCode(c,code)}catch(error){
+    try{await sendAdminLoginCode(c,code,challengeId)}catch(error){
      await c.env.DB.prepare('DELETE FROM admin_login_challenges WHERE id=?').bind(challengeId).run().catch(()=>undefined);
      logAuthFailure(c,'admin_login_code_delivery_failed',error);
      return fail(c,503,'ADMIN_EMAIL_UNAVAILABLE','The administrator verification email could not be sent. Try again later.');
