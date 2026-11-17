@@ -233,7 +233,7 @@ export default function WatchPage() {
       playerState: { ...playerState, sourceId: selectedServer?.id ?? playerState.sourceId },
       updatedAt: now,
     };
-    if (reason !== 'timeupdate' || now - lastLocalSnapshotAt.current >= 1000) {
+    if (reason !== 'timeupdate' || now - lastLocalSnapshotAt.current >= 5000) {
       writeLocalMediaPlayback(accountId, mediaSnapshot);
       lastLocalSnapshotAt.current = now;
     }
