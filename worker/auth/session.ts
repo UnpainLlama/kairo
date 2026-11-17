@@ -6,6 +6,7 @@ export type SessionUser = {
   displayName: string;
   email: string | null;
   username: string | null;
+  accessEmail: string | null;
   emailVerifiedAt: string | null;
   role: 'user' | 'admin';
 };
@@ -61,7 +62,7 @@ export function clearSessionCookie(secure = true): string {
 export async function createSession(
   db: D1Database,
   userId: string,
-  metadata: { userAgent?: string; ipPrefix?: string; ttlSeconds?: number } = {},
+  metadata: { userAgent?: string; ipPrefix?: string; ttlSeconds?: number; accessEmail?: string | null } = {},
   now = Date.now(),
 ): Promise<{ id: string; token: string; expiresAt: number; ttlSeconds: number }> {
   const id = crypto.randomUUID();
@@ -69,11 +70,12 @@ export async function createSession(
   const ttlSeconds = Math.max(60, Math.min(SESSION_TTL_SECONDS, Math.floor(metadata.ttlSeconds ?? SESSION_TTL_SECONDS)));
   const expiresAt = now + ttlSeconds * 1000;
   await db.prepare(
-    `INSERT INTO sessions (id, user_id, token_hash, expires_at, user_agent, ip_prefix)
-     VALUES (?, ?, ?, ?, ?, ?)`
+    `INSERT INTO sessions (id, user_id, token_hash, expires_at, user_agent, ip_prefix, access_email)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).bind(id, userId, await hashToken(token), expiresAt,
     metadata.userAgent?.slice(0, 512) ?? null,
-    metadata.ipPrefix?.slice(0, 64) ?? null).run();
+    metadata.ipPrefix?.slice(0, 64) ?? null,
+    metadata.accessEmail?.toLowerCase() ?? null).run();
   return { id, token, expiresAt, ttlSeconds };
 }
 
@@ -84,24 +86,27 @@ export async function revokeSession(db: D1Database, cookieHeader: string | null)
 }
 
 /** Resolve the current Kairo identity exclusively from the server-side session cookie. */
-export async function findSessionUser(db: D1Database, cookieHeader: string | null, now = Date.now()): Promise<SessionUser | null> {
+export async function findSessionUser(db: D1Database, cookieHeader: string | null, now = Date.now(), accessEmail?: string | null): Promise<SessionUser | null> {
   const token = readSessionCookie(cookieHeader);
   if (!token) return null;
   const row = await db.prepare(
     `SELECT s.user_id AS userId, p.display_name AS displayName,
-            p.email, p.username, p.email_verified_at AS emailVerifiedAt, p.role
+            p.email, p.username, p.access_email AS accessEmail,
+            p.email_verified_at AS emailVerifiedAt, p.role
      FROM sessions s
      INNER JOIN user_profiles p ON p.id = s.user_id
      WHERE s.token_hash = ? AND s.expires_at > ?
        AND p.account_status = 'active'
+       AND (? IS NULL OR (lower(s.access_email) = lower(?) AND lower(p.access_email) = lower(?)))
      LIMIT 1`
-  ).bind(await hashToken(token), now).first<SessionRow>();
+  ).bind(await hashToken(token), now, accessEmail ?? null, accessEmail ?? null, accessEmail ?? null).first<SessionRow>();
   if (!row) return null;
   return {
     id: row.userId,
     displayName: row.displayName,
     email: row.email,
     username: row.username,
+    accessEmail: row.accessEmail,
     emailVerifiedAt: row.emailVerifiedAt,
     role: row.role,
   };
