@@ -10,6 +10,7 @@ function routeFor(register: (app: any) => void, path: string): RouteHandler {
     get: (route: string, handler: RouteHandler) => routes.set(route, handler),
     post: () => {},
     delete: () => {},
+    use: () => {},
   });
   const handler = routes.get(path);
   if (!handler) throw new Error(`Route not registered: ${path}`);
