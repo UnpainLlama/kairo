@@ -245,13 +245,13 @@ async function parseJsonBody(c: YouTubeContext): Promise<unknown | null> {
 }
 
 export function registerYouTubeMediaRoutes(app: any): void {
-  // Public metadata is fetched through the official Data API. No API key or media URL reaches the browser.
+  // Administrator-only metadata is fetched through the official Data API. No API key or media URL reaches the browser.
   app.get('/api/v1/youtube/videos/:videoId', async (c: YouTubeContext) => {
     const requester = await signedInUser(c);
     if (!requester || requester.role !== 'admin') return fail(c, 404, 'NOT_FOUND', 'Not found.');
     const videoId = c.req.param('videoId');
     if (!isYouTubeVideoId(videoId)) return fail(c, 400, 'VALIDATION_ERROR', 'That YouTube video ID is invalid.');
-    if (!await permitRequest(c, 'video-metadata', 'public', 60)) return fail(c, 429, 'RATE_LIMITED', 'Too many video detail requests. Please try again shortly.');
+    if (!await permitRequest(c, 'video-metadata', 'admin', 60)) return fail(c, 429, 'RATE_LIMITED', 'Too many video detail requests. Please try again shortly.');
     try {
       const video = await youtubeApiVideo(c, videoId);
       if (!video) return fail(c, 404, 'YOUTUBE_VIDEO_NOT_FOUND', 'This YouTube video is unavailable or no longer public.');
