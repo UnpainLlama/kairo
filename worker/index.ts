@@ -20,6 +20,7 @@ import { ProviderError } from './metadata/types';
 interface Bindings {
   DB: D1Database;
   ADMIN_BOOTSTRAP_TOKEN?: string;
+  ADMIN_CONSOLE_PATH?: string;
   APP_ENV?: string;
   APP_BASE_URL?: string;
   RESEND_API_KEY?: string;
