@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
   Bell, Bookmark, CalendarDays, ChevronRight, Compass, Film, Flame, History, ListVideo,
@@ -73,6 +73,13 @@ const mobileNavItems: NavItem[] = [
   { to: '/profile', label: 'Profile', icon: UserRound },
 ];
 
+function AdminOnly({ children }: { children: ReactNode }) {
+  const account = useKairoAccount();
+  if (account.status === 'loading' || account.status === 'unavailable') return null;
+  if (account.status !== 'signed-in' || account.role !== 'admin') return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
 function YouTubeWatchRedirect() {
   const { search } = useLocation();
   const videoId = new URLSearchParams(search).get('v') ?? '';
@@ -103,14 +110,15 @@ function MenuLink({ to, label, icon: Icon, end, onNavigate }: NavItem & { onNavi
 
 export default function App() {
   const { pathname, search } = useLocation();
-  const isYouTubeMode = pathname.startsWith('/youtube');
+  const account = useKairoAccount();
+  const isAdmin = account.status === 'signed-in' && account.role === 'admin';
+  const isYouTubeMode = isAdmin && pathname.startsWith('/youtube');
   const isMoviesMode = pathname === '/movies' || pathname.startsWith('/movies/');
   const isMoviesWatchMode = pathname.startsWith('/movies/') && pathname.endsWith('/watch');
   const activeNavItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : navItems;
   const activeMenuItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : menuItems;
   const activeMobileItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : mobileNavItems;
   const [menuOpen, setMenuOpen] = useState(false);
-  const account = useKairoAccount();
   const currentUser = account.status === 'signed-in' ? { displayName: account.displayName ?? 'Account', email: account.email } : null;
   const [authBusy, setAuthBusy] = useState(false);
   const navigate = useNavigate();
@@ -183,15 +191,15 @@ export default function App() {
                   {activeMenuItems.slice(0, isYouTubeMode || isMoviesMode ? 5 : 4).map((item) => <MenuLink key={item.label} {...item} onNavigate={closeMenu} />)}
                   {isMoviesMode ? <>
                     <MenuLink to="/browse/anime" label="Anime" icon={Tv} onNavigate={closeMenu} />
-                    <MenuLink to="/youtube" label="YouTube" icon={Youtube} onNavigate={closeMenu} />
+                    {isAdmin && <MenuLink to="/youtube" label="YouTube" icon={Youtube} onNavigate={closeMenu} />}
                   </> : (
-                    <NavLink to={isYouTubeMode ? '/' : '/youtube'} className={({ isActive }) => `kc-menu-tile${isActive ? ' active' : ''}`} onClick={closeMenu}>
+                    {isAdmin && <NavLink to={isYouTubeMode ? '/' : '/youtube'} className={({ isActive }) => `kc-menu-tile${isActive ? ' active' : ''}`} onClick={closeMenu}>
                       {isYouTubeMode
                         ? <Tv size={17} strokeWidth={1.8} aria-hidden="true" />
                         : <Youtube size={17} strokeWidth={1.8} aria-hidden="true" />}
                       <span>{isYouTubeMode ? 'Anime' : 'YouTube'}</span>
                       <ChevronRight size={13} className="kc-menu-chevron" aria-hidden="true" />
-                    </NavLink>
+                    </NavLink>}
                   )}
                 </div>
                 {!isYouTubeMode && !isMoviesMode && <>
@@ -218,24 +226,22 @@ export default function App() {
 
       <main id="main" className="kc-main" tabIndex={-1}>
         <Routes>
-          <Route path="/login" element={<AuthPage mode="login" />} />
-          <Route path="/register" element={<AuthPage mode="register" />} />
-          <Route path="/verify-email" element={<AuthPage mode="register" />} />
+          <Route path="/login" element={<AuthPage />} />
           <Route path="/" element={<HomePage />} />
-          <Route path="/youtube" element={<YouTubeFeedPage />} />
+          <Route path="/youtube" element={<AdminOnly><YouTubeFeedPage /></AdminOnly>} />
           <Route path="/movies" element={<MoviesHomePage />} />
           <Route path="/movies/search" element={<MoviesSearchPage />} />
           <Route path="/movies/library" element={<MoviesLibraryPage />} />
           <Route path="/movies/browse/:category" element={<MoviesBrowsePage />} />
           <Route path="/movies/:externalId/watch" element={<MoviesWatchPage />} />
           <Route path="/movies/:externalId" element={<MoviesDetailPage />} />
-          <Route path="/youtube/search" element={<YouTubeSearchPage />} />
-          <Route path="/youtube/channels" element={<YouTubeChannelsPage />} />
-          <Route path="/youtube/watch" element={<YouTubeWatchRedirect />} />
-          <Route path="/watch" element={<YouTubeWatchRedirect />} />
-          <Route path="/youtube/watch/:videoId" element={<YouTubeWatchPage />} />
-          <Route path="/youtube/watch-later" element={<YouTubeWatchLaterPage />} />
-          <Route path="/youtube/history" element={<YouTubeHistoryPage />} />
+          <Route path="/youtube/search" element={<AdminOnly><YouTubeSearchPage /></AdminOnly>} />
+          <Route path="/youtube/channels" element={<AdminOnly><YouTubeChannelsPage /></AdminOnly>} />
+          <Route path="/youtube/watch" element={<AdminOnly><YouTubeWatchRedirect /></AdminOnly>} />
+          <Route path="/watch" element={<AdminOnly><YouTubeWatchRedirect /></AdminOnly>} />
+          <Route path="/youtube/watch/:videoId" element={<AdminOnly><YouTubeWatchPage /></AdminOnly>} />
+          <Route path="/youtube/watch-later" element={<AdminOnly><YouTubeWatchLaterPage /></AdminOnly>} />
+          <Route path="/youtube/history" element={<AdminOnly><YouTubeHistoryPage /></AdminOnly>} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/browse/movies" element={<Navigate to="/movies" replace />} />
           <Route path="/browse" element={<Navigate to="/browse/anime" replace />} />
