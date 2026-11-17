@@ -187,7 +187,7 @@ export default function YouTubeWatchPage() {
   }, [videoId, accountResolved, accountError, accountId]);
 
   const onProgress = useCallback((seconds: number, duration: number, completed: boolean, reason: PlaybackSaveReason, playerState: SavedPlayerState = {}) => {
-    if (!video || video.madeForKids || !Number.isFinite(seconds) || !Number.isFinite(duration) || duration <= 0) return;
+    if (reason === 'open' || !video || video.madeForKids || !Number.isFinite(seconds) || !Number.isFinite(duration) || duration <= 0) return;
     const position = completed ? duration : Math.max(0, Math.min(duration, seconds));
     const now = Date.now();
     const unifiedSnapshot: MediaPlaybackSnapshot = {
