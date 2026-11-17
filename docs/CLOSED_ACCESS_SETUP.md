@@ -47,7 +47,7 @@ This branch implements the agreed closed-access model:
 
 - The Proton mailbox is the recipient/inbox; Proton does not need to send mail from the Worker.
 - Resend sends the one-time code through its REST API. The free tier is subject to Resend's current sending limits and account/domain verification rules.
-- The test sender `onboarding@resend.dev` is intended for testing. If Resend restricts delivery to the account's own verified address, registering Resend with the same Proton mailbox satisfies that single-recipient setup. For unrestricted delivery, configure a verified domain you control and set `AUTH_EMAIL_FROM`.
+- The test sender `onboarding@resend.dev` is restricted to the email address associated with your Resend account. Register Resend using the same Proton mailbox configured as `ADMIN_EMAIL`; this supports the single-admin setup without owning a domain. To send to a different recipient, verify a domain you control and use a sender on that domain. For unrestricted delivery, configure a verified domain you control and set `AUTH_EMAIL_FROM`.
 - The recipient address, API key, and HMAC pepper are Worker secrets, never frontend variables.
 - The one-time code is eight digits, expires after five minutes, is single-use, and has a five-attempt challenge limit. Requests are rate-limited.
 
