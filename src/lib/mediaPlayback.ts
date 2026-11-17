@@ -90,13 +90,76 @@ export function writeLocalMediaPlayback(userId: string | null, snapshot: MediaPl
   }
 }
 
-export async function syncMediaPlayback(
-  userId: string | null,
-  snapshot: MediaPlaybackSnapshot,
-  keepalive = false,
-): Promise<boolean> {
-  writeLocalMediaPlayback(userId, snapshot);
-  if (!userId) return true;
+type PendingPlaybackSync = {
+  snapshot: MediaPlaybackSnapshot;
+  attempts: number;
+  nextAttemptAt: number;
+};
+
+function pendingSyncKey(userId: string): string {
+  return LOCAL_PREFIX + userId.trim() + ':pending-sync';
+}
+
+function readPendingSync(userId: string): PendingPlaybackSync[] {
+  try {
+    const raw = localStorage.getItem(pendingSyncKey(userId));
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is PendingPlaybackSync =>
+      Boolean(item && typeof item === 'object' &&
+        parseMediaPlayback((item as PendingPlaybackSync).snapshot) &&
+        Number.isInteger((item as PendingPlaybackSync).attempts) &&
+        Number.isFinite((item as PendingPlaybackSync).nextAttemptAt))
+    );
+  } catch { return []; }
+}
+
+function writePendingSync(userId: string, items: PendingPlaybackSync[]): void {
+  try {
+    const key = pendingSyncKey(userId);
+    if (items.length) localStorage.setItem(key, JSON.stringify(items.slice(-100)));
+    else localStorage.removeItem(key);
+  } catch { /* The local resume snapshot remains the fallback if storage is full. */ }
+}
+
+function enqueuePendingSync(userId: string, snapshot: MediaPlaybackSnapshot): void {
+  const items = readPendingSync(userId);
+  const index = items.findIndex(item =>
+    item.snapshot.mediaType === snapshot.mediaType && item.snapshot.mediaKey === snapshot.mediaKey
+  );
+  const entry: PendingPlaybackSync = { snapshot, attempts: 0, nextAttemptAt: Date.now() };
+  if (index >= 0) items[index] = entry;
+  else items.push(entry);
+  writePendingSync(userId, items);
+}
+
+function acknowledgePendingSync(userId: string, snapshot: MediaPlaybackSnapshot): void {
+  const items = readPendingSync(userId).filter(item =>
+    item.snapshot.mediaType !== snapshot.mediaType ||
+    item.snapshot.mediaKey !== snapshot.mediaKey ||
+    item.snapshot.updatedAt > snapshot.updatedAt
+  );
+  writePendingSync(userId, items);
+}
+
+function deferPendingSync(userId: string, snapshot: MediaPlaybackSnapshot): void {
+  const items = readPendingSync(userId);
+  const index = items.findIndex(item =>
+    item.snapshot.mediaType === snapshot.mediaType && item.snapshot.mediaKey === snapshot.mediaKey
+  );
+  if (index < 0) return;
+  const item = items[index];
+  if (item.snapshot.updatedAt > snapshot.updatedAt) return;
+  const attempts = item.attempts + 1;
+  items[index] = {
+    ...item,
+    attempts,
+    nextAttemptAt: Date.now() + Math.min(300_000, 5_000 * (2 ** Math.min(attempts - 1, 6))),
+  };
+  writePendingSync(userId, items);
+}
+
+async function sendPlaybackSnapshot(snapshot: MediaPlaybackSnapshot, keepalive = false): Promise<boolean> {
   try {
     const response = await fetch('/api/v1/me/playback', {
       method: 'POST',
@@ -106,9 +169,40 @@ export async function syncMediaPlayback(
       keepalive,
     });
     return response.ok;
-  } catch {
-    return false;
+  } catch { return false; }
+}
+
+export async function syncMediaPlayback(
+  userId: string | null,
+  snapshot: MediaPlaybackSnapshot,
+  keepalive = false,
+): Promise<boolean> {
+  writeLocalMediaPlayback(userId, snapshot);
+  if (!userId) return true;
+  enqueuePendingSync(userId, snapshot);
+  const acknowledged = await sendPlaybackSnapshot(snapshot, keepalive);
+  if (acknowledged) acknowledgePendingSync(userId, snapshot);
+  else deferPendingSync(userId, snapshot);
+  return acknowledged;
+}
+
+/** Retry failed cloud writes with persisted exponential backoff; newer snapshots replace older queued copies. */
+export async function flushPendingMediaPlayback(userId: string | null, now = Date.now()): Promise<void> {
+  if (!userId) return;
+  const due = readPendingSync(userId).filter(item => item.nextAttemptAt <= now).slice(0, 10);
+  for (const item of due) {
+    const acknowledged = await sendPlaybackSnapshot(item.snapshot);
+    if (acknowledged) acknowledgePendingSync(userId, item.snapshot);
+    else deferPendingSync(userId, item.snapshot);
   }
+}
+
+function removePendingMediaPlayback(userId: string | null, mediaType: MediaPlaybackType, mediaKey?: string): void {
+  if (!userId) return;
+  const items = readPendingSync(userId).filter(item =>
+    item.snapshot.mediaType !== mediaType || (mediaKey !== undefined && item.snapshot.mediaKey !== mediaKey)
+  );
+  writePendingSync(userId, items);
 }
 
 /** Local-first restore. A newer browser snapshot wins; the selected copy is cached locally. */
@@ -174,6 +268,7 @@ export async function deleteMediaPlayback(
       remove.forEach(key => localStorage.removeItem(key));
     }
   } catch { /* local storage may be unavailable */ }
+  removePendingMediaPlayback(userId, mediaType, mediaKey);
   if (!userId) return true;
   try {
     const query = new URLSearchParams({ mediaType });
