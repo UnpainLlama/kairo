@@ -199,7 +199,7 @@ export default function App() {
                         : <Youtube size={17} strokeWidth={1.8} aria-hidden="true" />}
                       <span>{isYouTubeMode ? 'Anime' : 'YouTube'}</span>
                       <ChevronRight size={13} className="kc-menu-chevron" aria-hidden="true" />
-                    </NavLink>}
+                    </NavLink>}</>
                   )}
                 </div>
                 {!isYouTubeMode && !isMoviesMode && <>
