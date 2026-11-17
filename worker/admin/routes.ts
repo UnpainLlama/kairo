@@ -17,7 +17,7 @@ const ok = (c: any, data: unknown, status = 200) =>
 
 
 async function currentAdmin(c: any) {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   return user?.role === 'admin' ? user : null;
 }
 
