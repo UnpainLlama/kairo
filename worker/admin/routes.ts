@@ -15,10 +15,48 @@ const fail = (c: any, status: number, code: string, message: string) =>
 const ok = (c: any, data: unknown, status = 200) =>
   c.json({ success: true, data }, status);
 
+
 async function currentAdmin(c: any) {
   const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
   return user?.role === 'admin' ? user : null;
 }
+
+function newConsolePath(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return '/' + btoa(binary).replace(/=/g, '').replaceAll('+', '-').replaceAll('/', '_');
+}
+
+async function ensureConsolePath(db: D1Database): Promise<string | null> {
+  const now = Date.now();
+  const existing = await db.prepare('SELECT path_value AS pathValue FROM admin_console_access WHERE singleton_id=1 AND expires_at>?')
+    .bind(now).first<{ pathValue: string }>();
+  if (existing?.pathValue) return existing.pathValue;
+  const path = newConsolePath();
+  await db.prepare(`INSERT INTO admin_console_access (singleton_id,path_value,rotated_at,expires_at)
+    VALUES (1,?,?,?)
+    ON CONFLICT(singleton_id) DO UPDATE SET path_value=excluded.path_value,
+      rotated_at=excluded.rotated_at, expires_at=excluded.expires_at
+    WHERE admin_console_access.expires_at <= ?`)
+    .bind(path, now, now + 30 * 60 * 1000, now).run();
+  const current = await db.prepare('SELECT path_value AS pathValue FROM admin_console_access WHERE singleton_id=1 AND expires_at>?')
+    .bind(now).first<{ pathValue: string }>();
+  return current?.pathValue ?? null;
+}
+
+export async function rotateAdminConsolePath(db: D1Database): Promise<void> {
+  const admin = await db.prepare("SELECT id FROM user_profiles WHERE role='admin' AND account_status='active' LIMIT 1").first();
+  if (!admin) return;
+  const now = Date.now();
+  const path = newConsolePath();
+  await db.prepare(`INSERT INTO admin_console_access (singleton_id,path_value,rotated_at,expires_at)
+    VALUES (1,?,?,?)
+    ON CONFLICT(singleton_id) DO UPDATE SET path_value=excluded.path_value,
+      rotated_at=excluded.rotated_at, expires_at=excluded.expires_at`)
+    .bind(path, now, now + 30 * 60 * 1000).run();
+}
+
 function originAllowed(c: any) {
   const origin = c.req.header('Origin');
   return !origin || origin === new URL(c.req.url).origin;
@@ -39,11 +77,13 @@ export function registerAdminRoutes(app: any) {
     noStore(c);
     const admin = await currentAdmin(c);
     if (!admin) return fail(c, 404, 'NOT_FOUND', 'Not found.');
-    const path = c.env.ADMIN_CONSOLE_PATH;
-    if (typeof path !== 'string' || !/^\/[A-Za-z0-9_-]{32,128}$/.test(path)) {
-      return fail(c, 503, 'ADMIN_CONSOLE_UNCONFIGURED', 'The administrator console path is not configured.');
+    try {
+      const path = await ensureConsolePath(c.env.DB);
+      if (!path) return fail(c, 503, 'ADMIN_CONSOLE_UNAVAILABLE', 'The administrator console is temporarily unavailable.');
+      return ok(c, { path, expiresInSeconds: 1800 });
+    } catch {
+      return fail(c, 503, 'ADMIN_CONSOLE_UNAVAILABLE', 'The administrator console is temporarily unavailable.');
     }
-    return ok(c, { path });
   });
 
   // One-time bootstrap: requires a separately configured Cloudflare Worker secret.
@@ -60,19 +100,16 @@ export function registerAdminRoutes(app: any) {
     const body: any = await c.req.json().catch(() => null);
     const username = usernameOf(body?.username);
     const displayName = typeof body?.displayName === 'string' ? body.displayName.trim() : '';
-    if (!username || displayName.length < 2 || displayName.length > 40 || !passwordOf(body?.password)) {
-      return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid username, display name, and password of at least 12 characters.');
+    if (!username || displayName.length < 2 || displayName.length > 40) {
+      return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid username and display name.');
     }
     try {
       const uid = crypto.randomUUID(), identityId = crypto.randomUUID();
-      const passwordHash = await hashPassword(body.password);
       const results = await c.env.DB.batch([
         c.env.DB.prepare("INSERT INTO user_profiles (id,identity_subject,display_name,username,account_status,role) VALUES (?,?,?,?, 'active','admin')")
           .bind(uid, 'closed-admin:' + crypto.randomUUID(), displayName, username),
         c.env.DB.prepare("INSERT INTO auth_identities (id,user_id,provider,provider_subject) SELECT ?,id,'email',? FROM user_profiles WHERE id=?")
           .bind(identityId, username, uid),
-        c.env.DB.prepare('INSERT INTO password_credentials (auth_identity_id,password_hash) SELECT ?,? FROM auth_identities WHERE id=?')
-          .bind(identityId, passwordHash, identityId),
       ]);
       if (Number(results[0]?.meta?.changes ?? 0) !== 1) return fail(c, 409, 'ADMIN_ALREADY_EXISTS', 'Administrator setup is no longer available.');
       return ok(c, { created: true, username }, 201);
