@@ -81,8 +81,15 @@ describe('shared media playback persistence', () => {
     expect(queued[0].attempts).toBe(1);
     expect(queued[0].nextAttemptAt).toBeGreaterThan(Date.now());
 
+    const firstBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(firstBody.syncSessionId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(firstBody.syncSequence).toBe(1);
+
     await flushPendingMediaPlayback('user-a', Number.MAX_SAFE_INTEGER);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    const retryBody = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+    expect(retryBody.syncSessionId).toBe(firstBody.syncSessionId);
+    expect(retryBody.syncSequence).toBe(firstBody.syncSequence);
     expect(localStorage.getItem(queueKey)).toBeNull();
   });
 
