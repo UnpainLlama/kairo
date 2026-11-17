@@ -15,33 +15,51 @@ This branch implements the agreed closed-access model:
 **Do not run any command below against production.** These steps have not been performed by this code change.
 
 1. Review the branch, reconcile it against the intended staging release, and run typecheck, tests, and build.
-2. Apply the additive migrations to the staging D1 database only:
+2. Before applying migrations, run this read-only preflight against the staging D1 database:
+
+   ```sql
+   SELECT role, COUNT(*) AS account_count
+   FROM user_profiles
+   GROUP BY role;
+
+   SELECT id, account_status
+   FROM user_profiles
+   WHERE role = 'admin';
+   ```
+
+   There must be no existing administrator and no more than 15 standard accounts. Existing standard accounts are backfilled with generated usernames and count toward the 15-account cap. If an administrator already exists or more than 15 standard accounts are present, stop and review the existing accounts before proceeding; do not delete or demote accounts automatically.
+
+3. Apply the additive migrations to the staging D1 database only:
 
    `npx wrangler d1 migrations apply DB --remote --env staging`
 
-3. Generate a bootstrap token with at least 32 bytes of cryptographic randomness and store it as a staging Worker secret:
+4. Generate a bootstrap token with at least 32 bytes of cryptographic randomness and store it as a staging Worker secret:
 
    `npx wrangler secret put ADMIN_BOOTSTRAP_TOKEN --env staging`
 
-4. Create the dedicated Proton Mail mailbox. Store its address as a staging Worker secret:
+5. Create the dedicated Proton Mail mailbox. Store its address as a staging Worker secret:
 
    `npx wrangler secret put ADMIN_EMAIL --env staging`
 
-5. Create a Resend account using that same Proton address and create a sending API key. Store the key as a staging Worker secret:
+6. Create a Resend account using that same Proton address and create a sending API key. Store the key as a staging Worker secret:
 
    `npx wrangler secret put RESEND_API_KEY --env staging`
 
-   The Worker defaults to `Kairo Security <onboarding@resend.dev>`. Resend's test sender can deliver only to the email address associated with your Resend account, so use the same Proton address for both accounts during single-admin testing. To send to a different recipient, you must control and verify a sending domain in Resend, then set `AUTH_EMAIL_FROM` to an address on that domain. The free Resend plan currently lists 3,000 emails/month and a 100-email daily limit. See [Resend pricing](https://resend.com/pricing).
+   The Worker defaults to `Kairo Security <onboarding@resend.dev>`. Resend's test sender can deliver only to the email address associated with your Resend account, so use the same Proton address for both accounts during this single-admin setup. To send to a different recipient, you must control and verify a sending domain in Resend, then set `AUTH_EMAIL_FROM` to an address on that verified domain:
 
-6. Generate a separate 32-byte random HMAC pepper and store it as a staging Worker secret:
+   `npx wrangler secret put AUTH_EMAIL_FROM --env staging`
+
+   The free Resend plan currently lists 3,000 emails/month and a 100-email daily limit. See [Resend pricing](https://resend.com/pricing).
+
+7. Generate a separate 32-byte random HMAC pepper and store it as a staging Worker secret:
 
    `npx wrangler secret put ADMIN_OTP_PEPPER --env staging`
 
-7. Provision the administrator by POSTing to the staging endpoint `/api/v1/admin/bootstrap`, sending the bootstrap token in the `X-Kairo-Bootstrap` header and JSON containing only `username` and `displayName`. The administrator does not receive a password credential; login is email-code based. Do not place the bootstrap token in source control, issue comments, or shell history.
-8. Remove the `ADMIN_BOOTSTRAP_TOKEN` staging secret immediately after successful provisioning.
-9. Verify the full admin email-code login, the 30-minute URL rotation, account creation/suspension/reactivation/password reset, and the YouTube restrictions.
-10. Verify playback restore, local checkpointing, 60-second cloud sync, retry after offline/reconnect, stale-write ordering, and completion behavior.
-11. Deploy to staging only after the migration and security tests have been reviewed and explicitly approved. Do not deploy production as part of this work.
+8. Provision the administrator by POSTing to the staging endpoint `/api/v1/admin/bootstrap`, sending the bootstrap token in the `X-Kairo-Bootstrap` header and JSON containing only `username` and `displayName`. The administrator does not receive a password credential; login is email-code based. Do not place the bootstrap token in source control, issue comments, or shell history.
+9. Remove the `ADMIN_BOOTSTRAP_TOKEN` staging secret immediately after successful provisioning.
+10. Verify the full admin email-code login, the 30-minute URL rotation, account creation/suspension/reactivation/password reset, and the YouTube restrictions.
+11. Verify playback restore, local checkpointing, 60-second cloud sync, retry after offline/reconnect, stale-write ordering, and completion behavior.
+12. Deploy to staging only after the migration and security tests have been reviewed and explicitly approved. Do not deploy production as part of this work.
 
 ## Email delivery notes
 
