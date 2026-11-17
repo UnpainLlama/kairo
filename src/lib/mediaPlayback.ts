@@ -98,28 +98,16 @@ type PendingPlaybackSync = PlaybackSyncMetadata & {
   nextAttemptAt: number;
 };
 
-let fallbackSessionId = '';
-let fallbackSequence = 0;
+let playbackSessionId = '';
+let playbackSequence = 0;
 
-function nextPlaybackSyncMetadata(userId: string): PlaybackSyncMetadata {
-  const key = 'kairo-playback-session:v1:' + userId.trim();
-  try {
-    let sessionId = sessionStorage.getItem(key) ?? '';
-    let sequence = Number(sessionStorage.getItem(key + ':sequence') ?? 0);
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sessionId) ||
-        !Number.isSafeInteger(sequence) || sequence < 0 || sequence >= 2_147_483_647) {
-      sessionId = crypto.randomUUID();
-      sequence = 0;
-      sessionStorage.setItem(key, sessionId);
-    }
-    sequence += 1;
-    sessionStorage.setItem(key + ':sequence', String(sequence));
-    return { sessionId, sequence };
-  } catch {
-    if (!fallbackSessionId) fallbackSessionId = crypto.randomUUID();
-    fallbackSequence = fallbackSequence >= 2_147_483_646 ? 1 : fallbackSequence + 1;
-    return { sessionId: fallbackSessionId, sequence: fallbackSequence };
+function nextPlaybackSyncMetadata(_userId: string): PlaybackSyncMetadata {
+  if (!playbackSessionId || playbackSequence >= 2_147_483_647) {
+    playbackSessionId = crypto.randomUUID();
+    playbackSequence = 0;
   }
+  playbackSequence += 1;
+  return { sessionId: playbackSessionId, sequence: playbackSequence };
 }
 
 function pendingSyncKey(userId: string): string {
