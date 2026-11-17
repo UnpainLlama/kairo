@@ -147,7 +147,7 @@ export default function App() {
           if (adminPath && pathname === adminPath && adminPath !== nextPath) navigate(nextPath, { replace: true });
           setAdminPath(nextPath);
         })
-        .catch(() => { if (active) setAdminPath(null); });
+        .catch(() => { /* Keep the last known path through transient network errors. */ });
     };
     refreshPath();
     const isOnConsolePath = Boolean(adminPath && pathname === adminPath);
