@@ -195,13 +195,14 @@ export default function YouTubeWatchPage() {
       progressSeconds: position, durationSeconds: duration, completed,
       playerState, updatedAt: now,
     };
-    if (reason !== 'timeupdate' || now - lastLocalSnapshotSave.current >= 5000) {
+    const shouldWriteLocal = reason !== 'timeupdate' || now - lastLocalSnapshotSave.current >= 5000;
+    if (shouldWriteLocal) {
       writeLocalProgress(accountId, video.videoId, position, now);
       writeLocalMediaPlayback(accountId, unifiedSnapshot);
       lastLocalSnapshotSave.current = now;
     }
     if (!accountId) {
-      if (reason !== 'timeupdate' || now - lastLocalSnapshotSave.current >= 5000) saveGuestYouTubeProgress({
+      if (shouldWriteLocal) saveGuestYouTubeProgress({
         videoId: video.videoId,
         title: video.title,
         description: video.description,
