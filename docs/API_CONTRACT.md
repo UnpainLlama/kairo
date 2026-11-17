@@ -103,7 +103,7 @@ All administrator routes verify the session role server-side. The console path i
 
 ## 3. Authenticated user routes
 
-Kairo uses closed access: public account registration and Google sign-in are disabled. Standard accounts sign in with administrator-issued usernames and passwords. The administrator submits a username with an empty password to request an eight-digit email code at the `ADMIN_EMAIL` Worker secret address, then verifies it at `POST /api/v1/auth/admin-code/verify`. Codes expire after five minutes, are single-use, and are rate-limited. Only an administrator can create, suspend/reactivate, or reset passwords for up to 15 standard accounts. The admin is provisioned once through `/api/v1/admin/bootstrap` using `ADMIN_BOOTSTRAP_TOKEN`; email delivery uses `RESEND_API_KEY` and optional `AUTH_EMAIL_FROM`.
+Kairo uses closed access: public account registration and Google sign-in are disabled. Standard accounts sign in with administrator-issued usernames and passwords. The administrator submits a username with an empty password to request an eight-digit email code at the `ADMIN_EMAIL` Worker secret address, then verifies it at `POST /api/v1/auth/admin-code/verify`. Codes expire after five minutes, are single-use, and are rate-limited. Only an administrator can create, suspend/reactivate, or reset passwords for up to 15 standard accounts. The admin is provisioned once through `/api/v1/admin/bootstrap` using `ADMIN_BOOTSTRAP_TOKEN`; email delivery uses `ADMIN_EMAIL`, `RESEND_API_KEY`, `ADMIN_OTP_PEPPER`, and optional `AUTH_EMAIL_FROM`.
 
 Authentication routes:
 
