@@ -22,7 +22,7 @@ export default function AuthPage(){
    if(continuation==='admin'){
     const response=await fetch('/api/v1/admin/console-path',{credentials:'same-origin',headers:{Accept:'application/json'},cache:'no-store'});
     const payload=await response.json().catch(()=>null) as Envelope|null;
-    if(!response.ok||!payload?.success||typeof payload.data?.path!=='string'||!/^\\/[A-Za-z0-9_-]{32,128}$/.test(payload.data.path))throw new Error('Administrator access is not available for this account.');
+    if(!response.ok||!payload?.success||typeof payload.data?.path!=='string'||!/^\/[A-Za-z0-9_-]{32,128}$/.test(payload.data.path))throw new Error('Administrator access is not available for this account.');
     destination=payload.data.path;
    }
    navigate(destination,{replace:true});
