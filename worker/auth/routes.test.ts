@@ -58,7 +58,7 @@ describe('closed-access authentication', () => {
               first: async () => {
                 if (sql.includes('INSERT INTO auth_rate_limits')) return { attempts: 1 };
                 if (sql.includes('SELECT p.id userId')) return {
-                  userId: 'user-123', accountStatus: 'active', identityId: 'identity-123', passwordHash,
+                  userId: 'user-123', accountStatus: 'active', role: 'user', identityId: 'identity-123', passwordHash,
                 };
                 return null;
               },
@@ -105,6 +105,32 @@ describe('closed-access authentication', () => {
     const response = await handler!(context({ username: 'StandardUser', password: '' }, db));
     expect(response.status).toBe(401);
     expect(calls.some(sql => sql.includes('INSERT INTO sessions'))).toBe(false);
+  });
+
+  it('does not allow the administrator password to bypass email verification', async () => {
+    const db = {
+      prepare(sql: string) {
+        return {
+          bind: () => ({
+            first: async () => {
+              if (sql.includes('INSERT INTO auth_rate_limits')) return { attempts: 1 };
+              if (sql.includes('SELECT p.id userId')) return {
+                userId: 'user-admin', accountStatus: 'active', role: 'admin',
+                identityId: 'identity-admin', passwordHash: null,
+              };
+              return null;
+            },
+            run: async () => ({ success: true, meta: { changes: 1 } }),
+          }),
+        };
+      },
+    } as unknown as D1Database;
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const handler = registeredRoutes().get('POST /api/v1/auth/login');
+    const response = await handler!(context({ username: 'KairoAdmin', password: 'old-admin-password' }, db));
+    expect(response.status).toBe(401);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('starts an administrator email-code challenge when the password is blank', async () => {
