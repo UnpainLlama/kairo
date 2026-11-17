@@ -25,6 +25,13 @@ function sameText(a:string,b:string):boolean{
  let mismatch=0;for(let i=0;i<a.length;i++)mismatch|=a.charCodeAt(i)^b.charCodeAt(i);
  return mismatch===0;
 }
+async function otpDigest(c:any,challengeId:string,code:string):Promise<string>{
+ const pepper=c.env.ADMIN_OTP_PEPPER;
+ if(typeof pepper!=='string'||pepper.length<32)throw new Error('admin_otp_pepper_unconfigured');
+ const key=await crypto.subtle.importKey('raw',enc.encode(pepper),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+ const digest=await crypto.subtle.sign('HMAC',key,enc.encode(challengeId+':'+code));
+ return [...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
+}
 function createOtpCode():string{
  const range=0x1_0000_0000,modulus=100_000_000,limit=Math.floor(range/modulus)*modulus;
  const values=new Uint32Array(1);let value=0;
@@ -73,11 +80,11 @@ export function registerAuthRoutes(app:Hono<any>){
    if(!row||row.accountStatus!=='active')return fail(c,401,'INVALID_CREDENTIALS','Username or password is incorrect.');
    if(row.role==='admin'){
     if(password.length>0)return fail(c,401,'ADMIN_EMAIL_CODE_REQUIRED','Administrator sign-in uses an emailed code. Leave the password blank.');
+    if(typeof c.env.ADMIN_OTP_PEPPER!=='string'||c.env.ADMIN_OTP_PEPPER.length<32)return fail(c,503,'ADMIN_EMAIL_UNAVAILABLE','Administrator verification is not configured.');
     if(!await permit(c.env.DB,'admin-code-send',ip(c),username.toLowerCase(),3))return fail(c,429,'RATE_LIMITED','Too many code requests. Try again later.');
     const challengeId=crypto.randomUUID();
     const code=createOtpCode();
-    const digest=await crypto.subtle.digest('SHA-256',enc.encode(challengeId+':'+code));
-    const codeHash=[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
+    const codeHash=await otpDigest(c,challengeId,code);
     await c.env.DB.batch([
      c.env.DB.prepare('DELETE FROM admin_login_challenges WHERE user_id=?').bind(row.userId),
      c.env.DB.prepare('INSERT INTO admin_login_challenges (id,user_id,code_hash,expires_at,attempts,created_at) VALUES (?,?,?,?,0,?)')
@@ -114,8 +121,7 @@ export function registerAuthRoutes(app:Hono<any>){
      WHERE ch.id=? AND p.username=? COLLATE NOCASE AND p.role='admin' AND p.account_status='active' AND ch.consumed_at IS NULL
      LIMIT 1`).bind(challengeId,username).first() as {userId:string;codeHash:string;expiresAt:number;attempts:number}|null;
    if(!challenge||Number(challenge.expiresAt)<=Date.now()||Number(challenge.attempts)>=5)return fail(c,401,'INVALID_CODE','The verification code is invalid or expired.');
-   const digest=await crypto.subtle.digest('SHA-256',enc.encode(challengeId+':'+code));
-   const suppliedHash=[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
+   const suppliedHash=await otpDigest(c,challengeId,code);
    if(!sameText(suppliedHash,challenge.codeHash)){
     await c.env.DB.prepare('UPDATE admin_login_challenges SET attempts=attempts+1 WHERE id=? AND consumed_at IS NULL AND attempts<5').bind(challengeId).run();
     return fail(c,401,'INVALID_CODE','The verification code is invalid or expired.');
