@@ -28,8 +28,9 @@ describe('playback progress sync policy', () => {
     expect(shouldSyncPlaybackProgress('ratechange', 10_000, 35, 35, 10_100, true)).toBe(true);
   });
 
-  it('does not resend unchanged pause positions unnecessarily', () => {
-    expect(shouldSyncPlaybackProgress('pause', 10_000, 35, 35, 10_100)).toBe(false);
+  it('flushes pause and completed seeks even when the position did not change', () => {
+    expect(shouldSyncPlaybackProgress('pause', 10_000, 35, 35, 10_100)).toBe(true);
+    expect(shouldSyncPlaybackProgress('seeked', 10_000, 35, 35, 10_100)).toBe(true);
   });
 
   it('rejects negative and non-finite positions', () => {
