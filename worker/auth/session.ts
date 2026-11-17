@@ -41,11 +41,11 @@ export function readSessionCookie(cookieHeader: string | null): string | null {
   return null;
 }
 
-export function sessionCookie(token: string, secure = true): string {
+export function sessionCookie(token: string, secure = true, maxAgeSeconds = SESSION_TTL_SECONDS): string {
   const flags = [
     `${SESSION_COOKIE}=${token}`,
     'Path=/',
-    `Max-Age=${SESSION_TTL_SECONDS}`,
+    `Max-Age=${Math.max(60, Math.min(SESSION_TTL_SECONDS, Math.floor(maxAgeSeconds)))}`,
     'HttpOnly',
     'SameSite=Lax',
   ];
@@ -62,19 +62,20 @@ export function clearSessionCookie(secure = true): string {
 export async function createSession(
   db: D1Database,
   userId: string,
-  metadata: { userAgent?: string; ipPrefix?: string } = {},
+  metadata: { userAgent?: string; ipPrefix?: string; ttlSeconds?: number } = {},
   now = Date.now(),
-): Promise<{ id: string; token: string; expiresAt: number }> {
+): Promise<{ id: string; token: string; expiresAt: number; ttlSeconds: number }> {
   const id = crypto.randomUUID();
   const token = createOpaqueToken();
-  const expiresAt = now + SESSION_TTL_MS;
+  const ttlSeconds = Math.max(60, Math.min(SESSION_TTL_SECONDS, Math.floor(metadata.ttlSeconds ?? SESSION_TTL_SECONDS)));
+  const expiresAt = now + ttlSeconds * 1000;
   await db.prepare(
     `INSERT INTO sessions (id, user_id, token_hash, expires_at, user_agent, ip_prefix)
      VALUES (?, ?, ?, ?, ?, ?)`
   ).bind(id, userId, await hashToken(token), expiresAt,
     metadata.userAgent?.slice(0, 512) ?? null,
     metadata.ipPrefix?.slice(0, 64) ?? null).run();
-  return { id, token, expiresAt };
+  return { id, token, expiresAt, ttlSeconds };
 }
 
 export async function revokeSession(db: D1Database, cookieHeader: string | null): Promise<void> {
