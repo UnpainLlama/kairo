@@ -5,6 +5,7 @@ import { boundedInt, parseId, parsePagination, parseSearchParams } from './lib/v
 import { clearSessionCookie, findSessionUser, revokeSession } from './auth/session';
 import { registerAuthRoutes } from './auth/routes';
 import { registerYouTubeMediaRoutes } from './youtube/routes';
+import { registerAdminRoutes } from './admin/routes';
 import { GENRES_SQL, buildListQuery, buildRelatedQuery, buildSearchQuery } from './repositories/catalog';
 import { BASE_RECORD_SQL, INSERT_PROVIDER_ID_SQL, PROVIDER_IDS_SQL } from './repositories/providerIds';
 import { buildRegistry, createCache, resolveUnified, sharedBreaker, toBaseRecord, type BaseRow } from './metadata/service';
@@ -18,6 +19,7 @@ import { ProviderError } from './metadata/types';
 
 interface Bindings {
   DB: D1Database;
+  ADMIN_BOOTSTRAP_TOKEN?: string;
   APP_ENV?: string;
   APP_BASE_URL?: string;
   RESEND_API_KEY?: string;
@@ -94,6 +96,7 @@ function fail(c: Context<{ Bindings: Bindings; Variables: Variables }>, status: 
 
 registerAuthRoutes(app);
 registerYouTubeMediaRoutes(app);
+registerAdminRoutes(app);
 
 function moviesProviderEnabled(c: AppContext): boolean {
   return c.env.MOVIES_TMDB_ENABLED === 'true' && c.env.MOVIES_TMDB_TERMS_APPROVED === 'true';
