@@ -105,6 +105,15 @@ All administrator routes verify the session role server-side. The console path i
 
 Kairo uses closed access: public account registration and Google sign-in are disabled. Standard accounts sign in with administrator-issued usernames and passwords. The administrator submits a username with an empty password to request an eight-digit email code at the `ADMIN_EMAIL` Worker secret address, then verifies it at `POST /api/v1/auth/admin-code/verify`. Codes expire after five minutes, are single-use, and are rate-limited. Only an administrator can create, suspend/reactivate, or reset passwords for up to 15 standard accounts. The admin is provisioned once through `/api/v1/admin/bootstrap` using `ADMIN_BOOTSTRAP_TOKEN`; email delivery uses `RESEND_API_KEY` and optional `AUTH_EMAIL_FROM`.
 
+Authentication routes:
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/v1/auth/login` | Standard accounts require username/password. An administrator submits username with an empty password to request an email code. |
+| POST | `/api/v1/auth/admin-code/verify` | Verify the administrator's eight-digit, five-minute, single-use email code and create the admin session. |
+
+Administrator email codes are HMAC-hashed using the `ADMIN_OTP_PEPPER` Worker secret. Delivery uses `RESEND_API_KEY` and `ADMIN_EMAIL`; the optional `AUTH_EMAIL_FROM` must be a sender on a domain verified by Resend unless using Resend's test sender for the Resend account's own email address.
+
 These routes require a valid Kairo session and server-side ownership checks.
 
 | Method | Path | Purpose |
@@ -167,10 +176,10 @@ Validate finite non-negative numbers, enforce sensible duration/position bounds,
 | POST | `/api/v1/youtube/watch-later` | Save a video to Kairo Watch Later. |
 | DELETE | `/api/v1/youtube/watch-later/:videoId` | Remove one video from Kairo Watch Later. |
 
-- Video metadata is public; the API key remains server-side. The endpoint returns a normalized record, whether YouTube allows embedding, and the API-provided Made for Kids flag. The watch page disables Kairo playback-history/progress tracking for videos YouTube marks Made for Kids. It does not return extracted stream URLs.
+- Video metadata is available only to the administrator; the API key remains server-side. The endpoint returns a normalized record, whether YouTube allows embedding, and the API-provided Made for Kids flag. Responses are private and non-cacheable. The watch page disables Kairo playback-history/progress tracking for videos YouTube marks Made for Kids. It does not return extracted stream URLs.
 - History and Watch Later require a Kairo session and are scoped by the server-derived user ID. Write operations require a same-origin request, validate the video ID and bounded metadata/progress fields, and use per-user/IP write limits. Authenticated library responses are `Cache-Control: no-store`.
 - The browser uses the official YouTube IFrame Player API. Kairo does not proxy video bytes, collect YouTube cookies, or bypass embed restrictions. If a video cannot be embedded, the UI offers the original YouTube watch URL.
-- Playback progress is stored locally for guests and synced to D1 for signed-in Kairo users. This Kairo history is separate from the user's YouTube account history.
+- Playback progress is stored locally for guests and synced to D1 for signed-in Kairo users. This Kairo history is separate from the user's YouTube account history. Browser resume checkpoints are written every five seconds; signed-in cloud checkpoints are sent every 60 seconds, with immediate flushes on pause, completed seek, end, visibility loss, close, and player-setting/source changes. Failed writes are retained in a per-account local retry queue with exponential backoff. Each tab assigns a monotonically increasing sequence to its playback writes; the Worker uses server receive time and sequence checks to reject late writes from the same tab. Across separate tabs/devices, the most recently received valid write wins.
 - The additive D1 schema is in `migrations/0011_youtube_media_library.sql`. Apply it to each target environment before deploying this Worker version. No remote migration is run by this source change.
 
 
