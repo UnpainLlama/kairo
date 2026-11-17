@@ -81,6 +81,7 @@ describe('closed-access authentication', () => {
     expect(calls.some(call => call.sql.includes('WHERE p.username=? COLLATE NOCASE'))).toBe(true);
     expect(calls.some(call => call.sql.includes('INSERT INTO sessions'))).toBe(true);
     expect(ctx.responseHeaders.get('set-cookie')).toMatch(/^kairo_session=[A-Za-z0-9_-]{43};/);
+    expect(ctx.responseHeaders.get('set-cookie')).toContain('Max-Age=28800');
   });
 
   it('rejects a standard account username-only login without creating a session', async () => {
