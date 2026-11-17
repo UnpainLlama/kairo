@@ -7,7 +7,7 @@ import { useAccountScope } from '../hooks/useAccountScope';
 import { addGuestYouTubeWatchLater, saveGuestYouTubeProgress, readGuestYouTubeHistory, readGuestYouTubeWatchLater } from '../lib/youtubeLocalLibrary';
 import { loadMediaPlayback, syncMediaPlayback, writeLocalMediaPlayback, type SavedPlayerState } from '../lib/mediaPlayback';
 import type { MediaPlaybackSnapshot } from '../lib/mediaPlayback';
-import type { PlaybackSaveReason } from '../lib/playbackSync';
+import { PLAYBACK_SERVER_SYNC_INTERVAL_MS, type PlaybackSaveReason } from '../lib/playbackSync';
 
 type VideoDetails = {
   videoId: string;
@@ -190,18 +190,18 @@ export default function YouTubeWatchPage() {
     if (!video || video.madeForKids || !Number.isFinite(seconds) || !Number.isFinite(duration) || duration <= 0) return;
     const position = completed ? duration : Math.max(0, Math.min(duration, seconds));
     const now = Date.now();
-    writeLocalProgress(accountId, video.videoId, position, now);
     const unifiedSnapshot: MediaPlaybackSnapshot = {
       mediaType: 'youtube', mediaKey: video.videoId, title: video.title, artworkUrl: video.thumbnailUrl,
       progressSeconds: position, durationSeconds: duration, completed,
       playerState, updatedAt: now,
     };
-    if (reason !== 'timeupdate' || now - lastLocalSnapshotSave.current >= 1000) {
+    if (reason !== 'timeupdate' || now - lastLocalSnapshotSave.current >= 5000) {
+      writeLocalProgress(accountId, video.videoId, position, now);
       writeLocalMediaPlayback(accountId, unifiedSnapshot);
       lastLocalSnapshotSave.current = now;
     }
     if (!accountId) {
-      saveGuestYouTubeProgress({
+      if (reason !== 'timeupdate' || now - lastLocalSnapshotSave.current >= 5000) saveGuestYouTubeProgress({
         videoId: video.videoId,
         title: video.title,
         description: video.description,
@@ -215,7 +215,7 @@ export default function YouTubeWatchPage() {
       });
       return;
     }
-    if (reason === 'timeupdate' && now - lastRemoteSave.current < 15000) return;
+    if (reason === 'timeupdate' && now - lastRemoteSave.current < PLAYBACK_SERVER_SYNC_INTERVAL_MS) return;
     lastRemoteSave.current = now;
     void syncMediaPlayback(accountId, unifiedSnapshot, reason === 'pagehide' || reason === 'ended' || reason === 'close');
     const body = {
