@@ -131,8 +131,8 @@ export function registerAuthRoutes(app:Hono<any>){
    const consumed=await c.env.DB.prepare('UPDATE admin_login_challenges SET consumed_at=? WHERE id=? AND user_id=? AND consumed_at IS NULL AND expires_at>? AND attempts<5 RETURNING user_id')
     .bind(Date.now(),challengeId,challenge.userId,Date.now()).first<{user_id:string}>();
    if(!consumed)return fail(c,401,'INVALID_CODE','The verification code is invalid or expired.');
-   const session=await createSession(c.env.DB,challenge.userId,{userAgent:c.req.header('User-Agent')??undefined,ipPrefix:ip(c)});
-   c.header('Set-Cookie',sessionCookie(session.token,new URL(c.req.url).protocol==='https:'));
+   const session=await createSession(c.env.DB,challenge.userId,{userAgent:c.req.header('User-Agent')??undefined,ipPrefix:ip(c),ttlSeconds:8*60*60});
+   c.header('Set-Cookie',sessionCookie(session.token,new URL(c.req.url).protocol==='https:',session.ttlSeconds));
    return ok(c,{signedIn:true,administrator:true,expiresAt:session.expiresAt});
   }catch(error){logAuthFailure(c,'admin_login_code_verify_failed',error);return fail(c,503,'AUTH_UNAVAILABLE','Administrator sign-in is temporarily unavailable.')}
  });
