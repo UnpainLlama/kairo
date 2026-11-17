@@ -67,13 +67,15 @@ This branch implements the agreed closed-access model:
 - Resend sends the one-time code through its REST API. The free tier is subject to Resend's current sending limits and account/domain verification rules.
 - The test sender `onboarding@resend.dev` is restricted to the email address associated with your Resend account. Register Resend using the same Proton mailbox configured as `ADMIN_EMAIL`; this supports the single-admin setup without owning a domain. To send to a different recipient, verify a domain you control and use a sender on that domain. For unrestricted delivery, configure a verified domain you control and set `AUTH_EMAIL_FROM`.
 - The recipient address, API key, and HMAC pepper are Worker secrets, never frontend variables.
-- The one-time code is eight digits, expires after five minutes, is single-use, and has a five-attempt challenge limit. Requests are rate-limited.
+- The one-time code is eight digits, expires after five minutes, is single-use, and has a five-attempt challenge limit. Requests are rate-limited both per IP and per administrator.
+- Administrator sessions expire after eight hours; standard-account sessions retain the existing 30-day lifetime.
+- `ADMIN_EMAIL` is fixed by the Worker secret and cannot be changed from the admin panel. Change it only through an authorized staging secret update after verifying access to the new mailbox.
 
 ## Security notes
 
 - A random console URL is an additional obscurity layer, not authorization. All admin APIs still require a valid server-side admin session.
 - The active console path is stored in D1 and rotated by the staging-only Cron Trigger every 30 minutes. The authenticated console-path endpoint can also provision a fresh path after expiry.
 - Noindex is only a crawler hint, not access control.
-- The first admin is created only with the bootstrap secret; the database partial unique index enforces a single admin role.
+- The first admin is created only with the bootstrap secret; the database partial unique index enforces a single admin role. A database trigger also enforces the 15-standard-account cap, including suspended and deleted accounts.
 - Standard account allocation counts suspended and deleted accounts toward the 15-account cap; reactivating a suspended account does not allocate a new slot.
 - No migration, Worker secret, or deployment is performed by the code change itself.
