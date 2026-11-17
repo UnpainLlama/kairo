@@ -25,7 +25,7 @@ describe('administrator console path rotation', () => {
     await rotateAdminConsolePath(db);
 
     expect(writes).toBe(1);
-    expect(insertedPath).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(insertedPath).toMatch(/^\/[A-Za-z0-9_-]{43}$/);
   });
 
   it('does not create a console path if no active administrator exists', async () => {
