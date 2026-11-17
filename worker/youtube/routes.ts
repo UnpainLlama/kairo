@@ -121,7 +121,7 @@ function originAllowed(c: YouTubeContext): boolean {
 }
 
 async function signedInUser(c: YouTubeContext) {
-  return findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  return findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
 }
 
 function cleanText(value: unknown, max: number, fallback = ''): string {
