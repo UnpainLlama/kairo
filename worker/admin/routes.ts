@@ -35,6 +35,17 @@ function sameSecret(a: string, b: string): boolean {
 }
 
 export function registerAdminRoutes(app: any) {
+  app.get('/api/v1/admin/console-path', async (c: any) => {
+    noStore(c);
+    const admin = await currentAdmin(c);
+    if (!admin) return fail(c, 404, 'NOT_FOUND', 'Not found.');
+    const path = c.env.ADMIN_CONSOLE_PATH;
+    if (typeof path !== 'string' || !/^\/[A-Za-z0-9_-]{32,128}$/.test(path)) {
+      return fail(c, 503, 'ADMIN_CONSOLE_UNCONFIGURED', 'The administrator console path is not configured.');
+    }
+    return ok(c, { path });
+  });
+
   // One-time bootstrap: requires a separately configured Cloudflare Worker secret.
   app.post('/api/v1/admin/bootstrap', async (c: any) => {
     noStore(c);
