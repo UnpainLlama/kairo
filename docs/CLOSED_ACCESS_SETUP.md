@@ -1,44 +1,57 @@
 # Closed-access Kairo setup
 
-This change set implements the closed-access account model:
+This branch implements the agreed closed-access model:
 
-- No public registration endpoint or Google sign-in route.
-- Username/password login for pre-provisioned accounts.
-- One administrator account, enforced by a partial unique D1 index.
-- Up to 15 standard accounts. Suspended accounts still count toward the allocation limit.
-- The administrator can create accounts, suspend/reactivate them, and reset passwords.
-- YouTube pages, OAuth routes, search, metadata, feed, history, and Watch Later are administrator-only at the Worker layer.
-- The admin console is available at the private path supplied by the owner. The path is an additional obscurity measure, not an authentication mechanism.
+- No public registration or Google sign-in.
+- Fifteen standard accounts maximum, plus one separate administrator account.
+- Standard accounts use administrator-issued username/password credentials.
+- Administrator login uses an emailed one-time code; an administrator password is not accepted for normal login.
+- The administrator has a separate console, manages standard accounts, and is the only role allowed to use YouTube features.
+- The admin console URL is generated from 256 bits of cryptographic randomness and rotates every 30 minutes. The URL is not an authentication factor; the server-side administrator session remains the access control.
+- Playback checkpoints are saved locally every five seconds and synced to D1 every 60 seconds for signed-in users. Important user/lifecycle events flush immediately. Failed cloud writes remain in a local retry queue with exponential backoff.
 
-## Staging activation checklist
+## Staging activation only
 
-Do not run these steps against production.
+**Do not run any command below against production.** These steps have not been performed by this code change.
 
-1. Review the code branch and run the repository build and tests.
-2. Apply the new migration to the staging D1 database only:
+1. Review the branch, reconcile it against the intended staging release, and run typecheck, tests, and build.
+2. Apply the additive migrations to the staging D1 database only:
 
-   npx wrangler d1 migrations apply DB --remote --env staging
+   `npx wrangler d1 migrations apply DB --remote --env staging`
 
-3. Generate a fresh random bootstrap token with at least 32 bytes of entropy. Store it as a Cloudflare Worker secret for the staging environment:
+3. Generate a bootstrap token with at least 32 bytes of cryptographic randomness and store it as a staging Worker secret:
 
-   npx wrangler secret put ADMIN_BOOTSTRAP_TOKEN --env staging
+   `npx wrangler secret put ADMIN_BOOTSTRAP_TOKEN --env staging`
 
-4. Generate a new private console path with at least 32 random bytes of entropy. The path previously supplied was included in public branch history and must not be reused. Store the replacement path (including its leading slash) as a Cloudflare Worker secret:
+4. Create the dedicated Proton Mail mailbox. Store its address as a staging Worker secret:
 
-   npx wrangler secret put ADMIN_CONSOLE_PATH --env staging
+   `npx wrangler secret put ADMIN_EMAIL --env staging`
 
-   The frontend retrieves this path only from an admin-authenticated endpoint; it is not embedded in the public source bundle.
+5. Create a Resend account using that same Proton address and create a sending API key. Store the key as a staging Worker secret:
 
-5. Provision the first administrator by POSTing to the staging Worker endpoint /api/v1/admin/bootstrap, sending the bootstrap token in the X-Kairo-Bootstrap header and a JSON body containing username, displayName, and a newly generated password. Do not put the token or password in source control, issue comments, or shell history.
-6. Verify that the administrator can sign in, reach the private console, create a standard account, suspend/reactivate it, and reset its password.
-7. Verify that anonymous visitors and standard accounts cannot open YouTube pages or call any YouTube API route.
-8. Remove the ADMIN_BOOTSTRAP_TOKEN staging secret after the administrator is created. The endpoint is already disabled once an admin exists, but removing the bootstrap secret is good hygiene.
-9. Deploy to staging only after the migration and security tests have been explicitly approved. Do not deploy production as part of this work.
+   `npx wrangler secret put RESEND_API_KEY --env staging`
+
+   The Worker defaults to `Kairo Security <onboarding@resend.dev>` as the sender. For a production-grade sender identity, use a domain you control, verify it in Resend, and set `AUTH_EMAIL_FROM` to an address on that verified domain. The free Resend plan currently lists 3,000 transactional emails/month and a 100-email daily limit. See [Resend pricing](https://resend.com/pricing).
+
+6. Provision the administrator by POSTing to the staging endpoint `/api/v1/admin/bootstrap`, sending the bootstrap token in the `X-Kairo-Bootstrap` header and JSON containing only `username` and `displayName`. The administrator does not receive a password credential; login is email-code based. Do not place the bootstrap token in source control, issue comments, or shell history.
+7. Remove the `ADMIN_BOOTSTRAP_TOKEN` staging secret immediately after successful provisioning.
+8. Verify the full admin email-code login, the 30-minute URL rotation, account creation/suspension/reactivation/password reset, and the YouTube restrictions.
+9. Verify playback restore, local checkpointing, 60-second cloud sync, retry after offline/reconnect, stale-write ordering, and completion behavior.
+10. Deploy to staging only after the migration and security tests have been reviewed and explicitly approved. Do not deploy production as part of this work.
+
+## Email delivery notes
+
+- The Proton mailbox is the recipient/inbox; Proton does not need to send mail from the Worker.
+- Resend sends the one-time code through its REST API. The free tier is subject to Resend's current sending limits and account/domain verification rules.
+- The test sender `onboarding@resend.dev` is intended for testing. If Resend restricts delivery to the account's own verified address, registering Resend with the same Proton mailbox satisfies that single-recipient setup. For unrestricted delivery, configure a verified domain you control and set `AUTH_EMAIL_FROM`.
+- The recipient address and API key are Worker secrets, never frontend variables.
+- The one-time code is eight digits, expires after five minutes, is single-use, and has a five-attempt challenge limit. Requests are rate-limited.
 
 ## Security notes
 
-- The private path is an obscurity measure, not authentication. It is held in a staging Worker secret and revealed only to a signed-in administrator. Every admin API request independently checks the server-side session role.
-- noindex is a crawler hint, not access control. Robots rules and bot-user-agent redirects must never be treated as protection.
-- Admin credentials are never hardcoded in this repository. Passwords are stored only as password hashes.
-- The bootstrap route requires the staging-only secret and becomes unavailable after the first admin account exists.
-- No account migration or secret change is performed by this code change itself.
+- A random console URL is an additional obscurity layer, not authorization. All admin APIs still require a valid server-side admin session.
+- The active console path is stored in D1 and rotated by the staging-only Cron Trigger every 30 minutes. The authenticated console-path endpoint can also provision a fresh path after expiry.
+- Noindex is only a crawler hint, not access control.
+- The first admin is created only with the bootstrap secret; the database partial unique index enforces a single admin role.
+- Standard account allocation counts suspended and deleted accounts toward the 15-account cap; reactivating a suspended account does not allocate a new slot.
+- No migration, Worker secret, or deployment is performed by the code change itself.
