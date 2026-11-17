@@ -52,7 +52,7 @@ export default function MoviesWatchPage() {
   }, [accountId, accountResolved, accountError, movie?.externalId, movie?.providerId]);
 
   const persistPlayback = useCallback((incoming: MediaPlaybackSnapshot, reason: PlaybackSaveReason) => {
-    if (!movie) return;
+    if (reason === 'open' || !movie) return;
     const now = Date.now();
     const snapshot: MediaPlaybackSnapshot = {
       ...incoming,
