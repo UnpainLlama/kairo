@@ -255,7 +255,7 @@ export function registerYouTubeMediaRoutes(app: any): void {
     try {
       const video = await youtubeApiVideo(c, videoId);
       if (!video) return fail(c, 404, 'YOUTUBE_VIDEO_NOT_FOUND', 'This YouTube video is unavailable or no longer public.');
-      c.header('Cache-Control', 'public, max-age=120, s-maxage=300');
+      c.header('Cache-Control', 'private, no-store');
       return c.json({ success: true, data: video });
     } catch (error) {
       return providerError(c, error);
