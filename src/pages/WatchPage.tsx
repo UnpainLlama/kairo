@@ -133,7 +133,7 @@ export default function WatchPage() {
         if (unified?.playerState.sourceId && serverItems.some(server => server.id === unified.playerState.sourceId)) {
           setSelectedServerId(unified.playerState.sourceId);
         }
-        if (unified && unified.updatedAt > Math.max(chosenUpdatedAt, Number(payload.data.deletedAt ?? 0), Number(payload.data.clearedAt ?? 0))) {
+        if (unified && unified.updatedAt > Math.max(Number(payload.data.deletedAt ?? 0), Number(payload.data.clearedAt ?? 0))) {
           chosenSeconds = unified.progressSeconds;
           chosenUpdatedAt = unified.updatedAt;
         }
