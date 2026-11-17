@@ -1,10 +1,10 @@
 export type PlaybackSaveReason = 'open' | 'play' | 'pause' | 'seeked' | 'ended' | 'pagehide' | 'timeupdate' | 'volumechange' | 'ratechange' | 'subtitlechange' | 'sourcechange' | 'close';
 
-export const PLAYBACK_SERVER_SYNC_INTERVAL_MS = 15_000;
+export const PLAYBACK_SERVER_SYNC_INTERVAL_MS = 60_000;
 
 /**
  * timeupdate can fire many times per second. Only allow periodic background
- * syncs every 15s; user-intent/lifecycle events can flush a changed position
+ * syncs every 60s; user-intent/lifecycle events can flush a changed position
  * immediately.
  */
 export function shouldSyncPlaybackProgress(
