@@ -203,16 +203,18 @@ async function sendPlaybackSnapshot(
 
 function applyServerTimestamp(userId: string, snapshot: MediaPlaybackSnapshot, updatedAt: number | null): void {
   if (!updatedAt || !Number.isFinite(updatedAt)) return;
-  const current = readLocalMediaPlayback(userId, snapshot.mediaType, snapshot.mediaKey);
+  const normalized = parseMediaPlayback(snapshot);
+  if (!normalized) return;
+  const current = readLocalMediaPlayback(userId, normalized.mediaType, normalized.mediaKey);
   const sameSnapshot = current &&
-    current.progressSeconds === snapshot.progressSeconds &&
-    current.durationSeconds === snapshot.durationSeconds &&
-    current.completed === snapshot.completed &&
-    current.title === snapshot.title &&
-    current.artworkUrl === snapshot.artworkUrl &&
-    JSON.stringify(normalizePlayerState(current.playerState)) === JSON.stringify(normalizePlayerState(snapshot.playerState));
-  if (current && sameSnapshot && current.updatedAt <= snapshot.updatedAt) {
-    writeLocalMediaPlayback(userId, { ...snapshot, updatedAt });
+    current.progressSeconds === normalized.progressSeconds &&
+    current.durationSeconds === normalized.durationSeconds &&
+    current.completed === normalized.completed &&
+    current.title === normalized.title &&
+    current.artworkUrl === normalized.artworkUrl &&
+    JSON.stringify(current.playerState) === JSON.stringify(normalized.playerState);
+  if (current && sameSnapshot && current.updatedAt <= normalized.updatedAt) {
+    writeLocalMediaPlayback(userId, { ...normalized, updatedAt });
   }
 }
 
