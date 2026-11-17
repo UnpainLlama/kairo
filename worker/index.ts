@@ -6,6 +6,7 @@ import { clearSessionCookie, findSessionUser, revokeSession } from './auth/sessi
 import { registerAuthRoutes } from './auth/routes';
 import { registerYouTubeMediaRoutes } from './youtube/routes';
 import { registerAdminRoutes, rotateAdminConsolePath } from './admin/routes';
+import { verifyCloudflareAccessAssertion } from './auth/cloudflareAccess';
 import { GENRES_SQL, buildListQuery, buildRelatedQuery, buildSearchQuery } from './repositories/catalog';
 import { BASE_RECORD_SQL, INSERT_PROVIDER_ID_SQL, PROVIDER_IDS_SQL } from './repositories/providerIds';
 import { buildRegistry, createCache, resolveUnified, sharedBreaker, toBaseRecord, type BaseRow } from './metadata/service';
@@ -20,6 +21,9 @@ import { ProviderError } from './metadata/types';
 interface Bindings {
   DB: D1Database;
   ADMIN_BOOTSTRAP_TOKEN?: string;
+  ACCESS_ENFORCED?: string;
+  ACCESS_TEAM_DOMAIN?: string;
+  ACCESS_AUD?: string;
   APP_ENV?: string;
   APP_BASE_URL?: string;
   GOOGLE_CLIENT_ID?: string;
@@ -53,7 +57,7 @@ interface Bindings {
   MOVIES_INGESTION_ENABLED?: string;
 }
 
-type Variables = { requestId: string };
+type Variables = { requestId: string; accessEmail: string | null };
 type AppContext = Context<{ Bindings: Bindings; Variables: Variables }>;
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -65,6 +69,27 @@ app.use('/api/*', async (c, next) => {
   c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
   c.header('X-Frame-Options', 'DENY');
   await next();
+});
+
+app.use('/api/*', async (c, next) => {
+  if (c.env.ACCESS_ENFORCED !== 'true') {
+    c.set('accessEmail', null);
+    return next();
+  }
+  const teamDomain = c.env.ACCESS_TEAM_DOMAIN;
+  const audience = c.env.ACCESS_AUD;
+  if (!teamDomain || !audience) {
+    return c.json({ success: false, error: { code: 'ACCESS_CONFIGURATION_REQUIRED', message: 'Access identity verification is not configured.' } }, 503);
+  }
+  const identity = await verifyCloudflareAccessAssertion(
+    c.req.header('Cf-Access-Jwt-Assertion') ?? null,
+    { ACCESS_TEAM_DOMAIN: teamDomain, ACCESS_AUD: audience },
+  );
+  if (!identity) {
+    return c.json({ success: false, error: { code: 'ACCESS_REQUIRED', message: 'A valid approved Cloudflare Access identity is required.' } }, 401);
+  }
+  c.set('accessEmail', identity.email);
+  return next();
 });
 
 app.use('/api/*', async (c, next) => {
