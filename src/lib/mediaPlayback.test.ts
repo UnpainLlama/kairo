@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   deleteMediaPlayback,
+  flushPendingMediaPlayback,
   listLocalMediaPlayback,
   mediaPlaybackStorageKey,
   normalizePlayerState,
   parseMediaPlayback,
   readLocalMediaPlayback,
+  syncMediaPlayback,
   writeLocalMediaPlayback,
   type MediaPlaybackSnapshot,
 } from './mediaPlayback';
@@ -62,6 +64,26 @@ describe('shared media playback persistence', () => {
     expect(readLocalMediaPlayback('user-a', 'movie', '550')?.progressSeconds).toBe(128);
     expect(listLocalMediaPlayback('user-a').map(item => item.mediaType)).toEqual(['youtube', 'movie']);
     expect(listLocalMediaPlayback('user-b')).toHaveLength(1);
+  });
+
+  it('keeps failed cloud checkpoints in a durable queue and retries them with backoff', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response('unavailable', { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(await syncMediaPlayback('user-a', snapshot())).toBe(false);
+    const queueKey = 'kairo-media-playback:v1:user-a:pending-sync';
+    const queued = JSON.parse(localStorage.getItem(queueKey) ?? '[]');
+    expect(queued).toHaveLength(1);
+    expect(queued[0].attempts).toBe(1);
+    expect(queued[0].nextAttemptAt).toBeGreaterThan(Date.now());
+
+    await flushPendingMediaPlayback('user-a', Number.MAX_SAFE_INTEGER);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(localStorage.getItem(queueKey)).toBeNull();
   });
 
   it('deletes one local resume record or clears a whole media namespace', async () => {
