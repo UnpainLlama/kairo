@@ -29,9 +29,9 @@ This branch implements the agreed closed-access model:
 
    There must be no existing administrator and no more than 15 standard accounts. Existing standard accounts are backfilled with generated usernames and count toward the 15-account cap. If an administrator already exists or more than 15 standard accounts are present, stop and review the existing accounts before proceeding; do not delete or demote accounts automatically.
 
-3. Apply the additive migrations to the staging D1 database only:
+3. Apply the additive migrations to the staging D1 database only. The staging database is named `kairo-db-staging` (the Worker binding is `DB`):
 
-   `npx wrangler d1 migrations apply DB --remote --env staging`
+   `npx wrangler d1 migrations apply kairo-db-staging --remote --env staging`
 
 4. Generate a bootstrap token with at least 32 bytes of cryptographic randomness and store it as a staging Worker secret:
 
