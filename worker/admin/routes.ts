@@ -125,7 +125,7 @@ export function registerAdminRoutes(app: any) {
     if (body?.status !== 'active' && body?.status !== 'suspended') return fail(c, 400, 'VALIDATION_ERROR', 'Status must be active or suspended.');
     const targetId = c.req.param('id');
     const results = await c.env.DB.batch([
-      c.env.DB.prepare("UPDATE user_profiles SET account_status=? WHERE id=? AND role='user'")
+      c.env.DB.prepare("UPDATE user_profiles SET account_status=? WHERE id=? AND role='user' AND account_status IN ('active','suspended')")
         .bind(body.status, targetId),
       c.env.DB.prepare("DELETE FROM sessions WHERE user_id=? AND ?='suspended'")
         .bind(targetId, body.status),
@@ -143,7 +143,7 @@ export function registerAdminRoutes(app: any) {
     if (!passwordOf(body?.password)) return fail(c, 400, 'VALIDATION_ERROR', 'Password must contain at least 12 characters.');
     try {
       const target = c.req.param('id');
-      const exists = await c.env.DB.prepare("SELECT id FROM user_profiles WHERE id=? AND role='user'").bind(target).first();
+      const exists = await c.env.DB.prepare("SELECT id FROM user_profiles WHERE id=? AND role='user' AND account_status IN ('active','suspended')").bind(target).first();
       if (!exists) return fail(c, 404, 'ACCOUNT_NOT_FOUND', 'That standard account was not found.');
       const hash = await hashPassword(body.password);
       await c.env.DB.batch([
