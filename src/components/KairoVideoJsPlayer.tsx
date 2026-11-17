@@ -88,7 +88,7 @@ export default function KairoVideoJsPlayer({
       if (!Number.isFinite(time)) return;
       const now = Date.now();
       // Keep an instant local resume point without writing on every timeupdate.
-      if (now - lastLocalSaveAt >= 1000) {
+      if (now - lastLocalSaveAt >= 5000) {
         try { localStorage.setItem(storageKey, String(time)); } catch { /* storage may be unavailable */ }
         lastLocalSaveAt = now;
       }
