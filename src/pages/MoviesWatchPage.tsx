@@ -63,7 +63,7 @@ export default function MoviesWatchPage() {
       updatedAt: now,
     };
     setPlaybackState(snapshot);
-    if (reason !== 'timeupdate' || now - lastLocalSaveAt.current >= 1000) {
+    if (reason !== 'timeupdate' || now - lastLocalSaveAt.current >= 5000) {
       writeLocalMediaPlayback(accountId, snapshot);
       lastLocalSaveAt.current = now;
     }
