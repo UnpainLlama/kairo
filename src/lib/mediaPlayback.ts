@@ -90,11 +90,37 @@ export function writeLocalMediaPlayback(userId: string | null, snapshot: MediaPl
   }
 }
 
-type PendingPlaybackSync = {
+type PlaybackSyncMetadata = { sessionId: string; sequence: number };
+
+type PendingPlaybackSync = PlaybackSyncMetadata & {
   snapshot: MediaPlaybackSnapshot;
   attempts: number;
   nextAttemptAt: number;
 };
+
+let fallbackSessionId = '';
+let fallbackSequence = 0;
+
+function nextPlaybackSyncMetadata(userId: string): PlaybackSyncMetadata {
+  const key = 'kairo-playback-session:v1:' + userId.trim();
+  try {
+    let sessionId = sessionStorage.getItem(key) ?? '';
+    let sequence = Number(sessionStorage.getItem(key + ':sequence') ?? 0);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sessionId) ||
+        !Number.isSafeInteger(sequence) || sequence < 0 || sequence >= 2_147_483_647) {
+      sessionId = crypto.randomUUID();
+      sequence = 0;
+      sessionStorage.setItem(key, sessionId);
+    }
+    sequence += 1;
+    sessionStorage.setItem(key + ':sequence', String(sequence));
+    return { sessionId, sequence };
+  } catch {
+    if (!fallbackSessionId) fallbackSessionId = crypto.randomUUID();
+    fallbackSequence = fallbackSequence >= 2_147_483_646 ? 1 : fallbackSequence + 1;
+    return { sessionId: fallbackSessionId, sequence: fallbackSequence };
+  }
+}
 
 function pendingSyncKey(userId: string): string {
   return LOCAL_PREFIX + userId.trim() + ':pending-sync';
@@ -109,7 +135,10 @@ function readPendingSync(userId: string): PendingPlaybackSync[] {
       Boolean(item && typeof item === 'object' &&
         parseMediaPlayback((item as PendingPlaybackSync).snapshot) &&
         Number.isInteger((item as PendingPlaybackSync).attempts) &&
-        Number.isFinite((item as PendingPlaybackSync).nextAttemptAt))
+        Number.isFinite((item as PendingPlaybackSync).nextAttemptAt) &&
+        typeof (item as PendingPlaybackSync).sessionId === 'string' &&
+        Number.isSafeInteger((item as PendingPlaybackSync).sequence) &&
+        (item as PendingPlaybackSync).sequence > 0)
     );
   } catch { return []; }
 }
@@ -122,34 +151,36 @@ function writePendingSync(userId: string, items: PendingPlaybackSync[]): void {
   } catch { /* The local resume snapshot remains the fallback if storage is full. */ }
 }
 
-function enqueuePendingSync(userId: string, snapshot: MediaPlaybackSnapshot): void {
+function enqueuePendingSync(userId: string, snapshot: MediaPlaybackSnapshot, metadata: PlaybackSyncMetadata): void {
   const items = readPendingSync(userId);
   const index = items.findIndex(item =>
     item.snapshot.mediaType === snapshot.mediaType && item.snapshot.mediaKey === snapshot.mediaKey
   );
-  const entry: PendingPlaybackSync = { snapshot, attempts: 0, nextAttemptAt: Date.now() };
+  const entry: PendingPlaybackSync = { ...metadata, snapshot, attempts: 0, nextAttemptAt: Date.now() };
   if (index >= 0) items[index] = entry;
   else items.push(entry);
   writePendingSync(userId, items);
 }
 
-function acknowledgePendingSync(userId: string, snapshot: MediaPlaybackSnapshot): void {
+function acknowledgePendingSync(userId: string, snapshot: MediaPlaybackSnapshot, metadata: PlaybackSyncMetadata): void {
   const items = readPendingSync(userId).filter(item =>
     item.snapshot.mediaType !== snapshot.mediaType ||
     item.snapshot.mediaKey !== snapshot.mediaKey ||
-    item.snapshot.updatedAt > snapshot.updatedAt
+    item.snapshot.updatedAt > snapshot.updatedAt ||
+    (item.sessionId === metadata.sessionId && item.sequence > metadata.sequence)
   );
   writePendingSync(userId, items);
 }
 
-function deferPendingSync(userId: string, snapshot: MediaPlaybackSnapshot): void {
+function deferPendingSync(userId: string, snapshot: MediaPlaybackSnapshot, metadata: PlaybackSyncMetadata): void {
   const items = readPendingSync(userId);
   const index = items.findIndex(item =>
     item.snapshot.mediaType === snapshot.mediaType && item.snapshot.mediaKey === snapshot.mediaKey
   );
   if (index < 0) return;
   const item = items[index];
-  if (item.snapshot.updatedAt > snapshot.updatedAt) return;
+  if (item.snapshot.updatedAt > snapshot.updatedAt ||
+      (item.sessionId === metadata.sessionId && item.sequence > metadata.sequence)) return;
   const attempts = item.attempts + 1;
   items[index] = {
     ...item,
@@ -159,17 +190,34 @@ function deferPendingSync(userId: string, snapshot: MediaPlaybackSnapshot): void
   writePendingSync(userId, items);
 }
 
-async function sendPlaybackSnapshot(snapshot: MediaPlaybackSnapshot, keepalive = false): Promise<boolean> {
+async function sendPlaybackSnapshot(
+  snapshot: MediaPlaybackSnapshot,
+  metadata: PlaybackSyncMetadata,
+  keepalive = false,
+): Promise<{ ok: boolean; saved: boolean; updatedAt: number | null }> {
   try {
     const response = await fetch('/api/v1/me/playback', {
       method: 'POST',
       credentials: 'same-origin',
       headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify(snapshot),
+      body: JSON.stringify({ ...snapshot, syncSessionId: metadata.sessionId, syncSequence: metadata.sequence }),
       keepalive,
     });
-    return response.ok;
-  } catch { return false; }
+    const payload = await response.json().catch(() => null);
+    return {
+      ok: response.ok,
+      saved: response.ok && payload?.data?.saved === true,
+      updatedAt: response.ok && Number.isFinite(Number(payload?.data?.updatedAt)) ? Number(payload.data.updatedAt) : null,
+    };
+  } catch { return { ok: false, saved: false, updatedAt: null }; }
+}
+
+function applyServerTimestamp(userId: string, snapshot: MediaPlaybackSnapshot, updatedAt: number | null): void {
+  if (!updatedAt || !Number.isFinite(updatedAt)) return;
+  const current = readLocalMediaPlayback(userId, snapshot.mediaType, snapshot.mediaKey);
+  if (current && current.updatedAt <= snapshot.updatedAt) {
+    writeLocalMediaPlayback(userId, { ...snapshot, updatedAt });
+  }
 }
 
 export async function syncMediaPlayback(
@@ -179,11 +227,14 @@ export async function syncMediaPlayback(
 ): Promise<boolean> {
   writeLocalMediaPlayback(userId, snapshot);
   if (!userId) return true;
-  enqueuePendingSync(userId, snapshot);
-  const acknowledged = await sendPlaybackSnapshot(snapshot, keepalive);
-  if (acknowledged) acknowledgePendingSync(userId, snapshot);
-  else deferPendingSync(userId, snapshot);
-  return acknowledged;
+  const metadata = nextPlaybackSyncMetadata(userId);
+  enqueuePendingSync(userId, snapshot, metadata);
+  const result = await sendPlaybackSnapshot(snapshot, metadata, keepalive);
+  if (result.ok) {
+    acknowledgePendingSync(userId, snapshot, metadata);
+    if (result.saved) applyServerTimestamp(userId, snapshot, result.updatedAt);
+  } else deferPendingSync(userId, snapshot, metadata);
+  return result.ok;
 }
 
 /** Retry failed cloud writes with persisted exponential backoff; newer snapshots replace older queued copies. */
@@ -191,9 +242,12 @@ export async function flushPendingMediaPlayback(userId: string | null, now = Dat
   if (!userId) return;
   const due = readPendingSync(userId).filter(item => item.nextAttemptAt <= now).slice(0, 10);
   for (const item of due) {
-    const acknowledged = await sendPlaybackSnapshot(item.snapshot);
-    if (acknowledged) acknowledgePendingSync(userId, item.snapshot);
-    else deferPendingSync(userId, item.snapshot);
+    const metadata = { sessionId: item.sessionId, sequence: item.sequence };
+    const result = await sendPlaybackSnapshot(item.snapshot, metadata);
+    if (result.ok) {
+      acknowledgePendingSync(userId, item.snapshot, metadata);
+      if (result.saved) applyServerTimestamp(userId, item.snapshot, result.updatedAt);
+    } else deferPendingSync(userId, item.snapshot, metadata);
   }
 }
 
