@@ -137,7 +137,7 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
     };
     const startTimer = () => {
       stopTimer();
-      timerRef.current = window.setInterval(() => report('timeupdate'), 1000);
+      timerRef.current = window.setInterval(() => report('timeupdate'), 5000);
     };
     const restorePosition = (target: YouTubePlayer): boolean => {
       if (restoredRef.current) return true;
