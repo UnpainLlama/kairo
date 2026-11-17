@@ -255,6 +255,17 @@ function parseYouTubeFeedCursorState(raw: string): YouTubeFeedCursorState | null
 }
 
 export function registerYouTubeAuthRoutes(app: any): void {
+  const adminOnly = async (c: YouTubeContext, next: () => Promise<void>) => {
+    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+    if (!user || user.role !== 'admin') {
+      c.header('Cache-Control', 'no-store');
+      return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Not found.' } }, 404);
+    }
+    await next();
+  };
+  app.use('/api/v1/auth/youtube', adminOnly);
+  app.use('/api/v1/auth/youtube/*', adminOnly);
+  app.use('/api/v1/youtube/*', adminOnly);
   app.get('/api/v1/auth/youtube', async (c: YouTubeContext) => {
     const clientId = c.env.GOOGLE_CLIENT_ID;
     const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
