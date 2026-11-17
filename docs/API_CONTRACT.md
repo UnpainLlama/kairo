@@ -103,16 +103,16 @@ All administrator routes verify the session role server-side. The console path i
 
 ## 3. Authenticated user routes
 
-Kairo uses closed access: public account registration and Google sign-in are disabled. Standard accounts sign in with administrator-issued usernames and passwords. The administrator submits a username with an empty password to request an eight-digit email code at the `ADMIN_EMAIL` Worker secret address, then verifies it at `POST /api/v1/auth/admin-code/verify`. Codes expire after five minutes, are single-use, and are rate-limited. Only an administrator can create, suspend/reactivate, or reset passwords for up to 15 standard accounts. The admin is provisioned once through `/api/v1/admin/bootstrap` using `ADMIN_BOOTSTRAP_TOKEN`; email delivery uses `ADMIN_EMAIL`, `RESEND_API_KEY`, `ADMIN_OTP_PEPPER`, and optional `AUTH_EMAIL_FROM`.
+Kairo uses closed access: public standard-account registration and Google sign-in are disabled. Standard accounts sign in with administrator-issued usernames and passwords. The single administrator is created once through `POST /api/v1/admin/bootstrap`, protected by the temporary `ADMIN_BOOTSTRAP_TOKEN` Worker secret. The bootstrap form collects the administrator username, display name, and password. The endpoint is disabled after an administrator exists. Administrator login uses username/password and creates an eight-hour session; standard-account sessions retain the existing 30-day lifetime.
 
 Authentication routes:
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/v1/auth/login` | Standard accounts require username/password. An administrator submits username with an empty password to request an email code. |
-| POST | `/api/v1/auth/admin-code/verify` | Verify the administrator's eight-digit, five-minute, single-use email code and create the admin session. |
+| POST | `/api/v1/auth/login` | Sign in using username/password. Administrator sessions last eight hours; standard sessions last 30 days. |
+| POST | `/api/v1/admin/bootstrap` | One-time administrator creation; requires the `X-Kairo-Bootstrap` header and is disabled after an admin exists. |
 
-Administrator email codes are HMAC-hashed using the `ADMIN_OTP_PEPPER` Worker secret. Delivery uses `RESEND_API_KEY` and `ADMIN_EMAIL`; the optional `AUTH_EMAIL_FROM` must be a sender on a domain verified by Resend unless using Resend's test sender for the Resend account's own email address.
+The bootstrap token is temporary and should be removed from the staging Worker secrets immediately after successful administrator setup. Passwords are stored as salted PBKDF2 hashes; plaintext passwords are never stored.
 
 These routes require a valid Kairo session and server-side ownership checks.
 
