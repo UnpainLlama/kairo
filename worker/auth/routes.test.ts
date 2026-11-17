@@ -123,4 +123,45 @@ describe('closed-access authentication', () => {
     expect(response.status).toBe(400);
     expect(calls).toHaveLength(0);
   });
+  it('locks the administrator after five wrong passwords within one hour until manual Cloudflare reset', async () => {
+    const passwordHash = await hashPassword('the-correct-administrator-password');
+    let failedAttempts = 0;
+    let lockedAt: number | null = null;
+    const db = {
+      prepare(sql: string) {
+        return {
+          bind: (..._values: unknown[]) => ({
+            first: async () => {
+              if (sql.includes('INSERT INTO auth_rate_limits')) return { attempts: 1 };
+              if (sql.includes('SELECT p.id userId')) return {
+                userId: 'admin-user', accountStatus: 'active', role: 'admin',
+                identityId: 'admin-identity', passwordHash, accessEmail: null,
+              };
+              if (sql.includes('SELECT locked_at AS lockedAt')) return { lockedAt };
+              if (sql.includes('INSERT INTO admin_login_security')) {
+                if (lockedAt !== null) return null;
+                failedAttempts += 1;
+                if (failedAttempts >= 5) lockedAt = Date.now();
+                return { failedAttempts, lockedAt };
+              }
+              return null;
+            },
+            run: async () => ({ success: true, meta: { changes: 1 } }),
+          }),
+        };
+      },
+    } as unknown as D1Database;
+    const handler = registeredRoutes().get('POST /api/v1/auth/login');
+    for (let attempt = 1; attempt < 5; attempt += 1) {
+      const response = await handler!(context({ username: 'KairoAdmin', password: 'wrong-password' }, db));
+      expect(response.status).toBe(401);
+    }
+    const fifth = await handler!(context({ username: 'KairoAdmin', password: 'wrong-password' }, db));
+    expect(fifth.status).toBe(423);
+    const sixth = await handler!(context({ username: 'KairoAdmin', password: 'wrong-password' }, db));
+    expect(sixth.status).toBe(423);
+    expect(failedAttempts).toBe(5);
+    expect(lockedAt).not.toBeNull();
+  });
+
 });
