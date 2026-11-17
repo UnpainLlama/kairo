@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { hashPassword } from './password';
 import { registerAuthRoutes } from './routes';
 
 type Handler = (context: any) => Promise<Response>;
+
+afterEach(() => vi.unstubAllGlobals());
 
 function registeredRoutes() {
   const routes = new Map<string, Handler>();
@@ -170,6 +172,43 @@ describe('closed-access authentication', () => {
     expect(typeof payload.data?.challengeId).toBe('string');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(calls.some(sql => sql.includes('INSERT INTO sessions'))).toBe(false);
+  });
+
+  it('consumes a valid administrator email code exactly once and creates a session', async () => {
+    const challengeId = 'a1b2c3d4-e5f6-4a7b-8c9d-0123456789ab';
+    const code = '01234567';
+    const pepper = 'b'.repeat(43);
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(pepper), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const digest = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(challengeId + ':' + code));
+    const codeHash = [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, '0')).join('');
+    const calls: string[] = [];
+    const db = {
+      prepare(sql: string) {
+        calls.push(sql);
+        return {
+          bind: () => ({
+            first: async () => {
+              if (sql.includes('INSERT INTO auth_rate_limits')) return { attempts: 1 };
+              if (sql.includes('SELECT ch.user_id')) return {
+                userId: 'user-admin', codeHash, expiresAt: Date.now() + 300_000, attempts: 0,
+              };
+              if (sql.includes('UPDATE admin_login_challenges SET consumed_at')) return { user_id: 'user-admin' };
+              return null;
+            },
+            run: async () => ({ success: true, meta: { changes: 1 } }),
+          }),
+        };
+      },
+    } as unknown as D1Database;
+    const handler = registeredRoutes().get('POST /api/v1/auth/admin-code/verify');
+    const ctx = context({ username: 'KairoAdmin', challengeId, code }, db, { ADMIN_OTP_PEPPER: pepper });
+    const response = await handler!(ctx);
+    const payload = await response.json() as { success: boolean; data?: { signedIn?: boolean; administrator?: boolean } };
+    expect(response.status).toBe(200);
+    expect(payload).toMatchObject({ success: true, data: { signedIn: true, administrator: true } });
+    expect(calls.some(sql => sql.includes('UPDATE admin_login_challenges SET consumed_at'))).toBe(true);
+    expect(calls.some(sql => sql.includes('INSERT INTO sessions'))).toBe(true);
+    expect(ctx.responseHeaders.get('set-cookie')).toMatch(/^kairo_session=[A-Za-z0-9_-]{43};/);
   });
 
   it('rejects malformed usernames before querying the account table', async () => {
