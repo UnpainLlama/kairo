@@ -23,8 +23,11 @@ import BrowsePage from './pages/BrowsePage';
 import AnimePage from './pages/AnimePage';
 import WatchPage from './pages/WatchPage';
 import AuthPage from './pages/AuthPage';
+import AdminPage from './pages/AdminPage';
 import { useKairoAccount } from './lib/AccountProvider';
 import { AboutPage, AccountPage, HistoryPage, NotFoundPage, ProfilePage } from './pages/StaticPages';
+
+const ADMIN_PATH = '/rngOIjDRuU_YYrn8zdMkyM4uKJBGa7wYFYo6J_Sh-eA';
 
 type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean; active?: boolean };
 
@@ -75,8 +78,10 @@ const mobileNavItems: NavItem[] = [
 
 function AdminOnly({ children }: { children: ReactNode }) {
   const account = useKairoAccount();
-  if (account.status === 'loading' || account.status === 'unavailable') return null;
-  if (account.status !== 'signed-in' || account.role !== 'admin') return <Navigate to="/" replace />;
+  if (account.status === 'loading') return null;
+  if (account.status === 'unavailable') return <main style={{ padding: 32 }}>Access could not be verified. Please refresh and try again.</main>;
+  if (account.status !== 'signed-in') return <Navigate to="/login?continue=admin" replace />;
+  if (account.role !== 'admin') return <NotFoundPage />;
   return <>{children}</>;
 }
 
@@ -149,6 +154,8 @@ export default function App() {
   }, [menuOpen]);
 
   const closeMenu = (_event?: MouseEvent<HTMLAnchorElement>) => setMenuOpen(false);
+
+  if (pathname === ADMIN_PATH) return <AdminOnly><AdminPage /></AdminOnly>;
 
   return (
     <div className={`kc-app${pathname === '/' ? ' kc-home-view' : ''}${isYouTubeMode ? ' yt-app' : ''}${isMoviesMode ? ' mv-app' : ''}${isMoviesWatchMode ? ' mv-watch-app' : ''}`}>
