@@ -81,7 +81,8 @@ export function registerAuthRoutes(app:Hono<any>){
    if(row.role==='admin'){
     if(password.length>0)return fail(c,401,'ADMIN_EMAIL_CODE_REQUIRED','Administrator sign-in uses an emailed code. Leave the password blank.');
     if(typeof c.env.ADMIN_OTP_PEPPER!=='string'||c.env.ADMIN_OTP_PEPPER.length<32)return fail(c,503,'ADMIN_EMAIL_UNAVAILABLE','Administrator verification is not configured.');
-    if(!await permit(c.env.DB,'admin-code-send',ip(c),username.toLowerCase(),3))return fail(c,429,'RATE_LIMITED','Too many code requests. Try again later.');
+    if(!await permit(c.env.DB,'admin-code-send-ip',ip(c),username.toLowerCase(),3)||
+       !await permit(c.env.DB,'admin-code-send-global','global',username.toLowerCase(),3))return fail(c,429,'RATE_LIMITED','Too many code requests. Try again later.');
     const challengeId=crypto.randomUUID();
     const code=createOtpCode();
     const codeHash=await otpDigest(c,challengeId,code);
