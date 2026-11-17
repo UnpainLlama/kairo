@@ -127,7 +127,7 @@ export function ProfilePage() {
         const previous=byKey.get(key);
         if(!previous||legacy.updatedAt>previous.updatedAt)byKey.set(key,legacy);
       }
-      const merged=[...byKey.values()].filter(item=>item.title&&Number.isFinite(item.progressSeconds)).sort((a,b)=>b.updatedAt-a.updatedAt).slice(0,100);
+      const merged=[...byKey.values()].filter(item=>item.title&&Number.isFinite(item.progressSeconds)&&(user?.role==='admin'||item.mediaType!=='youtube')).sort((a,b)=>b.updatedAt-a.updatedAt).slice(0,100);
       if(!active)return;
       setPlaybackItems(merged);
       for(const item of merged){
