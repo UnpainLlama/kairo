@@ -39,6 +39,7 @@ export default function AuthPage() {
   const setupMode = new URLSearchParams(location.search).get('setup') === 'admin';
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [accessEmail, setAccessEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [bootstrapToken, setBootstrapToken] = useState('');
@@ -54,7 +55,7 @@ export default function AuthPage() {
     try {
       if (setupMode) {
         if (password !== confirmPassword) throw new Error('The passwords do not match.');
-        await post('/api/v1/admin/bootstrap', { username, displayName, password }, { 'X-Kairo-Bootstrap': bootstrapToken });
+        await post('/api/v1/admin/bootstrap', { username, displayName, accessEmail, password }, { 'X-Kairo-Bootstrap': bootstrapToken });
         window.dispatchEvent(new Event('kairo:auth-change'));
         navigate(await currentAdminPath(), { replace: true });
         return;
@@ -80,7 +81,7 @@ export default function AuthPage() {
         <h1>{setupMode ? 'Set up administrator' : 'Welcome back'}</h1>
         <p className="kc-auth-copy">
           {setupMode
-            ? 'Create the single administrator account. This setup closes permanently after the account is created.'
+            ? 'Create the single administrator account and bind it to the Gmail address allowed by Cloudflare Access. This setup closes permanently after the account is created.'
             : 'Sign in with the username and password provided for your account.'}
         </p>
         <form onSubmit={submit}>
@@ -104,6 +105,16 @@ export default function AuthPage() {
                   maxLength={40}
                   value={displayName}
                   onChange={event => setDisplayName(event.target.value)}
+                />
+              </label>
+              <label>Approved Cloudflare Access email
+                <input
+                  type="email"
+                  autoComplete="email"
+                  required
+                  maxLength={254}
+                  value={accessEmail}
+                  onChange={event => setAccessEmail(event.target.value)}
                 />
               </label>
               <label>One-time setup token
