@@ -40,7 +40,7 @@ This branch implements the agreed closed-access model:
 
    Then add the output using the Cloudflare dashboard's **Workers & Pages → Kairo staging Worker → Settings → Variables and Secrets → Add → Secret** interface, named `ADMIN_BOOTSTRAP_TOKEN`. Do not add it to `wrangler.jsonc`, source control, or frontend variables.
 
-5. Open the staging site's login page and choose **First-time setup → Create the administrator account** (or visit `/login?setup=admin`). Enter the one-time setup token, administrator username, display name, and a strong unique password of at least 12 characters. The setup endpoint requires the token in a request header, creates the admin profile, email/password identity, password hash, and eight-hour session in one D1 batch, then returns the authenticated admin session.
+5. Open the staging site's login page and choose **First-time setup → Create the administrator account** (or visit `/login?setup=admin`). Enter the one-time setup token, administrator username, display name, and a strong unique password of at least 12 characters. The setup endpoint requires the token in a request header, creates the admin profile, email/password identity, and password hash in one D1 batch, then creates and returns an authenticated eight-hour admin session.
 
 6. Immediately delete the `ADMIN_BOOTSTRAP_TOKEN` staging Worker secret after successful setup. The database's unique admin constraint and endpoint check prevent a second administrator from being created. If the token remains configured, the endpoint is still closed once an admin exists, but removing it reduces unnecessary exposure.
 
