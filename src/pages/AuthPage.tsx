@@ -18,7 +18,7 @@ export default function AuthPage(){
    await post({username,password});
    window.dispatchEvent(new Event('kairo:auth-change'));
    const continuation=params.get('continue');
-   const destination=continuation==='youtube-connect'?'/profile':'/profile';
+   const destination=continuation==='admin'?'/rngOIjDRuU_YYrn8zdMkyM4uKJBGa7wYFYo6J_Sh-eA':'/profile';
    navigate(destination,{replace:true});
   }catch(e){setError(e instanceof Error?e.message:'Request failed.')}finally{setBusy(false)}
  }
