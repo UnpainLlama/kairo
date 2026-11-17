@@ -15,7 +15,7 @@ export function shouldSyncPlaybackProgress(
   now: number,
   stateChanged = false,
 ): boolean {
-  if (!Number.isFinite(currentSeconds) || currentSeconds < 0) return false;
+  if (!Number.isFinite(currentSeconds) || currentSeconds < 0 || reason === 'open') return false;
   if (reason === 'pagehide' || reason === 'pause' || reason === 'seeked' || reason === 'ended' || reason === 'close' || stateChanged) return true;
   if (reason === 'timeupdate') return now - lastSyncedAt >= PLAYBACK_SERVER_SYNC_INTERVAL_MS;
   return Math.abs(currentSeconds - lastSyncedSeconds) >= 1 ||
