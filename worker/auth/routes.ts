@@ -71,7 +71,8 @@ export function registerAuthRoutes(app:Hono<any>){
   const password=typeof b?.password==='string'?b.password:'';
   if(!username||(b?.password!==undefined&&typeof b.password!=='string')||enc.encode(password).length>1024)return fail(c,400,'VALIDATION_ERROR','Enter a valid username.');
   try{
-   if(!await permit(c.env.DB,'login',ip(c),username.toLowerCase(),8))return fail(c,429,'RATE_LIMITED','Too many sign-in attempts. Try again in 15 minutes.');
+   if(!await permit(c.env.DB,'login-ip',ip(c),'global',30)||
+      !await permit(c.env.DB,'login',ip(c),username.toLowerCase(),8))return fail(c,429,'RATE_LIMITED','Too many sign-in attempts. Try again in 15 minutes.');
    const row=await c.env.DB.prepare(`SELECT p.id userId,p.account_status accountStatus,p.role,i.id identityId,pc.password_hash passwordHash
     FROM user_profiles p
     LEFT JOIN auth_identities i ON i.user_id=p.id AND i.provider='email'
@@ -116,7 +117,8 @@ export function registerAuthRoutes(app:Hono<any>){
   const code=typeof b?.code==='string'?b.code:'';
   if(!username||!/^[0-9a-f-]{36}$/i.test(challengeId)||!/^[0-9]{8}$/.test(code))return fail(c,400,'VALIDATION_ERROR','Enter the eight-digit verification code.');
   try{
-   if(!await permit(c.env.DB,'admin-code-verify',ip(c),challengeId,8))return fail(c,429,'RATE_LIMITED','Too many verification attempts. Request a new code later.');
+   if(!await permit(c.env.DB,'admin-code-verify-ip',ip(c),'global',30)||
+      !await permit(c.env.DB,'admin-code-verify',ip(c),challengeId,8))return fail(c,429,'RATE_LIMITED','Too many verification attempts. Request a new code later.');
    const challenge=await c.env.DB.prepare(`SELECT ch.user_id userId,ch.code_hash codeHash,ch.expires_at expiresAt,ch.attempts,
       p.username,p.account_status accountStatus
      FROM admin_login_challenges ch JOIN user_profiles p ON p.id=ch.user_id
