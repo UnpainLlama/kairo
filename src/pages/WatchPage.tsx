@@ -176,7 +176,7 @@ export default function WatchPage() {
           };
           writeLocalMediaPlayback(accountId, sharedSnapshot);
           if (!unified || sharedSnapshot.updatedAt > unified.updatedAt) void syncMediaPlayback(accountId, sharedSnapshot);
-          if (localIsNewer) {
+          if (localIsNewer && !unified) {
             void fetch('/api/v1/me/history/sync', {
               method: 'POST', credentials: 'same-origin',
               headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
