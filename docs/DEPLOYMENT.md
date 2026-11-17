@@ -76,7 +76,7 @@ Open these in a browser (replace the host with your staging URL):
 | `METADATA_CACHE` | KV binding | `wrangler.jsonc` per environment | Short-lived provider response cache (needed on workers.dev) |
 | `APP_ENV` | var | `wrangler.jsonc` | `development`, `staging`, `production` |
 | `APP_BASE_URL` | Worker variable | `wrangler.jsonc` per environment | Canonical public origin used to construct OAuth callback and return URLs |
-| `GOOGLE_CLIENT_ID` | Worker variable | `wrangler.jsonc` per environment | Google OpenID Connect and explicit YouTube authorization client |
+| `GOOGLE_CLIENT_ID` | Worker variable | `wrangler.jsonc` per environment | OAuth client used only for administrator-only YouTube authorization |
 | `METADATA_PROVIDERS` | var | `wrangler.jsonc` | Enabled metadata providers. `anilist` now; add `kitsu` only after its terms are verified |
 | `ALLOWED_ORIGIN` | var, optional | not set | Only for cross-origin API use |
 | `GOOGLE_CLIENT_SECRET` | Worker secret | Cloudflare Worker environment | Required for the administrator's YouTube OAuth connection |
@@ -120,7 +120,7 @@ Playback position is written locally at most once per second and synced to the s
 
 **Still to verify before enabling account features on staging:**
 - Merge/review the current `youtube` promotion PR, then deploy the promoted commit to staging. The final `/api/ready` should report both `database: "ok"` and `schema: "ok"`.
-- Confirm the staging Worker secrets `GOOGLE_CLIENT_SECRET` and `YOUTUBE_TOKEN_ENCRYPTION_KEY` exist. Cloudflare does not expose secret values for read-back; verify by running a controlled sign-in / YouTube connection test after deployment.
+- Confirm the staging Worker secrets `GOOGLE_CLIENT_SECRET` and `YOUTUBE_TOKEN_ENCRYPTION_KEY` exist. Cloudflare does not expose secret values for read-back; verify by running a controlled administrator-only YouTube connection test after deployment.
 - Confirm the exact YouTube and Google callback URLs are registered in the Google OAuth client.
 - Validate provider endpoints and Jikan/MyAnimeList terms as described in `docs/LIVE_CATALOGUE.md`. The staging deploy's `cache: "kv"` proves the binding is present, not that every KV read/write path has been exercised.
 - Migration `0007_youtube_oauth.sql` remains pending on staging until a reviewed staging deployment applies it. Production remains blocked and untouched.
