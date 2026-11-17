@@ -92,18 +92,18 @@ Ratings are on a 0-10 scale. See docs/PROVIDERS.md.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/v1/admin/console-path` | Return the staging-configured private console path to the authenticated administrator only. |
-| POST | `/api/v1/admin/bootstrap` | One-time administrator provisioning; requires the `ADMIN_BOOTSTRAP_TOKEN` secret and is disabled after an admin exists. |
+| POST | `/api/v1/admin/bootstrap` | One-time administrator provisioning; requires `ADMIN_BOOTSTRAP_TOKEN` and is disabled after an admin exists. |
+| GET | `/api/v1/admin/console-path` | Return the current 30-minute console path to an authenticated administrator only. |
 | GET | `/api/v1/admin/accounts` | List standard accounts and the 15-account allocation count. |
 | POST | `/api/v1/admin/accounts` | Create a standard username/password account while below the cap. |
 | PATCH | `/api/v1/admin/accounts/:id/status` | Suspend or reactivate a standard account. |
 | POST | `/api/v1/admin/accounts/:id/password` | Reset a standard account password and revoke its active sessions. |
 
-All administrator routes verify the session role server-side. The database enforces a single administrator role; suspended standard accounts continue to count toward the 15-account allocation limit.
+All administrator routes verify the session role server-side. The console path is an obscurity layer, not an authentication mechanism. A staging Cron Trigger rotates it every 30 minutes. The database enforces a single administrator role; suspended standard accounts continue to count toward the 15-account allocation limit.
 
 ## 3. Authenticated user routes
 
-Kairo uses closed access: public account registration and Google sign-in are disabled. Sign-in uses administrator-issued usernames and passwords. Only an administrator can create, suspend/reactivate, or reset passwords for up to 15 standard accounts. The single admin account is provisioned once through `/api/v1/admin/bootstrap` using the separately configured `ADMIN_BOOTSTRAP_TOKEN` Worker secret.
+Kairo uses closed access: public account registration and Google sign-in are disabled. Standard accounts sign in with administrator-issued usernames and passwords. The administrator submits a username with an empty password to request an eight-digit email code at the `ADMIN_EMAIL` Worker secret address, then verifies it at `POST /api/v1/auth/admin-code/verify`. Codes expire after five minutes, are single-use, and are rate-limited. Only an administrator can create, suspend/reactivate, or reset passwords for up to 15 standard accounts. The admin is provisioned once through `/api/v1/admin/bootstrap` using `ADMIN_BOOTSTRAP_TOKEN`; email delivery uses `RESEND_API_KEY` and optional `AUTH_EMAIL_FROM`.
 
 These routes require a valid Kairo session and server-side ownership checks.
 
