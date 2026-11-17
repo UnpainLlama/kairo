@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-type Account = { id: string; username: string; displayName: string; status: 'active' | 'suspended' | 'deleted'; createdAt: string };
+type Account = { id: string; username: string; accessEmail: string | null; displayName: string; status: 'active' | 'suspended' | 'deleted'; createdAt: string };
 type Payload = { success?: boolean; data?: { accounts?: Account[]; standardAccountCount?: number; standardAccountLimit?: number; account?: Account }; error?: { message?: string } };
 
 async function request(path: string, method = 'GET', body?: unknown): Promise<Payload> {
@@ -28,7 +28,10 @@ export default function AdminPage() {
   const [notice, setNotice] = useState('');
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [accessEmail, setAccessEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [emailEditId, setEmailEditId] = useState<string | null>(null);
+  const [emailEditValue, setEmailEditValue] = useState('');
   const [resetId, setResetId] = useState<string | null>(null);
   const [resetPassword, setResetPassword] = useState('');
 
@@ -62,11 +65,23 @@ export default function AdminPage() {
   async function createAccount(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError(''); setNotice('');
     try {
-      await request('/api/v1/admin/accounts', 'POST', { username, displayName, password });
-      setUsername(''); setDisplayName(''); setPassword('');
+      await request('/api/v1/admin/accounts', 'POST', { username, displayName, accessEmail, password });
+      setUsername(''); setDisplayName(''); setAccessEmail(''); setPassword('');
       setNotice('Account created. Share its credentials with the intended user through a secure channel.');
       await load();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not create account.'); }
+    finally { setBusy(false); }
+  }
+
+  async function saveAccessEmail(event: FormEvent) {
+    event.preventDefault(); if (!emailEditId) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      await request('/api/v1/admin/accounts/' + encodeURIComponent(emailEditId) + '/access-email', 'PATCH', { accessEmail: emailEditValue });
+      setEmailEditId(null); setEmailEditValue('');
+      setNotice('Approved email updated. The account must sign in again; its previous sessions were revoked.');
+      await load();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not update approved email.'); }
     finally { setBusy(false); }
   }
 
@@ -124,10 +139,14 @@ export default function AdminPage() {
       <div style={{ height: 7, background: '#303034', borderRadius: 99, overflow: 'hidden' }}><div style={{ height: '100%', width: Math.min(100, count / limit * 100) + '%', background: '#a1a1aa' }} /></div>
       {loading ? <p>Loading accounts…</p> : accounts.length === 0 ? <p style={{ color: '#a1a1aa' }}>No standard accounts have been created.</p> : <div style={{ marginTop: 16 }}>
         {accounts.map(account => <article key={account.id} style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '14px 0', borderTop: '1px solid #303034' }}>
-          <div><strong>{account.displayName}</strong><div style={{ color: '#a1a1aa', fontSize: 13 }}>@{account.username} · {account.status}</div></div>
+          <div><strong>{account.displayName}</strong><div style={{ color: '#a1a1aa', fontSize: 13 }}>@{account.username} · {account.status}</div><div style={{ color: '#a1a1aa', fontSize: 12 }}>{account.accessEmail ?? 'No approved email assigned'}</div></div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {account.status !== 'deleted' && <><button style={button} disabled={busy} onClick={() => { setResetId(resetId === account.id ? null : account.id); setResetPassword(''); }}>Reset password</button><button style={button} disabled={busy} onClick={() => void setStatus(account)}>{account.status === 'active' ? 'Suspend' : 'Reactivate'}</button></>}
+            {account.status !== 'deleted' && <><button style={button} disabled={busy} onClick={() => { setEmailEditId(emailEditId === account.id ? null : account.id); setEmailEditValue(account.accessEmail ?? ''); }}>Change approved email</button><button style={button} disabled={busy} onClick={() => { setResetId(resetId === account.id ? null : account.id); setResetPassword(''); }}>Reset password</button><button style={button} disabled={busy} onClick={() => void setStatus(account)}>{account.status === 'active' ? 'Suspend' : 'Reactivate'}</button></>}
           </div>
+          {emailEditId === account.id && <form onSubmit={saveAccessEmail} style={{ width: '100%', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <input style={{ ...field, flex: '1 1 260px', marginTop: 0 }} type="email" autoComplete="off" maxLength={254} placeholder="Approved email address" required value={emailEditValue} onChange={event => setEmailEditValue(event.target.value)} />
+            <button style={button} disabled={busy}>Save approved email</button>
+          </form>}
           {resetId === account.id && <form onSubmit={savePassword} style={{ width: '100%', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             <input style={{ ...field, flex: '1 1 260px', marginTop: 0 }} type="password" minLength={12} maxLength={1024} autoComplete="new-password" placeholder="New password (12+ characters)" required value={resetPassword} onChange={event => setResetPassword(event.target.value)} />
             <button style={button} disabled={busy}>Save password</button>
@@ -138,10 +157,11 @@ export default function AdminPage() {
 
     <section style={surface}>
       <h2 style={{ marginTop: 0 }}>Create standard account</h2>
-      <p style={{ color: '#a1a1aa' }}>New accounts receive the regular Kairo interface. They do not receive administrator or YouTube permissions.</p>
+      <p style={{ color: '#a1a1aa' }}>New accounts receive the regular Kairo interface. They do not receive administrator or YouTube permissions. Add the exact same email to the Cloudflare Access allowlist before inviting them.</p>
       <form onSubmit={createAccount} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
         <label>Username<input style={field} autoComplete="off" minLength={3} maxLength={64} pattern="[A-Za-z0-9._-]+" required value={username} onChange={event => setUsername(event.target.value)} /></label>
         <label>Display name<input style={field} autoComplete="off" minLength={2} maxLength={40} required value={displayName} onChange={event => setDisplayName(event.target.value)} /></label>
+        <label>Approved email<input style={field} type="email" autoComplete="off" maxLength={254} required value={accessEmail} onChange={event => setAccessEmail(event.target.value)} /></label>
         <label>Password<input style={field} type="password" autoComplete="new-password" minLength={12} maxLength={1024} required value={password} onChange={event => setPassword(event.target.value)} /></label>
         <div style={{ display: 'flex', alignItems: 'end' }}><button style={{ ...button, width: '100%' }} disabled={busy || count >= limit}>{busy ? 'Please wait…' : count >= limit ? 'Account limit reached' : 'Create account'}</button></div>
       </form>
