@@ -12,6 +12,10 @@ describe('playback progress sync policy', () => {
     expect(PLAYBACK_SERVER_SYNC_INTERVAL_MS).toBe(60_000);
   });
 
+  it('does not write a new cloud checkpoint merely because a player initialized', () => {
+    expect(shouldSyncPlaybackProgress('open', 0, 0, 45, 120_000)).toBe(false);
+  });
+
   it('flushes changed positions on play, pause, seek, end and page exit', () => {
     for (const reason of ['play', 'pause', 'seeked', 'ended', 'pagehide'] as const) {
       expect(shouldSyncPlaybackProgress(reason, 10_000, 30, 35, 10_100)).toBe(true);
