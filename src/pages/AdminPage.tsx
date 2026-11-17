@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-type Account = { id: string; username: string; displayName: string; status: 'active' | 'suspended'; createdAt: string };
+type Account = { id: string; username: string; displayName: string; status: 'active' | 'suspended' | 'deleted'; createdAt: string };
 type Payload = { success?: boolean; data?: { accounts?: Account[]; standardAccountCount?: number; standardAccountLimit?: number; account?: Account }; error?: { message?: string } };
 
 async function request(path: string, method = 'GET', body?: unknown): Promise<Payload> {
@@ -126,8 +126,7 @@ export default function AdminPage() {
         {accounts.map(account => <article key={account.id} style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '14px 0', borderTop: '1px solid #303034' }}>
           <div><strong>{account.displayName}</strong><div style={{ color: '#a1a1aa', fontSize: 13 }}>@{account.username} · {account.status}</div></div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            <button style={button} disabled={busy} onClick={() => { setResetId(resetId === account.id ? null : account.id); setResetPassword(''); }}>Reset password</button>
-            <button style={button} disabled={busy} onClick={() => void setStatus(account)}>{account.status === 'active' ? 'Suspend' : 'Reactivate'}</button>
+            {account.status !== 'deleted' && <><button style={button} disabled={busy} onClick={() => { setResetId(resetId === account.id ? null : account.id); setResetPassword(''); }}>Reset password</button><button style={button} disabled={busy} onClick={() => void setStatus(account)}>{account.status === 'active' ? 'Suspend' : 'Reactivate'}</button></>}
           </div>
           {resetId === account.id && <form onSubmit={savePassword} style={{ width: '100%', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             <input style={{ ...field, flex: '1 1 260px', marginTop: 0 }} type="password" minLength={12} maxLength={1024} autoComplete="new-password" placeholder="New password (12+ characters)" required value={resetPassword} onChange={event => setResetPassword(event.target.value)} />
