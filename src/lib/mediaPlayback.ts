@@ -124,9 +124,9 @@ function readPendingSync(userId: string): PendingPlaybackSync[] {
         parseMediaPlayback((item as PendingPlaybackSync).snapshot) &&
         Number.isInteger((item as PendingPlaybackSync).attempts) &&
         Number.isFinite((item as PendingPlaybackSync).nextAttemptAt) &&
-        typeof (item as PendingPlaybackSync).sessionId === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test((item as PendingPlaybackSync).sessionId) &&
         Number.isSafeInteger((item as PendingPlaybackSync).sequence) &&
-        (item as PendingPlaybackSync).sequence > 0)
+        (item as PendingPlaybackSync).sequence > 0 && (item as PendingPlaybackSync).sequence <= 2_147_483_647)
     );
   } catch { return []; }
 }
