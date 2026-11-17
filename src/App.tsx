@@ -124,7 +124,7 @@ export default function App() {
   const activeMenuItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : menuItems;
   const activeMobileItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : mobileNavItems;
   const [menuOpen, setMenuOpen] = useState(false);
-  const currentUser = account.status === 'signed-in' ? { displayName: account.displayName ?? 'Account', email: account.email } : null;
+  const currentUser = account.status === 'signed-in' ? { displayName: account.displayName ?? 'Account', email: account.email, username: account.username } : null;
   const [authBusy, setAuthBusy] = useState(false);
   const navigate = useNavigate();
   const menuRef = useRef<HTMLDivElement>(null);
@@ -190,7 +190,7 @@ export default function App() {
               <section className="kc-menu-popover" id="kc-navigation-menu" aria-label="Kairo navigation menu">
                 <Link to={currentUser ? "/profile" : "/login"} className="kc-menu-profile" onClick={closeMenu}>
                   <span className="kc-menu-avatar"><UserRound size={19} aria-hidden="true" /></span>
-                  <span><b>{currentUser?.displayName ?? 'Profile'}</b><small>{currentUser?.email ?? 'Guest account'}</small></span>
+                  <span><b>{currentUser?.displayName ?? 'Profile'}</b><small>{currentUser?.username ? '@' + currentUser.username : currentUser?.email ?? 'Guest account'}</small></span>
                   <ChevronRight size={15} aria-hidden="true" />
                 </Link>
                 <div className="kc-menu-section-label">{isYouTubeMode ? 'Video' : isMoviesMode ? 'Movies' : 'Media'}</div>
