@@ -212,7 +212,7 @@ export default function WatchPage() {
   }, [accountId, slug, parsedEpisode, selectedServer?.id]);
 
   const persistPlaybackProgress = useCallback((seconds: number, reason: PlaybackSaveReason, playerState: SavedPlayerState = {}) => {
-    if (!accountResolved || !animeForProgress || !episodeForProgress || !Number.isFinite(seconds)) return;
+    if (reason === 'open' || !accountResolved || !animeForProgress || !episodeForProgress || !Number.isFinite(seconds)) return;
     const duration = Number(episodeForProgress.durationSeconds);
     const position = Math.max(0, Math.min(
       Number.isFinite(duration) && duration > 0 ? duration : 86400,
