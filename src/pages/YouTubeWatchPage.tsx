@@ -152,9 +152,9 @@ export default function YouTubeWatchPage() {
             completed: Boolean(details.durationSeconds && resume >= details.durationSeconds - 2),
             playerState: unified?.playerState ?? {}, updatedAt: Math.max(Date.now(), chosenUpdatedAt),
           };
-          if (snapshot) {
+          if (snapshot && accountId && !unified && (resume > 0 || history || preferLegacyLocal)) {
             writeLocalMediaPlayback(accountId, snapshot);
-            if (accountId && !unified && (resume > 0 || history || preferLegacyLocal)) void syncMediaPlayback(accountId, snapshot);
+            void syncMediaPlayback(accountId, snapshot);
           }
           if (accountId && (preferLegacyLocal || unifiedUpdatedAt > remoteUpdatedAt) && !madeForKids) {
             void fetch('/api/v1/youtube/history', {
