@@ -133,7 +133,7 @@ export default function App() {
     if (!isAdmin) { setAdminPath(null); return; }
     fetch('/api/v1/admin/console-path', { credentials: 'same-origin', headers: { Accept: 'application/json' }, cache: 'no-store' })
       .then(response => response.ok ? response.json() : null)
-      .then(payload => { if (active && typeof payload?.data?.path === 'string' && /^\\/[A-Za-z0-9_-]{32,128}$/.test(payload.data.path)) setAdminPath(payload.data.path); })
+      .then(payload => { if (active && typeof payload?.data?.path === 'string' && /^\/[A-Za-z0-9_-]{32,128}$/.test(payload.data.path)) setAdminPath(payload.data.path); })
       .catch(() => { if (active) setAdminPath(null); });
     return () => { active = false; };
   }, [isAdmin]);
