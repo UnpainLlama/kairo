@@ -27,8 +27,6 @@ import AdminPage from './pages/AdminPage';
 import { useKairoAccount } from './lib/AccountProvider';
 import { AboutPage, AccountPage, HistoryPage, NotFoundPage, ProfilePage } from './pages/StaticPages';
 
-const ADMIN_PATH = '/rngOIjDRuU_YYrn8zdMkyM4uKJBGa7wYFYo6J_Sh-eA';
-
 type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean; active?: boolean };
 
 const navItems: NavItem[] = [
@@ -117,6 +115,7 @@ export default function App() {
   const { pathname, search } = useLocation();
   const account = useKairoAccount();
   const isAdmin = account.status === 'signed-in' && account.role === 'admin';
+  const [adminPath, setAdminPath] = useState<string | null>(null);
   const isYouTubeMode = isAdmin && pathname.startsWith('/youtube');
   const isMoviesMode = pathname === '/movies' || pathname.startsWith('/movies/');
   const isMoviesWatchMode = pathname.startsWith('/movies/') && pathname.endsWith('/watch');
@@ -128,6 +127,16 @@ export default function App() {
   const [authBusy, setAuthBusy] = useState(false);
   const navigate = useNavigate();
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (!isAdmin) { setAdminPath(null); return; }
+    fetch('/api/v1/admin/console-path', { credentials: 'same-origin', headers: { Accept: 'application/json' }, cache: 'no-store' })
+      .then(response => response.ok ? response.json() : null)
+      .then(payload => { if (active && typeof payload?.data?.path === 'string' && /^\\/[A-Za-z0-9_-]{32,128}$/.test(payload.data.path)) setAdminPath(payload.data.path); })
+      .catch(() => { if (active) setAdminPath(null); });
+    return () => { active = false; };
+  }, [isAdmin]);
 
   useEffect(() => { window.scrollTo({ top: 0, left: 0, behavior: 'auto' }); }, [pathname, search]);
 
@@ -155,7 +164,7 @@ export default function App() {
 
   const closeMenu = (_event?: MouseEvent<HTMLAnchorElement>) => setMenuOpen(false);
 
-  if (pathname === ADMIN_PATH) return <AdminOnly><AdminPage /></AdminOnly>;
+  if (adminPath && pathname === adminPath) return <AdminOnly><AdminPage /></AdminOnly>;
 
   return (
     <div className={`kc-app${pathname === '/' ? ' kc-home-view' : ''}${isYouTubeMode ? ' yt-app' : ''}${isMoviesMode ? ' mv-app' : ''}${isMoviesWatchMode ? ' mv-watch-app' : ''}`}>
