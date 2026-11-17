@@ -224,6 +224,7 @@ export function AccountPage({ title }: { title: string }) {
       .finally(()=>{if(active)setYoutubeLoaded(true)});
     return()=>{active=false};
   },[title,user?.id,location.key]);
+  const youtubeStatus=new URLSearchParams(location.search).get('youtube');
   const youtubeMessages:Record<string,string>={
     connected:'YouTube is connected. Kairo can now request access to your subscriptions.',
     cancelled:'You cancelled the YouTube connection.',
@@ -260,7 +261,7 @@ export function AccountPage({ title }: { title: string }) {
       {youtubeStatus&&<p role="status" className="kc-auth-copy">{youtubeMessages[youtubeStatus]??'YouTube connection status updated.'}</p>}
       {youtubeError&&<p role="alert" className="kc-auth-error">{youtubeError}</p>}</>}
     </section>
-    :title==='Settings'&&loaded?<EmptyState title="Sign in to manage your account"><Link className="kc-link" to="/login">Sign in to manage your account.</EmptyState>
+    :title==='Settings'&&loaded?<EmptyState title="Sign in to manage your account"><Link className="kc-link" to="/login">Sign in</Link> to manage your account.</EmptyState>
     :<EmptyState title="Not available yet">{title} features are still being built. You can still <Link className="kc-link" to="/search">search</Link> and browse.</EmptyState>}
   </>;
 }
