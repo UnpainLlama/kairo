@@ -92,6 +92,7 @@ Ratings are on a 0-10 scale. See docs/PROVIDERS.md.
 
 | Method | Path | Purpose |
 |---|---|---|
+| GET | `/api/v1/admin/console-path` | Return the staging-configured private console path to the authenticated administrator only. |
 | POST | `/api/v1/admin/bootstrap` | One-time administrator provisioning; requires the `ADMIN_BOOTSTRAP_TOKEN` secret and is disabled after an admin exists. |
 | GET | `/api/v1/admin/accounts` | List standard accounts and the 15-account allocation count. |
 | POST | `/api/v1/admin/accounts` | Create a standard username/password account while below the cap. |
