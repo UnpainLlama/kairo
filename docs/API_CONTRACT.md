@@ -88,9 +88,23 @@ Search parameters:
 
 Ratings are on a 0-10 scale. See docs/PROVIDERS.md.
 
+## 3a. Administrator routes
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/v1/admin/bootstrap` | One-time administrator provisioning; requires the `ADMIN_BOOTSTRAP_TOKEN` secret and is disabled after an admin exists. |
+| GET | `/api/v1/admin/accounts` | List standard accounts and the 15-account allocation count. |
+| POST | `/api/v1/admin/accounts` | Create a standard username/password account while below the cap. |
+| PATCH | `/api/v1/admin/accounts/:id/status` | Suspend or reactivate a standard account. |
+| POST | `/api/v1/admin/accounts/:id/password` | Reset a standard account password and revoke its active sessions. |
+
+All administrator routes verify the session role server-side. The database enforces a single administrator role; suspended standard accounts continue to count toward the 15-account allocation limit.
+
 ## 3. Authenticated user routes
 
-These routes require a valid identity-provider session/token and server-side ownership checks.
+Kairo uses closed access: public account registration and Google sign-in are disabled. Sign-in uses administrator-issued usernames and passwords. Only an administrator can create, suspend/reactivate, or reset passwords for up to 15 standard accounts. The single admin account is provisioned once through `/api/v1/admin/bootstrap` using the separately configured `ADMIN_BOOTSTRAP_TOKEN` Worker secret.
+
+These routes require a valid Kairo session and server-side ownership checks.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -124,14 +138,14 @@ Validate finite non-negative numbers, enforce sensible duration/position bounds,
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/v1/youtube/channels/search?q=...` | Search public YouTube channels using the server-side API key. |
-| GET | `/api/v1/youtube/videos/search?q=...` | Search public YouTube videos by keyword, with sort, duration and page-token filters. |
+| GET | `/api/v1/youtube/channels/search?q=...` | Administrator-only YouTube channel search. |
+| GET | `/api/v1/youtube/videos/search?q=...` | Administrator-only YouTube video search. |
 | GET | `/api/v1/youtube/channels` | List the user's channels saved in Kairo. |
 | POST | `/api/v1/youtube/channels` | Add a public channel to the user's Kairo feed. |
 | DELETE | `/api/v1/youtube/channels/:channelId` | Remove a channel from the user's Kairo feed. |
 | GET | `/api/v1/youtube/feed` | Fetch recent public uploads from the user's saved Kairo channels. |
 
-- Channel discovery, adding channels, loading the saved-channel feed, and saved-channel management require a valid Kairo session. Public keyword video search does not require a Kairo or YouTube account; guest searches are rate-limited by client IP and share the project's daily search quota. Public YouTube data uses the server-side `YOUTUBE_DATA_API_KEY`; users do not need to connect a YouTube/Google account.
+- Every YouTube page and API route, including metadata, keyword search, channel search, feed, OAuth connection, playback history and Watch Later, requires a valid administrator session. Anonymous visitors and standard accounts receive a not-found response. The restriction is enforced in the Worker, not only in the frontend.
 - Kairo's channel list is stored separately in `youtube_feed_channels`; adding a channel does not subscribe the user to it on YouTube and does not change their YouTube subscriptions.
 - Uses the official YouTube Data API with a Worker secret (`YOUTUBE_DATA_API_KEY`). The key is added only to server-to-server requests and is never returned to the browser or included in application logs. OAuth remains separate and optional for future account-specific features such as importing actual YouTube subscriptions.
 - Kairo does not impose a maximum number of saved channels. Feed requests process up to 20 channels at a time, with up to four uploads per channel, to keep each Worker request within a predictable API-call budget. Each saved channel's uploads-playlist ID is persisted in D1 at add time; legacy saved channels are hydrated on their next feed request. Subsequent requests load older uploads from the next channel batch or the next page of each uploads playlist. Cursor state is stored in D1, scoped to the authenticated user, and expires after one hour.
