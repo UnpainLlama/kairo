@@ -567,12 +567,14 @@ app.post('/api/v1/me/playback', async (c) => {
   const title = typeof item.title === 'string' ? item.title.trim() : '';
   const progress = Number(item.progressSeconds);
   const duration = item.durationSeconds === null || item.durationSeconds === undefined ? null : Number(item.durationSeconds);
-  const clientTime = Number(item.updatedAt);
+  const syncSessionId = typeof item.syncSessionId === 'string' ? item.syncSessionId : '';
+  const syncSequence = Number(item.syncSequence);
   if (!['anime', 'movie', 'youtube'].includes(mediaType) || !mediaKey || mediaKey.length > 256 ||
       /[\u0000-\u001f]/.test(mediaKey) || !title || title.length > 300 ||
       !Number.isFinite(progress) || progress < 0 || progress > 86400 ||
       (duration !== null && (!Number.isFinite(duration) || duration <= 0 || duration > 86400)) ||
-      !Number.isFinite(clientTime) || clientTime <= 0) {
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(syncSessionId) ||
+      !Number.isSafeInteger(syncSequence) || syncSequence < 1 || syncSequence > 2_147_483_647) {
     return fail(c, 400, 'VALIDATION_ERROR', 'The playback progress record is invalid.');
   }
   if (mediaType === 'movie' && !/^\d{1,12}$/.test(mediaKey)) return fail(c, 400, 'VALIDATION_ERROR', 'The movie playback key must be a TMDB ID.');
@@ -593,22 +595,26 @@ app.post('/api/v1/me/playback', async (c) => {
   if (typeof rawState.subtitleLanguage === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(rawState.subtitleLanguage)) playerState.subtitleLanguage = rawState.subtitleLanguage;
   if (typeof rawState.sourceId === 'string' && /^[A-Za-z0-9_-]{1,100}$/.test(rawState.sourceId)) playerState.sourceId = rawState.sourceId;
   const now = Date.now();
-  const updatedAt = Math.min(Math.floor(clientTime), now + 60_000);
+  const updatedAt = now;
   const progressSeconds = duration === null ? Math.min(86400, progress) : Math.min(duration, progress);
   try {
-    await c.env.DB.prepare(`
+    const result = await c.env.DB.prepare(`
       INSERT INTO user_media_playback
         (user_id, media_type, media_key, title, artwork_url, duration_seconds,
-         progress_seconds, completed, player_state_json, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         progress_seconds, completed, player_state_json, updated_at, session_id, sequence)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(user_id, media_type, media_key) DO UPDATE SET
         title=excluded.title, artwork_url=excluded.artwork_url, duration_seconds=excluded.duration_seconds,
         progress_seconds=excluded.progress_seconds, completed=excluded.completed,
-        player_state_json=excluded.player_state_json, updated_at=excluded.updated_at
-      WHERE excluded.updated_at >= user_media_playback.updated_at
+        player_state_json=excluded.player_state_json, updated_at=excluded.updated_at,
+        session_id=excluded.session_id, sequence=excluded.sequence
+      WHERE user_media_playback.session_id IS NULL
+         OR (excluded.session_id = user_media_playback.session_id AND excluded.sequence > user_media_playback.sequence)
+         OR (excluded.session_id <> user_media_playback.session_id AND excluded.updated_at > user_media_playback.updated_at)
     `).bind(user.id, mediaType, mediaKey, title, artworkUrl, duration, progressSeconds,
-      item.completed === true ? 1 : 0, JSON.stringify(playerState), updatedAt).run();
-    return ok(c, { saved: true, updatedAt });
+      item.completed === true ? 1 : 0, JSON.stringify(playerState), updatedAt, syncSessionId, syncSequence).run();
+    const saved = Number(result.meta.changes ?? 0) > 0;
+    return ok(c, { saved, stale: !saved, updatedAt });
   } catch (error) {
     logError(c, 'media_playback_sync_failed', error);
     return fail(c, 503, 'PLAYBACK_UNAVAILABLE', 'Could not sync playback progress.');
