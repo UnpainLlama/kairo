@@ -205,17 +205,19 @@ export default function App() {
                 <div className="kc-menu-section-label">{isYouTubeMode ? 'Video' : isMoviesMode ? 'Movies' : 'Media'}</div>
                 <div className="kc-menu-grid">
                   {activeMenuItems.slice(0, isYouTubeMode || isMoviesMode ? 5 : 4).map((item) => <MenuLink key={item.label} {...item} onNavigate={closeMenu} />)}
-                  {isMoviesMode ? <>
-                    <MenuLink to="/browse/anime" label="Anime" icon={Tv} onNavigate={closeMenu} />
-                    {isAdmin && <MenuLink to="/youtube" label="YouTube" icon={Youtube} onNavigate={closeMenu} />}
-                  </> : (
-                    {isAdmin && <NavLink to={isYouTubeMode ? '/' : '/youtube'} className={({ isActive }) => `kc-menu-tile${isActive ? ' active' : ''}`} onClick={closeMenu}>
+                  {isMoviesMode ? (
+                    <>
+                      <MenuLink to="/browse/anime" label="Anime" icon={Tv} onNavigate={closeMenu} />
+                      {isAdmin && <MenuLink to="/youtube" label="YouTube" icon={Youtube} onNavigate={closeMenu} />}
+                    </>
+                  ) : (
+                    isAdmin && <NavLink to={isYouTubeMode ? '/' : '/youtube'} className={({ isActive }) => `kc-menu-tile${isActive ? ' active' : ''}`} onClick={closeMenu}>
                       {isYouTubeMode
                         ? <Tv size={17} strokeWidth={1.8} aria-hidden="true" />
                         : <Youtube size={17} strokeWidth={1.8} aria-hidden="true" />}
                       <span>{isYouTubeMode ? 'Anime' : 'YouTube'}</span>
                       <ChevronRight size={13} className="kc-menu-chevron" aria-hidden="true" />
-                    </NavLink>}</>
+                    </NavLink>
                   )}
                 </div>
                 {!isYouTubeMode && !isMoviesMode && <>
