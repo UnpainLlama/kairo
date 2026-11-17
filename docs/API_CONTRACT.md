@@ -94,8 +94,9 @@ Ratings are on a 0-10 scale. See docs/PROVIDERS.md.
 |---|---|---|
 | POST | `/api/v1/admin/bootstrap` | One-time administrator provisioning; requires `ADMIN_BOOTSTRAP_TOKEN` and is disabled after an admin exists. |
 | GET | `/api/v1/admin/console-path` | Return the current 30-minute console path to an authenticated administrator only. |
-| GET | `/api/v1/admin/accounts` | List standard accounts and the 15-account allocation count. |
-| POST | `/api/v1/admin/accounts` | Create a standard username/password account while below the cap. |
+| GET | `/api/v1/admin/accounts` | List standard accounts, their unique Cloudflare Access email bindings, and the 15-account allocation count. |
+| POST | `/api/v1/admin/accounts` | Create a standard username/password account bound to one approved Access email while below the cap. |
+| PATCH | `/api/v1/admin/accounts/:id/access-email` | Change a standard account's unique Access email and revoke its sessions. |
 | PATCH | `/api/v1/admin/accounts/:id/status` | Suspend or reactivate a standard account. |
 | POST | `/api/v1/admin/accounts/:id/password` | Reset a standard account password and revoke its active sessions. |
 
@@ -103,16 +104,20 @@ All administrator routes verify the session role server-side. The console path i
 
 ## 3. Authenticated user routes
 
-Kairo uses closed access: public standard-account registration and Google sign-in are disabled. Standard accounts sign in with administrator-issued usernames and passwords. The single administrator is created once through `POST /api/v1/admin/bootstrap`, protected by the temporary `ADMIN_BOOTSTRAP_TOKEN` Worker secret. The bootstrap form collects the administrator username, display name, and password. The endpoint is disabled after an administrator exists. Administrator login uses username/password and creates an eight-hour session; standard-account sessions retain the existing 30-day lifetime.
+Kairo uses closed access: public standard-account registration and Google sign-in are disabled. Cloudflare Access is the outer staging entrance and is configured with exact individual email addresses, not a Gmail-domain wildcard. The Worker verifies the signed Cloudflare Access application JWT (signature, issuer, audience and token times) and binds each Kairo account and session to the verified Access email. A Kairo username/password is required for personal features; invited visitors may browse the catalogue without a Kairo account.
+
+Standard accounts are created by an administrator with a username, password, and unique approved Access email. Changing the assigned email revokes all sessions for that account. The Cloudflare Access allowlist must be maintained separately by the operator.
+
+The single administrator is created once through `POST /api/v1/admin/bootstrap`, protected by the temporary `ADMIN_BOOTSTRAP_TOKEN` Worker secret and current verified Access identity. The endpoint also records permanent bootstrap completion in D1. Administrator login uses username/password and creates an eight-hour session; standard-account sessions retain the existing 30-day lifetime. Five incorrect administrator passwords within the one-hour failure window lock the administrator login until manually cleared in the staging D1 console.
 
 Authentication routes:
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/v1/auth/login` | Sign in using username/password. Administrator sessions last eight hours; standard sessions last 30 days. |
-| POST | `/api/v1/admin/bootstrap` | One-time administrator creation; requires the `X-Kairo-Bootstrap` header and is disabled after an admin exists. |
+| POST | `/api/v1/auth/login` | Sign in using username/password matched to the current verified Access email. Administrator sessions last eight hours; standard sessions last 30 days. |
+| POST | `/api/v1/admin/bootstrap` | One-time administrator creation; requires the `X-Kairo-Bootstrap` header and the current verified Access email; permanently disabled after initialization. |
 
-The bootstrap token is temporary and should be removed from the staging Worker secrets immediately after successful administrator setup. Passwords are stored as salted PBKDF2 hashes; plaintext passwords are never stored.
+The bootstrap token is temporary and should be removed from the staging Worker secrets immediately after successful administrator setup. Passwords are stored as salted PBKDF2 hashes; plaintext passwords are never stored. The current administrator authentication intentionally has no Kairo MFA; see `docs/CLOSED_ACCESS_SETUP.md` for outstanding production security work and the manual lockout recovery procedure.
 
 These routes require a valid Kairo session and server-side ownership checks.
 
