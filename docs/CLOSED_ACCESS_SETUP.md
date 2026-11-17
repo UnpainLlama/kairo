@@ -32,7 +32,7 @@ Do not run these steps against production.
 5. Provision the first administrator by POSTing to the staging Worker endpoint /api/v1/admin/bootstrap, sending the bootstrap token in the X-Kairo-Bootstrap header and a JSON body containing username, displayName, and a newly generated password. Do not put the token or password in source control, issue comments, or shell history.
 6. Verify that the administrator can sign in, reach the private console, create a standard account, suspend/reactivate it, and reset its password.
 7. Verify that anonymous visitors and standard accounts cannot open YouTube pages or call any YouTube API route.
-7. Remove the ADMIN_BOOTSTRAP_TOKEN staging secret after the administrator is created. The endpoint is already disabled once an admin exists, but removing the bootstrap secret is good hygiene.
+8. Remove the ADMIN_BOOTSTRAP_TOKEN staging secret after the administrator is created. The endpoint is already disabled once an admin exists, but removing the bootstrap secret is good hygiene.
 9. Deploy to staging only after the migration and security tests have been explicitly approved. Do not deploy production as part of this work.
 
 ## Security notes
