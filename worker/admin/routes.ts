@@ -1,3 +1,4 @@
+import { normalizeAccessEmail } from '../auth/cloudflareAccess';
 import { hashPassword } from '../auth/password';
 import { createSession, sessionCookie, findSessionUser } from '../auth/session';
 
@@ -95,30 +96,37 @@ export function registerAdminRoutes(app: any) {
     if (typeof expected !== 'string' || expected.length < 32 || !supplied || !sameSecret(expected, supplied)) {
       return fail(c, 404, 'NOT_FOUND', 'Not found.');
     }
-    const adminCount = await c.env.DB.prepare("SELECT COUNT(*) AS count FROM user_profiles WHERE role='admin'").first<{ count: number }>();
-    if (Number(adminCount?.count ?? 0) !== 0) return fail(c, 404, 'NOT_FOUND', 'Not found.');
+    const setupState = await c.env.DB.prepare('SELECT admin_bootstrap_completed_at AS completedAt FROM app_security_state WHERE singleton_id=1').first<{ completedAt: number | null }>();
+    if (!setupState || setupState.completedAt !== null) return fail(c, 404, 'NOT_FOUND', 'Not found.');
     const body: any = await c.req.json().catch(() => null);
     const username = usernameOf(body?.username);
     const displayName = typeof body?.displayName === 'string' ? body.displayName.trim() : '';
-    if (!username || displayName.length < 2 || displayName.length > 40 || !passwordOf(body?.password)) {
-      return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid username, display name, and password of at least 12 characters.');
+    const assertedEmail = normalizeAccessEmail(c.get('accessEmail'));
+    const submittedEmail = normalizeAccessEmail(body?.accessEmail);
+    const accessEmail = c.env.ACCESS_ENFORCED === 'true' ? assertedEmail : (submittedEmail ?? assertedEmail);
+    if (!username || displayName.length < 2 || displayName.length > 40 || !passwordOf(body?.password) ||
+        !accessEmail || (assertedEmail && submittedEmail && assertedEmail !== submittedEmail)) {
+      return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid username, display name, approved email address, and password of at least 12 characters.');
     }
     try {
-      const uid = crypto.randomUUID(), identityId = crypto.randomUUID();
+      const uid = crypto.randomUUID(), identityId = crypto.randomUUID(), now = Date.now();
       const passwordHash = await hashPassword(body.password);
       const results = await c.env.DB.batch([
-        c.env.DB.prepare("INSERT INTO user_profiles (id,identity_subject,display_name,username,account_status,role) VALUES (?,?,?,?, 'active','admin')")
-          .bind(uid, 'closed-admin:' + crypto.randomUUID(), displayName, username),
+        c.env.DB.prepare("INSERT INTO user_profiles (id,identity_subject,display_name,username,access_email,account_status,role) SELECT ?,?,?,?,?, 'active','admin' WHERE EXISTS (SELECT 1 FROM app_security_state WHERE singleton_id=1 AND admin_bootstrap_completed_at IS NULL) AND NOT EXISTS (SELECT 1 FROM user_profiles WHERE role='admin')")
+          .bind(uid, 'closed-admin:' + crypto.randomUUID(), displayName, username, accessEmail),
         c.env.DB.prepare("INSERT INTO auth_identities (id,user_id,provider,provider_subject) SELECT ?,id,'email',? FROM user_profiles WHERE id=?")
           .bind(identityId, username, uid),
         c.env.DB.prepare('INSERT INTO password_credentials (auth_identity_id,password_hash) SELECT ?,? FROM auth_identities WHERE id=?')
           .bind(identityId, passwordHash, identityId),
+        c.env.DB.prepare("UPDATE app_security_state SET admin_bootstrap_completed_at=? WHERE singleton_id=1 AND admin_bootstrap_completed_at IS NULL AND EXISTS (SELECT 1 FROM user_profiles WHERE id=? AND role='admin')")
+          .bind(now, uid),
       ]);
-      if (Number(results[0]?.meta?.changes ?? 0) !== 1) return fail(c, 409, 'ADMIN_ALREADY_EXISTS', 'Administrator setup is no longer available.');
+      if (Number(results[0]?.meta?.changes ?? 0) !== 1 || Number(results[3]?.meta?.changes ?? 0) !== 1) return fail(c, 409, 'ADMIN_ALREADY_EXISTS', 'Administrator setup is no longer available.');
       const session = await createSession(c.env.DB, uid, {
         userAgent: c.req.header('User-Agent') ?? undefined,
         ipPrefix: c.req.header('CF-Connecting-IP') ?? 'unknown',
         ttlSeconds: 8 * 60 * 60,
+        accessEmail: c.env.ACCESS_ENFORCED === 'true' ? accessEmail : null,
       });
       c.header('Set-Cookie', sessionCookie(session.token, new URL(c.req.url).protocol === 'https:', session.ttlSeconds));
       const path = await ensureConsolePath(c.env.DB);
@@ -134,7 +142,7 @@ export function registerAdminRoutes(app: any) {
     if (!admin) return fail(c, 404, 'NOT_FOUND', 'Not found.');
     try {
       const [accounts, count] = await Promise.all([
-        c.env.DB.prepare("SELECT id,username,display_name AS displayName,account_status AS status,created_at AS createdAt FROM user_profiles WHERE role='user' ORDER BY created_at ASC").all(),
+        c.env.DB.prepare("SELECT id,username,access_email AS accessEmail,display_name AS displayName,account_status AS status,created_at AS createdAt FROM user_profiles WHERE role='user' ORDER BY created_at ASC").all(),
         c.env.DB.prepare("SELECT COUNT(*) AS count FROM user_profiles WHERE role='user'").first<{ count: number }>(),
       ]);
       return ok(c, { accounts: accounts.results ?? [], standardAccountCount: Number(count?.count ?? 0), standardAccountLimit: 15 });
@@ -151,15 +159,16 @@ export function registerAdminRoutes(app: any) {
     const body: any = await c.req.json().catch(() => null);
     const username = usernameOf(body?.username);
     const displayName = typeof body?.displayName === 'string' ? body.displayName.trim() : '';
-    if (!username || displayName.length < 2 || displayName.length > 40 || !passwordOf(body?.password)) {
-      return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid username, display name, and password of at least 12 characters.');
+    const accessEmail = normalizeAccessEmail(body?.accessEmail);
+    if (!username || displayName.length < 2 || displayName.length > 40 || !accessEmail || !passwordOf(body?.password)) {
+      return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid username, approved email address, display name, and password of at least 12 characters.');
     }
     try {
       const uid = crypto.randomUUID(), identityId = crypto.randomUUID();
       const passwordHash = await hashPassword(body.password);
       const results = await c.env.DB.batch([
-        c.env.DB.prepare("INSERT INTO user_profiles (id,identity_subject,display_name,username,account_status,role) SELECT ?,?,?,?,'active','user' WHERE (SELECT COUNT(*) FROM user_profiles WHERE role='user') < 15")
-          .bind(uid, 'closed-user:' + crypto.randomUUID(), displayName, username),
+        c.env.DB.prepare("INSERT INTO user_profiles (id,identity_subject,display_name,username,access_email,account_status,role) SELECT ?,?,?,?,?, 'active','user' WHERE (SELECT COUNT(*) FROM user_profiles WHERE role='user') < 15")
+          .bind(uid, 'closed-user:' + crypto.randomUUID(), displayName, username, accessEmail),
         c.env.DB.prepare("INSERT INTO auth_identities (id,user_id,provider,provider_subject) SELECT ?,id,'email',? FROM user_profiles WHERE id=?")
           .bind(identityId, username, uid),
         c.env.DB.prepare('INSERT INTO password_credentials (auth_identity_id,password_hash) SELECT ?,? FROM auth_identities WHERE id=?')
@@ -168,9 +177,29 @@ export function registerAdminRoutes(app: any) {
       if (Number(results[0]?.meta?.changes ?? 0) !== 1) {
         return fail(c, 409, 'ACCOUNT_LIMIT_REACHED', 'All 15 standard accounts have already been allocated.');
       }
-      return ok(c, { created: true, account: { id: uid, username, displayName, status: 'active' } }, 201);
+      return ok(c, { created: true, account: { id: uid, username, accessEmail, displayName, status: 'active' } }, 201);
     } catch {
       return fail(c, 409, 'ACCOUNT_CREATE_FAILED', 'The account could not be created. Check that its username is unique.');
+    }
+  });
+
+  app.patch('/api/v1/admin/accounts/:id/access-email', async (c: any) => {
+    noStore(c);
+    if (!originAllowed(c)) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
+    const admin = await currentAdmin(c);
+    if (!admin) return fail(c, 404, 'NOT_FOUND', 'Not found.');
+    const body: any = await c.req.json().catch(() => null);
+    const accessEmail = normalizeAccessEmail(body?.accessEmail);
+    if (!accessEmail) return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid approved email address.');
+    try {
+      const targetId = c.req.param('id');
+      const result = await c.env.DB.prepare("UPDATE user_profiles SET access_email=? WHERE id=? AND role='user' AND account_status IN ('active','suspended')")
+        .bind(accessEmail, targetId).run();
+      if (Number(result.meta?.changes ?? 0) !== 1) return fail(c, 404, 'ACCOUNT_NOT_FOUND', 'That standard account was not found.');
+      await c.env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(targetId).run();
+      return ok(c, { updated: true, accessEmail, sessionsRevoked: true });
+    } catch {
+      return fail(c, 409, 'ACCESS_EMAIL_IN_USE', 'That approved email address is already assigned to another Kairo account.');
     }
   });
 
