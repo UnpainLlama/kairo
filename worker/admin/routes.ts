@@ -1,5 +1,5 @@
 import { hashPassword } from '../auth/password';
-import { findSessionUser } from '../auth/session';
+import { createSession, sessionCookie, findSessionUser } from '../auth/session';
 
 const enc = new TextEncoder();
 const usernameOf = (value: unknown): string | null => {
@@ -86,7 +86,7 @@ export function registerAdminRoutes(app: any) {
     }
   });
 
-  // One-time bootstrap: requires a separately configured Cloudflare Worker secret.
+  // First administrator setup is guarded by a one-time Worker secret and closes permanently after creation.
   app.post('/api/v1/admin/bootstrap', async (c: any) => {
     noStore(c);
     if (!originAllowed(c)) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
@@ -100,21 +100,31 @@ export function registerAdminRoutes(app: any) {
     const body: any = await c.req.json().catch(() => null);
     const username = usernameOf(body?.username);
     const displayName = typeof body?.displayName === 'string' ? body.displayName.trim() : '';
-    if (!username || displayName.length < 2 || displayName.length > 40) {
-      return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid username and display name.');
+    if (!username || displayName.length < 2 || displayName.length > 40 || !passwordOf(body?.password)) {
+      return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid username, display name, and password of at least 12 characters.');
     }
     try {
       const uid = crypto.randomUUID(), identityId = crypto.randomUUID();
+      const passwordHash = await hashPassword(body.password);
       const results = await c.env.DB.batch([
         c.env.DB.prepare("INSERT INTO user_profiles (id,identity_subject,display_name,username,account_status,role) VALUES (?,?,?,?, 'active','admin')")
           .bind(uid, 'closed-admin:' + crypto.randomUUID(), displayName, username),
         c.env.DB.prepare("INSERT INTO auth_identities (id,user_id,provider,provider_subject) SELECT ?,id,'email',? FROM user_profiles WHERE id=?")
           .bind(identityId, username, uid),
+        c.env.DB.prepare('INSERT INTO password_credentials (auth_identity_id,password_hash) SELECT ?,? FROM auth_identities WHERE id=?')
+          .bind(identityId, passwordHash, identityId),
       ]);
       if (Number(results[0]?.meta?.changes ?? 0) !== 1) return fail(c, 409, 'ADMIN_ALREADY_EXISTS', 'Administrator setup is no longer available.');
-      return ok(c, { created: true, username }, 201);
+      const session = await createSession(c.env.DB, uid, {
+        userAgent: c.req.header('User-Agent') ?? undefined,
+        ipPrefix: c.req.header('CF-Connecting-IP') ?? 'unknown',
+        ttlSeconds: 8 * 60 * 60,
+      });
+      c.header('Set-Cookie', sessionCookie(session.token, new URL(c.req.url).protocol === 'https:', session.ttlSeconds));
+      const path = await ensureConsolePath(c.env.DB);
+      return ok(c, { created: true, signedIn: true, administrator: true, username, path }, 201);
     } catch {
-      return fail(c, 409, 'ADMIN_SETUP_FAILED', 'Administrator setup could not be completed.');
+      return fail(c, 409, 'ADMIN_SETUP_FAILED', 'Administrator setup could not be completed. Check that the username is unique.');
     }
   });
 
