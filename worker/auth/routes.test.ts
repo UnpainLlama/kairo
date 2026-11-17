@@ -1,8 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { hashPassword } from './password';
 import { registerAuthRoutes } from './routes';
-
-afterEach(() => {});
 
 function registeredRoutes() {
   const routes = new Map<string, (context: any) => Promise<Response>>();
