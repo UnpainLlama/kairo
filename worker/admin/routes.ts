@@ -158,7 +158,10 @@ export function registerAdminRoutes(app: any) {
       if (!exists) return fail(c, 404, 'ACCOUNT_NOT_FOUND', 'That standard account was not found.');
       const hash = await hashPassword(body.password);
       await c.env.DB.batch([
-        c.env.DB.prepare("UPDATE password_credentials SET password_hash=?,password_changed_at=CURRENT_TIMESTAMP WHERE auth_identity_id IN (SELECT i.id FROM auth_identities i WHERE i.user_id=? AND i.provider='email')").bind(hash, target),
+        c.env.DB.prepare("INSERT INTO auth_identities (id,user_id,provider,provider_subject) SELECT ?,id,'email',username FROM user_profiles WHERE id=? AND role='user' AND account_status IN ('active','suspended') ON CONFLICT(user_id,provider) DO NOTHING")
+          .bind(crypto.randomUUID(), target),
+        c.env.DB.prepare("INSERT INTO password_credentials (auth_identity_id,password_hash) SELECT id,? FROM auth_identities WHERE user_id=? AND provider='email' ON CONFLICT(auth_identity_id) DO UPDATE SET password_hash=excluded.password_hash,password_changed_at=CURRENT_TIMESTAMP")
+          .bind(hash, target),
         c.env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(target),
       ]);
       return ok(c, { passwordReset: true, sessionsRevoked: true });
