@@ -86,8 +86,6 @@ export default function AuthPage() {
         setNotice('A new verification code has been sent. The previous code is no longer valid.');
       }
     } catch (caught) {
-      setChallengeId(null);
-      setCode('');
       setError(caught instanceof Error ? caught.message : 'Could not resend the verification code.');
     } finally {
       setBusy(false);
