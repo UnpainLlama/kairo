@@ -161,7 +161,7 @@ export function ProfilePage() {
         const resume=Math.floor(item.progressSeconds);
         const stamp=`${Math.floor(resume/60)}:${String(resume%60).padStart(2,'0')}`;
         return <Link key={item.mediaType+':'+item.mediaKey} to={href} className="kc-profile-history-item"><span className="kc-history-art">{item.artworkUrl?<img src={item.artworkUrl} alt="" loading="lazy"/>:<UserRound size={20}/>}</span><span><b>{item.title}</b><small>{label} · {item.completed?'Completed':item.progressSeconds>0?'Resume at '+stamp:'Not started'}</small><i><span style={{width:`${percent}%`}}/></i></span></Link>
-      })}</div>:<EmptyState title="Nothing watched yet">Start watching in Anime, Movies or YouTube and your progress will appear here.</EmptyState>}
+      })}</div>:<EmptyState title="Nothing watched yet">Start watching in Anime or Movies{user?.role==='admin'?' or YouTube':''} and your progress will appear here.</EmptyState>}
     </div>
     {error&&<p className="kc-auth-error" role="alert">{error}</p>}
     <div className="kc-profile-actions"><Link className="kc-btn" to="/settings"><Settings size={15}/> Settings</Link><button className="kc-btn kc-btn-danger" type="button" onClick={()=>void logout()} disabled={busy}><LogOut size={15}/>{busy?'Signing out…':'Sign out'}</button></div>
