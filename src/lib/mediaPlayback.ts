@@ -154,8 +154,9 @@ function acknowledgePendingSync(userId: string, snapshot: MediaPlaybackSnapshot,
   const items = readPendingSync(userId).filter(item =>
     item.snapshot.mediaType !== snapshot.mediaType ||
     item.snapshot.mediaKey !== snapshot.mediaKey ||
+    item.sessionId !== metadata.sessionId ||
     item.snapshot.updatedAt > snapshot.updatedAt ||
-    (item.sessionId === metadata.sessionId && item.sequence > metadata.sequence)
+    item.sequence > metadata.sequence
   );
   writePendingSync(userId, items);
 }
@@ -167,8 +168,8 @@ function deferPendingSync(userId: string, snapshot: MediaPlaybackSnapshot, metad
   );
   if (index < 0) return;
   const item = items[index];
-  if (item.snapshot.updatedAt > snapshot.updatedAt ||
-      (item.sessionId === metadata.sessionId && item.sequence > metadata.sequence)) return;
+  if (item.sessionId !== metadata.sessionId || item.snapshot.updatedAt > snapshot.updatedAt ||
+      item.sequence > metadata.sequence) return;
   const attempts = item.attempts + 1;
   items[index] = {
     ...item,
