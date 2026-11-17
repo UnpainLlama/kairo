@@ -66,9 +66,9 @@ export function registerAuthRoutes(app:Hono<any>){
   noStore(c);
   if(!originOk(c))return fail(c,403,'ORIGIN_FORBIDDEN','This request origin is not allowed.');
   let b:any;try{b=await c.req.json()}catch{return fail(c,400,'VALIDATION_ERROR','Provide valid JSON.')}
-  const username=usernameOf(b.username);
-  const password=typeof b.password==='string'?b.password:'';
-  if(!username||(b.password!==undefined&&typeof b.password!=='string')||enc.encode(password).length>1024)return fail(c,400,'VALIDATION_ERROR','Enter a valid username.');
+  const username=usernameOf(b?.username);
+  const password=typeof b?.password==='string'?b.password:'';
+  if(!username||(b?.password!==undefined&&typeof b.password!=='string')||enc.encode(password).length>1024)return fail(c,400,'VALIDATION_ERROR','Enter a valid username.');
   try{
    if(!await permit(c.env.DB,'login',ip(c),username.toLowerCase(),8))return fail(c,429,'RATE_LIMITED','Too many sign-in attempts. Try again in 15 minutes.');
    const row=await c.env.DB.prepare(`SELECT p.id userId,p.account_status accountStatus,p.role,i.id identityId,pc.password_hash passwordHash
