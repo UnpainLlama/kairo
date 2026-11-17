@@ -137,8 +137,8 @@ export default function YouTubeWatchPage() {
         const unifiedUpdatedAt = Number(unified?.updatedAt ?? 0);
         let resume = history && Number.isFinite(history.progressSeconds) ? history.progressSeconds : 0;
         let chosenUpdatedAt = remoteUpdatedAt;
-        if (unified && unified.updatedAt >= chosenUpdatedAt) { resume = unified.progressSeconds; chosenUpdatedAt = unified.updatedAt; }
-        const preferLegacyLocal = Boolean(localRecord.seconds > 0 && localRecord.updatedAt > chosenUpdatedAt);
+        if (unified) { resume = unified.progressSeconds; chosenUpdatedAt = unified.updatedAt; }
+        const preferLegacyLocal = Boolean(!unified && localRecord.seconds > 0 && localRecord.updatedAt > chosenUpdatedAt);
         if (preferLegacyLocal) { resume = localRecord.seconds; chosenUpdatedAt = localRecord.updatedAt; }
         if (active) {
           const routeVideo = location.state && typeof location.state === 'object'
