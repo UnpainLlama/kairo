@@ -123,10 +123,15 @@ export function registerAdminRoutes(app: any) {
     if (!admin) return fail(c, 404, 'NOT_FOUND', 'Not found.');
     const body: any = await c.req.json().catch(() => null);
     if (body?.status !== 'active' && body?.status !== 'suspended') return fail(c, 400, 'VALIDATION_ERROR', 'Status must be active or suspended.');
-    const result = await c.env.DB.prepare("UPDATE user_profiles SET account_status=? WHERE id=? AND role='user'")
-      .bind(body.status, c.req.param('id')).run();
-    if (Number(result.meta?.changes ?? 0) !== 1) return fail(c, 404, 'ACCOUNT_NOT_FOUND', 'That standard account was not found.');
-    return ok(c, { updated: true, status: body.status });
+    const targetId = c.req.param('id');
+    const results = await c.env.DB.batch([
+      c.env.DB.prepare("UPDATE user_profiles SET account_status=? WHERE id=? AND role='user'")
+        .bind(body.status, targetId),
+      c.env.DB.prepare("DELETE FROM sessions WHERE user_id=? AND ?='suspended'")
+        .bind(targetId, body.status),
+    ]);
+    if (Number(results[0]?.meta?.changes ?? 0) !== 1) return fail(c, 404, 'ACCOUNT_NOT_FOUND', 'That standard account was not found.');
+    return ok(c, { updated: true, status: body.status, sessionsRevoked: body.status === 'suspended' });
   });
 
   app.post('/api/v1/admin/accounts/:id/password', async (c: any) => {
