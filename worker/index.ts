@@ -21,6 +21,7 @@ interface Bindings {
   DB: D1Database;
   ADMIN_BOOTSTRAP_TOKEN?: string;
   ADMIN_EMAIL?: string;
+  ADMIN_OTP_PEPPER?: string;
   APP_ENV?: string;
   APP_BASE_URL?: string;
   RESEND_API_KEY?: string;
