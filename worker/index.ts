@@ -216,7 +216,7 @@ app.post('/api/v1/movies/ingest', async (c) => {
   if (c.env.MOVIES_INGESTION_ENABLED !== 'true' || !moviesProviderEnabled(c)) {
     return fail(c, 503, 'MOVIES_INGESTION_DISABLED', 'Movie ingestion is disabled until the metadata provider terms and persistence rules are approved.');
   }
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to continue.');
   if (user.role !== 'admin') return fail(c, 403, 'ADMIN_REQUIRED', 'Administrator access is required.');
   const body: unknown = await c.req.json().catch(() => null);
@@ -255,7 +255,7 @@ app.post('/api/v1/movies/ingest/:externalId', async (c) => {
   if (c.env.MOVIES_INGESTION_ENABLED !== 'true' || !moviesProviderEnabled(c)) {
     return fail(c, 503, 'MOVIES_INGESTION_DISABLED', 'Movie ingestion is disabled until the metadata provider terms and persistence rules are approved.');
   }
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to continue.');
   if (user.role !== 'admin') return fail(c, 403, 'ADMIN_REQUIRED', 'Administrator access is required.');
   const externalId = c.req.param('externalId');
@@ -481,13 +481,13 @@ app.get('/api/v1/anime/:id/metadata', async (c) => {
 
 
 app.get('/api/v1/me', async (c) => {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your profile.');
   return ok(c, { user });
 });
 
 app.get('/api/v1/me/playback', async (c) => {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to restore playback progress.');
   const mediaType = c.req.query('mediaType');
   const mediaKey = c.req.query('mediaKey');
@@ -529,7 +529,7 @@ app.get('/api/v1/me/playback', async (c) => {
 app.delete('/api/v1/me/playback', async (c) => {
   const origin = c.req.header('Origin');
   if (origin && origin !== new URL(c.req.url).origin) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to delete playback progress.');
   const mediaType = c.req.query('mediaType');
   const mediaKey = c.req.query('mediaKey');
@@ -552,7 +552,7 @@ app.delete('/api/v1/me/playback', async (c) => {
 app.post('/api/v1/me/playback', async (c) => {
   const origin = c.req.header('Origin');
   if (origin && origin !== new URL(c.req.url).origin) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync playback progress.');
   let body: unknown;
   try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
@@ -619,7 +619,7 @@ app.post('/api/v1/me/playback', async (c) => {
 });
 
 app.get('/api/v1/me/history/sync', async (c) => {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to restore watch history.');
   const slug = c.req.query('slug');
   const episodeNumber = c.req.query('episodeNumber');
@@ -671,7 +671,7 @@ app.post('/api/v1/me/history/sync', async (c) => {
   if (origin && origin !== new URL(c.req.url).origin) {
     return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
   }
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync watch history.');
   let body: unknown;
   try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
@@ -764,7 +764,7 @@ app.post('/api/v1/me/history/sync', async (c) => {
 });
 
 app.get('/api/v1/me/movies/library', async (c) => {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your Movies library.');
   try {
     const result = await c.env.DB.prepare(`
@@ -785,7 +785,7 @@ app.post('/api/v1/me/movies/library', async (c) => {
   if (origin && origin !== new URL(c.req.url).origin) {
     return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
   }
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync your Movies library.');
   let body: unknown;
   try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
@@ -829,7 +829,7 @@ app.delete('/api/v1/me/movies/library/:providerId/:externalId', async (c) => {
   if (origin && origin !== new URL(c.req.url).origin) {
     return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
   }
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to manage your Movies library.');
   const providerId = c.req.param('providerId').trim().toLowerCase();
   const externalId = c.req.param('externalId').trim();
@@ -848,7 +848,7 @@ app.delete('/api/v1/me/movies/library/:providerId/:externalId', async (c) => {
 });
 
 app.get('/api/v1/me/library', async (c) => {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your library.');
   try {
     const result = await c.env.DB.prepare(
