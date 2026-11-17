@@ -611,7 +611,7 @@ app.post('/api/v1/me/playback', async (c) => {
         session_id=excluded.session_id, sequence=excluded.sequence
       WHERE user_media_playback.session_id IS NULL
          OR (excluded.session_id = user_media_playback.session_id AND excluded.sequence > user_media_playback.sequence)
-         OR (excluded.session_id <> user_media_playback.session_id AND excluded.updated_at > user_media_playback.updated_at)
+         OR (excluded.session_id <> user_media_playback.session_id AND excluded.updated_at >= user_media_playback.updated_at)
     `).bind(user.id, mediaType, mediaKey, title, artworkUrl, duration, progressSeconds,
       item.completed === true ? 1 : 0, JSON.stringify(playerState), updatedAt, syncSessionId, syncSequence).run();
     const saved = Number(result.meta.changes ?? 0) > 0;
