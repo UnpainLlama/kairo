@@ -494,6 +494,7 @@ app.get('/api/v1/me/playback', async (c) => {
   const mediaType = c.req.query('mediaType');
   const mediaKey = c.req.query('mediaKey');
   if (mediaType && !['anime', 'movie', 'youtube'].includes(mediaType)) return fail(c, 400, 'VALIDATION_ERROR', 'The media type is invalid.');
+  if (mediaType === 'youtube' && user.role !== 'admin') return fail(c, 404, 'NOT_FOUND', 'Not found.');
   if (mediaKey && (!mediaType || !mediaKey.trim() || mediaKey.length > 256)) return fail(c, 400, 'VALIDATION_ERROR', 'The media playback key is invalid.');
   c.header('Cache-Control', 'no-store');
   const limit = boundedInt(c.req.query('limit'), 50, 1, 100);
@@ -518,7 +519,7 @@ app.get('/api/v1/me/playback', async (c) => {
         .bind(user.id, mediaType, mediaKey).first<Record<string, unknown>>();
       return ok(c, { item: row ? mapRow(row) : null });
     }
-    const result = await c.env.DB.prepare(`SELECT ${columns} FROM user_media_playback WHERE user_id=? ${mediaType ? 'AND media_type=?' : ''} ORDER BY updated_at DESC LIMIT ?`)
+    const result = await c.env.DB.prepare(`SELECT ${columns} FROM user_media_playback WHERE user_id=? ${mediaType ? 'AND media_type=?' : user.role !== 'admin' ? "AND media_type!='youtube'" : ''} ORDER BY updated_at DESC LIMIT ?`)
       .bind(...(mediaType ? [user.id, mediaType, limit] : [user.id, limit])).all<Record<string, unknown>>();
     return ok(c, { items: (result.results ?? []).map(mapRow) }, { count: result.results?.length ?? 0 });
   } catch (error) {
@@ -538,6 +539,7 @@ app.delete('/api/v1/me/playback', async (c) => {
       (mediaKey !== undefined && (!mediaKey.trim() || mediaKey.length > 256))) {
     return fail(c, 400, 'VALIDATION_ERROR', 'The playback record to delete is invalid.');
   }
+  if (mediaType === 'youtube' && user.role !== 'admin') return fail(c, 404, 'NOT_FOUND', 'Not found.');
   try {
     const result = mediaKey
       ? await c.env.DB.prepare('DELETE FROM user_media_playback WHERE user_id=? AND media_type=? AND media_key=?').bind(user.id, mediaType, mediaKey).run()
@@ -559,6 +561,7 @@ app.post('/api/v1/me/playback', async (c) => {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(c, 400, 'VALIDATION_ERROR', 'Provide a playback progress record.');
   const item = body as Record<string, unknown>;
   const mediaType = typeof item.mediaType === 'string' ? item.mediaType : '';
+  if (mediaType === 'youtube' && user.role !== 'admin') return fail(c, 404, 'NOT_FOUND', 'Not found.');
   const mediaKey = typeof item.mediaKey === 'string' ? item.mediaKey.trim() : '';
   const title = typeof item.title === 'string' ? item.title.trim() : '';
   const progress = Number(item.progressSeconds);
