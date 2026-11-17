@@ -1,12 +1,12 @@
 # Kairo
 
-Kairo is a React, TypeScript, Vite and Cloudflare Workers media-discovery application for Anime, Movies and YouTube.
+Kairo is a closed-access React, TypeScript, Vite and Cloudflare Workers media-discovery application for Anime, Movies and administrator-only YouTube features.
 
 ## Project areas
 
 - **Anime:** catalogue discovery, metadata enrichment, episode discovery and provider-gated playback.
 - **Movies:** TMDB-powered catalogue search and details, with **CineSrc as the only movie playback provider**.
-- **YouTube:** public video/channel discovery and the user's saved channel feed through the official YouTube Data API.
+- **YouTube (administrator only):** video/channel discovery and a saved channel feed through the official YouTube Data API. Standard accounts and anonymous visitors cannot access YouTube pages or APIs.
 
 ## Movie provider boundary
 
