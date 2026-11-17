@@ -2,10 +2,11 @@
 
 This branch implements the agreed closed-access model:
 
-- No public registration or Google sign-in.
+- No public standard-account registration or Google sign-in.
 - Fifteen standard accounts maximum, plus one separate administrator account.
 - Standard accounts use administrator-issued username/password credentials.
-- Administrator login uses an emailed one-time code; an administrator password is not accepted for normal login.
+- The first administrator is created once through a bootstrap form using a staging Worker secret and chooses a username and password. The bootstrap endpoint permanently closes once an administrator exists.
+- Administrator login uses that username/password and creates an eight-hour session. Standard-account sessions retain the existing 30-day lifetime.
 - The administrator has a separate console, manages standard accounts, and is the only role allowed to use YouTube features.
 - The admin console URL is generated from 256 bits of cryptographic randomness and rotates every 30 minutes. The URL is not an authentication factor; the server-side administrator session remains the access control.
 - Playback checkpoints are saved locally every five seconds and synced to D1 every 60 seconds for signed-in users. Important user/lifecycle events flush immediately. Failed cloud writes remain in a local retry queue with exponential backoff.
@@ -33,49 +34,35 @@ This branch implements the agreed closed-access model:
 
    `npx wrangler d1 migrations apply kairo-db-staging --remote --env staging`
 
-4. Generate a bootstrap token with at least 32 bytes of cryptographic randomness and store it as a staging Worker secret:
+4. Generate a one-time bootstrap token with at least 32 bytes of cryptographic randomness and store it as a staging Worker secret:
 
-   `npx wrangler secret put ADMIN_BOOTSTRAP_TOKEN --env staging`
+   `openssl rand -hex 32`
 
-5. Create the dedicated Proton Mail mailbox. Store its address as a staging Worker secret:
+   Then add the output using the Cloudflare dashboard's **Workers & Pages → Kairo staging Worker → Settings → Variables and Secrets → Add → Secret** interface, named `ADMIN_BOOTSTRAP_TOKEN`. Do not add it to `wrangler.jsonc`, source control, or frontend variables.
 
-   `npx wrangler secret put ADMIN_EMAIL --env staging`
+5. Open the staging site's login page and choose **First-time setup → Create the administrator account** (or visit `/login?setup=admin`). Enter the one-time setup token, administrator username, display name, and a strong unique password of at least 12 characters. The setup endpoint requires the token in a request header, creates the admin profile, email/password identity, password hash, and eight-hour session in one D1 batch, then returns the authenticated admin session.
 
-6. Create a Resend account using that same Proton address and create a sending API key. Store the key as a staging Worker secret:
+6. Immediately delete the `ADMIN_BOOTSTRAP_TOKEN` staging Worker secret after successful setup. The database's unique admin constraint and endpoint check prevent a second administrator from being created. If the token remains configured, the endpoint is still closed once an admin exists, but removing it reduces unnecessary exposure.
 
-   `npx wrangler secret put RESEND_API_KEY --env staging`
+7. Verify administrator username/password login, the eight-hour session, the 30-minute console URL rotation, account creation/suspension/reactivation/password reset, and the YouTube restrictions.
 
-   The Worker defaults to `Kairo Security <onboarding@resend.dev>`. Resend's test sender can deliver only to the email address associated with your Resend account, so use the same Proton address for both accounts during this single-admin setup. To send to a different recipient, you must control and verify a sending domain in Resend, then set `AUTH_EMAIL_FROM` to an address on that verified domain:
+8. Verify playback restore, local checkpointing, 60-second cloud sync, retry after offline/reconnect, stale-write ordering, and completion behavior.
 
-   `npx wrangler secret put AUTH_EMAIL_FROM --env staging`
+9. Deploy to staging only after the migration and security tests have been reviewed and explicitly approved. Do not deploy production as part of this work.
 
-   The free Resend plan currently lists 3,000 emails/month and a 100-email daily limit. See [Resend pricing](https://resend.com/pricing).
+## Bootstrap and password notes
 
-7. Generate a separate 32-byte random HMAC pepper and store it as a staging Worker secret:
-
-   `npx wrangler secret put ADMIN_OTP_PEPPER --env staging`
-
-8. Provision the administrator by POSTing to the staging endpoint `/api/v1/admin/bootstrap`, sending the bootstrap token in the `X-Kairo-Bootstrap` header and JSON containing only `username` and `displayName`. The administrator does not receive a password credential; login is email-code based. Do not place the bootstrap token in source control, issue comments, or shell history.
-9. Remove the `ADMIN_BOOTSTRAP_TOKEN` staging secret immediately after successful provisioning.
-10. Verify the full admin email-code login, the 30-minute URL rotation, account creation/suspension/reactivation/password reset, and the YouTube restrictions.
-11. Verify playback restore, local checkpointing, 60-second cloud sync, retry after offline/reconnect, stale-write ordering, and completion behavior.
-12. Deploy to staging only after the migration and security tests have been reviewed and explicitly approved. Do not deploy production as part of this work.
-
-## Email delivery notes
-
-- The Proton mailbox is the recipient/inbox; Proton does not need to send mail from the Worker.
-- Resend sends the one-time code through its REST API. The free tier is subject to Resend's current sending limits and account/domain verification rules.
-- The test sender `onboarding@resend.dev` is restricted to the email address associated with your Resend account. Register Resend using the same Proton mailbox configured as `ADMIN_EMAIL`; this supports the single-admin setup without owning a domain. To send to a different recipient, verify a domain you control and use a sender on that domain. For unrestricted delivery, configure a verified domain you control and set `AUTH_EMAIL_FROM`.
-- The recipient address, API key, and HMAC pepper are Worker secrets, never frontend variables.
-- The one-time code is eight digits, expires after five minutes, is single-use, and has a five-attempt challenge limit. Requests are rate-limited both per IP and per administrator.
+- The only new required Worker secret for first-time administrator setup is `ADMIN_BOOTSTRAP_TOKEN`. It is a temporary setup credential, not the administrator's login password.
+- The bootstrap form is reachable at `/login?setup=admin`; knowing the URL does not grant setup access. The endpoint checks the 256-bit random token and refuses setup if any admin already exists.
+- Choose a strong, unique administrator password and keep it in a password manager. The application stores only a salted PBKDF2 password hash.
 - Administrator sessions expire after eight hours; standard-account sessions retain the existing 30-day lifetime.
-- `ADMIN_EMAIL` is fixed by the Worker secret and cannot be changed from the admin panel. Change it only through an authorized staging secret update after verifying access to the new mailbox.
+- If the admin password is lost, do not reopen public signup or manually edit D1 without a reviewed recovery procedure.
 
 ## Security notes
 
-- A random console URL is an additional obscurity layer, not authorization. All admin APIs still require a valid server-side admin session.
+- The bootstrap token must never be committed to source control, pasted into chat, or included in a URL. It is submitted over HTTPS in a request header.
+- A random console URL is an additional obscurity layer, not authorization. All admin APIs still require a valid server-side administrator session.
 - The active console path is stored in D1 and rotated by the staging-only Cron Trigger every 30 minutes. The authenticated console-path endpoint can also provision a fresh path after expiry.
 - Noindex is only a crawler hint, not access control.
-- The first admin is created only with the bootstrap secret; the database partial unique index enforces a single admin role. A database trigger also enforces the 15-standard-account cap, including suspended and deleted accounts.
-- Standard account allocation counts suspended and deleted accounts toward the 15-account cap; reactivating a suspended account does not allocate a new slot.
+- The database partial unique index enforces one administrator role. A database trigger also enforces the 15-standard-account cap, including suspended and deleted accounts.
 - No migration, Worker secret, or deployment is performed by the code change itself.
