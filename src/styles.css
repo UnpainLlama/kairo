@@ -1078,7 +1078,7 @@ img { display: block; }
 @media(max-width:520px){.kc-auth{padding:20px 14px}.kc-auth-card{padding:25px 20px}}
 
 
-/* Google sign-in and account linking */
+/* Administrator YouTube account connection */
 .kc-auth-google{display:flex;align-items:center;justify-content:center;gap:12px;width:100%;min-height:46px;padding:0 16px;border:1px solid var(--line,#303036);border-radius:10px;background:var(--surface,#19191d);color:var(--text,#f4f4f5);font-weight:600;text-decoration:none;transition:border-color .15s ease,background .15s ease}
 .kc-auth-google:hover{border-color:var(--muted,#777);background:var(--surface-raised,#222228)}
 .kc-auth-google span{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#fff;color:#4285f4;font-weight:800;font-family:Arial,sans-serif}
