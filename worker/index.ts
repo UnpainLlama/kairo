@@ -5,7 +5,7 @@ import { boundedInt, parseId, parsePagination, parseSearchParams } from './lib/v
 import { clearSessionCookie, findSessionUser, revokeSession } from './auth/session';
 import { registerAuthRoutes } from './auth/routes';
 import { registerYouTubeMediaRoutes } from './youtube/routes';
-import { registerAdminRoutes } from './admin/routes';
+import { registerAdminRoutes, rotateAdminConsolePath } from './admin/routes';
 import { GENRES_SQL, buildListQuery, buildRelatedQuery, buildSearchQuery } from './repositories/catalog';
 import { BASE_RECORD_SQL, INSERT_PROVIDER_ID_SQL, PROVIDER_IDS_SQL } from './repositories/providerIds';
 import { buildRegistry, createCache, resolveUnified, sharedBreaker, toBaseRecord, type BaseRow } from './metadata/service';
@@ -20,7 +20,7 @@ import { ProviderError } from './metadata/types';
 interface Bindings {
   DB: D1Database;
   ADMIN_BOOTSTRAP_TOKEN?: string;
-  ADMIN_CONSOLE_PATH?: string;
+  ADMIN_EMAIL?: string;
   APP_ENV?: string;
   APP_BASE_URL?: string;
   RESEND_API_KEY?: string;
@@ -912,4 +912,11 @@ function safeJsonArray(value: unknown): unknown[] {
   }
 }
 
-export default app;
+export default {
+  fetch: (request: Request, env: Bindings, context: ExecutionContext) => app.fetch(request, env, context),
+  scheduled(_controller: ScheduledController, env: Bindings, context: ExecutionContext) {
+    context.waitUntil(rotateAdminConsolePath(env.DB).catch((error) => {
+      console.error(JSON.stringify({ event: 'admin_console_rotation_failed', message: error instanceof Error ? error.message : 'unknown' }));
+    }));
+  },
+};
