@@ -42,7 +42,7 @@ async function sendAdminLoginCode(c:any,code:string):Promise<void>{
  const apiKey=c.env.RESEND_API_KEY;
  const recipient=c.env.ADMIN_EMAIL;
  const sender=c.env.AUTH_EMAIL_FROM||'Kairo Security <onboarding@resend.dev>';
- if(typeof apiKey!=='string'||apiKey.length<12||typeof recipient!=='string'||!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(recipient)){
+ if(typeof apiKey!=='string'||apiKey.length<12||typeof recipient!=='string'||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)){
   throw new Error('admin_email_delivery_unconfigured');
  }
  const response=await fetch('https://api.resend.com/emails',{
