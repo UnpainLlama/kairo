@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { flushPendingMediaPlayback } from './mediaPlayback';
 
 export type AccountStatus = 'loading' | 'guest' | 'signed-in' | 'unavailable';
 export type KairoAccountState = {
@@ -71,6 +72,20 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('focus', refresh);
     };
   }, [attempt]);
+
+  useEffect(() => {
+    if (status !== 'signed-in' || !accountId) return;
+    const flush = () => { void flushPendingMediaPlayback(accountId); };
+    flush();
+    window.addEventListener('online', flush);
+    window.addEventListener('focus', flush);
+    const interval = window.setInterval(flush, 60_000);
+    return () => {
+      window.removeEventListener('online', flush);
+      window.removeEventListener('focus', flush);
+      window.clearInterval(interval);
+    };
+  }, [accountId, status]);
 
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
   const value = useMemo(() => ({ status, accountId, displayName, email, username, role, retry }), [status, accountId, displayName, email, username, role, retry]);
