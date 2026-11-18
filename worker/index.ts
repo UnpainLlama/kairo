@@ -72,6 +72,13 @@ app.use('/api/*', async (c, next) => {
 });
 
 app.use('/api/*', async (c, next) => {
+  const pathname = new URL(c.req.url).pathname;
+  // These two minimal probes are public only when Cloudflare's Worker destination
+  // has exact public path overrides for these paths. Every other API requires Access.
+  if (pathname === '/api/health' || pathname === '/api/ready') {
+    c.set('accessEmail', null);
+    return next();
+  }
   if (c.env.ACCESS_ENFORCED !== 'true') {
     c.set('accessEmail', null);
     return next();
@@ -304,7 +311,7 @@ app.get('/api/v1/movies/:externalId', async (c) => {
   }
 });
 
-app.get('/api/health', (c) => ok(c, { status: 'ok', service: 'kairo-api', environment: c.env.APP_ENV ?? 'unknown' }));
+app.get('/api/health', (c) => ok(c, { status: 'ok', service: 'kairo-api' }));
 
 // Live catalogue providers and independent episode-discovery providers. Public API paths remain stable. Each route below answers first when CATALOG_SOURCE is not "db" and otherwise falls through
 // to the original D1 route registered further down, so the API paths and response shapes are unchanged.
@@ -314,7 +321,19 @@ const serveLive = (pick: (h: LiveHandlers) => (r: LiveRequest) => Promise<LiveRe
   const result = await pick(live)({ query: c.req.query(), param: (name) => c.req.param(name), requestId: c.get('requestId'), env: c.env });
   return c.json(result.body as Record<string, unknown>, result.status as 200);
 };
-app.get('/api/ready', serveLive((h) => h.ready));
+app.get('/api/ready', async (c: AppContext, next: Next) => {
+  if (!isLiveMode(c.env.CATALOG_SOURCE)) return next();
+  const result = await live.ready({
+    query: c.req.query(),
+    param: (name) => c.req.param(name),
+    requestId: c.get('requestId'),
+    env: c.env,
+  });
+  if (c.env.ACCESS_ENFORCED === 'true' && result.status === 200) {
+    return ok(c, { status: 'ready' });
+  }
+  return c.json(result.body as Record<string, unknown>, result.status as 200);
+});
 app.get('/api/v1/catalog/featured', serveLive((h) => h.featured));
 app.get('/api/v1/catalog/trending', serveLive((h) => h.trending));
 app.get('/api/v1/catalog/latest', serveLive((h) => h.latest));
@@ -359,7 +378,9 @@ app.get('/api/ready', async (c) => {
       return fail(c, 503, 'CATALOG_UNAVAILABLE', 'The database is reachable but its schema is not up to date. Apply migrations.');
     }
     const providers = buildRegistry(c.env.METADATA_PROVIDERS, fetch).enabled.map((p) => p.id);
-    return ok(c, { status: 'ready', database: 'ok', schema: 'ok', cache: c.env.METADATA_CACHE ? 'kv' : 'none', providers });
+    return c.env.ACCESS_ENFORCED === 'true'
+      ? ok(c, { status: 'ready' })
+      : ok(c, { status: 'ready', database: 'ok', schema: 'ok', cache: c.env.METADATA_CACHE ? 'kv' : 'none', providers });
   } catch (error) {
     logError(c, 'readiness_failed', error);
     return fail(c, 503, 'CATALOG_UNAVAILABLE', 'The service is not ready.');
