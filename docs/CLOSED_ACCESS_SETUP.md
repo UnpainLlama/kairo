@@ -127,6 +127,9 @@ Keep the Cloudflare account itself protected with a strong unique password and i
 
 - Kairo administrator MFA is intentionally not included in this design. Password-only Kairo administrator authentication is a consciously accepted risk, not an ASVS Level 2 MFA implementation.
 - The current PBKDF2 workerd compatibility ceiling (100,000 iterations) remains below OWASP's PBKDF2 recommendation. A stronger, benchmarked password-hashing design is still required before production.
-- The password policy, password blocklist, login timing equalization, session idle timeout, CSRF hardening, static-response security headers, and administrator recovery/credential rotation still need their separately tracked remediation and regression tests.
+- New passwords for first-admin setup, account creation and password resets now require at least 15 Unicode code points (existing passwords remain usable until reset). A common/breached-password blocklist is still outstanding.
+- Login performs a dummy PBKDF2 verification for unknown, suspended or wrong-Access-identity accounts to reduce username timing differences. Mutating login/admin requests require a matching Origin or Referer; administrator bootstrap attempts are rate-limited by source IP.
+- Static assets now receive baseline security headers from `public/_headers`. A complete CSP remains deferred because the video player embeds several external providers; headers and embed compatibility need live staging verification.
+- Session idle timeout and broader CSRF defence for all state-changing routes remain outstanding, as do administrator recovery/credential rotation beyond the documented manual D1 unlock.
 - Cloudflare Access dashboard configuration, actual allowed email entries, team domain, AUD tag, live response headers, and D1 state must be verified in the staging environment. Source-code changes alone do not create the Access application or populate its allowlist.
 - No migration, Worker secret, Cloudflare Access policy, or deployment is performed by the code change itself.
