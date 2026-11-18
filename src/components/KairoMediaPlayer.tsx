@@ -1,4 +1,5 @@
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
+import AnimeEmbedPlayer from './AnimeEmbedPlayer';
 import KairoVideoJsPlayer from './KairoVideoJsPlayer';
 import YouTubeIframePlayer from './YouTubeIframePlayer';
 import type { PlaybackSaveReason } from '../lib/playbackSync';
@@ -47,39 +48,6 @@ function readSavedSeconds(progressKey: string): number {
   } catch { return 0; }
 }
 
-/** For third-party iframes without a supported player API, only the last known position can be flushed. */
-function OpaqueProviderEmbed({ src, title, provider, progressKey, onProgress, playerState }: {
-  src: string; title: string; provider: string; progressKey: string;
-  onProgress?: Props['onProgress']; playerState?: SavedPlayerState | null;
-}) {
-  useEffect(() => {
-    const seconds = readSavedSeconds(progressKey);
-    onProgress?.(seconds, 'open', playerState ?? {});
-    const flush = () => onProgress?.(readSavedSeconds(progressKey), 'pagehide', playerState ?? {});
-    const onVisibilityChange = () => { if (document.visibilityState === 'hidden') flush(); };
-    window.addEventListener('pagehide', flush);
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    return () => {
-      flush();
-      window.removeEventListener('pagehide', flush);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-    };
-  }, [progressKey, onProgress, playerState]);
-
-  return <div className="kc-external-player" data-provider={provider}>
-    <iframe
-      className="kc-player-frame"
-      src={src}
-      title={title}
-      sandbox="allow-scripts allow-same-origin allow-presentation"
-      allow="autoplay; encrypted-media; picture-in-picture; fullscreen; accelerometer; gyroscope"
-      allowFullScreen
-      referrerPolicy="strict-origin-when-cross-origin"
-    />
-    <span className="kc-external-provider-label">{provider} player</span>
-  </div>;
-}
-
 export default function KairoMediaPlayer({ source, title, progressKey, introEnd, outroStart, nextUrl, onProgress, initialPlayerState }: Props) {
   const rawUrl = source.protocol === 'hls' ? source.manifestUrl : source.protocol === 'file' ? source.mediaUrl : source.embedUrl;
   const safeUrl = useMemo(() => safeHttpsUrl(rawUrl), [rawUrl]);
@@ -102,8 +70,8 @@ export default function KairoMediaPlayer({ source, title, progressKey, introEnd,
     />;
   }
 
-  // An arbitrary cross-origin iframe cannot expose progress unless its provider documents a player API.
-  return <OpaqueProviderEmbed
+  // Anime embeds have their own iframe boundary. Movie embeds live in MovieEmbedPlayer.
+  return <AnimeEmbedPlayer
     src={safeUrl.href}
     title={title}
     provider={source.provider.toLowerCase()}

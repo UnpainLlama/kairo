@@ -8,10 +8,10 @@ resources or navigation. The domain list is a first candidate built from the URL
 playback hosts currently configured in this branch; real staging use is required to discover
 provider/CDN hosts that vary by title or region.
 
-The three external-player surfaces are sandboxed in code:
+The external-player surfaces are sandboxed in code. Anime and Movie are separate React player modules:
 
 - CineSrc movie iframe: `allow-scripts allow-same-origin allow-presentation`.
-- Generic Anime provider iframe: the same sandbox tokens.
+- Generic Anime provider iframe, isolated in `src/components/AnimeEmbedPlayer.tsx`: the same sandbox tokens.
 - YouTube IFrame Player API: a MutationObserver applies the same sandbox tokens when the
   API inserts its player iframe.
 

@@ -33,7 +33,7 @@ export function toLiveTitle(meta: NormalizedMetadata, provider: SourceId): LiveT
       genres: meta.genres,
     },
     altTitles,
-    malId: provider === 'jikan' ? own : num(meta.ids.mal),
+    malId: provider === 'jikan' || provider === 'mal' ? own : num(meta.ids.mal),
     anilistId: provider === 'anilist' ? own : num(meta.ids.anilist),
     url: meta.url,
     provider,

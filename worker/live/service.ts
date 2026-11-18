@@ -7,6 +7,7 @@ import type { FetchLike } from '../metadata/providers/http';
 import { ProviderError, type EpisodePage, type EpisodeProvider, type EpisodeRecord, type EpisodeServer } from '../metadata/types';
 import { buildEpisodeProviders, listEpisodes as resolveEpisodes } from '../episodes/service';
 import { createAniListSource } from './anilist';
+import { createMalSource } from './mal';
 import { createJikanSource } from './jikan';
 import { createHiAnimeSource } from './hianime';
 import { createTmdbArtworkProvider } from '../artwork/tmdb';
@@ -144,7 +145,7 @@ const candidatesFor = <T>(deps: Deps, ref: Ref, run: (s: CatalogSource, signal: 
 
 // Version and provider order are part of every live cache key. This prevents
 // pre-AniList HiAnime ids in KV from being served after the catalogue changes.
-const liveCacheScope = (deps: Deps): string => `live:v3:${deps.sources.map((source) => source.id).join(',') || 'none'}`;
+const liveCacheScope = (deps: Deps): string => `live:v4:${deps.sources.map((source) => source.id).join(',') || 'none'}`;
 
 export function getList(deps: Deps, kind: ListKind, page: number, limit: number): Promise<Outcome<Paged>> {
   const day = kind === 'featured' ? new Date(deps.now()).toISOString().slice(0, 10) : 'stable';
@@ -175,7 +176,10 @@ export function getGenres(deps: Deps): Promise<Outcome<{ name: string; count: nu
 
 export function getTitle(deps: Deps, ref: Ref): Promise<Outcome<LiveTitle>> {
   // MyAnimeList ids try Jikan first. AniList ids can only come from AniList.
-  const ordered = ref.kind === 'm' ? [...deps.sources].sort((a, b) => Number(b.id === 'jikan') - Number(a.id === 'jikan')) : deps.sources;
+  const ordered = ref.kind === 'm' ? [...deps.sources].sort((a, b) => {
+    const priority = (id: SourceId) => id === 'mal' ? 0 : id === 'jikan' ? 1 : id === 'anilist' ? 2 : 3;
+    return priority(a.id) - priority(b.id);
+  }) : deps.sources;
   return resolve(deps, {
     key: `${liveCacheScope(deps)}:title:${ref.kind}${ref.id}`,
     ttl: TTL.detail,
@@ -358,18 +362,23 @@ export async function getEpisodeServers(deps: Deps, ref: Ref, episodeNumber: num
   }
 }
 
-const FACTORIES: Record<SourceId, (f: FetchLike, baseUrl?: string) => CatalogSource> = { anilist: (f) => createAniListSource(f), jikan: (f) => createJikanSource(f), hianime: (f, baseUrl) => createHiAnimeSource(f, baseUrl) };
+const FACTORIES: Record<SourceId, (f: FetchLike, baseUrl?: string, malClientId?: string) => CatalogSource> = {
+  mal: (f, _baseUrl, clientId) => createMalSource(f, clientId),
+  anilist: (f) => createAniListSource(f),
+  jikan: (f) => createJikanSource(f),
+  hianime: (f, baseUrl) => createHiAnimeSource(f, baseUrl),
+};
 
 export function parseSourceList(csv: string | undefined): SourceId[] {
-  const wanted = (csv ?? 'anilist,jikan').split(',').map((s) => s.trim().toLowerCase()).filter((s): s is SourceId => s in FACTORIES);
-  return wanted.length > 0 ? [...new Set(wanted)] : ['anilist', 'jikan'];
+  const wanted = (csv ?? 'mal,anilist').split(',').map((s) => s.trim().toLowerCase()).filter((s): s is SourceId => s in FACTORIES);
+  return wanted.length > 0 ? [...new Set(wanted)] : ['mal', 'anilist'];
 }
 
 export function buildDeps(env: LiveEnv, fetchImpl: FetchLike, onError?: Deps['onError']): Deps {
   const playbackHosts = (env.HIANIME_PLAYBACK_ALLOWED_HOSTS ?? '').split(',').map((host) => host.trim().toLowerCase()).filter((host) => /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i.test(host));
   const episodeRegistry = buildEpisodeProviders(env.EPISODE_PROVIDERS, env.HIANIME_BASE_URL, fetchImpl, playbackHosts);
   return {
-    sources: parseSourceList(env.LIVE_PROVIDERS).map((id) => FACTORIES[id](fetchImpl, env.HIANIME_BASE_URL)),
+    sources: parseSourceList(env.LIVE_PROVIDERS).map((id) => FACTORIES[id](fetchImpl, env.HIANIME_BASE_URL, env.MAL_CLIENT_ID)),
     episodeProviders: episodeRegistry.providers,
     unknownEpisodeProviders: episodeRegistry.unknown,
     cache: createCache(env),
