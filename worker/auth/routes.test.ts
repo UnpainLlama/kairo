@@ -127,6 +127,7 @@ describe('closed-access authentication', () => {
     const passwordHash = await hashPassword('the-correct-administrator-password');
     let failedAttempts = 0;
     let lockedAt: number | null = null;
+    let sessionsRevoked = false;
     const db = {
       prepare(sql: string) {
         return {
@@ -146,7 +147,10 @@ describe('closed-access authentication', () => {
               }
               return null;
             },
-            run: async () => ({ success: true, meta: { changes: 1 } }),
+            run: async () => {
+              if (sql.includes('DELETE FROM sessions WHERE user_id IN')) sessionsRevoked = true;
+              return { success: true, meta: { changes: 1 } };
+            },
           }),
         };
       },
@@ -162,6 +166,7 @@ describe('closed-access authentication', () => {
     expect(sixth.status).toBe(423);
     expect(failedAttempts).toBe(5);
     expect(lockedAt).not.toBeNull();
+    expect(sessionsRevoked).toBe(true);
   });
 
 });
