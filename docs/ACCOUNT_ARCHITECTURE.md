@@ -40,7 +40,7 @@ This document describes the current closed-access branch. Public registration an
 
 - Apply migrations in order on staging only, including `0015_closed_access_usernames.sql`, `0016_playback_write_order.sql`, `0017_admin_email_otp_console_rotation.sql`, and `0018_cloudflare_access_identity_admin_lockout.sql`.
 - Configure Cloudflare Access on the staging Worker only. Use an Allow policy with individually specified email addresses, One-time PIN, and a 24-hour Access session. Do not use Protect all Workers or change the Production Worker.
-- Set staging Worker variables `ACCESS_ENFORCED=true`, `ACCESS_TEAM_DOMAIN`, and `ACCESS_AUD`. The team domain and AUD are public configuration values; the Worker fails closed when enforcement is enabled but either is missing.
+- The staging Wrangler config sets `ACCESS_ENFORCED=true` and contains placeholders for `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD`. Replace both placeholders with the exact Kairo staging Access application's team domain and AUD before deployment; Wrangler configuration is the source of truth for variables, and the staging deploy workflow blocks deployment while placeholders remain. These are public configuration values, not secrets.
 - Store `ADMIN_BOOTSTRAP_TOKEN` as a staging Worker secret. Remove it immediately after first administrator creation.
 - The admin console lockout recovery procedure is in `docs/CLOSED_ACCESS_SETUP.md`. Use the staging D1 database only.
 - Verify the Cloudflare email allowlist and Kairo `access_email` bindings agree. They are maintained separately; changing one does not automatically update the other.
