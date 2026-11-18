@@ -10,7 +10,7 @@ const usernameOf = (value: unknown): string | null => {
     ? valueTrimmed : null;
 };
 const passwordOf = (value: unknown): value is string =>
-  typeof value === 'string' && enc.encode(value).length >= 12 && enc.encode(value).length <= 1024;
+  typeof value === 'string' && Array.from(value).length >= 15 && enc.encode(value).length <= 1024;
 const fail = (c: any, status: number, code: string, message: string) =>
   c.json({ success: false, error: { code, message } }, status);
 const ok = (c: any, data: unknown, status = 200) =>
@@ -59,8 +59,26 @@ export async function rotateAdminConsolePath(db: D1Database): Promise<void> {
 }
 
 function originAllowed(c: any) {
+  const expected = new URL(c.req.url).origin;
   const origin = c.req.header('Origin');
-  return !origin || origin === new URL(c.req.url).origin;
+  if (origin) return origin === expected;
+  const referer = c.req.header('Referer');
+  if (!referer) return false;
+  try { return new URL(referer).origin === expected; } catch { return false; }
+}
+
+async function permitBootstrapAttempt(db: D1Database, ip: string): Promise<boolean> {
+  const digest = await crypto.subtle.digest('SHA-256', enc.encode('admin-bootstrap:' + ip));
+  const key = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+  const now = Date.now();
+  const row = await db.prepare(`INSERT INTO auth_rate_limits(bucket_key,window_started_at,attempts) VALUES(?,?,1)
+    ON CONFLICT(bucket_key) DO UPDATE SET
+      attempts=CASE WHEN window_started_at<=? THEN 1 ELSE attempts+1 END,
+      window_started_at=CASE WHEN window_started_at<=? THEN ? ELSE window_started_at END
+    RETURNING attempts`)
+    .bind(key, now, now - 15 * 60 * 1000, now - 15 * 60 * 1000, now)
+    .first<{ attempts: number }>();
+  return Number(row?.attempts ?? 11) <= 10;
 }
 function noStore(c: any) {
   c.header('Cache-Control', 'no-store');
@@ -93,6 +111,10 @@ export function registerAdminRoutes(app: any) {
     if (!originAllowed(c)) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
     const expected = c.env.ADMIN_BOOTSTRAP_TOKEN;
     const supplied = c.req.header('X-Kairo-Bootstrap');
+    const bootstrapIp = c.req.header('CF-Connecting-IP') ?? 'unknown';
+    if (!await permitBootstrapAttempt(c.env.DB, bootstrapIp)) {
+      return fail(c, 429, 'RATE_LIMITED', 'Too many administrator setup attempts. Try again in 15 minutes.');
+    }
     if (typeof expected !== 'string' || expected.length < 32 || !supplied || !sameSecret(expected, supplied)) {
       return fail(c, 404, 'NOT_FOUND', 'Not found.');
     }
@@ -106,7 +128,7 @@ export function registerAdminRoutes(app: any) {
     const accessEmail = c.env.ACCESS_ENFORCED === 'true' ? assertedEmail : (submittedEmail ?? assertedEmail);
     if (!username || displayName.length < 2 || displayName.length > 40 || !passwordOf(body?.password) ||
         !accessEmail || (assertedEmail && submittedEmail && assertedEmail !== submittedEmail)) {
-      return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid username, display name, approved email address, and password of at least 12 characters.');
+      return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid username, display name, approved email address, and password of at least 15 characters.');
     }
     try {
       const uid = crypto.randomUUID(), identityId = crypto.randomUUID(), now = Date.now();
@@ -227,7 +249,7 @@ export function registerAdminRoutes(app: any) {
     const admin = await currentAdmin(c);
     if (!admin) return fail(c, 404, 'NOT_FOUND', 'Not found.');
     const body: any = await c.req.json().catch(() => null);
-    if (!passwordOf(body?.password)) return fail(c, 400, 'VALIDATION_ERROR', 'Password must contain at least 12 characters.');
+    if (!passwordOf(body?.password)) return fail(c, 400, 'VALIDATION_ERROR', 'Password must contain at least 15 characters.');
     try {
       const target = c.req.param('id');
       const exists = await c.env.DB.prepare("SELECT id FROM user_profiles WHERE id=? AND role='user' AND account_status IN ('active','suspended')").bind(target).first();
