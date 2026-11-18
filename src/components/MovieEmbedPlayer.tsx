@@ -234,9 +234,10 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl = null, init
         className="nf-player-frame"
         src={embedUrl}
         title={title}
+        sandbox="allow-scripts allow-same-origin allow-presentation"
         allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
         allowFullScreen
-        referrerPolicy="origin"
+        referrerPolicy="strict-origin-when-cross-origin"
         onLoad={() => { setLoaded(true); setFailed(false); }}
       />
       {!loaded && !failed && <>{backButton}<span className="nf-spinner" role="status" aria-label="Loading" /></>}
