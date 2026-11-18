@@ -148,7 +148,7 @@ export default function AdminPage() {
             <button style={button} disabled={busy}>Save approved email</button>
           </form>}
           {resetId === account.id && <form onSubmit={savePassword} style={{ width: '100%', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            <input style={{ ...field, flex: '1 1 260px', marginTop: 0 }} type="password" minLength={12} maxLength={1024} autoComplete="new-password" placeholder="New password (12+ characters)" required value={resetPassword} onChange={event => setResetPassword(event.target.value)} />
+            <input style={{ ...field, flex: '1 1 260px', marginTop: 0 }} type="password" minLength={15} maxLength={1024} autoComplete="new-password" placeholder="New password (15+ characters)" required value={resetPassword} onChange={event => setResetPassword(event.target.value)} />
             <button style={button} disabled={busy}>Save password</button>
           </form>}
         </article>)}
@@ -162,7 +162,7 @@ export default function AdminPage() {
         <label>Username<input style={field} autoComplete="off" minLength={3} maxLength={64} pattern="[A-Za-z0-9._-]+" required value={username} onChange={event => setUsername(event.target.value)} /></label>
         <label>Display name<input style={field} autoComplete="off" minLength={2} maxLength={40} required value={displayName} onChange={event => setDisplayName(event.target.value)} /></label>
         <label>Approved email<input style={field} type="email" autoComplete="off" maxLength={254} required value={accessEmail} onChange={event => setAccessEmail(event.target.value)} /></label>
-        <label>Password<input style={field} type="password" autoComplete="new-password" minLength={12} maxLength={1024} required value={password} onChange={event => setPassword(event.target.value)} /></label>
+        <label>Password<input style={field} type="password" autoComplete="new-password" minLength={15} maxLength={1024} required value={password} onChange={event => setPassword(event.target.value)} /></label>
         <div style={{ display: 'flex', alignItems: 'end' }}><button style={{ ...button, width: '100%' }} disabled={busy || count >= limit}>{busy ? 'Please wait…' : count >= limit ? 'Account limit reached' : 'Create account'}</button></div>
       </form>
     </section>
