@@ -33,7 +33,7 @@ npm test
 npm run build
 ```
 
-Closed-access account provisioning, one-time administrator setup, and staging-only activation are documented in [docs/CLOSED_ACCESS_SETUP.md](docs/CLOSED_ACCESS_SETUP.md). Cloudflare environments, D1 migrations, Worker secrets and release gates are documented in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Start with [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the wider system design.
+External video-frame sandboxing and the report-only resource whitelist are documented in [docs/EMBED_SECURITY.md](docs/EMBED_SECURITY.md). Closed-access account provisioning, one-time administrator setup, and staging-only activation are documented in [docs/CLOSED_ACCESS_SETUP.md](docs/CLOSED_ACCESS_SETUP.md). Cloudflare environments, D1 migrations, Worker secrets and release gates are documented in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Start with [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the wider system design.
 
 ## Repository conventions
 
