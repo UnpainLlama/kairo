@@ -1,5 +1,5 @@
 import { normalizeAccessEmail } from '../auth/cloudflareAccess';
-import { hashPassword } from '../auth/password';
+import { hashPassword, isNewPasswordValid } from '../auth/password';
 import { createSession, sessionCookie, findSessionUser } from '../auth/session';
 
 const enc = new TextEncoder();
@@ -9,8 +9,7 @@ const usernameOf = (value: unknown): string | null => {
   return valueTrimmed.length >= 3 && valueTrimmed.length <= 64 && /^[A-Za-z0-9._-]+$/.test(valueTrimmed)
     ? valueTrimmed : null;
 };
-const passwordOf = (value: unknown): value is string =>
-  typeof value === 'string' && Array.from(value).length >= 15 && enc.encode(value).length <= 1024;
+const passwordOf = isNewPasswordValid;
 const fail = (c: any, status: number, code: string, message: string) =>
   c.json({ success: false, error: { code, message } }, status);
 const ok = (c: any, data: unknown, status = 200) =>
