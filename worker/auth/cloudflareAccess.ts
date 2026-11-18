@@ -143,16 +143,14 @@ export async function verifyCloudflareAccessAssertion(
   }
 
   if (header.alg !== 'RS256' || typeof header.kid !== 'string' || header.kid.length > 128 ||
-      claims.iss !== issuer || claims.type !== 'app' ||
+      claims.iss !== issuer ||
       !Array.isArray(claims.aud) && typeof claims.aud !== 'string' ||
       !(Array.isArray(claims.aud) ? claims.aud : [claims.aud]).includes(audience) ||
       typeof claims.exp !== 'number' || !Number.isFinite(claims.exp) ||
       claims.exp <= nowSeconds - CLOCK_SKEW_SECONDS ||
-      typeof claims.iat !== 'number' || !Number.isFinite(claims.iat) ||
-      claims.iat > nowSeconds + CLOCK_SKEW_SECONDS ||
-      typeof claims.nbf !== 'number' || !Number.isFinite(claims.nbf) ||
-      claims.nbf > nowSeconds + CLOCK_SKEW_SECONDS ||
-      typeof claims.sub !== 'string' || !claims.sub.trim() ||
+      (claims.iat !== undefined && (typeof claims.iat !== 'number' || !Number.isFinite(claims.iat) || claims.iat > nowSeconds + CLOCK_SKEW_SECONDS)) ||
+      (claims.nbf !== undefined && (typeof claims.nbf !== 'number' || !Number.isFinite(claims.nbf) || claims.nbf > nowSeconds + CLOCK_SKEW_SECONDS)) ||
+      (claims.sub !== undefined && (typeof claims.sub !== 'string' || !claims.sub.trim())) ||
       typeof claims.email !== 'string' || claims.service_token_status === true ||
       typeof claims.common_name === 'string') return null;
 
@@ -175,7 +173,7 @@ export async function verifyCloudflareAccessAssertion(
 
   const email = normalizeAccessEmail(claims.email);
   if (!email) return null;
-  return { email, subject: claims.sub };
+  return { email, subject: typeof claims.sub === 'string' ? claims.sub : email };
 }
 
 /** Test-only reset so JWKS rotation and cache cases remain isolated between tests. */
