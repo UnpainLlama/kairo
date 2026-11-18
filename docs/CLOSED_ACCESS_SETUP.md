@@ -8,7 +8,7 @@ This branch implements the agreed staging access model:
 - The intended allocation is one administrator email plus up to 15 standard-user emails (16 total).
 - Kairo's Worker verifies the signed Cloudflare Access application JWT, including RS256 signature, team issuer, application audience, token times, and human identity email. It never trusts a user-supplied email header.
 - Every Kairo account is bound to one unique Access email. The Kairo session is also bound to that email and is rejected when the current Access identity differs.
-- Invited visitors can browse the catalogue without a Kairo account. A Kairo username/password is required for personal/cloud features.
+- Invited visitors can browse the catalogue after Cloudflare Access sign-in without entering their Kairo username/password. Each invited email is still assigned an active Kairo profile; Kairo credentials are required only for personal/cloud features.
 - The single administrator is provisioned once using a temporary Worker bootstrap secret and a password. The bootstrap completion state is permanent in D1.
 - Administrator sign-in does not use Kairo MFA. Five incorrect password attempts within a one-hour window lock the administrator login until an operator manually unlocks it through the Cloudflare D1 console.
 - Administrator sessions expire after eight hours; standard-account sessions retain the existing 30-day lifetime.
@@ -45,7 +45,7 @@ Cloudflare Access protects the static application and the `workers.dev` URL at t
 1. Add an invited email to the exact-email Cloudflare Access policy.
 2. In Kairo's administrator console, create the standard account and supply the same approved email address, username, display name, and password.
 3. Share the Kairo username and password with the intended user through a separate secure channel.
-4. The user opens the staging URL, enters their email at Cloudflare's Access screen, receives a PIN, and completes Access sign-in. They can then browse anonymously or sign in to their Kairo account for personal features.
+4. The user opens the staging URL, enters their email at Cloudflare's Access screen, receives a PIN, and completes Access sign-in. They can browse the catalogue without signing in to Kairo, or enter their Kairo username/password for personal features.
 5. To change the email assigned to an existing Kairo account, use **Change approved email** in the administrator console. This revokes the account's existing Kairo sessions. Add the new email to the Cloudflare Access policy and remove the old one if it should no longer enter the site.
 6. Existing accounts created before the email-binding migration have no `access_email`. Assign an approved email to each account in the administrator console before that user attempts Kairo sign-in.
 
