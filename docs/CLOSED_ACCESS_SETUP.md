@@ -31,10 +31,12 @@ This branch implements the agreed staging access model:
 5. Create an **Allow** policy for the protected Worker application. Add each invited email as an individual **Emails** selector value. The policy should contain the administrator's email and only the invited standard-user emails, up to 16 addresses total.
 6. Do not use **Emails ending in**, **Email domain**, **Login Methods: One-time PIN** as an Include rule by itself, **Everyone**, or **All valid emails**. The allowlist must identify individual addresses.
 7. Set the Access application session duration to 24 hours as the initial setting.
-8. In the Access application settings, copy the **Team domain** and **Application Audience (AUD) tag**. Set these as ordinary staging Worker variables:
-   - `ACCESS_TEAM_DOMAIN` — the team domain, for example `your-team.cloudflareaccess.com` (use your actual team domain).
+8. In the Access application settings, copy the **Team domain** and **Application Audience (AUD) tag**.
+9. Replace the two staging placeholders in `wrangler.jsonc` with the exact values from this Kairo staging Access application:
+   - `ACCESS_TEAM_DOMAIN` — the team domain, for example `your-team.cloudflareaccess.com` (use your actual team domain; the Worker accepts the domain with or without `https://`).
    - `ACCESS_AUD` — the AUD tag for this specific Kairo staging Access application.
-9. The staging Wrangler configuration sets `ACCESS_ENFORCED=true`. The Worker fails closed for API requests if the team domain or AUD tag is missing or if the Access assertion is absent/invalid. Set both values before deploying the feature branch.
+10. Commit those two values to the staging feature branch before deploying. Wrangler treats its configuration as the source of truth and can overwrite dashboard-only variables on the next deploy. The staging deploy workflow now refuses to deploy while either placeholder remains. Do not add the AUD tag or team domain to production configuration.
+11. The staging Wrangler configuration sets `ACCESS_ENFORCED=true`. The Worker fails closed for API requests if the team domain or AUD tag is missing or if the Access assertion is absent/invalid.
 
 Cloudflare Access protects the static application and the `workers.dev` URL at the perimeter. The Worker independently validates the signed `Cf-Access-Jwt-Assertion` for API requests. The application JWT must be for this exact Access app. Do not rely on a plain email header or on a browser-provided value.
 
