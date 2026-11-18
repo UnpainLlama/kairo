@@ -149,6 +149,22 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
       return true;
     };
 
+    // The official IFrame API creates its own iframe. Observe insertion before the
+    // iframe's first navigation and apply the same restrictions as the other players:
+    // scripts and same-origin storage remain available to YouTube, but popups and
+    // top-level navigation are not granted.
+    const sandboxYouTubeFrames = () => {
+      hostRef.current?.querySelectorAll('iframe').forEach((frame) => {
+        frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-presentation');
+        frame.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+      });
+    };
+    const frameObserver = new MutationObserver(sandboxYouTubeFrames);
+    if (hostRef.current) {
+      frameObserver.observe(hostRef.current, { childList: true, subtree: true });
+      sandboxYouTubeFrames();
+    }
+
     void loadYouTubeIframeApi().then((api) => {
       if (cancelled || !hostRef.current) return;
       const player = new api.Player(hostRef.current, {
@@ -237,6 +253,7 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
     document.addEventListener('visibilitychange', visibilityChange);
     return () => {
       cancelled = true;
+      frameObserver.disconnect();
       stopTimer();
       if (resumeTimerRef.current !== null) {
         window.clearInterval(resumeTimerRef.current);
