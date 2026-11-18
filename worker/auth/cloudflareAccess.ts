@@ -183,6 +183,16 @@ export async function verifyCloudflareAccessAssertion(
   return { email, subject: typeof claims.sub === 'string' ? claims.sub : email };
 }
 
+
+/** A signed Access token is not sufficient on its own: Kairo also checks that the
+ * email still belongs to an active invited account on every API request. */
+export async function hasActiveAccessAccount(db: D1Database, email: string): Promise<boolean> {
+  const row = await db.prepare(
+    "SELECT id FROM user_profiles WHERE access_email = ? COLLATE NOCASE AND account_status = 'active' LIMIT 1",
+  ).bind(email).first<{ id: string }>();
+  return Boolean(row?.id);
+}
+
 /** Test-only reset so JWKS rotation and cache cases remain isolated between tests. */
 export function resetAccessJwksCacheForTests(): void {
   jwksCache = null;
