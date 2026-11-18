@@ -133,7 +133,7 @@ export default function AuthPage() {
               type="password"
               autoComplete={setupMode ? 'new-password' : 'current-password'}
               required
-              minLength={setupMode ? 12 : 1}
+              minLength={setupMode ? 15 : 1}
               maxLength={1024}
               value={password}
               onChange={event => setPassword(event.target.value)}
@@ -145,7 +145,7 @@ export default function AuthPage() {
                 type="password"
                 autoComplete="new-password"
                 required
-                minLength={12}
+                minLength={15}
                 maxLength={1024}
                 value={confirmPassword}
                 onChange={event => setConfirmPassword(event.target.value)}
