@@ -23,13 +23,18 @@ This branch implements the agreed staging access model:
 1. In Cloudflare, open **Workers & Pages** and select the staging Worker corresponding to `kairo-anime-platform-staging.unpainllama.workers.dev`.
 2. Open its **Access** tab and choose **Protect this Worker**. Protect the staging Worker (including the URL/preview endpoints that belong to that Worker). Do not select the account-wide option.
 3. In Zero Trust, ensure **One-time PIN** is enabled as a login method.
-4. Create an **Allow** policy for this application. Add each invited email as an individual **Emails** selector value. The policy should contain the administrator's email and only the invited standard-user emails, up to 16 addresses total.
-5. Do not use **Emails ending in**, **Email domain**, **Login Methods: One-time PIN** as an Include rule by itself, **Everyone**, or **All valid emails**. The allowlist must identify individual addresses.
-6. Set the Access application session duration to 24 hours as the initial setting. Cloudflare's email PIN expires after 10 minutes; users can request another PIN after expiry.
-7. In the Access application settings, copy the **Team domain** and **Application Audience (AUD) tag**. Set these as ordinary staging Worker variables:
+4. In the Worker destination's path overrides, make exactly these two paths public so the repository's credential-free deployment health check can run:
+   - `/api/health`
+   - `/api/ready`
+
+   These handlers return only a generic health status when Access enforcement is enabled. No other path may be public. Do not create an application-wide Bypass/Everyone policy. Cloudflare documents Worker destination path overrides in its [Access application API](https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/applications/methods/create/).
+5. Create an **Allow** policy for the protected Worker application. Add each invited email as an individual **Emails** selector value. The policy should contain the administrator's email and only the invited standard-user emails, up to 16 addresses total.
+6. Do not use **Emails ending in**, **Email domain**, **Login Methods: One-time PIN** as an Include rule by itself, **Everyone**, or **All valid emails**. The allowlist must identify individual addresses.
+7. Set the Access application session duration to 24 hours as the initial setting.
+8. In the Access application settings, copy the **Team domain** and **Application Audience (AUD) tag**. Set these as ordinary staging Worker variables:
    - `ACCESS_TEAM_DOMAIN` — the team domain, for example `your-team.cloudflareaccess.com` (use your actual team domain).
    - `ACCESS_AUD` — the AUD tag for this specific Kairo staging Access application.
-8. The staging Wrangler configuration sets `ACCESS_ENFORCED=true`. The Worker fails closed for API requests if the team domain or AUD tag is missing or if the Access assertion is absent/invalid. Set both values before deploying the feature branch.
+9. The staging Wrangler configuration sets `ACCESS_ENFORCED=true`. The Worker fails closed for API requests if the team domain or AUD tag is missing or if the Access assertion is absent/invalid. Set both values before deploying the feature branch.
 
 Cloudflare Access protects the static application and the `workers.dev` URL at the perimeter. The Worker independently validates the signed `Cf-Access-Jwt-Assertion` for API requests. The application JWT must be for this exact Access app. Do not rely on a plain email header or on a browser-provided value.
 
