@@ -84,6 +84,9 @@ jobs:
       TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'staging' }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PRODUCTION_DEPLOY_APPROVED: ${{ vars.PRODUCTION_DEPLOY_APPROVED }}
+      STAGING_URL: ${{ vars.STAGING_URL }}
+      PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
     steps:
       - name: Guard - manual staging deploys must use the reconciled staging branch
         if: github.event_name == 'workflow_dispatch' && env.TARGET == 'staging'
@@ -96,7 +99,7 @@ jobs:
         if: env.TARGET == 'production'
         run: |
           if [ "$GITHUB_REF" != "refs/heads/main" ]; then echo "::error::Production deploys only run from main."; exit 1; fi
-          if [ "${{ vars.PRODUCTION_DEPLOY_APPROVED }}" != "true" ]; then
+          if [ "$PRODUCTION_DEPLOY_APPROVED" != "true" ]; then
             echo "::error::Production deploy is not approved. The owner must set the repository variable PRODUCTION_DEPLOY_APPROVED=true."; exit 1
           fi
       - name: Checkout
@@ -130,7 +133,11 @@ jobs:
       - name: Verify health and database connectivity
         run: |
           URL=$(grep -o 'https://[A-Za-z0-9._-]*\.workers\.dev' deploy.log | head -1 || true)
-          URL="${URL:-${{ vars.STAGING_URL }}}"
+          if [ "$TARGET" = "production" ]; then
+            URL="${URL:-$PRODUCTION_URL}"
+          else
+            URL="${URL:-$STAGING_URL}"
+          fi
           if [ -z "$URL" ]; then echo "::error::Could not find the deployed URL in the deploy log. Set the repository variable STAGING_URL."; exit 1; fi
           echo "Checking $URL"
           for path in /api/health /api/ready; do

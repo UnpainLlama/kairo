@@ -89,7 +89,7 @@ Open these in a browser (replace the host with your staging URL):
 | `TMDB_ACCESS_TOKEN` | Worker secret | Cloudflare Worker environment | Required for TMDB Movies discovery/search/details where `MOVIES_TMDB_ENABLED=true`; also used for optional Anime artwork enrichment |
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | GitHub environment **secrets** | GitHub only | Deploying. Never in the repo or the Worker |
 | `STAGING_DEPLOY_ENABLED` | GitHub variable | GitHub | Auto-deploy staging on merge to main |
-| `STAGING_URL` | GitHub variable, optional | GitHub | Fallback if the deploy log URL cannot be read |
+| `STAGING_URL`, `PRODUCTION_URL` | GitHub variables, optional | GitHub | Environment-specific fallback URL if the deploy log URL cannot be read; a production check never falls back to the staging URL |
 | `PRODUCTION_DEPLOY_APPROVED` | GitHub variable | GitHub | Must be `true` for any production deploy. **Do not set.** |
 
 CineSrc is embedded directly by the Movies watch page and requires no Kairo Worker secret or additional Cloudflare binding. Movie playback is not routed through a Worker proxy.
