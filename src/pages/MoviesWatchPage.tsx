@@ -52,7 +52,7 @@ export default function MoviesWatchPage() {
   }, [accountId, accountResolved, accountError, movie?.externalId, movie?.providerId]);
 
   const persistPlayback = useCallback((incoming: MediaPlaybackSnapshot, reason: PlaybackSaveReason) => {
-    if (!movie) return;
+    if (reason === 'open' || !movie) return;
     const now = Date.now();
     const snapshot: MediaPlaybackSnapshot = {
       ...incoming,
@@ -63,7 +63,7 @@ export default function MoviesWatchPage() {
       updatedAt: now,
     };
     setPlaybackState(snapshot);
-    if (reason !== 'timeupdate' || now - lastLocalSaveAt.current >= 1000) {
+    if (reason !== 'timeupdate' || now - lastLocalSaveAt.current >= 5000) {
       writeLocalMediaPlayback(accountId, snapshot);
       lastLocalSaveAt.current = now;
     }

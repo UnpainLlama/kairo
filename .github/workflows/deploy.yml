@@ -2,7 +2,7 @@ name: Build and deploy KAIRO
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, staging]
   push:
     branches: [main]
   workflow_dispatch:
@@ -33,6 +33,37 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      - name: Verify staging and production Access configuration
+        run: node scripts/validate-wrangler-access.mjs
+      - name: Report dependency security advisories
+        run: |
+          npm audit --json > npm-audit-all.json || true
+          set +e
+          npm audit --omit=dev --json > npm-audit-production.json
+          production_audit_status=$?
+          set -e
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          function printAudit(file, label) {
+            let report = {};
+            try { report = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+            const entries = Object.entries(report.vulnerabilities ?? {});
+            console.log(label + ': ' + (entries.length === 0 ? 'no reported vulnerabilities' : entries.length + ' affected packages'));
+            for (const [name, item] of entries) {
+              console.log(`- ${name}: severity=${item.severity}, direct=${item.isDirect}, range=${item.range}, paths=${(item.nodes ?? []).join(',')}, fixAvailable=${JSON.stringify(item.fixAvailable)}`);
+              for (const advisory of item.via ?? []) {
+                if (typeof advisory === 'string') console.log(`  - dependency: ${advisory}`);
+                else console.log(`  - ${advisory.title ?? advisory.name ?? 'Advisory'}: ${advisory.url ?? ''} (range: ${advisory.range ?? 'unspecified'})`);
+              }
+            }
+          }
+          printAudit('npm-audit-production.json', 'Production dependency audit (dev dependencies omitted)');
+          printAudit('npm-audit-all.json', 'Full dependency audit');
+          NODE
+          if [ "$production_audit_status" -ne 0 ]; then
+            echo "::error::Production dependency audit failed. Resolve production dependency advisories before this change can pass CI."
+            exit 1
+          fi
       - name: Typecheck
         run: npm run typecheck
       - name: Test
@@ -53,12 +84,22 @@ jobs:
       TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'staging' }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PRODUCTION_DEPLOY_APPROVED: ${{ vars.PRODUCTION_DEPLOY_APPROVED }}
+      STAGING_URL: ${{ vars.STAGING_URL }}
+      PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
     steps:
+      - name: Guard - manual staging deploys must use the reconciled staging branch
+        if: github.event_name == 'workflow_dispatch' && env.TARGET == 'staging'
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/staging" ]; then
+            echo "::error::Manual staging deploys must be dispatched from the reconciled 'staging' branch. Do not deploy feature branches directly."
+            exit 1
+          fi
       - name: Guard - production needs explicit approval
         if: env.TARGET == 'production'
         run: |
-          if [ "${{ github.ref }}" != "refs/heads/main" ]; then echo "::error::Production deploys only run from main."; exit 1; fi
-          if [ "${{ vars.PRODUCTION_DEPLOY_APPROVED }}" != "true" ]; then
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then echo "::error::Production deploys only run from main."; exit 1; fi
+          if [ "$PRODUCTION_DEPLOY_APPROVED" != "true" ]; then
             echo "::error::Production deploy is not approved. The owner must set the repository variable PRODUCTION_DEPLOY_APPROVED=true."; exit 1
           fi
       - name: Checkout
@@ -72,6 +113,10 @@ jobs:
           if grep -q "REPLACE_WITH_${WANT}_" wrangler.jsonc; then
             echo "::error file=wrangler.jsonc::Replace the REPLACE_WITH_${WANT}_... placeholders with your real Cloudflare IDs. See docs/DEPLOYMENT.md."; exit 1
           fi
+          if grep -Eq "REPLACE_WITH_${WANT}_ACCESS_(TEAM_DOMAIN|AUD)" wrangler.jsonc; then
+            echo "::error file=wrangler.jsonc::Set the ${TARGET} ACCESS_TEAM_DOMAIN and ACCESS_AUD from that environment's Kairo Access application before deploying."; exit 1
+          fi
+          node scripts/validate-wrangler-access.mjs --require-values
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
@@ -88,7 +133,11 @@ jobs:
       - name: Verify health and database connectivity
         run: |
           URL=$(grep -o 'https://[A-Za-z0-9._-]*\.workers\.dev' deploy.log | head -1 || true)
-          URL="${URL:-${{ vars.STAGING_URL }}}"
+          if [ "$TARGET" = "production" ]; then
+            URL="${URL:-$PRODUCTION_URL}"
+          else
+            URL="${URL:-$STAGING_URL}"
+          fi
           if [ -z "$URL" ]; then echo "::error::Could not find the deployed URL in the deploy log. Set the repository variable STAGING_URL."; exit 1; fi
           echo "Checking $URL"
           for path in /api/health /api/ready; do
@@ -101,5 +150,9 @@ jobs:
             if [ "$ok" != "1" ]; then echo "::error::$URL$path did not return a healthy response."; cat body.json; exit 1; fi
             echo "$path OK: $(cat body.json)"
           done
-          grep -q '"cache":"kv"' body.json || echo "::warning::The KV cache binding is not active (ready reports cache != kv)."
+          if [ "$TARGET" = "staging" ]; then
+            echo "::notice::Staging readiness intentionally omits cache details behind Cloudflare Access."
+          else
+            grep -q '"cache":"kv"' body.json || echo "::warning::The KV cache binding is not active (ready reports cache != kv)."
+          fi
           { echo "### Deployed $TARGET"; echo "$URL"; echo; echo '```json'; cat body.json; echo; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

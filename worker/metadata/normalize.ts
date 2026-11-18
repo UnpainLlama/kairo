@@ -12,8 +12,8 @@ export const normalizeFormat = (raw: unknown): Format | null => FORMATS[clean(ra
 const STATUSES: Record<string, Status | null> = {
   // AniList
   // KAIRO's own stored values must round-trip
-  AIRING: 'airing',
-  FINISHED: 'finished', RELEASING: 'airing', NOT_YET_RELEASED: 'upcoming', HIATUS: 'hiatus', CANCELLED: null,
+  AIRING: 'airing', CURRENTLY_AIRING: 'airing',
+  FINISHED: 'finished', FINISHED_AIRING: 'finished', RELEASING: 'airing', NOT_YET_RELEASED: 'upcoming', NOT_YET_AIRED: 'upcoming', HIATUS: 'hiatus', CANCELLED: null,
   // Kitsu
   CURRENT: 'airing', TBA: 'upcoming', UNRELEASED: 'upcoming', UPCOMING: 'upcoming',
   // anime-offline-database

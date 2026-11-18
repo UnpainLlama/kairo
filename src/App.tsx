@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
   Bell, Bookmark, CalendarDays, ChevronRight, Compass, Film, Flame, History, ListVideo,
@@ -23,6 +23,7 @@ import BrowsePage from './pages/BrowsePage';
 import AnimePage from './pages/AnimePage';
 import WatchPage from './pages/WatchPage';
 import AuthPage from './pages/AuthPage';
+import AdminPage from './pages/AdminPage';
 import { useKairoAccount } from './lib/AccountProvider';
 import { AboutPage, AccountPage, HistoryPage, NotFoundPage, ProfilePage } from './pages/StaticPages';
 
@@ -73,6 +74,15 @@ const mobileNavItems: NavItem[] = [
   { to: '/profile', label: 'Profile', icon: UserRound },
 ];
 
+function AdminOnly({ children }: { children: ReactNode }) {
+  const account = useKairoAccount();
+  if (account.status === 'loading') return null;
+  if (account.status === 'unavailable') return <main style={{ padding: 32 }}>Access could not be verified. Please refresh and try again.</main>;
+  if (account.status !== 'signed-in') return <Navigate to="/login?continue=admin" replace />;
+  if (account.role !== 'admin') return <NotFoundPage />;
+  return <>{children}</>;
+}
+
 function YouTubeWatchRedirect() {
   const { search } = useLocation();
   const videoId = new URLSearchParams(search).get('v') ?? '';
@@ -103,18 +113,58 @@ function MenuLink({ to, label, icon: Icon, end, onNavigate }: NavItem & { onNavi
 
 export default function App() {
   const { pathname, search } = useLocation();
-  const isYouTubeMode = pathname.startsWith('/youtube');
+  const account = useKairoAccount();
+  const isAdmin = account.status === 'signed-in' && account.role === 'admin';
+  const [adminPath, setAdminPath] = useState<string | null>(null);
+  const isYouTubeMode = isAdmin && pathname.startsWith('/youtube');
   const isMoviesMode = pathname === '/movies' || pathname.startsWith('/movies/');
   const isMoviesWatchMode = pathname.startsWith('/movies/') && pathname.endsWith('/watch');
   const activeNavItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : navItems;
   const activeMenuItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : menuItems;
   const activeMobileItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : mobileNavItems;
   const [menuOpen, setMenuOpen] = useState(false);
-  const account = useKairoAccount();
-  const currentUser = account.status === 'signed-in' ? { displayName: account.displayName ?? 'Account', email: account.email } : null;
+  const currentUser = account.status === 'signed-in' ? { displayName: account.displayName ?? 'Account', email: account.email, username: account.username } : null;
   const [authBusy, setAuthBusy] = useState(false);
   const navigate = useNavigate();
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (!isAdmin) {
+      setAdminPath(null);
+      return () => { active = false; };
+    }
+    const refreshPath = () => {
+      fetch('/api/v1/admin/console-path', {
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+      })
+        .then(response => {
+          if (response.status === 401 || response.status === 404) {
+            window.dispatchEvent(new Event('kairo:auth-change'));
+            return null;
+          }
+          return response.ok ? response.json() : null;
+        })
+        .then(payload => {
+          const nextPath = payload?.data?.path;
+          if (!active || typeof nextPath !== 'string' || !/^\/[A-Za-z0-9_-]{32,128}$/.test(nextPath)) return;
+          if (adminPath && pathname === adminPath && adminPath !== nextPath) navigate(nextPath, { replace: true });
+          setAdminPath(nextPath);
+        })
+        .catch(() => { /* Keep the last known path through transient network errors. */ });
+    };
+    refreshPath();
+    const isOnConsolePath = Boolean(adminPath && pathname === adminPath);
+    if (isOnConsolePath) window.addEventListener('focus', refreshPath);
+    const interval = isOnConsolePath ? window.setInterval(refreshPath, 60_000) : null;
+    return () => {
+      active = false;
+      if (isOnConsolePath) window.removeEventListener('focus', refreshPath);
+      if (interval !== null) window.clearInterval(interval);
+    };
+  }, [isAdmin, pathname, adminPath, navigate]);
 
   useEffect(() => { window.scrollTo({ top: 0, left: 0, behavior: 'auto' }); }, [pathname, search]);
 
@@ -141,6 +191,8 @@ export default function App() {
   }, [menuOpen]);
 
   const closeMenu = (_event?: MouseEvent<HTMLAnchorElement>) => setMenuOpen(false);
+
+  if (adminPath && pathname === adminPath) return <AdminOnly><AdminPage /></AdminOnly>;
 
   return (
     <div className={`kc-app${pathname === '/' ? ' kc-home-view' : ''}${isYouTubeMode ? ' yt-app' : ''}${isMoviesMode ? ' mv-app' : ''}${isMoviesWatchMode ? ' mv-watch-app' : ''}`}>
@@ -175,17 +227,19 @@ export default function App() {
               <section className="kc-menu-popover" id="kc-navigation-menu" aria-label="Kairo navigation menu">
                 <Link to={currentUser ? "/profile" : "/login"} className="kc-menu-profile" onClick={closeMenu}>
                   <span className="kc-menu-avatar"><UserRound size={19} aria-hidden="true" /></span>
-                  <span><b>{currentUser?.displayName ?? 'Profile'}</b><small>{currentUser?.email ?? 'Guest account'}</small></span>
+                  <span><b>{currentUser?.displayName ?? 'Profile'}</b><small>{currentUser?.username ? '@' + currentUser.username : currentUser?.email ?? 'Guest account'}</small></span>
                   <ChevronRight size={15} aria-hidden="true" />
                 </Link>
                 <div className="kc-menu-section-label">{isYouTubeMode ? 'Video' : isMoviesMode ? 'Movies' : 'Media'}</div>
                 <div className="kc-menu-grid">
                   {activeMenuItems.slice(0, isYouTubeMode || isMoviesMode ? 5 : 4).map((item) => <MenuLink key={item.label} {...item} onNavigate={closeMenu} />)}
-                  {isMoviesMode ? <>
-                    <MenuLink to="/browse/anime" label="Anime" icon={Tv} onNavigate={closeMenu} />
-                    <MenuLink to="/youtube" label="YouTube" icon={Youtube} onNavigate={closeMenu} />
-                  </> : (
-                    <NavLink to={isYouTubeMode ? '/' : '/youtube'} className={({ isActive }) => `kc-menu-tile${isActive ? ' active' : ''}`} onClick={closeMenu}>
+                  {isMoviesMode ? (
+                    <>
+                      <MenuLink to="/browse/anime" label="Anime" icon={Tv} onNavigate={closeMenu} />
+                      {isAdmin && <MenuLink to="/youtube" label="YouTube" icon={Youtube} onNavigate={closeMenu} />}
+                    </>
+                  ) : (
+                    isAdmin && <NavLink to={isYouTubeMode ? '/' : '/youtube'} className={({ isActive }) => `kc-menu-tile${isActive ? ' active' : ''}`} onClick={closeMenu}>
                       {isYouTubeMode
                         ? <Tv size={17} strokeWidth={1.8} aria-hidden="true" />
                         : <Youtube size={17} strokeWidth={1.8} aria-hidden="true" />}
@@ -218,24 +272,22 @@ export default function App() {
 
       <main id="main" className="kc-main" tabIndex={-1}>
         <Routes>
-          <Route path="/login" element={<AuthPage mode="login" />} />
-          <Route path="/register" element={<AuthPage mode="register" />} />
-          <Route path="/verify-email" element={<AuthPage mode="register" />} />
+          <Route path="/login" element={<AuthPage />} />
           <Route path="/" element={<HomePage />} />
-          <Route path="/youtube" element={<YouTubeFeedPage />} />
+          <Route path="/youtube" element={<AdminOnly><YouTubeFeedPage /></AdminOnly>} />
           <Route path="/movies" element={<MoviesHomePage />} />
           <Route path="/movies/search" element={<MoviesSearchPage />} />
           <Route path="/movies/library" element={<MoviesLibraryPage />} />
           <Route path="/movies/browse/:category" element={<MoviesBrowsePage />} />
           <Route path="/movies/:externalId/watch" element={<MoviesWatchPage />} />
           <Route path="/movies/:externalId" element={<MoviesDetailPage />} />
-          <Route path="/youtube/search" element={<YouTubeSearchPage />} />
-          <Route path="/youtube/channels" element={<YouTubeChannelsPage />} />
-          <Route path="/youtube/watch" element={<YouTubeWatchRedirect />} />
-          <Route path="/watch" element={<YouTubeWatchRedirect />} />
-          <Route path="/youtube/watch/:videoId" element={<YouTubeWatchPage />} />
-          <Route path="/youtube/watch-later" element={<YouTubeWatchLaterPage />} />
-          <Route path="/youtube/history" element={<YouTubeHistoryPage />} />
+          <Route path="/youtube/search" element={<AdminOnly><YouTubeSearchPage /></AdminOnly>} />
+          <Route path="/youtube/channels" element={<AdminOnly><YouTubeChannelsPage /></AdminOnly>} />
+          <Route path="/youtube/watch" element={<AdminOnly><YouTubeWatchRedirect /></AdminOnly>} />
+          <Route path="/watch" element={<AdminOnly><YouTubeWatchRedirect /></AdminOnly>} />
+          <Route path="/youtube/watch/:videoId" element={<AdminOnly><YouTubeWatchPage /></AdminOnly>} />
+          <Route path="/youtube/watch-later" element={<AdminOnly><YouTubeWatchLaterPage /></AdminOnly>} />
+          <Route path="/youtube/history" element={<AdminOnly><YouTubeHistoryPage /></AdminOnly>} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/browse/movies" element={<Navigate to="/movies" replace />} />
           <Route path="/browse" element={<Navigate to="/browse/anime" replace />} />

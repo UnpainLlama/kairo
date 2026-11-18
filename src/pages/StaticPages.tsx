@@ -6,7 +6,7 @@ import { useKairoAccount } from '../lib/AccountProvider';
 import { historyPausedStorageKey, readWatchHistory, watchProgressStorageKey, writeWatchHistory } from '../lib/accountStorage';
 import { deleteMediaPlayback, listLocalMediaPlayback, syncMediaPlayback, writeLocalMediaPlayback, type MediaPlaybackSnapshot } from '../lib/mediaPlayback';
 
-type AccountUser = { id: string; displayName: string; email: string | null; emailVerifiedAt?: string | null };
+type AccountUser = { id: string; displayName: string; email: string | null; username?: string | null; role?: 'user' | 'admin'; emailVerifiedAt?: string | null };
 type WatchEntry = { slug: string; title: string; posterUrl: string | null; episodeNumber: number; episodeTitle: string; progressKey: string; durationSeconds: number | null; updatedAt: number };
 function readHistory(userId: string | null): WatchEntry[] {
   return readWatchHistory<WatchEntry>(userId).filter((x) => x && typeof x.slug === 'string' && typeof x.title === 'string');
@@ -127,7 +127,7 @@ export function ProfilePage() {
         const previous=byKey.get(key);
         if(!previous||legacy.updatedAt>previous.updatedAt)byKey.set(key,legacy);
       }
-      const merged=[...byKey.values()].filter(item=>item.title&&Number.isFinite(item.progressSeconds)).sort((a,b)=>b.updatedAt-a.updatedAt).slice(0,100);
+      const merged=[...byKey.values()].filter(item=>item.title&&Number.isFinite(item.progressSeconds)&&(user?.role==='admin'||item.mediaType!=='youtube')).sort((a,b)=>b.updatedAt-a.updatedAt).slice(0,100);
       if(!active)return;
       setPlaybackItems(merged);
       for(const item of merged){
@@ -143,9 +143,9 @@ export function ProfilePage() {
   async function logout(){setBusy(true);setError('');try{await signOut();navigate('/login',{replace:true})}catch(e){setError(e instanceof Error?e.message:'Sign out failed.')}finally{setBusy(false)}}
   if(!loaded && !unavailable)return <LoadingState label="Loading profile"/>;
   if(unavailable)return <section className="kc-profile-page"><EmptyState title="Account status unavailable">Reconnect to Kairo to load this profile without mixing it with guest data. <button type="button" className="kc-link" onClick={retry}>Retry</button></EmptyState></section>;
-  if(!user)return <section className="kc-profile-page"><div className="kc-profile-hero"><div className="kc-profile-avatar"><UserRound size={34}/></div><div><span className="kc-section-kicker">KAIRO ACCOUNT</span><h1>Your profile</h1><p>Sign in to keep your Kairo account and viewing activity together.</p></div><Link className="kc-btn kc-btn-primary" to="/login"><LogIn size={15}/> Sign in</Link></div><EmptyState title="Your profile starts here">Create an account or sign in to manage your profile. Your local watch history remains available on this device.</EmptyState></section>;
+  if(!user)return <section className="kc-profile-page"><div className="kc-profile-hero"><div className="kc-profile-avatar"><UserRound size={34}/></div><div><span className="kc-section-kicker">KAIRO ACCOUNT</span><h1>Your profile</h1><p>Sign in to keep your Kairo account and viewing activity together.</p></div><Link className="kc-btn kc-btn-primary" to="/login"><LogIn size={15}/> Sign in</Link></div><EmptyState title="Your profile starts here">Sign in with an administrator-issued account to sync your profile and viewing activity. Your local watch history remains available on this device.</EmptyState></section>;
   return <section className="kc-profile-page">
-    <div className="kc-profile-hero"><div className="kc-profile-avatar"><UserRound size={34}/></div><div className="kc-profile-heading"><span className="kc-section-kicker">KAIRO ACCOUNT</span><h1>{user.displayName}</h1><p>{user.email??'Email not available'}</p></div><Link className="kc-btn" to="/settings"><Settings size={15}/> Account settings</Link></div>
+    <div className="kc-profile-hero"><div className="kc-profile-avatar"><UserRound size={34}/></div><div className="kc-profile-heading"><span className="kc-section-kicker">KAIRO ACCOUNT</span><h1>{user.displayName}</h1><p>@{user.username??'account'}</p></div><Link className="kc-btn" to="/settings"><Settings size={15}/> Account settings</Link></div>
     <div className="kc-profile-stats">
       <article><span><Clock size={17}/></span><b>{watched}</b><small>Recent episodes</small></article>
       <article><span><Play size={17}/></span><b>{completed}</b><small>Completed episodes</small></article>
@@ -161,7 +161,7 @@ export function ProfilePage() {
         const resume=Math.floor(item.progressSeconds);
         const stamp=`${Math.floor(resume/60)}:${String(resume%60).padStart(2,'0')}`;
         return <Link key={item.mediaType+':'+item.mediaKey} to={href} className="kc-profile-history-item"><span className="kc-history-art">{item.artworkUrl?<img src={item.artworkUrl} alt="" loading="lazy"/>:<UserRound size={20}/>}</span><span><b>{item.title}</b><small>{label} · {item.completed?'Completed':item.progressSeconds>0?'Resume at '+stamp:'Not started'}</small><i><span style={{width:`${percent}%`}}/></i></span></Link>
-      })}</div>:<EmptyState title="Nothing watched yet">Start watching in Anime, Movies or YouTube and your progress will appear here.</EmptyState>}
+      })}</div>:<EmptyState title="Nothing watched yet">Start watching in Anime or Movies{user?.role==='admin'?' or YouTube':''} and your progress will appear here.</EmptyState>}
     </div>
     {error&&<p className="kc-auth-error" role="alert">{error}</p>}
     <div className="kc-profile-actions"><Link className="kc-btn" to="/settings"><Settings size={15}/> Settings</Link><button className="kc-btn kc-btn-danger" type="button" onClick={()=>void logout()} disabled={busy}><LogOut size={15}/>{busy?'Signing out…':'Sign out'}</button></div>
@@ -209,14 +209,14 @@ export function AccountPage({ title }: { title: string }) {
     return()=>{active=false};
   },[location.key]);
   useEffect(()=>{
-    if(title!=='Settings'||!user||(pendingConnect!=='google'&&pendingConnect!=='youtube'))return;
+    if(title!=='Settings'||!user||user.role!=='admin'||pendingConnect!=='youtube')return;
     if(pendingConnectStarted.current===pendingConnect)return;
     pendingConnectStarted.current=pendingConnect;
-    window.location.assign(pendingConnect==='google'?'/api/v1/auth/google?intent=link':'/api/v1/auth/youtube');
+    window.location.assign('/api/v1/auth/youtube');
   },[title,user?.id,pendingConnect]);
   useEffect(()=>{
     let active=true;
-    if(title!=='Settings'||!user){setYoutubeLoaded(true);return()=>{active=false};}
+    if(title!=='Settings'||!user||user.role!=='admin'){setYoutubeLoaded(true);return()=>{active=false};}
     fetch('/api/v1/auth/youtube/status',{credentials:'same-origin',headers:{Accept:'application/json'}})
       .then(r=>r.ok?r.json():null)
       .then(p=>{if(active&&p?.success)setYoutubeConnected(p.data?.connected===true)})
@@ -224,18 +224,7 @@ export function AccountPage({ title }: { title: string }) {
       .finally(()=>{if(active)setYoutubeLoaded(true)});
     return()=>{active=false};
   },[title,user?.id,location.key]);
-  const googleStatus=new URLSearchParams(location.search).get('google');
   const youtubeStatus=new URLSearchParams(location.search).get('youtube');
-  const googleMessages:Record<string,string>={
-    connected:'Google has been connected to your Kairo account.',
-    already_linked:'That Google account is already connected to a different Kairo account.',
-    another_account_linked:'A different Google account is already connected here.',
-    cancelled:'Google sign-in was cancelled. You can try again.',
-    expired:'That Google request expired. Please try again.',
-    token_exchange_failed:'Google could not complete account linking. Please try again.',
-    missing_identity:'Google did not return an account identity. Please try again.',
-    failed:'Google account linking could not be completed. Please try again.'
-  };
   const youtubeMessages:Record<string,string>={
     connected:'YouTube is connected. Kairo can now request access to your subscriptions.',
     cancelled:'You cancelled the YouTube connection.',
@@ -263,20 +252,16 @@ export function AccountPage({ title }: { title: string }) {
   }
   return <><header className="kc-page-head"><h1>{title}</h1></header>
     {title==='Settings'&&loaded&&user?<section className="kc-account-panel">
-      <h2>Account</h2><p>Signed in as <strong>{user.displayName}</strong> · {user.email}</p>
-      <h3>Connected sign-in methods</h3>
-      <p>Connect Google as an additional way to sign in. You’ll be asked to sign in again first if your current session is older than 15 minutes.</p>
-      <a className="kc-auth-google" href="/api/v1/auth/google?intent=link"><span aria-hidden="true">G</span>Connect Google</a>
-      {googleStatus&&<p role="status" className="kc-auth-copy">{googleMessages[googleStatus]??'Google account linking status updated.'}</p>}
-      <h3>YouTube</h3>
+      <h2>Account</h2><p>Signed in as <strong>{user.displayName}</strong> · @{user.username ?? 'account'}</p>
+      {user.role==='admin'&&<><h3>YouTube</h3>
       <p>Connect YouTube separately to let Kairo read your subscriptions. This does not change how you sign in to Kairo.</p>
       {!youtubeLoaded?<p className="kc-auth-copy" role="status">Checking YouTube connection…</p>
         :youtubeConnected?<div><p className="kc-auth-copy" role="status">YouTube is connected.</p><button className="kc-btn" type="button" onClick={()=>void disconnectYouTube()} disabled={youtubeBusy}>{youtubeBusy?'Disconnecting…':'Disconnect YouTube'}</button></div>
         :<a className="kc-auth-google" href="/api/v1/auth/youtube"><span aria-hidden="true">▶</span>Connect YouTube</a>}
       {youtubeStatus&&<p role="status" className="kc-auth-copy">{youtubeMessages[youtubeStatus]??'YouTube connection status updated.'}</p>}
-      {youtubeError&&<p role="alert" className="kc-auth-error">{youtubeError}</p>}
+      {youtubeError&&<p role="alert" className="kc-auth-error">{youtubeError}</p>}</>}
     </section>
-    :title==='Settings'&&loaded?<EmptyState title="Sign in to manage your account"><Link className="kc-link" to="/login">Sign in</Link> to connect Google or YouTube and manage your account.</EmptyState>
+    :title==='Settings'&&loaded?<EmptyState title="Sign in to manage your account"><Link className="kc-link" to="/login">Sign in</Link> to manage your account.</EmptyState>
     :<EmptyState title="Not available yet">{title} features are still being built. You can still <Link className="kc-link" to="/search">search</Link> and browse.</EmptyState>}
   </>;
 }

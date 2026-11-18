@@ -133,7 +133,7 @@ export default function WatchPage() {
         if (unified?.playerState.sourceId && serverItems.some(server => server.id === unified.playerState.sourceId)) {
           setSelectedServerId(unified.playerState.sourceId);
         }
-        if (unified && unified.updatedAt > Math.max(chosenUpdatedAt, Number(payload.data.deletedAt ?? 0), Number(payload.data.clearedAt ?? 0))) {
+        if (unified && unified.updatedAt > Math.max(Number(payload.data.deletedAt ?? 0), Number(payload.data.clearedAt ?? 0))) {
           chosenSeconds = unified.progressSeconds;
           chosenUpdatedAt = unified.updatedAt;
         }
@@ -176,7 +176,7 @@ export default function WatchPage() {
           };
           writeLocalMediaPlayback(accountId, sharedSnapshot);
           if (!unified || sharedSnapshot.updatedAt > unified.updatedAt) void syncMediaPlayback(accountId, sharedSnapshot);
-          if (localIsNewer) {
+          if (localIsNewer && !unified) {
             void fetch('/api/v1/me/history/sync', {
               method: 'POST', credentials: 'same-origin',
               headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
@@ -212,13 +212,13 @@ export default function WatchPage() {
   }, [accountId, slug, parsedEpisode, selectedServer?.id]);
 
   const persistPlaybackProgress = useCallback((seconds: number, reason: PlaybackSaveReason, playerState: SavedPlayerState = {}) => {
-    if (!accountResolved || !animeForProgress || !episodeForProgress || !Number.isFinite(seconds)) return;
+    if (reason === 'open' || !accountResolved || !animeForProgress || !episodeForProgress || !Number.isFinite(seconds)) return;
     const duration = Number(episodeForProgress.durationSeconds);
     const position = Math.max(0, Math.min(
       Number.isFinite(duration) && duration > 0 ? duration : 86400,
       seconds,
     ));
-    if (position <= 0 && reason !== 'play' && reason !== 'open' && Object.keys(playerState).length === 0) return;
+    if (position <= 0 && reason !== 'play' && Object.keys(playerState).length === 0) return;
 
     const now = Date.now();
     const progressKey = watchProgressStorageKey(accountId, slug, parsedEpisode, selectedServer?.id ?? '');
@@ -233,7 +233,7 @@ export default function WatchPage() {
       playerState: { ...playerState, sourceId: selectedServer?.id ?? playerState.sourceId },
       updatedAt: now,
     };
-    if (reason !== 'timeupdate' || now - lastLocalSnapshotAt.current >= 1000) {
+    if (reason !== 'timeupdate' || now - lastLocalSnapshotAt.current >= 5000) {
       writeLocalMediaPlayback(accountId, mediaSnapshot);
       lastLocalSnapshotAt.current = now;
     }

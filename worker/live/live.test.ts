@@ -6,6 +6,7 @@ import type { ArtworkProvider } from '../artwork/tmdb';
 import { CircuitBreaker } from '../metadata/breaker';
 import { createAniListSource, buildPageQuery } from './anilist';
 import { createJikanSource, mapJikanAnime, Pacer } from './jikan';
+import { createMalSource } from './mal';
 import { createJikanEpisodeProvider } from '../episodes/providers/jikan';
 import { createLiveHandlers, parseBrowse, currentSeason } from './handlers';
 import { makeSlug, parseRef, slugify } from './ids';
@@ -180,6 +181,29 @@ describe('Pacer', () => {
 });
 
 describe('service and handlers', () => {
+  it('falls back to AniList when MAL cannot serve an otherwise valid filter such as hiatus', async () => {
+    const mal = createMalSource(async () => json({ data: [] }), 'test-client', { pacer: instant });
+    const ani = createAniListSource(async () => aniPage([media(77, { status: 'HIATUS' })]));
+    const d = deps(async () => json({}), { sources: [mal, ani] });
+    const response = await call(d, 'browse', req({ status: 'hiatus', sort: 'popularity' }));
+    expect(response.body).toMatchObject({
+      data: { items: [{ id: 'a77', status: 'hiatus' }] },
+      meta: { source: 'anilist', degraded: true },
+    });
+  });
+
+  it('marks the MAL catalogue disabled until a Worker Client ID is configured', async () => {
+    const mal = createMalSource(async () => json({ data: [] }), undefined, { pacer: instant });
+    const d = deps(async () => json({}), { sources: [mal] });
+    const response = await call(d, 'providers', req());
+    expect(response.body).toMatchObject({
+      data: {
+        items: [{ id: 'mal', enabled: false }],
+        unknownConfigured: ['mal:client_id_missing'],
+      },
+    });
+  });
+
   it('enriches live catalogue cards with TMDB artwork without changing their Kairo ids', async () => {
     const artworkProvider: ArtworkProvider = {
       id: 'tmdb',
@@ -391,29 +415,52 @@ describe('service and handlers', () => {
       'watch_progress', 'viewing_history', 'data_sources', 'anime_provider_ids',
       'anime_relations', 'anime_field_sources', 'auth_identities', 'password_credentials',
       'sessions', 'email_verification_tokens', 'password_reset_tokens', 'provider_connections',
-      'auth_rate_limits', 'google_oauth_states', 'user_watch_history', 'youtube_oauth_states',
+      'auth_rate_limits', 'google_oauth_states', 'user_watch_history', 'user_watch_history_tombstones',
+      'user_watch_history_clear_markers', 'user_movie_library_refs', 'user_media_playback',
+      'movies', 'movie_external_ids', 'movie_genres', 'movie_genre_links', 'movie_credits',
+      'movie_availability_offers', 'user_movie_library',
+      'youtube_oauth_states', 'youtube_feed_channels', 'youtube_feed_cursors',
+      'youtube_watch_history', 'youtube_watch_later', 'admin_console_access',
+      'app_security_state', 'admin_login_security',
     ];
-    const readyDb = {
-      prepare: () => ({
-        first: async () => ({ ok: 1 }),
-        all: async () => ({ results: schemaTables.map((name) => ({ name })) }),
+    const makeReadyDb = (options: {
+      missingTable?: string;
+      missingProfileColumns?: boolean;
+      missingSessionColumns?: boolean;
+      missingYouTubeColumn?: boolean;
+      missingPlaybackColumns?: boolean;
+      missingSecurityState?: boolean;
+    } = {}) => ({
+      prepare: (sql: string) => ({
+        first: async () => sql.includes('FROM app_security_state') && options.missingSecurityState ? null : { ok: 1 },
+        all: async () => {
+          if (sql.includes("FROM sqlite_master")) {
+            return { results: schemaTables.filter((name) => name !== options.missingTable).map((name) => ({ name })) };
+          }
+          if (sql.includes("FROM user_profiles") && options.missingProfileColumns) throw new Error('username/access_email column missing');
+          if (sql.includes("FROM sessions") && options.missingSessionColumns) throw new Error('sessions.access_email column missing');
+          if (sql.includes("FROM youtube_feed_channels") && options.missingYouTubeColumn) throw new Error('upload_playlist_id column missing');
+          if (sql.includes("FROM user_media_playback") && options.missingPlaybackColumns) throw new Error('session_id/sequence columns missing');
+          return { results: [] };
+        },
       }),
-    } as unknown as NonNullable<LiveRequest['env']['DB']>;
+    });
+    const readyDb = makeReadyDb() as unknown as NonNullable<LiveRequest['env']['DB']>;
     expect(await call(d, 'ready', req({}, {}, { DB: readyDb }))).toMatchObject({
       status: 200,
       body: { data: { status: 'ready', database: 'ok', schema: 'ok', providers: ['anilist', 'jikan'], episodeProviders: ['jikan'] } },
     });
 
-    const incompleteDb = {
-      prepare: () => ({
-        first: async () => ({ ok: 1 }),
-        all: async () => ({ results: schemaTables.filter((name) => name !== 'youtube_oauth_states').map((name) => ({ name })) }),
-      }),
-    } as unknown as NonNullable<LiveRequest['env']['DB']>;
+    const incompleteDb = makeReadyDb({ missingTable: 'admin_login_security' }) as unknown as NonNullable<LiveRequest['env']['DB']>;
     expect(await call(d, 'ready', req({}, {}, { DB: incompleteDb }))).toMatchObject({
       status: 503,
       body: { success: false, error: { code: 'DATABASE_SCHEMA_NOT_READY' } },
     });
+    expect(await call(d, 'ready', req({}, {}, { DB: makeReadyDb({ missingProfileColumns: true }) as unknown as NonNullable<LiveRequest['env']['DB']> }))).toMatchObject({ status: 503 });
+    expect(await call(d, 'ready', req({}, {}, { DB: makeReadyDb({ missingSessionColumns: true }) as unknown as NonNullable<LiveRequest['env']['DB']> }))).toMatchObject({ status: 503 });
+    expect(await call(d, 'ready', req({}, {}, { DB: makeReadyDb({ missingYouTubeColumn: true }) as unknown as NonNullable<LiveRequest['env']['DB']> }))).toMatchObject({ status: 503 });
+    expect(await call(d, 'ready', req({}, {}, { DB: makeReadyDb({ missingPlaybackColumns: true }) as unknown as NonNullable<LiveRequest['env']['DB']> }))).toMatchObject({ status: 503 });
+    expect(await call(d, 'ready', req({}, {}, { DB: makeReadyDb({ missingSecurityState: true }) as unknown as NonNullable<LiveRequest['env']['DB']> }))).toMatchObject({ status: 503 });
     expect(await call(d, 'ready', req())).toMatchObject({ status: 503 });
     expect(calls).toBe(0);
   });

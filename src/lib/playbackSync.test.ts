@@ -4,12 +4,16 @@ import { PLAYBACK_SERVER_SYNC_INTERVAL_MS, shouldSyncPlaybackProgress } from './
 describe('playback progress sync policy', () => {
   it('does not send a request for every timeupdate event', () => {
     expect(shouldSyncPlaybackProgress('timeupdate', 10_000, 30, 31, 20_000)).toBe(false);
-    expect(shouldSyncPlaybackProgress('timeupdate', 10_000, 30, 45, 24_999)).toBe(false);
+    expect(shouldSyncPlaybackProgress('timeupdate', 10_000, 30, 45, 69_999)).toBe(false);
   });
 
-  it('syncs during playback at the 15-second interval', () => {
-    expect(shouldSyncPlaybackProgress('timeupdate', 10_000, 30, 45, 25_000)).toBe(true);
-    expect(PLAYBACK_SERVER_SYNC_INTERVAL_MS).toBe(15_000);
+  it('syncs during playback at the 60-second interval', () => {
+    expect(shouldSyncPlaybackProgress('timeupdate', 10_000, 30, 45, 70_000)).toBe(true);
+    expect(PLAYBACK_SERVER_SYNC_INTERVAL_MS).toBe(60_000);
+  });
+
+  it('does not write a new cloud checkpoint merely because a player initialized', () => {
+    expect(shouldSyncPlaybackProgress('open', 0, 0, 45, 120_000)).toBe(false);
   });
 
   it('flushes changed positions on play, pause, seek, end and page exit', () => {
@@ -28,8 +32,9 @@ describe('playback progress sync policy', () => {
     expect(shouldSyncPlaybackProgress('ratechange', 10_000, 35, 35, 10_100, true)).toBe(true);
   });
 
-  it('does not resend unchanged pause positions unnecessarily', () => {
-    expect(shouldSyncPlaybackProgress('pause', 10_000, 35, 35, 10_100)).toBe(false);
+  it('flushes pause and completed seeks even when the position did not change', () => {
+    expect(shouldSyncPlaybackProgress('pause', 10_000, 35, 35, 10_100)).toBe(true);
+    expect(shouldSyncPlaybackProgress('seeked', 10_000, 35, 35, 10_100)).toBe(true);
   });
 
   it('rejects negative and non-finite positions', () => {

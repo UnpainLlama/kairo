@@ -7,7 +7,7 @@ import { useAccountScope } from '../hooks/useAccountScope';
 import { addGuestYouTubeWatchLater, saveGuestYouTubeProgress, readGuestYouTubeHistory, readGuestYouTubeWatchLater } from '../lib/youtubeLocalLibrary';
 import { loadMediaPlayback, syncMediaPlayback, writeLocalMediaPlayback, type SavedPlayerState } from '../lib/mediaPlayback';
 import type { MediaPlaybackSnapshot } from '../lib/mediaPlayback';
-import type { PlaybackSaveReason } from '../lib/playbackSync';
+import { PLAYBACK_SERVER_SYNC_INTERVAL_MS, type PlaybackSaveReason } from '../lib/playbackSync';
 
 type VideoDetails = {
   videoId: string;
@@ -137,8 +137,8 @@ export default function YouTubeWatchPage() {
         const unifiedUpdatedAt = Number(unified?.updatedAt ?? 0);
         let resume = history && Number.isFinite(history.progressSeconds) ? history.progressSeconds : 0;
         let chosenUpdatedAt = remoteUpdatedAt;
-        if (unified && unified.updatedAt >= chosenUpdatedAt) { resume = unified.progressSeconds; chosenUpdatedAt = unified.updatedAt; }
-        const preferLegacyLocal = Boolean(localRecord.seconds > 0 && localRecord.updatedAt > chosenUpdatedAt);
+        if (unified) { resume = unified.progressSeconds; chosenUpdatedAt = unified.updatedAt; }
+        const preferLegacyLocal = Boolean(!unified && localRecord.seconds > 0 && localRecord.updatedAt > chosenUpdatedAt);
         if (preferLegacyLocal) { resume = localRecord.seconds; chosenUpdatedAt = localRecord.updatedAt; }
         if (active) {
           const routeVideo = location.state && typeof location.state === 'object'
@@ -152,9 +152,9 @@ export default function YouTubeWatchPage() {
             completed: Boolean(details.durationSeconds && resume >= details.durationSeconds - 2),
             playerState: unified?.playerState ?? {}, updatedAt: Math.max(Date.now(), chosenUpdatedAt),
           };
-          if (snapshot) {
+          if (snapshot && accountId && !unified && (resume > 0 || history || preferLegacyLocal)) {
             writeLocalMediaPlayback(accountId, snapshot);
-            if (accountId) void syncMediaPlayback(accountId, snapshot);
+            void syncMediaPlayback(accountId, snapshot);
           }
           if (accountId && (preferLegacyLocal || unifiedUpdatedAt > remoteUpdatedAt) && !madeForKids) {
             void fetch('/api/v1/youtube/history', {
@@ -187,21 +187,22 @@ export default function YouTubeWatchPage() {
   }, [videoId, accountResolved, accountError, accountId]);
 
   const onProgress = useCallback((seconds: number, duration: number, completed: boolean, reason: PlaybackSaveReason, playerState: SavedPlayerState = {}) => {
-    if (!video || video.madeForKids || !Number.isFinite(seconds) || !Number.isFinite(duration) || duration <= 0) return;
+    if (reason === 'open' || !video || video.madeForKids || !Number.isFinite(seconds) || !Number.isFinite(duration) || duration <= 0) return;
     const position = completed ? duration : Math.max(0, Math.min(duration, seconds));
     const now = Date.now();
-    writeLocalProgress(accountId, video.videoId, position, now);
     const unifiedSnapshot: MediaPlaybackSnapshot = {
       mediaType: 'youtube', mediaKey: video.videoId, title: video.title, artworkUrl: video.thumbnailUrl,
       progressSeconds: position, durationSeconds: duration, completed,
       playerState, updatedAt: now,
     };
-    if (reason !== 'timeupdate' || now - lastLocalSnapshotSave.current >= 1000) {
+    const shouldWriteLocal = reason !== 'timeupdate' || now - lastLocalSnapshotSave.current >= 5000;
+    if (shouldWriteLocal) {
+      writeLocalProgress(accountId, video.videoId, position, now);
       writeLocalMediaPlayback(accountId, unifiedSnapshot);
       lastLocalSnapshotSave.current = now;
     }
     if (!accountId) {
-      saveGuestYouTubeProgress({
+      if (shouldWriteLocal) saveGuestYouTubeProgress({
         videoId: video.videoId,
         title: video.title,
         description: video.description,
@@ -215,7 +216,7 @@ export default function YouTubeWatchPage() {
       });
       return;
     }
-    if (reason === 'timeupdate' && now - lastRemoteSave.current < 15000) return;
+    if (reason === 'timeupdate' && now - lastRemoteSave.current < PLAYBACK_SERVER_SYNC_INTERVAL_MS) return;
     lastRemoteSave.current = now;
     void syncMediaPlayback(accountId, unifiedSnapshot, reason === 'pagehide' || reason === 'ended' || reason === 'close');
     const body = {

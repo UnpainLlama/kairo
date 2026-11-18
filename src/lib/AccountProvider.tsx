@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { flushPendingMediaPlayback } from './mediaPlayback';
 
 export type AccountStatus = 'loading' | 'guest' | 'signed-in' | 'unavailable';
 export type KairoAccountState = {
@@ -6,6 +7,8 @@ export type KairoAccountState = {
   accountId: string | null;
   displayName: string | null;
   email: string | null;
+  username: string | null;
+  role: 'user' | 'admin' | null;
   retry: () => void;
 };
 
@@ -17,6 +20,8 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const [accountId, setAccountId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
+  const [username, setUsername] = useState<string | null>(null);
+  const [role, setRole] = useState<'user' | 'admin' | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -25,6 +30,8 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     setAccountId(null);
     setDisplayName(null);
     setEmail(null);
+    setUsername(null);
+    setRole(null);
 
     const load = async () => {
       try {
@@ -47,6 +54,8 @@ export function AccountProvider({ children }: { children: ReactNode }) {
           setAccountId(user.id);
           setDisplayName(typeof user.displayName === 'string' ? user.displayName : null);
           setEmail(typeof user.email === 'string' ? user.email : null);
+          setUsername(typeof user.username === 'string' ? user.username : null);
+          setRole(user.role === 'admin' ? 'admin' : 'user');
           setStatus('signed-in');
         }
       } catch {
@@ -64,8 +73,22 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     };
   }, [attempt]);
 
+  useEffect(() => {
+    if (status !== 'signed-in' || !accountId) return;
+    const flush = () => { void flushPendingMediaPlayback(accountId); };
+    flush();
+    window.addEventListener('online', flush);
+    window.addEventListener('focus', flush);
+    const interval = window.setInterval(flush, 60_000);
+    return () => {
+      window.removeEventListener('online', flush);
+      window.removeEventListener('focus', flush);
+      window.clearInterval(interval);
+    };
+  }, [accountId, status]);
+
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
-  const value = useMemo(() => ({ status, accountId, displayName, email, retry }), [status, accountId, displayName, email, retry]);
+  const value = useMemo(() => ({ status, accountId, displayName, email, username, role, retry }), [status, accountId, displayName, email, username, role, retry]);
   return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>;
 }
 

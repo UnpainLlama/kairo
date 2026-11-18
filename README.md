@@ -1,12 +1,12 @@
 # Kairo
 
-Kairo is a React, TypeScript, Vite and Cloudflare Workers media-discovery application for Anime, Movies and YouTube.
+Kairo is a closed-access React, TypeScript, Vite and Cloudflare Workers media-discovery application for Anime, Movies and administrator-only YouTube features.
 
 ## Project areas
 
 - **Anime:** catalogue discovery, metadata enrichment, episode discovery and provider-gated playback.
 - **Movies:** TMDB-powered catalogue search and details, with **CineSrc as the only movie playback provider**.
-- **YouTube:** public video/channel discovery and the user's saved channel feed through the official YouTube Data API.
+- **YouTube (administrator only):** video/channel discovery and a saved channel feed through the official YouTube Data API. Standard accounts and anonymous visitors cannot access YouTube pages or APIs.
 
 ## Movie provider boundary
 
@@ -33,7 +33,7 @@ npm test
 npm run build
 ```
 
-Cloudflare environments, D1 migrations, Worker secrets and release gates are documented in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Start with [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the wider system design.
+External video-frame sandboxing and the report-only resource whitelist are documented in [docs/EMBED_SECURITY.md](docs/EMBED_SECURITY.md). Closed-access account provisioning, one-time administrator setup, and staging-only activation are documented in [docs/CLOSED_ACCESS_SETUP.md](docs/CLOSED_ACCESS_SETUP.md). Cloudflare environments, D1 migrations, Worker secrets and release gates are documented in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Start with [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the wider system design.
 
 ## Repository conventions
 

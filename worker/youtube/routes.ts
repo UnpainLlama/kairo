@@ -11,6 +11,7 @@ type YouTubeContext = {
   };
   json(body: unknown, status?: number): Response;
   header(name: string, value: string): void;
+  get?(name: string): unknown;
 };
 
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
@@ -121,7 +122,7 @@ function originAllowed(c: YouTubeContext): boolean {
 }
 
 async function signedInUser(c: YouTubeContext) {
-  return findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  return findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined);
 }
 
 function cleanText(value: unknown, max: number, fallback = ''): string {
@@ -245,15 +246,17 @@ async function parseJsonBody(c: YouTubeContext): Promise<unknown | null> {
 }
 
 export function registerYouTubeMediaRoutes(app: any): void {
-  // Public metadata is fetched through the official Data API. No API key or media URL reaches the browser.
+  // Administrator-only metadata is fetched through the official Data API. No API key or media URL reaches the browser.
   app.get('/api/v1/youtube/videos/:videoId', async (c: YouTubeContext) => {
+    const requester = await signedInUser(c);
+    if (!requester || requester.role !== 'admin') return fail(c, 404, 'NOT_FOUND', 'Not found.');
     const videoId = c.req.param('videoId');
     if (!isYouTubeVideoId(videoId)) return fail(c, 400, 'VALIDATION_ERROR', 'That YouTube video ID is invalid.');
-    if (!await permitRequest(c, 'video-metadata', 'public', 60)) return fail(c, 429, 'RATE_LIMITED', 'Too many video detail requests. Please try again shortly.');
+    if (!await permitRequest(c, 'video-metadata', 'admin', 60)) return fail(c, 429, 'RATE_LIMITED', 'Too many video detail requests. Please try again shortly.');
     try {
       const video = await youtubeApiVideo(c, videoId);
       if (!video) return fail(c, 404, 'YOUTUBE_VIDEO_NOT_FOUND', 'This YouTube video is unavailable or no longer public.');
-      c.header('Cache-Control', 'public, max-age=120, s-maxage=300');
+      c.header('Cache-Control', 'private, no-store');
       return c.json({ success: true, data: video });
     } catch (error) {
       return providerError(c, error);
@@ -263,7 +266,7 @@ export function registerYouTubeMediaRoutes(app: any): void {
   app.get('/api/v1/youtube/history', async (c: YouTubeContext) => {
     noStore(c);
     const user = await signedInUser(c);
-    if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to view your YouTube watch history.');
+    if (!user || user.role !== 'admin') return fail(c, 404, 'NOT_FOUND', 'Not found.');
     if (!await permitRequest(c, 'history-read', user.id, 120)) return fail(c, 429, 'RATE_LIMITED', 'Too many history requests. Please try again shortly.');
     try {
       const result = await c.env.DB.prepare(
@@ -282,7 +285,7 @@ export function registerYouTubeMediaRoutes(app: any): void {
     noStore(c);
     if (!originAllowed(c)) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
     const user = await signedInUser(c);
-    if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to save YouTube watch progress.');
+    if (!user || user.role !== 'admin') return fail(c, 404, 'NOT_FOUND', 'Not found.');
     if (!await permitRequest(c, 'history-write', user.id, 180)) return fail(c, 429, 'RATE_LIMITED', 'YouTube progress is being saved too frequently. Try again shortly.');
     const parsed = parseVideoPayload(await parseJsonBody(c));
     if (!parsed) return fail(c, 400, 'VALIDATION_ERROR', 'The video or playback progress is invalid.');
@@ -308,7 +311,7 @@ export function registerYouTubeMediaRoutes(app: any): void {
     noStore(c);
     if (!originAllowed(c)) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
     const user = await signedInUser(c);
-    if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to manage your YouTube watch history.');
+    if (!user || user.role !== 'admin') return fail(c, 404, 'NOT_FOUND', 'Not found.');
     if (!await permitRequest(c, 'history-delete', user.id, 120)) return fail(c, 429, 'RATE_LIMITED', 'Too many history changes. Please try again shortly.');
     const videoId = c.req.param('videoId');
     if (!isYouTubeVideoId(videoId)) return fail(c, 400, 'VALIDATION_ERROR', 'That YouTube video ID is invalid.');
@@ -323,7 +326,7 @@ export function registerYouTubeMediaRoutes(app: any): void {
   app.get('/api/v1/youtube/watch-later', async (c: YouTubeContext) => {
     noStore(c);
     const user = await signedInUser(c);
-    if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to view your Watch Later list.');
+    if (!user || user.role !== 'admin') return fail(c, 404, 'NOT_FOUND', 'Not found.');
     if (!await permitRequest(c, 'watch-later-read', user.id, 120)) return fail(c, 429, 'RATE_LIMITED', 'Too many Watch Later requests. Please try again shortly.');
     try {
       const result = await c.env.DB.prepare(
@@ -341,7 +344,7 @@ export function registerYouTubeMediaRoutes(app: any): void {
     noStore(c);
     if (!originAllowed(c)) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
     const user = await signedInUser(c);
-    if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to save videos to Watch Later.');
+    if (!user || user.role !== 'admin') return fail(c, 404, 'NOT_FOUND', 'Not found.');
     if (!await permitRequest(c, 'watch-later-write', user.id, 60)) return fail(c, 429, 'RATE_LIMITED', 'Too many Watch Later changes. Please try again shortly.');
     const parsed = parseVideoPayload(await parseJsonBody(c));
     if (!parsed) return fail(c, 400, 'VALIDATION_ERROR', 'The video details are invalid.');
@@ -364,7 +367,7 @@ export function registerYouTubeMediaRoutes(app: any): void {
     noStore(c);
     if (!originAllowed(c)) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
     const user = await signedInUser(c);
-    if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to manage your Watch Later list.');
+    if (!user || user.role !== 'admin') return fail(c, 404, 'NOT_FOUND', 'Not found.');
     if (!await permitRequest(c, 'watch-later-delete', user.id, 60)) return fail(c, 429, 'RATE_LIMITED', 'Too many Watch Later changes. Please try again shortly.');
     const videoId = c.req.param('videoId');
     if (!isYouTubeVideoId(videoId)) return fail(c, 400, 'VALIDATION_ERROR', 'That YouTube video ID is invalid.');

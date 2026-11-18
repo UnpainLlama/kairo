@@ -1,11 +1,12 @@
 const SESSION_COOKIE = 'kairo_session';
 export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
-const SESSION_TTL_MS = SESSION_TTL_SECONDS * 1000;
 
 export type SessionUser = {
   id: string;
   displayName: string;
   email: string | null;
+  username: string | null;
+  accessEmail: string | null;
   emailVerifiedAt: string | null;
   role: 'user' | 'admin';
 };
@@ -14,6 +15,8 @@ type SessionRow = {
   userId: string;
   displayName: string;
   email: string | null;
+  username: string | null;
+  accessEmail: string | null;
   emailVerifiedAt: string | null;
   role: 'user' | 'admin';
 };
@@ -39,11 +42,11 @@ export function readSessionCookie(cookieHeader: string | null): string | null {
   return null;
 }
 
-export function sessionCookie(token: string, secure = true): string {
+export function sessionCookie(token: string, secure = true, maxAgeSeconds = SESSION_TTL_SECONDS): string {
   const flags = [
     `${SESSION_COOKIE}=${token}`,
     'Path=/',
-    `Max-Age=${SESSION_TTL_SECONDS}`,
+    `Max-Age=${Math.max(60, Math.min(SESSION_TTL_SECONDS, Math.floor(maxAgeSeconds)))}`,
     'HttpOnly',
     'SameSite=Lax',
   ];
@@ -60,19 +63,21 @@ export function clearSessionCookie(secure = true): string {
 export async function createSession(
   db: D1Database,
   userId: string,
-  metadata: { userAgent?: string; ipPrefix?: string } = {},
+  metadata: { userAgent?: string; ipPrefix?: string; ttlSeconds?: number; accessEmail?: string | null } = {},
   now = Date.now(),
-): Promise<{ id: string; token: string; expiresAt: number }> {
+): Promise<{ id: string; token: string; expiresAt: number; ttlSeconds: number }> {
   const id = crypto.randomUUID();
   const token = createOpaqueToken();
-  const expiresAt = now + SESSION_TTL_MS;
+  const ttlSeconds = Math.max(60, Math.min(SESSION_TTL_SECONDS, Math.floor(metadata.ttlSeconds ?? SESSION_TTL_SECONDS)));
+  const expiresAt = now + ttlSeconds * 1000;
   await db.prepare(
-    `INSERT INTO sessions (id, user_id, token_hash, expires_at, user_agent, ip_prefix)
-     VALUES (?, ?, ?, ?, ?, ?)`
+    `INSERT INTO sessions (id, user_id, token_hash, expires_at, user_agent, ip_prefix, access_email)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).bind(id, userId, await hashToken(token), expiresAt,
     metadata.userAgent?.slice(0, 512) ?? null,
-    metadata.ipPrefix?.slice(0, 64) ?? null).run();
-  return { id, token, expiresAt };
+    metadata.ipPrefix?.slice(0, 64) ?? null,
+    metadata.accessEmail?.toLowerCase() ?? null).run();
+  return { id, token, expiresAt, ttlSeconds };
 }
 
 export async function revokeSession(db: D1Database, cookieHeader: string | null): Promise<void> {
@@ -82,23 +87,41 @@ export async function revokeSession(db: D1Database, cookieHeader: string | null)
 }
 
 /** Resolve the current Kairo identity exclusively from the server-side session cookie. */
-export async function findSessionUser(db: D1Database, cookieHeader: string | null, now = Date.now()): Promise<SessionUser | null> {
+export async function findSessionUser(db: D1Database, cookieHeader: string | null, now = Date.now(), accessEmail?: string | null): Promise<SessionUser | null> {
   const token = readSessionCookie(cookieHeader);
   if (!token) return null;
+  const tokenHash = await hashToken(token);
   const row = await db.prepare(
     `SELECT s.user_id AS userId, p.display_name AS displayName,
-            p.email, p.email_verified_at AS emailVerifiedAt, p.role
+            p.email, p.username, p.access_email AS accessEmail,
+            p.email_verified_at AS emailVerifiedAt, p.role
      FROM sessions s
      INNER JOIN user_profiles p ON p.id = s.user_id
      WHERE s.token_hash = ? AND s.expires_at > ?
+       AND COALESCE(s.last_used_at, s.created_at) >= CASE
+         WHEN p.role = 'admin' THEN datetime('now', '-60 minutes')
+         ELSE datetime('now', '-14 days')
+       END
        AND p.account_status = 'active'
+       AND (p.role <> 'admin' OR NOT EXISTS (
+         SELECT 1 FROM admin_login_security als
+         WHERE als.singleton_id = 1 AND als.locked_at IS NOT NULL
+       ))
+       AND (? IS NULL OR (lower(s.access_email) = lower(?) AND lower(p.access_email) = lower(?)))
      LIMIT 1`
-  ).bind(await hashToken(token), now).first<SessionRow>();
+  ).bind(tokenHash, now, accessEmail ?? null, accessEmail ?? null, accessEmail ?? null).first<SessionRow>();
   if (!row) return null;
+  // Persist activity at most once every five minutes. This makes idle expiry server-enforced
+  // without writing to D1 for every API request.
+  await db.prepare(`UPDATE sessions SET last_used_at=CURRENT_TIMESTAMP
+    WHERE token_hash=? AND (last_used_at IS NULL OR last_used_at <= datetime('now', '-5 minutes'))`)
+    .bind(tokenHash).run();
   return {
     id: row.userId,
     displayName: row.displayName,
     email: row.email,
+    username: row.username,
+    accessEmail: row.accessEmail,
     emailVerifiedAt: row.emailVerifiedAt,
     role: row.role,
   };

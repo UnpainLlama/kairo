@@ -90,6 +90,134 @@ export function writeLocalMediaPlayback(userId: string | null, snapshot: MediaPl
   }
 }
 
+type PlaybackSyncMetadata = { sessionId: string; sequence: number };
+
+type PendingPlaybackSync = PlaybackSyncMetadata & {
+  snapshot: MediaPlaybackSnapshot;
+  attempts: number;
+  nextAttemptAt: number;
+};
+
+let playbackSessionId = '';
+let playbackSequence = 0;
+
+function nextPlaybackSyncMetadata(_userId: string): PlaybackSyncMetadata {
+  if (!playbackSessionId || playbackSequence >= 2_147_483_647) {
+    playbackSessionId = crypto.randomUUID();
+    playbackSequence = 0;
+  }
+  playbackSequence += 1;
+  return { sessionId: playbackSessionId, sequence: playbackSequence };
+}
+
+function pendingSyncKey(userId: string): string {
+  return LOCAL_PREFIX + userId.trim() + ':pending-sync';
+}
+
+function readPendingSync(userId: string): PendingPlaybackSync[] {
+  try {
+    const raw = localStorage.getItem(pendingSyncKey(userId));
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is PendingPlaybackSync =>
+      Boolean(item && typeof item === 'object' &&
+        parseMediaPlayback((item as PendingPlaybackSync).snapshot) &&
+        Number.isInteger((item as PendingPlaybackSync).attempts) &&
+        Number.isFinite((item as PendingPlaybackSync).nextAttemptAt) &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test((item as PendingPlaybackSync).sessionId) &&
+        Number.isSafeInteger((item as PendingPlaybackSync).sequence) &&
+        (item as PendingPlaybackSync).sequence > 0 && (item as PendingPlaybackSync).sequence <= 2_147_483_647)
+    );
+  } catch { return []; }
+}
+
+function writePendingSync(userId: string, items: PendingPlaybackSync[]): void {
+  try {
+    const key = pendingSyncKey(userId);
+    if (items.length) localStorage.setItem(key, JSON.stringify(items.slice(-100)));
+    else localStorage.removeItem(key);
+  } catch { /* The local resume snapshot remains the fallback if storage is full. */ }
+}
+
+function enqueuePendingSync(userId: string, snapshot: MediaPlaybackSnapshot, metadata: PlaybackSyncMetadata): void {
+  const items = readPendingSync(userId);
+  const index = items.findIndex(item =>
+    item.snapshot.mediaType === snapshot.mediaType && item.snapshot.mediaKey === snapshot.mediaKey
+  );
+  const entry: PendingPlaybackSync = { ...metadata, snapshot, attempts: 0, nextAttemptAt: Date.now() };
+  if (index >= 0) items[index] = entry;
+  else items.push(entry);
+  writePendingSync(userId, items);
+}
+
+function acknowledgePendingSync(userId: string, snapshot: MediaPlaybackSnapshot, metadata: PlaybackSyncMetadata): void {
+  const items = readPendingSync(userId).filter(item =>
+    item.snapshot.mediaType !== snapshot.mediaType ||
+    item.snapshot.mediaKey !== snapshot.mediaKey ||
+    item.sessionId !== metadata.sessionId ||
+    item.snapshot.updatedAt > snapshot.updatedAt ||
+    item.sequence > metadata.sequence
+  );
+  writePendingSync(userId, items);
+}
+
+function deferPendingSync(userId: string, snapshot: MediaPlaybackSnapshot, metadata: PlaybackSyncMetadata): void {
+  const items = readPendingSync(userId);
+  const index = items.findIndex(item =>
+    item.snapshot.mediaType === snapshot.mediaType && item.snapshot.mediaKey === snapshot.mediaKey
+  );
+  if (index < 0) return;
+  const item = items[index];
+  if (item.sessionId !== metadata.sessionId || item.snapshot.updatedAt > snapshot.updatedAt ||
+      item.sequence > metadata.sequence) return;
+  const attempts = item.attempts + 1;
+  items[index] = {
+    ...item,
+    attempts,
+    nextAttemptAt: Date.now() + Math.min(300_000, 5_000 * (2 ** Math.min(attempts - 1, 6))),
+  };
+  writePendingSync(userId, items);
+}
+
+async function sendPlaybackSnapshot(
+  snapshot: MediaPlaybackSnapshot,
+  metadata: PlaybackSyncMetadata,
+  keepalive = false,
+): Promise<{ ok: boolean; saved: boolean; updatedAt: number | null }> {
+  try {
+    const response = await fetch('/api/v1/me/playback', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...snapshot, syncSessionId: metadata.sessionId, syncSequence: metadata.sequence }),
+      keepalive,
+    });
+    const payload = await response.json().catch(() => null);
+    return {
+      ok: response.ok,
+      saved: response.ok && payload?.data?.saved === true,
+      updatedAt: response.ok && Number.isFinite(Number(payload?.data?.updatedAt)) ? Number(payload.data.updatedAt) : null,
+    };
+  } catch { return { ok: false, saved: false, updatedAt: null }; }
+}
+
+function applyServerTimestamp(userId: string, snapshot: MediaPlaybackSnapshot, updatedAt: number | null): void {
+  if (!updatedAt || !Number.isFinite(updatedAt)) return;
+  const normalized = parseMediaPlayback(snapshot);
+  if (!normalized) return;
+  const current = readLocalMediaPlayback(userId, normalized.mediaType, normalized.mediaKey);
+  const sameSnapshot = current &&
+    current.progressSeconds === normalized.progressSeconds &&
+    current.durationSeconds === normalized.durationSeconds &&
+    current.completed === normalized.completed &&
+    current.title === normalized.title &&
+    current.artworkUrl === normalized.artworkUrl &&
+    JSON.stringify(current.playerState) === JSON.stringify(normalized.playerState);
+  if (current && sameSnapshot && current.updatedAt <= normalized.updatedAt) {
+    writeLocalMediaPlayback(userId, { ...normalized, updatedAt });
+  }
+}
+
 export async function syncMediaPlayback(
   userId: string | null,
   snapshot: MediaPlaybackSnapshot,
@@ -97,18 +225,36 @@ export async function syncMediaPlayback(
 ): Promise<boolean> {
   writeLocalMediaPlayback(userId, snapshot);
   if (!userId) return true;
-  try {
-    const response = await fetch('/api/v1/me/playback', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify(snapshot),
-      keepalive,
-    });
-    return response.ok;
-  } catch {
-    return false;
+  const metadata = nextPlaybackSyncMetadata(userId);
+  enqueuePendingSync(userId, snapshot, metadata);
+  const result = await sendPlaybackSnapshot(snapshot, metadata, keepalive);
+  if (result.ok) {
+    acknowledgePendingSync(userId, snapshot, metadata);
+    if (result.saved) applyServerTimestamp(userId, snapshot, result.updatedAt);
+  } else deferPendingSync(userId, snapshot, metadata);
+  return result.ok;
+}
+
+/** Retry failed cloud writes with persisted exponential backoff; newer snapshots replace older queued copies. */
+export async function flushPendingMediaPlayback(userId: string | null, now = Date.now()): Promise<void> {
+  if (!userId) return;
+  const due = readPendingSync(userId).filter(item => item.nextAttemptAt <= now).slice(0, 10);
+  for (const item of due) {
+    const metadata = { sessionId: item.sessionId, sequence: item.sequence };
+    const result = await sendPlaybackSnapshot(item.snapshot, metadata);
+    if (result.ok) {
+      acknowledgePendingSync(userId, item.snapshot, metadata);
+      if (result.saved) applyServerTimestamp(userId, item.snapshot, result.updatedAt);
+    } else deferPendingSync(userId, item.snapshot, metadata);
   }
+}
+
+function removePendingMediaPlayback(userId: string | null, mediaType: MediaPlaybackType, mediaKey?: string): void {
+  if (!userId) return;
+  const items = readPendingSync(userId).filter(item =>
+    item.snapshot.mediaType !== mediaType || (mediaKey !== undefined && item.snapshot.mediaKey !== mediaKey)
+  );
+  writePendingSync(userId, items);
 }
 
 /** Local-first restore. A newer browser snapshot wins; the selected copy is cached locally. */
@@ -174,6 +320,7 @@ export async function deleteMediaPlayback(
       remove.forEach(key => localStorage.removeItem(key));
     }
   } catch { /* local storage may be unavailable */ }
+  removePendingMediaPlayback(userId, mediaType, mediaKey);
   if (!userId) return true;
   try {
     const query = new URLSearchParams({ mediaType });

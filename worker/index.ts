@@ -5,6 +5,8 @@ import { boundedInt, parseId, parsePagination, parseSearchParams } from './lib/v
 import { clearSessionCookie, findSessionUser, revokeSession } from './auth/session';
 import { registerAuthRoutes } from './auth/routes';
 import { registerYouTubeMediaRoutes } from './youtube/routes';
+import { registerAdminRoutes, rotateAdminConsolePath } from './admin/routes';
+import { hasActiveAccessAccount, verifyCloudflareAccessAssertion } from './auth/cloudflareAccess';
 import { GENRES_SQL, buildListQuery, buildRelatedQuery, buildSearchQuery } from './repositories/catalog';
 import { BASE_RECORD_SQL, INSERT_PROVIDER_ID_SQL, PROVIDER_IDS_SQL } from './repositories/providerIds';
 import { buildRegistry, createCache, resolveUnified, sharedBreaker, toBaseRecord, type BaseRow } from './metadata/service';
@@ -18,16 +20,18 @@ import { ProviderError } from './metadata/types';
 
 interface Bindings {
   DB: D1Database;
+  ADMIN_BOOTSTRAP_TOKEN?: string;
+  ACCESS_ENFORCED?: string;
+  ACCESS_TEAM_DOMAIN?: string;
+  ACCESS_AUD?: string;
   APP_ENV?: string;
   APP_BASE_URL?: string;
-  RESEND_API_KEY?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   /** Base64url-encoded 32-byte AES-GCM key used only for YouTube OAuth token encryption. */
   YOUTUBE_TOKEN_ENCRYPTION_KEY?: string;
-  /** Server-only Google API key for public YouTube Data API reads. */
+  /** Server-only Google API key for administrator-only YouTube Data API reads. */
   YOUTUBE_DATA_API_KEY?: string;
-  AUTH_EMAIL_FROM?: string;
   ALLOWED_ORIGIN?: string;
   /** Comma-separated metadata provider ids to enable, e.g. "anilist". Empty = none. */
   METADATA_PROVIDERS?: string;
@@ -37,6 +41,8 @@ interface Bindings {
   CATALOG_SOURCE?: string;
   /** Catalogue-provider priority, comma-separated. */
   LIVE_PROVIDERS?: string;
+  /** Registered MyAnimeList API Client ID stored as a Worker secret. */
+  MAL_CLIENT_ID?: string;
   /** Independent episode-provider priority, e.g. "hianime,jikan". */
   EPISODE_PROVIDERS?: string;
   /** HiAnime mirror base URL; adapter enforces a fixed HTTPS host allowlist. */
@@ -53,7 +59,7 @@ interface Bindings {
   MOVIES_INGESTION_ENABLED?: string;
 }
 
-type Variables = { requestId: string };
+type Variables = { requestId: string; accessEmail: string | null };
 type AppContext = Context<{ Bindings: Bindings; Variables: Variables }>;
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -68,9 +74,68 @@ app.use('/api/*', async (c, next) => {
 });
 
 app.use('/api/*', async (c, next) => {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(c.req.method.toUpperCase())) return next();
+  const expectedOrigin = new URL(c.req.url).origin;
+  const origin = c.req.header('Origin');
+  let requestOrigin = origin ?? null;
+  if (!requestOrigin) {
+    const referer = c.req.header('Referer');
+    if (referer) {
+      try { requestOrigin = new URL(referer).origin; } catch { requestOrigin = null; }
+    }
+  }
+  if (requestOrigin !== expectedOrigin) {
+    return c.json({
+      success: false,
+      error: { code: 'ORIGIN_FORBIDDEN', message: 'This request origin is not allowed.' },
+      meta: { requestId: c.get('requestId') },
+    }, 403);
+  }
+  return next();
+});
+
+app.use('/api/*', async (c, next) => {
+  const pathname = new URL(c.req.url).pathname;
+  // These two minimal probes are public only when Cloudflare's Worker destination
+  // has exact public path overrides for these paths. Every other API requires Access.
+  if (pathname === '/api/health' || pathname === '/api/ready') {
+    c.set('accessEmail', null);
+    return next();
+  }
+  if (c.env.ACCESS_ENFORCED !== 'true') {
+    c.set('accessEmail', null);
+    return next();
+  }
+  const teamDomain = c.env.ACCESS_TEAM_DOMAIN;
+  const audience = c.env.ACCESS_AUD;
+  if (!teamDomain || !audience) {
+    return c.json({ success: false, error: { code: 'ACCESS_CONFIGURATION_REQUIRED', message: 'Access identity verification is not configured.' } }, 503);
+  }
+  const identity = await verifyCloudflareAccessAssertion(
+    c.req.header('Cf-Access-Jwt-Assertion') ?? null,
+    { ACCESS_TEAM_DOMAIN: teamDomain, ACCESS_AUD: audience },
+  );
+  if (!identity) {
+    return c.json({ success: false, error: { code: 'ACCESS_REQUIRED', message: 'A valid approved Cloudflare Access identity is required.' } }, 401);
+  }
+  c.set('accessEmail', identity.email);
+  // The Access email selector is checked at login, not on every active token.
+  // Keep a live Kairo-side allow check so suspending/removing an invite blocks API use immediately.
+  // Initial admin bootstrap is the only exception and remains protected by the signed Access JWT
+  // plus the one-time bootstrap Worker secret.
+  if (pathname !== '/api/v1/admin/bootstrap') {
+    const activeInvite = await hasActiveAccessAccount(c.env.DB, identity.email);
+    if (!activeInvite) {
+      return c.json({ success: false, error: { code: 'ACCESS_INVITE_REQUIRED', message: 'This email is not currently invited to Kairo.' } }, 403);
+    }
+  }
+  return next();
+});
+
+app.use('/api/*', async (c, next) => {
   const origin = c.env.ALLOWED_ORIGIN;
   if (origin) {
-    return cors({ origin, allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], allowHeaders: ['Content-Type', 'Authorization'], credentials: true })(c, next);
+    return cors({ origin, allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], allowHeaders: ['Content-Type', 'Authorization', 'X-Kairo-Bootstrap'], credentials: true })(c, next);
   }
   await next();
 });
@@ -94,6 +159,7 @@ function fail(c: Context<{ Bindings: Bindings; Variables: Variables }>, status: 
 
 registerAuthRoutes(app);
 registerYouTubeMediaRoutes(app);
+registerAdminRoutes(app);
 
 function moviesProviderEnabled(c: AppContext): boolean {
   return c.env.MOVIES_TMDB_ENABLED === 'true' && c.env.MOVIES_TMDB_TERMS_APPROVED === 'true';
@@ -215,7 +281,7 @@ app.post('/api/v1/movies/ingest', async (c) => {
   if (c.env.MOVIES_INGESTION_ENABLED !== 'true' || !moviesProviderEnabled(c)) {
     return fail(c, 503, 'MOVIES_INGESTION_DISABLED', 'Movie ingestion is disabled until the metadata provider terms and persistence rules are approved.');
   }
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to continue.');
   if (user.role !== 'admin') return fail(c, 403, 'ADMIN_REQUIRED', 'Administrator access is required.');
   const body: unknown = await c.req.json().catch(() => null);
@@ -254,7 +320,7 @@ app.post('/api/v1/movies/ingest/:externalId', async (c) => {
   if (c.env.MOVIES_INGESTION_ENABLED !== 'true' || !moviesProviderEnabled(c)) {
     return fail(c, 503, 'MOVIES_INGESTION_DISABLED', 'Movie ingestion is disabled until the metadata provider terms and persistence rules are approved.');
   }
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to continue.');
   if (user.role !== 'admin') return fail(c, 403, 'ADMIN_REQUIRED', 'Administrator access is required.');
   const externalId = c.req.param('externalId');
@@ -278,7 +344,7 @@ app.get('/api/v1/movies/:externalId', async (c) => {
   }
 });
 
-app.get('/api/health', (c) => ok(c, { status: 'ok', service: 'kairo-api', environment: c.env.APP_ENV ?? 'unknown' }));
+app.get('/api/health', (c) => ok(c, { status: 'ok', service: 'kairo-api' }));
 
 // Live catalogue providers and independent episode-discovery providers. Public API paths remain stable. Each route below answers first when CATALOG_SOURCE is not "db" and otherwise falls through
 // to the original D1 route registered further down, so the API paths and response shapes are unchanged.
@@ -288,7 +354,19 @@ const serveLive = (pick: (h: LiveHandlers) => (r: LiveRequest) => Promise<LiveRe
   const result = await pick(live)({ query: c.req.query(), param: (name) => c.req.param(name), requestId: c.get('requestId'), env: c.env });
   return c.json(result.body as Record<string, unknown>, result.status as 200);
 };
-app.get('/api/ready', serveLive((h) => h.ready));
+app.get('/api/ready', async (c: AppContext, next: Next) => {
+  if (!isLiveMode(c.env.CATALOG_SOURCE)) return next();
+  const result = await live.ready({
+    query: c.req.query(),
+    param: (name) => c.req.param(name),
+    requestId: c.get('requestId'),
+    env: c.env,
+  });
+  if (c.env.ACCESS_ENFORCED === 'true' && result.status === 200) {
+    return ok(c, { status: 'ready' });
+  }
+  return c.json(result.body as Record<string, unknown>, result.status as 200);
+});
 app.get('/api/v1/catalog/featured', serveLive((h) => h.featured));
 app.get('/api/v1/catalog/trending', serveLive((h) => h.trending));
 app.get('/api/v1/catalog/latest', serveLive((h) => h.latest));
@@ -333,7 +411,9 @@ app.get('/api/ready', async (c) => {
       return fail(c, 503, 'CATALOG_UNAVAILABLE', 'The database is reachable but its schema is not up to date. Apply migrations.');
     }
     const providers = buildRegistry(c.env.METADATA_PROVIDERS, fetch).enabled.map((p) => p.id);
-    return ok(c, { status: 'ready', database: 'ok', schema: 'ok', cache: c.env.METADATA_CACHE ? 'kv' : 'none', providers });
+    return c.env.ACCESS_ENFORCED === 'true'
+      ? ok(c, { status: 'ready' })
+      : ok(c, { status: 'ready', database: 'ok', schema: 'ok', cache: c.env.METADATA_CACHE ? 'kv' : 'none', providers });
   } catch (error) {
     logError(c, 'readiness_failed', error);
     return fail(c, 503, 'CATALOG_UNAVAILABLE', 'The service is not ready.');
@@ -480,17 +560,18 @@ app.get('/api/v1/anime/:id/metadata', async (c) => {
 
 
 app.get('/api/v1/me', async (c) => {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your profile.');
   return ok(c, { user });
 });
 
 app.get('/api/v1/me/playback', async (c) => {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to restore playback progress.');
   const mediaType = c.req.query('mediaType');
   const mediaKey = c.req.query('mediaKey');
   if (mediaType && !['anime', 'movie', 'youtube'].includes(mediaType)) return fail(c, 400, 'VALIDATION_ERROR', 'The media type is invalid.');
+  if (mediaType === 'youtube' && user.role !== 'admin') return fail(c, 404, 'NOT_FOUND', 'Not found.');
   if (mediaKey && (!mediaType || !mediaKey.trim() || mediaKey.length > 256)) return fail(c, 400, 'VALIDATION_ERROR', 'The media playback key is invalid.');
   c.header('Cache-Control', 'no-store');
   const limit = boundedInt(c.req.query('limit'), 50, 1, 100);
@@ -515,7 +596,7 @@ app.get('/api/v1/me/playback', async (c) => {
         .bind(user.id, mediaType, mediaKey).first<Record<string, unknown>>();
       return ok(c, { item: row ? mapRow(row) : null });
     }
-    const result = await c.env.DB.prepare(`SELECT ${columns} FROM user_media_playback WHERE user_id=? ${mediaType ? 'AND media_type=?' : ''} ORDER BY updated_at DESC LIMIT ?`)
+    const result = await c.env.DB.prepare(`SELECT ${columns} FROM user_media_playback WHERE user_id=? ${mediaType ? 'AND media_type=?' : user.role !== 'admin' ? "AND media_type!='youtube'" : ''} ORDER BY updated_at DESC LIMIT ?`)
       .bind(...(mediaType ? [user.id, mediaType, limit] : [user.id, limit])).all<Record<string, unknown>>();
     return ok(c, { items: (result.results ?? []).map(mapRow) }, { count: result.results?.length ?? 0 });
   } catch (error) {
@@ -527,7 +608,7 @@ app.get('/api/v1/me/playback', async (c) => {
 app.delete('/api/v1/me/playback', async (c) => {
   const origin = c.req.header('Origin');
   if (origin && origin !== new URL(c.req.url).origin) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to delete playback progress.');
   const mediaType = c.req.query('mediaType');
   const mediaKey = c.req.query('mediaKey');
@@ -535,6 +616,7 @@ app.delete('/api/v1/me/playback', async (c) => {
       (mediaKey !== undefined && (!mediaKey.trim() || mediaKey.length > 256))) {
     return fail(c, 400, 'VALIDATION_ERROR', 'The playback record to delete is invalid.');
   }
+  if (mediaType === 'youtube' && user.role !== 'admin') return fail(c, 404, 'NOT_FOUND', 'Not found.');
   try {
     const result = mediaKey
       ? await c.env.DB.prepare('DELETE FROM user_media_playback WHERE user_id=? AND media_type=? AND media_key=?').bind(user.id, mediaType, mediaKey).run()
@@ -549,23 +631,26 @@ app.delete('/api/v1/me/playback', async (c) => {
 app.post('/api/v1/me/playback', async (c) => {
   const origin = c.req.header('Origin');
   if (origin && origin !== new URL(c.req.url).origin) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync playback progress.');
   let body: unknown;
   try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
   if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(c, 400, 'VALIDATION_ERROR', 'Provide a playback progress record.');
   const item = body as Record<string, unknown>;
   const mediaType = typeof item.mediaType === 'string' ? item.mediaType : '';
+  if (mediaType === 'youtube' && user.role !== 'admin') return fail(c, 404, 'NOT_FOUND', 'Not found.');
   const mediaKey = typeof item.mediaKey === 'string' ? item.mediaKey.trim() : '';
   const title = typeof item.title === 'string' ? item.title.trim() : '';
   const progress = Number(item.progressSeconds);
   const duration = item.durationSeconds === null || item.durationSeconds === undefined ? null : Number(item.durationSeconds);
-  const clientTime = Number(item.updatedAt);
+  const syncSessionId = typeof item.syncSessionId === 'string' ? item.syncSessionId : '';
+  const syncSequence = Number(item.syncSequence);
   if (!['anime', 'movie', 'youtube'].includes(mediaType) || !mediaKey || mediaKey.length > 256 ||
       /[\u0000-\u001f]/.test(mediaKey) || !title || title.length > 300 ||
       !Number.isFinite(progress) || progress < 0 || progress > 86400 ||
       (duration !== null && (!Number.isFinite(duration) || duration <= 0 || duration > 86400)) ||
-      !Number.isFinite(clientTime) || clientTime <= 0) {
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(syncSessionId) ||
+      !Number.isSafeInteger(syncSequence) || syncSequence < 1 || syncSequence > 2_147_483_647) {
     return fail(c, 400, 'VALIDATION_ERROR', 'The playback progress record is invalid.');
   }
   if (mediaType === 'movie' && !/^\d{1,12}$/.test(mediaKey)) return fail(c, 400, 'VALIDATION_ERROR', 'The movie playback key must be a TMDB ID.');
@@ -586,22 +671,26 @@ app.post('/api/v1/me/playback', async (c) => {
   if (typeof rawState.subtitleLanguage === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(rawState.subtitleLanguage)) playerState.subtitleLanguage = rawState.subtitleLanguage;
   if (typeof rawState.sourceId === 'string' && /^[A-Za-z0-9_-]{1,100}$/.test(rawState.sourceId)) playerState.sourceId = rawState.sourceId;
   const now = Date.now();
-  const updatedAt = Math.min(Math.floor(clientTime), now + 60_000);
+  const updatedAt = now;
   const progressSeconds = duration === null ? Math.min(86400, progress) : Math.min(duration, progress);
   try {
-    await c.env.DB.prepare(`
+    const result = await c.env.DB.prepare(`
       INSERT INTO user_media_playback
         (user_id, media_type, media_key, title, artwork_url, duration_seconds,
-         progress_seconds, completed, player_state_json, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         progress_seconds, completed, player_state_json, updated_at, session_id, sequence)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(user_id, media_type, media_key) DO UPDATE SET
         title=excluded.title, artwork_url=excluded.artwork_url, duration_seconds=excluded.duration_seconds,
         progress_seconds=excluded.progress_seconds, completed=excluded.completed,
-        player_state_json=excluded.player_state_json, updated_at=excluded.updated_at
-      WHERE excluded.updated_at >= user_media_playback.updated_at
+        player_state_json=excluded.player_state_json, updated_at=excluded.updated_at,
+        session_id=excluded.session_id, sequence=excluded.sequence
+      WHERE user_media_playback.session_id IS NULL
+         OR (excluded.session_id = user_media_playback.session_id AND excluded.sequence > user_media_playback.sequence)
+         OR (excluded.session_id <> user_media_playback.session_id AND excluded.updated_at >= user_media_playback.updated_at)
     `).bind(user.id, mediaType, mediaKey, title, artworkUrl, duration, progressSeconds,
-      item.completed === true ? 1 : 0, JSON.stringify(playerState), updatedAt).run();
-    return ok(c, { saved: true, updatedAt });
+      item.completed === true ? 1 : 0, JSON.stringify(playerState), updatedAt, syncSessionId, syncSequence).run();
+    const saved = Number(result.meta.changes ?? 0) > 0;
+    return ok(c, { saved, stale: !saved, updatedAt });
   } catch (error) {
     logError(c, 'media_playback_sync_failed', error);
     return fail(c, 503, 'PLAYBACK_UNAVAILABLE', 'Could not sync playback progress.');
@@ -609,7 +698,7 @@ app.post('/api/v1/me/playback', async (c) => {
 });
 
 app.get('/api/v1/me/history/sync', async (c) => {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to restore watch history.');
   const slug = c.req.query('slug');
   const episodeNumber = c.req.query('episodeNumber');
@@ -661,7 +750,7 @@ app.post('/api/v1/me/history/sync', async (c) => {
   if (origin && origin !== new URL(c.req.url).origin) {
     return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
   }
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync watch history.');
   let body: unknown;
   try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
@@ -754,7 +843,7 @@ app.post('/api/v1/me/history/sync', async (c) => {
 });
 
 app.get('/api/v1/me/movies/library', async (c) => {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your Movies library.');
   try {
     const result = await c.env.DB.prepare(`
@@ -775,7 +864,7 @@ app.post('/api/v1/me/movies/library', async (c) => {
   if (origin && origin !== new URL(c.req.url).origin) {
     return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
   }
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync your Movies library.');
   let body: unknown;
   try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
@@ -819,7 +908,7 @@ app.delete('/api/v1/me/movies/library/:providerId/:externalId', async (c) => {
   if (origin && origin !== new URL(c.req.url).origin) {
     return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
   }
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to manage your Movies library.');
   const providerId = c.req.param('providerId').trim().toLowerCase();
   const externalId = c.req.param('externalId').trim();
@@ -838,7 +927,7 @@ app.delete('/api/v1/me/movies/library/:providerId/:externalId', async (c) => {
 });
 
 app.get('/api/v1/me/library', async (c) => {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your library.');
   try {
     const result = await c.env.DB.prepare(
@@ -899,4 +988,13 @@ function safeJsonArray(value: unknown): unknown[] {
   }
 }
 
-export default app;
+export default {
+  fetch: (request: Request, env: Bindings, context: ExecutionContext) => app.fetch(request, env, context),
+  // Expose Hono's in-process request helper for Worker integration tests only.
+  request: app.request.bind(app),
+  scheduled(_controller: ScheduledController, env: Bindings, context: ExecutionContext) {
+    context.waitUntil(rotateAdminConsolePath(env.DB).catch((error) => {
+      console.error(JSON.stringify({ event: 'admin_console_rotation_failed', message: error instanceof Error ? error.message : 'unknown' }));
+    }));
+  },
+};

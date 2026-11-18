@@ -12,7 +12,7 @@ const SEASONS = ANIME_SEASONS;
 const isSeason = (v: string | null): v is Season => v !== null && (SEASONS as readonly string[]).includes(v);
 const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
-/** AniList trending score, optionally scoped to a season and year. */
+/** MyAnimeList ranking and popularity, scoped to a seasonal chart. */
 export default function TrendingPage() {
   const [params, setParams] = useSearchParams();
   const now = currentAnimeSeason();

@@ -7,6 +7,8 @@ import { httpsUrlOrNull, normalizeFormat, normalizeSeason, plainText, positiveIn
 import { asString, isObject, providerFetch, readJson, USER_AGENT, type FetchLike } from '../metadata/providers/http';
 import { ProviderError, type Attribution, type NormalizedMetadata, type Status } from '../metadata/types';
 import { toLiveTitle } from './map';
+import { Pacer } from './pacer';
+export { Pacer } from './pacer';
 import type { Ref } from './ids';
 import type { BrowseQuery, CatalogSource, ListKind, LiveTitle, Paged } from './types';
 
@@ -28,21 +30,6 @@ export const JIKAN_ATTRIBUTION: Attribution = {
   ],
 };
 
-/** Spaces request starts so a burst from one Worker isolate stays under 3/second. Reserves its slot synchronously. */
-export class Pacer {
-  private next = 0;
-  constructor(
-    private gapMs: number,
-    private now: () => number = Date.now,
-    private sleep: (ms: number) => Promise<void> = (ms) => new Promise<void>((r) => setTimeout(r, ms)),
-  ) {}
-  async wait(): Promise<void> {
-    const t = this.now();
-    const start = Math.max(t, this.next);
-    this.next = start + this.gapMs;
-    if (start > t) await this.sleep(start - t);
-  }
-}
 const sharedPacer = new Pacer(400);
 
 /** Shared by catalogue and episode adapters so combined Jikan traffic observes one per-isolate pace. */

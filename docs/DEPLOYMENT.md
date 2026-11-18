@@ -51,8 +51,10 @@ Dashboard labels change occasionally; if one differs slightly, look for the near
 
 ### 2f. Deploy staging
 1. Repository > **Actions** > **Build and deploy KAIRO** > **Run workflow**.
-2. Choose your branch, set **target** to `staging`, run.
+2. Select the reconciled **`staging`** branch and set **target** to `staging`. Manual staging deployments are rejected from feature branches and `main`; first complete and review the feature-to-staging reconciliation described in [Closed-access setup](CLOSED_ACCESS_SETUP.md).
 3. When it finishes, open the run's **Summary**. It shows the staging URL and the `/api/ready` response.
+
+The separate optional `STAGING_DEPLOY_ENABLED=true` setting still permits the documented automatic staging deployment on pushes to `main`. The branch guard applies to manual `workflow_dispatch` staging runs.
 
 If the deploy log says the account needs a **workers.dev subdomain**, register one: dashboard > **Workers & Pages** > the subdomain setting. Then re-run.
 
@@ -76,23 +78,25 @@ Open these in a browser (replace the host with your staging URL):
 | `METADATA_CACHE` | KV binding | `wrangler.jsonc` per environment | Short-lived provider response cache (needed on workers.dev) |
 | `APP_ENV` | var | `wrangler.jsonc` | `development`, `staging`, `production` |
 | `APP_BASE_URL` | Worker variable | `wrangler.jsonc` per environment | Canonical public origin used to construct OAuth callback and return URLs |
-| `GOOGLE_CLIENT_ID` | Worker variable | `wrangler.jsonc` per environment | Google OpenID Connect and explicit YouTube authorization client |
+| `ACCESS_ENFORCED` | Worker variable | `wrangler.jsonc` per environment | Must be `true` for staging and production; Worker API routes fail closed without a valid Access identity |
+| `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` | Worker variables | `wrangler.jsonc` per environment | Exact Cloudflare Access team issuer and application audience. Staging and production use their own app settings; both are checked by the deploy workflow before deployment |
+| `GOOGLE_CLIENT_ID` | Worker variable | `wrangler.jsonc` per environment | OAuth client used only for administrator-only YouTube authorization |
 | `METADATA_PROVIDERS` | var | `wrangler.jsonc` | Enabled metadata providers. `anilist` now; add `kitsu` only after its terms are verified |
 | `ALLOWED_ORIGIN` | var, optional | not set | Only for cross-origin API use |
-| `GOOGLE_CLIENT_SECRET` | Worker secret | Cloudflare Worker environment | Required for Google sign-in and account linking |
+| `GOOGLE_CLIENT_SECRET` | Worker secret | Cloudflare Worker environment | Required for the administrator's YouTube OAuth connection |
 | `YOUTUBE_TOKEN_ENCRYPTION_KEY` | Worker secret | Cloudflare Worker environment | Required for YouTube token encryption; 32 random bytes, unpadded base64url |
-| `YOUTUBE_DATA_API_KEY` | Worker secret | Cloudflare Worker environment | Required for public YouTube video/channel search, uploads and watch metadata; restrict to YouTube Data API v3 |
+| `YOUTUBE_DATA_API_KEY` | Worker secret | Cloudflare Worker environment | Required for administrator-only YouTube video/channel search, uploads and watch metadata; restrict to YouTube Data API v3 |
 | `TMDB_ACCESS_TOKEN` | Worker secret | Cloudflare Worker environment | Required for TMDB Movies discovery/search/details where `MOVIES_TMDB_ENABLED=true`; also used for optional Anime artwork enrichment |
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | GitHub environment **secrets** | GitHub only | Deploying. Never in the repo or the Worker |
 | `STAGING_DEPLOY_ENABLED` | GitHub variable | GitHub | Auto-deploy staging on merge to main |
-| `STAGING_URL` | GitHub variable, optional | GitHub | Fallback if the deploy log URL cannot be read |
+| `STAGING_URL`, `PRODUCTION_URL` | GitHub variables, optional | GitHub | Environment-specific fallback URL if the deploy log URL cannot be read; a production check never falls back to the staging URL |
 | `PRODUCTION_DEPLOY_APPROVED` | GitHub variable | GitHub | Must be `true` for any production deploy. **Do not set.** |
 
 CineSrc is embedded directly by the Movies watch page and requires no Kairo Worker secret or additional Cloudflare binding. Movie playback is not routed through a Worker proxy.
 
-Authentication is already implemented. Set `GOOGLE_CLIENT_SECRET` and `YOUTUBE_TOKEN_ENCRYPTION_KEY` in Cloudflare's staging Worker **Secrets** before testing Google sign-in or YouTube connection. Keep `APP_BASE_URL` and `GOOGLE_CLIENT_ID` in the staging Worker variables. Generate the YouTube encryption key from 32 cryptographically random bytes and encode it as unpadded base64url. Do not put Worker secrets in GitHub Actions logs or source control. For the Kairo public YouTube feed, also add `YOUTUBE_DATA_API_KEY` as a **staging Worker secret**. Create the key in the Google Cloud project with YouTube Data API v3 enabled, restrict the key to YouTube Data API v3, and keep it server-side; this Worker calls Google from the server, so browser HTTP-referrer restrictions are not applicable. Never store the key in `wrangler.jsonc`, GitHub, or client-side code. The YouTube feed no longer requires a visitor to connect their YouTube account.
+Authentication is already implemented. Set `GOOGLE_CLIENT_SECRET` and `YOUTUBE_TOKEN_ENCRYPTION_KEY` in Cloudflare's staging Worker **Secrets** before testing the administrator-only YouTube connection. Keep `APP_BASE_URL` and `GOOGLE_CLIENT_ID` in the staging Worker variables. Generate the YouTube encryption key from 32 cryptographically random bytes and encode it as unpadded base64url. Do not put Worker secrets in GitHub Actions logs or source control. For the Kairo administrator-only YouTube feed, also add `YOUTUBE_DATA_API_KEY` as a **staging Worker secret**. Create the key in the Google Cloud project with YouTube Data API v3 enabled, restrict the key to YouTube Data API v3, and keep it server-side; this Worker calls Google from the server, so browser HTTP-referrer restrictions are not applicable. Never store the key in `wrangler.jsonc`, GitHub, or client-side code. The YouTube feed is available only to the Kairo administrator; OAuth is optional for the feed itself.
 
-The password verifier uses PBKDF2-HMAC-SHA-256 at 100,000 iterations because the Cloudflare Workers production WebCrypto runtime still enforces a 100,000-iteration cap (tracked in [workerd issue #1346](https://github.com/cloudflare/workerd/issues/1346)). This is the runtime ceiling, not a recommendation to reduce the cost further. It is below OWASP's 600,000-iteration recommendation and is a security compromise. Workers Free also has a 10 ms CPU budget per request. Measure actual staging registration/login invocations in Workers **Metrics → Errors → Invocation Statuses** and request logs; check for Error 1102 / exceeded CPU. Do not treat CI's Node-based password tests as proof that the Worker runtime has enough CPU. Before public launch, evaluate a memory-hard KDF or dedicated authentication runtime with target-plan benchmarking.
+The password verifier uses PBKDF2-HMAC-SHA-256 at 100,000 iterations because the Cloudflare Workers production WebCrypto runtime still enforces a 100,000-iteration cap (tracked in [workerd issue #1346](https://github.com/cloudflare/workerd/issues/1346)). This is the runtime ceiling, not a recommendation to reduce the cost further. It is below OWASP's 600,000-iteration recommendation and is a security compromise. Workers Free also has a 10 ms CPU budget per request. Measure actual staging account-creation/login invocations in Workers **Metrics → Errors → Invocation Statuses** and request logs; check for Error 1102 / exceeded CPU. Do not treat CI's Node-based password tests as proof that the Worker runtime has enough CPU. Before public launch, evaluate a memory-hard KDF or dedicated authentication runtime with target-plan benchmarking.
 
 Playback position is written locally at most once per second and synced to the signed-in account's D1 history row every 15 seconds while playing, plus on play, pause, seek, end and page exit. Guests stay local-only. A cross-origin iframe does not expose its playhead to Kairo unless its player API supports it, so remote resume tracking is limited to Kairo-controlled HLS/file playback.
 
@@ -120,13 +124,13 @@ Playback position is written locally at most once per second and synced to the s
 
 **Still to verify before enabling account features on staging:**
 - Merge/review the current `youtube` promotion PR, then deploy the promoted commit to staging. The final `/api/ready` should report both `database: "ok"` and `schema: "ok"`.
-- Confirm the staging Worker secrets `GOOGLE_CLIENT_SECRET` and `YOUTUBE_TOKEN_ENCRYPTION_KEY` exist. Cloudflare does not expose secret values for read-back; verify by running a controlled sign-in / YouTube connection test after deployment.
+- Confirm the staging Worker secrets `GOOGLE_CLIENT_SECRET` and `YOUTUBE_TOKEN_ENCRYPTION_KEY` exist. Cloudflare does not expose secret values for read-back; verify by running a controlled administrator-only YouTube connection test after deployment.
 - Confirm the exact YouTube and Google callback URLs are registered in the Google OAuth client.
 - Validate provider endpoints and Jikan/MyAnimeList terms as described in `docs/LIVE_CATALOGUE.md`. The staging deploy's `cache: "kv"` proves the binding is present, not that every KV read/write path has been exercised.
 - Migration `0007_youtube_oauth.sql` remains pending on staging until a reviewed staging deployment applies it. Production remains blocked and untouched.
 
 ## 8. Production (blocked)
-Production deploys are blocked by design until you approve. They need all of: a separate D1 database and KV namespace, their IDs in the `production` block, a separate token in the `production` environment, the variable `PRODUCTION_DEPLOY_APPROVED=true`, a run from `main`, and your approval as required reviewer. Do none of this until staging is proven with a real catalogue.
+Production deploys are blocked by design until you approve. They need all of: a separate D1 database and KV namespace, their IDs in the `production` block, a separate token in the `production` environment, a separately configured production Cloudflare Access application with its own team domain and AUD tag, `ACCESS_ENFORCED=true`, the variable `PRODUCTION_DEPLOY_APPROVED=true`, a run from `main`, and your approval as required reviewer. The committed production Access values are placeholders, and the workflow refuses to deploy while either placeholder remains or enforcement is not `true`. Do not put production Access values or credentials in the staging configuration. Do none of this until staging is proven with a real catalogue.
 
 ### Approved playback host allowlist
 

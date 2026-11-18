@@ -255,6 +255,18 @@ function parseYouTubeFeedCursorState(raw: string): YouTubeFeedCursorState | null
 }
 
 export function registerYouTubeAuthRoutes(app: any): void {
+  const adminOnly = async (c: YouTubeContext, next: () => Promise<void>) => {
+    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined);
+    if (!user || user.role !== 'admin') {
+      c.header('Cache-Control', 'no-store');
+      return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Not found.' } }, 404);
+    }
+    c.header('Cache-Control', 'private, no-store');
+    await next();
+  };
+  app.use('/api/v1/auth/youtube', adminOnly);
+  app.use('/api/v1/auth/youtube/*', adminOnly);
+  app.use('/api/v1/youtube/*', adminOnly);
   app.get('/api/v1/auth/youtube', async (c: YouTubeContext) => {
     const clientId = c.env.GOOGLE_CLIENT_ID;
     const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
@@ -280,7 +292,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
       return unavailable(c);
     }
     const cookie = c.req.header('Cookie') ?? null;
-    const user = await findSessionUser(c.env.DB, cookie);
+    const user = await findSessionUser(c.env.DB, cookie, Date.now(), c.get?.('accessEmail') as string | null | undefined);
     if (!user) return redirectTo(c, '/login?youtube=sign_in_required&continue=youtube-connect');
     if (!await hasRecentSession(c.env.DB, cookie)) return redirectTo(c, '/login?youtube=reauth_required&continue=youtube-connect');
 
@@ -355,7 +367,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
     }
     const cookie = c.req.header('Cookie') ?? null;
     const sessionToken = readSessionCookie(cookie);
-    const user = await findSessionUser(c.env.DB, cookie);
+    const user = await findSessionUser(c.env.DB, cookie, Date.now(), c.get?.('accessEmail') as string | null | undefined);
     if (!sessionToken || !user) {
       logYouTubeDiagnostic(c, 'youtube_callback_session_missing');
       return redirectTo(c, '/login?youtube=sign_in_required&continue=youtube-connect');
@@ -487,7 +499,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
   });
 
   app.get('/api/v1/auth/youtube/status', async (c: YouTubeContext) => {
-    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined);
     if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to manage YouTube.' } }, 401);
     try {
       const row = await c.env.DB.prepare(
@@ -506,7 +518,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
     if (!origin || origin !== new URL(c.req.url).origin) {
       return c.json({ success: false, error: { code: 'ORIGIN_FORBIDDEN', message: 'This request origin is not allowed.' } }, 403);
     }
-    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined);
     if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to manage YouTube.' } }, 401);
     try {
       const row = await c.env.DB.prepare(
@@ -530,7 +542,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
   // Kairo keeps each user's selected channel list and never exposes the key.
   app.get('/api/v1/youtube/channels', async (c: YouTubeContext) => {
     c.header('Cache-Control', 'no-store');
-    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined);
     if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to manage your Kairo channels.' } }, 401);
     try {
       const result = await c.env.DB.prepare(
@@ -545,7 +557,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
 
   app.get('/api/v1/youtube/channels/search', async (c: YouTubeContext) => {
     c.header('Cache-Control', 'no-store');
-    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined);
     if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to search YouTube channels.' } }, 401);
     const term = new URL(c.req.url).searchParams.get('q')?.trim() ?? '';
     if (term.length < 2 || term.length > 80 || /[\u0000-\u001F\u007F]/.test(term)) {
@@ -586,7 +598,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
     c.header('Cache-Control', 'no-store');
     // Searching public videos does not require a Kairo or YouTube account.
     // Guests are still rate-limited by client IP and the shared project quota.
-    const identity = (await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null))?.id ?? 'guest';
+    const identity = (await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined))?.id ?? 'guest';
 
     const params = new URL(c.req.url).searchParams;
     const term = params.get('q')?.trim() ?? '';
@@ -708,7 +720,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
     if (!origin || origin !== new URL(c.req.url).origin) {
       return c.json({ success: false, error: { code: 'ORIGIN_FORBIDDEN', message: 'This request origin is not allowed.' } }, 403);
     }
-    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined);
     if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to add channels.' } }, 401);
     let body: any;
     try { body = await c.req.json(); } catch { return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Provide valid JSON.' } }, 400); }
@@ -752,7 +764,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
     if (!origin || origin !== new URL(c.req.url).origin) {
       return c.json({ success: false, error: { code: 'ORIGIN_FORBIDDEN', message: 'This request origin is not allowed.' } }, 403);
     }
-    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined);
     if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to remove channels.' } }, 401);
     const channelId = c.req.param('channelId');
     if (!/^[A-Za-z0-9_-]{6,64}$/.test(channelId)) {
@@ -769,7 +781,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
 
   app.get('/api/v1/youtube/feed', async (c: YouTubeContext) => {
     c.header('Cache-Control', 'no-store');
-    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined);
     if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to view your Kairo feed.' } }, 401);
     if (!await allowYouTubeRequest(c, user.id, 'feed-page', 30)) {
       return c.json({ success: false, error: { code: 'RATE_LIMITED', message: 'Your feed is loading too quickly. Please try again in 15 minutes.' } }, 429);

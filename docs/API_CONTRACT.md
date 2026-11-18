@@ -53,8 +53,8 @@ Do not expose stack traces, SQL, provider tokens, internal hostnames, or secret 
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/health` | Liveness probe (no dependencies) |
-| GET | `/api/ready` | Readiness probe (verifies D1 is reachable; 503 `CATALOG_UNAVAILABLE` otherwise) |
+| GET | `/api/health` | Minimal public liveness probe (no dependencies); only public Access path override |
+| GET | `/api/ready` | Minimal public readiness probe (verifies D1/schema; 503 if unavailable); only public Access path override. Detailed dependency fields are omitted when Access enforcement is enabled. |
 | GET | `/api/v1/catalog/featured` | Featured titles |
 | GET | `/api/v1/catalog/trending?page=1&limit=24` | Trending titles |
 | GET | `/api/v1/catalog/latest?page=1&limit=24` | Recently updated titles |
@@ -88,9 +88,38 @@ Search parameters:
 
 Ratings are on a 0-10 scale. See docs/PROVIDERS.md.
 
+## 3a. Administrator routes
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/v1/admin/bootstrap` | One-time administrator provisioning; requires `ADMIN_BOOTSTRAP_TOKEN` and is disabled after an admin exists. |
+| GET | `/api/v1/admin/console-path` | Return the current 30-minute console path to an authenticated administrator only. |
+| GET | `/api/v1/admin/accounts` | List standard accounts, their unique Cloudflare Access email bindings, and the 15-account allocation count. |
+| POST | `/api/v1/admin/accounts` | Create a standard username/password account bound to one approved Access email while below the cap. |
+| PATCH | `/api/v1/admin/accounts/:id/access-email` | Change a standard account's unique Access email and revoke its sessions. |
+| PATCH | `/api/v1/admin/accounts/:id/status` | Suspend or reactivate a standard account. |
+| POST | `/api/v1/admin/accounts/:id/password` | Reset a standard account password and revoke its active sessions. |
+
+All administrator routes verify the session role server-side. The console path is an obscurity layer, not an authentication mechanism. A staging Cron Trigger rotates it every 30 minutes. The database enforces a single administrator role; suspended standard accounts continue to count toward the 15-account allocation limit.
+
 ## 3. Authenticated user routes
 
-These routes require a valid identity-provider session/token and server-side ownership checks.
+Kairo uses closed access: public standard-account registration and Google sign-in are disabled. Cloudflare Access is the outer staging entrance and is configured with exact individual email addresses, not a Gmail-domain wildcard. The Worker verifies the signed Cloudflare Access application JWT (signature, issuer, audience and token times), then checks that its verified email maps to an active Kairo profile on every API request. Each Kairo account and session is bound to that verified Access email. A Kairo username/password is required for personal features; invited visitors may browse the catalogue without entering Kairo credentials; their email must still be assigned to an active Kairo profile.
+
+Standard accounts are created by an administrator with a username, password, and unique approved Access email. Changing the assigned email revokes all sessions for that account. The Cloudflare Access allowlist must be maintained separately by the operator.
+
+The single administrator is created once through `POST /api/v1/admin/bootstrap`, protected by the temporary `ADMIN_BOOTSTRAP_TOKEN` Worker secret and current verified Access identity. The endpoint also records permanent bootstrap completion in D1. Administrator login uses username/password and creates an eight-hour session; standard-account sessions retain the existing 30-day lifetime. Five incorrect administrator passwords within the one-hour failure window lock the administrator login until manually cleared in the staging D1 console.
+
+Authentication routes:
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/v1/auth/login` | Sign in using username/password matched to the current verified Access email. Administrator sessions last eight hours; standard sessions last 30 days. |
+| POST | `/api/v1/admin/bootstrap` | One-time administrator creation; requires the `X-Kairo-Bootstrap` header and the current verified Access email; permanently disabled after initialization. |
+
+The bootstrap token is temporary and should be removed from the staging Worker secrets immediately after successful administrator setup. Passwords are stored as salted PBKDF2 hashes; plaintext passwords are never stored. The current administrator authentication intentionally has no Kairo MFA; see `docs/CLOSED_ACCESS_SETUP.md` for outstanding production security work and the manual lockout recovery procedure.
+
+These routes require a valid Kairo session and server-side ownership checks.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -124,16 +153,16 @@ Validate finite non-negative numbers, enforce sensible duration/position bounds,
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/v1/youtube/channels/search?q=...` | Search public YouTube channels using the server-side API key. |
-| GET | `/api/v1/youtube/videos/search?q=...` | Search public YouTube videos by keyword, with sort, duration and page-token filters. |
+| GET | `/api/v1/youtube/channels/search?q=...` | Administrator-only YouTube channel search. |
+| GET | `/api/v1/youtube/videos/search?q=...` | Administrator-only YouTube video search. |
 | GET | `/api/v1/youtube/channels` | List the user's channels saved in Kairo. |
 | POST | `/api/v1/youtube/channels` | Add a public channel to the user's Kairo feed. |
 | DELETE | `/api/v1/youtube/channels/:channelId` | Remove a channel from the user's Kairo feed. |
 | GET | `/api/v1/youtube/feed` | Fetch recent public uploads from the user's saved Kairo channels. |
 
-- Channel discovery, adding channels, loading the saved-channel feed, and saved-channel management require a valid Kairo session. Public keyword video search does not require a Kairo or YouTube account; guest searches are rate-limited by client IP and share the project's daily search quota. Public YouTube data uses the server-side `YOUTUBE_DATA_API_KEY`; users do not need to connect a YouTube/Google account.
+- Every YouTube page and API route, including metadata, keyword search, channel search, feed, OAuth connection, playback history and Watch Later, requires a valid administrator session. Anonymous visitors and standard accounts receive a not-found response. The restriction is enforced in the Worker, not only in the frontend.
 - Kairo's channel list is stored separately in `youtube_feed_channels`; adding a channel does not subscribe the user to it on YouTube and does not change their YouTube subscriptions.
-- Uses the official YouTube Data API with a Worker secret (`YOUTUBE_DATA_API_KEY`). The key is added only to server-to-server requests and is never returned to the browser or included in application logs. OAuth remains separate and optional for future account-specific features such as importing actual YouTube subscriptions.
+- Uses the official YouTube Data API with a Worker secret (`YOUTUBE_DATA_API_KEY`). The key is added only to server-to-server requests and is never returned to the browser or included in application logs. OAuth is an administrator-only optional connection for future account-specific features such as importing actual YouTube subscriptions.
 - Kairo does not impose a maximum number of saved channels. Feed requests process up to 20 channels at a time, with up to four uploads per channel, to keep each Worker request within a predictable API-call budget. Each saved channel's uploads-playlist ID is persisted in D1 at add time; legacy saved channels are hydrated on their next feed request. Subsequent requests load older uploads from the next channel batch or the next page of each uploads playlist. Cursor state is stored in D1, scoped to the authenticated user, and expires after one hour.
 - Channel searches are limited to five per user per 15 minutes; video searches are limited to eight per user per 15 minutes. Both share an 80-call rolling 24-hour project search budget, reserving headroom under YouTube's default 100-call daily `search.list` allowance. Video search supports relevance, upload-date, view-count and rating sort orders, duration filters, and page-token pagination. Each result page makes one batched `videos.list` request to enrich durations when the shared data-API budget permits; search results remain available if that optional enrichment fails. Feed page requests are limited to 30 per user per 15 minutes. Each playlist page consumes one shared data-API unit per channel; a one-time uploads-playlist lookup is also charged when an older saved channel has not yet been hydrated. Video metadata lookups share the same 8,000-unit project budget with channel additions, duration enrichment and feed requests. Feed responses use `Cache-Control: no-store`; video cards open the Kairo watch route with the official YouTube player and an external fallback.
 - YouTube's public Data API does not expose a reliable Shorts classification flag or public source-video aspect ratio. Kairo therefore filters videos whose title or description explicitly contains a Shorts hashtag (`#short`, `#shorts`, `#youtubeshorts`); unlabelled Shorts cannot be guaranteed to be detected without relying on unsupported page scraping.
@@ -144,7 +173,7 @@ Validate finite non-negative numbers, enforce sensible duration/position bounds,
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/v1/youtube/videos/:videoId` | Retrieve public video metadata and the YouTube embed-allowed flag from the official Data API. |
+| GET | `/api/v1/youtube/videos/:videoId` | Retrieve administrator-only video metadata and the YouTube embed-allowed flag from the official Data API. |
 | GET | `/api/v1/youtube/history` | List the signed-in user's recent YouTube playback history. |
 | POST | `/api/v1/youtube/history` | Save or update playback progress for a video. |
 | DELETE | `/api/v1/youtube/history/:videoId` | Remove one video from the signed-in user's history. |
@@ -152,10 +181,10 @@ Validate finite non-negative numbers, enforce sensible duration/position bounds,
 | POST | `/api/v1/youtube/watch-later` | Save a video to Kairo Watch Later. |
 | DELETE | `/api/v1/youtube/watch-later/:videoId` | Remove one video from Kairo Watch Later. |
 
-- Video metadata is public; the API key remains server-side. The endpoint returns a normalized record, whether YouTube allows embedding, and the API-provided Made for Kids flag. The watch page disables Kairo playback-history/progress tracking for videos YouTube marks Made for Kids. It does not return extracted stream URLs.
+- Video metadata is available only to the administrator; the API key remains server-side. The endpoint returns a normalized record, whether YouTube allows embedding, and the API-provided Made for Kids flag. Responses are private and non-cacheable. The watch page disables Kairo playback-history/progress tracking for videos YouTube marks Made for Kids. It does not return extracted stream URLs.
 - History and Watch Later require a Kairo session and are scoped by the server-derived user ID. Write operations require a same-origin request, validate the video ID and bounded metadata/progress fields, and use per-user/IP write limits. Authenticated library responses are `Cache-Control: no-store`.
 - The browser uses the official YouTube IFrame Player API. Kairo does not proxy video bytes, collect YouTube cookies, or bypass embed restrictions. If a video cannot be embedded, the UI offers the original YouTube watch URL.
-- Playback progress is stored locally for guests and synced to D1 for signed-in Kairo users. This Kairo history is separate from the user's YouTube account history.
+- Playback progress is stored locally for guests and synced to D1 for signed-in Kairo users. This Kairo history is separate from the user's YouTube account history. Browser resume checkpoints are written every five seconds; signed-in cloud checkpoints are sent every 60 seconds, with immediate flushes on pause, completed seek, end, visibility loss, close, and player-setting/source changes. Failed writes are retained in a per-account local retry queue with exponential backoff. Each tab assigns a monotonically increasing sequence to its playback writes; the Worker uses server receive time and sequence checks to reject late writes from the same tab. Across separate tabs/devices, the most recently received valid write wins.
 - The additive D1 schema is in `migrations/0011_youtube_media_library.sql`. Apply it to each target environment before deploying this Worker version. No remote migration is run by this source change.
 
 
@@ -223,6 +252,6 @@ The example is a schema illustration, not a live URL. Return only provider-autho
 - These routes derive user ownership exclusively from the validated HttpOnly Kairo session cookie. No user ID is accepted from the request body.
 - Movie library rows store provider_id and external_id with the user's status/favorite/rating state. They do not ingest or copy TMDB metadata into the account library.
 - Anime history deletes are recorded in tombstones, and history clear operations update a per-account clear marker. A stale offline client cannot recreate a row with an update timestamp older than the delete/clear marker.
-- Guest Anime, Movies and YouTube state is browser-only and is not sent to these routes. YouTube account history and Watch Later continue to use the routes in section 3b.
+- Guest Anime and Movies state is browser-only and is not sent to these routes. YouTube pages and their APIs are administrator-only; YouTube history and Watch Later use the routes in section 3b.
 - Account records are common across all three media domains because the same Kairo session resolves to the same user_profiles.id. Domain tables and provider metadata remain separate.
 - The additive schema is migrations/0013_unified_media_sync.sql. It is applied by the normal D1 migration step in the staging or production deployment workflow; PR verification does not modify a remote database.
