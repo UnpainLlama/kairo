@@ -7,7 +7,7 @@ This document describes the current closed-access branch. Public registration an
 - Cloudflare Access is the outer entrance for the staging site. Its Allow policy must contain individual email addresses; it must not allow a whole Gmail domain or Everyone.
 - Cloudflare Access uses One-time PIN for invited email addresses. This is perimeter authentication and is separate from Kairo's username/password login.
 - The intended access allocation is one administrator email plus up to 15 standard-user email addresses.
-- The Worker independently validates the signed `Cf-Access-Jwt-Assertion` for API requests. It checks the RS256 signature against the configured Cloudflare Access team JWKS, exact issuer, Access application audience, token times, application token type, and verified identity email.
+- The Worker independently validates the signed `Cf-Access-Jwt-Assertion` for API requests. It checks the RS256 signature against the configured Cloudflare Access team JWKS, exact issuer, Access application audience, token expiry, and verified human identity email.
 - Kairo stores a unique `access_email` binding on each profile and session. Login requires the current verified Access email to match the account binding; every authenticated API request checks that the session and current profile still match the request's Access email.
 - Invited visitors can browse the catalogue without a Kairo account. A Kairo username/password is required for personal/cloud features.
 - Standard-account registration and Google sign-in are disabled. The administrator provisions up to 15 standard username/password accounts and assigns each a unique Access email.
