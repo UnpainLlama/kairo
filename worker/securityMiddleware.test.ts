@@ -12,7 +12,7 @@ describe('API origin protection', () => {
   it('rejects state-changing requests with no Origin or Referer', async () => {
     const response = await worker.request(url, { method: 'POST' }, env);
     expect(response.status).toBe(403);
-    expect((await response.json()).error.code).toBe('ORIGIN_FORBIDDEN');
+    expect(((await response.json()) as { error: { code: string } }).error.code).toBe('ORIGIN_FORBIDDEN');
   });
 
   it('rejects a foreign Origin even when the request is otherwise valid', async () => {
