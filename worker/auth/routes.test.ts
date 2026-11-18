@@ -140,6 +140,10 @@ describe('closed-access authentication', () => {
         };
         return {
           first,
+          run: async () => {
+            if (sql.includes('DELETE FROM sessions WHERE user_id IN')) sessionsRevoked = true;
+            return { success: true, meta: { changes: 1 } };
+          },
           bind: (..._values: unknown[]) => ({
             first: async () => {
               if (sql.includes('INSERT INTO auth_rate_limits')) return { attempts: 1 };
