@@ -72,6 +72,9 @@ jobs:
           if grep -q "REPLACE_WITH_${WANT}_" wrangler.jsonc; then
             echo "::error file=wrangler.jsonc::Replace the REPLACE_WITH_${WANT}_... placeholders with your real Cloudflare IDs. See docs/DEPLOYMENT.md."; exit 1
           fi
+          if [ "$TARGET" = "staging" ] && grep -Eq 'REPLACE_WITH_STAGING_ACCESS_(TEAM_DOMAIN|AUD)' wrangler.jsonc; then
+            echo "::error file=wrangler.jsonc::Set ACCESS_TEAM_DOMAIN and ACCESS_AUD from the Kairo staging Access application before deploying."; exit 1
+          fi
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
