@@ -2,9 +2,9 @@ const ALGORITHM = 'PBKDF2';
 const HASH_NAME = 'SHA-256';
 const FORMAT = 'pbkdf2-sha256';
 const VERSION = 1;
-// workerd currently rejects any single WebCrypto PBKDF2 operation above 100,000 iterations.
-// This is a runtime compatibility ceiling, not the ideal password-hashing cost; see the
-// account architecture docs for the security trade-off and follow-up options.
+// KAIRO conservatively caps this at 100,000 based on previously observed Workerd behavior.
+// The current deployed runtime has not been re-tested: confirm the ceiling in staging before
+// changing it. This is a compatibility cap, not an adequate long-term password-hashing target.
 export const PASSWORD_HASH_ITERATIONS = 100_000;
 const SALT_BYTES = 16;
 const HASH_BYTES = 32;
