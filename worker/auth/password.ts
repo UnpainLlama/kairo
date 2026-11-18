@@ -10,6 +10,11 @@ const SALT_BYTES = 16;
 const HASH_BYTES = 32;
 const MAX_PASSWORD_BYTES = 1024;
 
+export function isNewPasswordValid(value: unknown): value is string {
+  return typeof value === 'string' && Array.from(value).length >= 15 &&
+    new TextEncoder().encode(value).length <= MAX_PASSWORD_BYTES;
+}
+
 export async function hashPassword(password: string): Promise<string> {
   const passwordBytes = validatePassword(password);
   const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
