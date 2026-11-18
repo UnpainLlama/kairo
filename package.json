@@ -20,12 +20,12 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "hono": "^4.9.8",
-    "lucide-react": "^0.468.0",
+    "hono": "^4.13.18",
+    "lucide-react": "^1.73.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.9.5",
-    "hls.js": "^1.6.15"
+    "hls.js": "^1.7.4"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.13.0",
