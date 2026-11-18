@@ -79,7 +79,7 @@ If you only remove an email from the Access policy, an already-issued Access app
 
 3. Apply the additive migrations to the staging D1 database only. The staging database is named `kairo-db-staging` (the Worker binding is `DB`):
 
-   `npx wrangler d1 migrations apply kairo-db-staging --remote --env staging`
+   `npx wrangler d1 migrations apply DB --remote --env staging`
 
 4. Generate a one-time bootstrap token with at least 32 bytes of cryptographic randomness:
 
