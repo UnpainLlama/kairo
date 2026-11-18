@@ -31,7 +31,7 @@ The report-only policy currently reflects the app's known dependencies:
 | `script-src` | `self`, `cdn.jsdelivr.net`, `www.youtube.com`, `s.ytimg.com` | Kairo bundle, Video.js CDN files, official YouTube IFrame API/player |
 | `style-src` | `self`, `cdn.jsdelivr.net`, `fonts.googleapis.com` | App CSS, Video.js stylesheet, Google Fonts CSS |
 | `font-src` | `self`, `fonts.gstatic.com`, `data:` | Local fonts, Google Fonts files, embedded font data |
-| `img-src` | `self`, `image.tmdb.org`, `s4.anilist.co`, `cdn.myanimelist.net`, `i.ytimg.com`, `img.youtube.com`, known HiAnime mirrors | Catalogue artwork, movie artwork, YouTube thumbnails and provider posters |
+| `img-src` | `self`, `image.tmdb.org`, `s4.anilist.co`, `cdn.myanimelist.net`, `i.ytimg.com`, `img.youtube.com`, `yt3.ggpht.com`, `yt3.googleusercontent.com`, known HiAnime mirrors | Catalogue artwork, movie artwork, YouTube thumbnails and provider posters |
 | `connect-src` | `self`, AniList, Jikan, TMDB, Google APIs/OAuth, jsDelivr and configured playback hosts | Browser XHR/fetch, player requests and HLS segments. Most catalogue/API calls are Worker-to-provider requests and are not subject to the browser's CSP. |
 | `frame-src` | `self`, `cinesrc.st`, YouTube, and configured staging playback hosts | Approved movie and episode players |
 | `media-src` | `self`, `blob:`, `data:`, and configured staging playback hosts | Direct media and HLS playback |
