@@ -303,7 +303,7 @@ export function createMalSource(
 
     async related(ref, limit, signal) {
       if (ref.kind !== 'm') throw new ProviderError('not_found', 'MyAnimeList only resolves MyAnimeList ids.');
-      const body = await get(`/anime/${ref.id}`, { fields: DETAIL_FIELDS, nsfw: false }, signal);
+      const body = await get(`/anime/${ref.id}`, { fields: DETAIL_FIELDS }, signal);
       const value = isObject(body.data) ? body.data : body;
       if (!isObject(value) || isAdult(value)) throw new ProviderError('not_found', 'MyAnimeList has no matching anime.');
       const recommendations = Array.isArray(value.recommendations) ? value.recommendations : [];
