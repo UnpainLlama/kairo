@@ -44,6 +44,10 @@ function decodeJson<T>(segment: string): T {
   return JSON.parse(utf8.decode(bytes)) as T;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function normalizeTeamIssuer(value: string | undefined): string | null {
   if (!value || value.length > 255) return null;
   try {
@@ -133,14 +137,17 @@ export async function verifyCloudflareAccessAssertion(
   const parts = token.split('.');
   if (parts.length !== 3) return null;
 
-  let header: AccessJwtHeader;
-  let claims: AccessJwtClaims;
+  let headerValue: unknown;
+  let claimsValue: unknown;
   try {
-    header = decodeJson<AccessJwtHeader>(parts[0]);
-    claims = decodeJson<AccessJwtClaims>(parts[1]);
+    headerValue = decodeJson<unknown>(parts[0]);
+    claimsValue = decodeJson<unknown>(parts[1]);
   } catch {
     return null;
   }
+  if (!isRecord(headerValue) || !isRecord(claimsValue)) return null;
+  const header = headerValue as AccessJwtHeader;
+  const claims = claimsValue as AccessJwtClaims;
 
   if (header.alg !== 'RS256' || typeof header.kid !== 'string' || header.kid.length > 128 ||
       claims.iss !== issuer ||
