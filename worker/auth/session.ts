@@ -90,6 +90,7 @@ export async function revokeSession(db: D1Database, cookieHeader: string | null)
 export async function findSessionUser(db: D1Database, cookieHeader: string | null, now = Date.now(), accessEmail?: string | null): Promise<SessionUser | null> {
   const token = readSessionCookie(cookieHeader);
   if (!token) return null;
+  const tokenHash = await hashToken(token);
   const row = await db.prepare(
     `SELECT s.user_id AS userId, p.display_name AS displayName,
             p.email, p.username, p.access_email AS accessEmail,
@@ -97,6 +98,10 @@ export async function findSessionUser(db: D1Database, cookieHeader: string | nul
      FROM sessions s
      INNER JOIN user_profiles p ON p.id = s.user_id
      WHERE s.token_hash = ? AND s.expires_at > ?
+       AND COALESCE(s.last_used_at, s.created_at) >= CASE
+         WHEN p.role = 'admin' THEN datetime('now', '-60 minutes')
+         ELSE datetime('now', '-14 days')
+       END
        AND p.account_status = 'active'
        AND (p.role <> 'admin' OR NOT EXISTS (
          SELECT 1 FROM admin_login_security als
@@ -106,6 +111,11 @@ export async function findSessionUser(db: D1Database, cookieHeader: string | nul
      LIMIT 1`
   ).bind(await hashToken(token), now, accessEmail ?? null, accessEmail ?? null, accessEmail ?? null).first<SessionRow>();
   if (!row) return null;
+  // Persist activity at most once every five minutes. This makes idle expiry server-enforced
+  // without writing to D1 for every API request.
+  await db.prepare(`UPDATE sessions SET last_used_at=CURRENT_TIMESTAMP
+    WHERE token_hash=? AND (last_used_at IS NULL OR last_used_at <= datetime('now', '-5 minutes'))`)
+    .bind(tokenHash).run();
   return {
     id: row.userId,
     displayName: row.displayName,
