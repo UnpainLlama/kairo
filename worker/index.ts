@@ -957,6 +957,8 @@ function safeJsonArray(value: unknown): unknown[] {
 
 export default {
   fetch: (request: Request, env: Bindings, context: ExecutionContext) => app.fetch(request, env, context),
+  // Expose Hono's in-process request helper for Worker integration tests only.
+  request: app.request.bind(app),
   scheduled(_controller: ScheduledController, env: Bindings, context: ExecutionContext) {
     context.waitUntil(rotateAdminConsolePath(env.DB).catch((error) => {
       console.error(JSON.stringify({ event: 'admin_console_rotation_failed', message: error instanceof Error ? error.message : 'unknown' }));
