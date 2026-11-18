@@ -4,30 +4,6 @@ import { hasActiveAccessAccount, resetAccessJwksCacheForTests, verifyCloudflareA
 afterEach(() => {
   vi.unstubAllGlobals();
   resetAccessJwksCacheForTests();
-  it('requires an active Kairo invitation for every verified Access identity', async () => {
-    let status: 'active' | 'suspended' = 'active';
-    const db = {
-      prepare(sql: string) {
-        return {
-          bind: (email: string) => ({
-            first: async () => {
-              expect(sql).toContain("account_status = 'active'");
-              return email.toLowerCase() === 'invited.user@gmail.com' && status === 'active'
-                ? { id: 'invited-account' }
-                : null;
-            },
-          }),
-        };
-      },
-    } as unknown as D1Database;
-
-    await expect(hasActiveAccessAccount(db, 'INVITED.USER@gmail.com')).resolves.toBe(true);
-    status = 'suspended';
-    await expect(hasActiveAccessAccount(db, 'invited.user@gmail.com')).resolves.toBe(false);
-    status = 'active';
-    await expect(hasActiveAccessAccount(db, 'someone.else@gmail.com')).resolves.toBe(false);
-  });
-
 });
 
 function base64url(value: Uint8Array | string): string {
@@ -109,5 +85,31 @@ describe('Cloudflare Access application JWT verification', () => {
     await expect(verifyCloudflareAccessAssertion(null, bindings)).resolves.toBeNull();
     await expect(verifyCloudflareAccessAssertion('token', { ACCESS_TEAM_DOMAIN: bindings.ACCESS_TEAM_DOMAIN })).resolves.toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('Cloudflare Access invitation status', () => {
+  it('requires an active Kairo invitation for every verified Access identity', async () => {
+    let status: 'active' | 'suspended' = 'active';
+    const db = {
+      prepare(sql: string) {
+        return {
+          bind: (email: string) => ({
+            first: async () => {
+              expect(sql).toContain("account_status = 'active'");
+              return email.toLowerCase() === 'invited.user@gmail.com' && status === 'active'
+                ? { id: 'invited-account' }
+                : null;
+            },
+          }),
+        };
+      },
+    } as unknown as D1Database;
+
+    await expect(hasActiveAccessAccount(db, 'INVITED.USER@gmail.com')).resolves.toBe(true);
+    status = 'suspended';
+    await expect(hasActiveAccessAccount(db, 'invited.user@gmail.com')).resolves.toBe(false);
+    status = 'active';
+    await expect(hasActiveAccessAccount(db, 'someone.else@gmail.com')).resolves.toBe(false);
   });
 });
