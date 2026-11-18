@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clearSessionCookie, createOpaqueToken, createSession, hashToken, readSessionCookie, sessionCookie } from './session';
+import { clearSessionCookie, createOpaqueToken, createSession, findSessionUser, hashToken, readSessionCookie, sessionCookie } from './session';
 
 describe('session primitives', () => {
   it('creates 256-bit URL-safe opaque tokens', () => {
@@ -46,4 +46,37 @@ describe('session primitives', () => {
     expect(clearSessionCookie()).toContain('Max-Age=0');
     expect(clearSessionCookie(false)).not.toContain('Secure');
   });
+  it('binds an authenticated Kairo session to the current verified Cloudflare Access email', async () => {
+    const token = createOpaqueToken();
+    const queryLog: Array<{ sql: string; values: unknown[] }> = [];
+    const db = {
+      prepare(sql: string) {
+        return {
+          bind: (...values: unknown[]) => ({
+            first: async () => {
+              queryLog.push({ sql, values });
+              const requestedEmail = values[2] as string | null;
+              if (requestedEmail && requestedEmail.toLowerCase() !== 'invited@gmail.com') return null;
+              return {
+                userId: 'standard-user',
+                displayName: 'Invited User',
+                email: null,
+                username: 'InvitedUser',
+                accessEmail: 'invited@gmail.com',
+                emailVerifiedAt: null,
+                role: 'user',
+              };
+            },
+          }),
+        };
+      },
+    } as unknown as D1Database;
+
+    await expect(findSessionUser(db, `kairo_session=${token}`, 1234, 'another@gmail.com')).resolves.toBeNull();
+    const user = await findSessionUser(db, `kairo_session=${token}`, 1234, 'INVITED@gmail.com');
+    expect(user).toMatchObject({ id: 'standard-user', accessEmail: 'invited@gmail.com', role: 'user' });
+    expect(queryLog.every(entry => entry.sql.includes('lower(s.access_email)') && entry.sql.includes('lower(p.access_email)'))).toBe(true);
+    expect(queryLog[1].values.slice(2)).toEqual(['INVITED@gmail.com', 'INVITED@gmail.com', 'INVITED@gmail.com']);
+  });
+
 });
