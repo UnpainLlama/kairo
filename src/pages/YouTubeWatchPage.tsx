@@ -216,7 +216,7 @@ export default function YouTubeWatchPage() {
       });
       return;
     }
-    if (reason === 'open' || (reason === 'timeupdate' && now - lastRemoteSave.current < PLAYBACK_SERVER_SYNC_INTERVAL_MS)) return;
+    if (reason === 'timeupdate' && now - lastRemoteSave.current < PLAYBACK_SERVER_SYNC_INTERVAL_MS) return;
     lastRemoteSave.current = now;
     void syncMediaPlayback(accountId, unifiedSnapshot, reason === 'pagehide' || reason === 'ended' || reason === 'close');
     const body = {
