@@ -18,7 +18,7 @@ async function signedAccessToken(options: { email?: string; audience?: string; e
     { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
     true,
     ['sign', 'verify'],
-  );
+  ) as CryptoKeyPair;
   const jwk = { ...(await crypto.subtle.exportKey('jwk', pair.publicKey)), kid: 'test-access-key', use: 'sig', alg: 'RS256' };
   const now = Math.floor(Date.now() / 1000);
   const header = base64url(JSON.stringify({ alg: 'RS256', kid: 'test-access-key', typ: 'JWT' }));
