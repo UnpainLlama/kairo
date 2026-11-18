@@ -61,6 +61,8 @@ describe('MyAnimeList API v2 mapping', () => {
     expect(parsed.origin + parsed.pathname).toBe('https://api.myanimelist.net/v2/anime/ranking');
     expect(parsed.searchParams.get('ranking_type')).toBe('bypopularity');
     expect(parsed.searchParams.get('fields')).toContain('genres');
+    expect(parsed.searchParams.get('fields')).toContain('alternative_titles{en,ja,synonyms}');
+    expect(parsed.searchParams.get('fields')).toContain('start_season{year,season}');
     expect(parsed.searchParams.get('nsfw')).toBeNull();
     expect(clientId).toBe('private-test-id');
     expect(redirectMode).toBe('manual');
@@ -88,7 +90,7 @@ describe('MyAnimeList API v2 mapping', () => {
     const related = await source.related(ref!, 10, signal);
     expect(new URL(urls[0]!).pathname).toBe('/v2/anime/42');
     expect(new URL(urls[0]!).searchParams.get('fields')).toContain('synopsis');
-    expect(new URL(urls[0]!).searchParams.get('fields')).toContain('recommendations{node{id,title,main_picture,nsfw,media_type,status,num_episodes,start_date,start_season,mean,genres,alternative_titles},num_recommendations}');
+    expect(new URL(urls[0]!).searchParams.get('fields')).toContain('recommendations{node{id,title,main_picture,nsfw,media_type,status,num_episodes,start_date,start_season{year,season},mean,genres,alternative_titles{en,ja,synonyms}},num_recommendations}');
     expect(new URL(urls[0]!).searchParams.get('nsfw')).toBeNull();
     expect(title.card.id).toBe('m42');
     expect(related.map((item) => item.card.id)).toEqual(['m43']);
