@@ -41,19 +41,23 @@ function mockDb(account: { role: string; passwordHash: string; userId?: string }
   const db = {
     prepare(sql: string) {
       calls.push(sql);
+      const first = async () => {
+        if (sql.includes('INSERT INTO auth_rate_limits')) return { attempts: 1 };
+        if (sql.includes('SELECT p.id userId')) return {
+          userId: account.userId ?? 'test-user',
+          accountStatus: 'active',
+          role: account.role,
+          identityId: 'test-identity',
+          passwordHash: account.passwordHash,
+          accessEmail: null,
+        };
+        if (sql.includes('SELECT locked_at AS lockedAt')) return { lockedAt: null };
+        return null;
+      };
       return {
+        first,
         bind: (..._values: unknown[]) => ({
-          first: async () => {
-            if (sql.includes('INSERT INTO auth_rate_limits')) return { attempts: 1 };
-            if (sql.includes('SELECT p.id userId')) return {
-              userId: account.userId ?? 'test-user',
-              accountStatus: 'active',
-              role: account.role,
-              identityId: 'test-identity',
-              passwordHash: account.passwordHash,
-            };
-            return null;
-          },
+          first,
           run: async () => ({ success: true, meta: { changes: 1 } }),
         }),
       };
@@ -130,7 +134,12 @@ describe('closed-access authentication', () => {
     let sessionsRevoked = false;
     const db = {
       prepare(sql: string) {
+        const first = async () => {
+          if (sql.includes('SELECT locked_at AS lockedAt')) return { lockedAt };
+          return null;
+        };
         return {
+          first,
           bind: (..._values: unknown[]) => ({
             first: async () => {
               if (sql.includes('INSERT INTO auth_rate_limits')) return { attempts: 1 };
