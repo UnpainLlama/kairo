@@ -49,6 +49,7 @@ describe('session primitives', () => {
   it('binds sessions to the current verified Cloudflare Access email and blocks admin sessions while locked', async () => {
     const token = createOpaqueToken();
     const queryLog: Array<{ sql: string; values: unknown[] }> = [];
+    const writes: string[] = [];
     let role: 'user' | 'admin' = 'user';
     let adminLocked = false;
     const db = {
@@ -70,6 +71,10 @@ describe('session primitives', () => {
                 role,
               };
             },
+            run: async () => {
+              writes.push(sql);
+              return { success: true, meta: { changes: 1 } };
+            },
           }),
         };
       },
@@ -81,6 +86,10 @@ describe('session primitives', () => {
     expect(queryLog.every(entry => entry.sql.includes('lower(s.access_email)') && entry.sql.includes('lower(p.access_email)'))).toBe(true);
     expect(queryLog[1].values.slice(2)).toEqual(['INVITED@gmail.com', 'INVITED@gmail.com', 'INVITED@gmail.com']);
     expect(queryLog[1].sql).toContain('NOT EXISTS (');
+    expect(queryLog[1].sql).toContain("datetime('now', '-60 minutes')");
+    expect(queryLog[1].sql).toContain("datetime('now', '-14 days')");
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toContain("datetime('now', '-5 minutes')");
 
     role = 'admin';
     adminLocked = true;
