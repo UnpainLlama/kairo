@@ -83,7 +83,7 @@ Suspending a Kairo account revokes its Kairo sessions and blocks personal featur
 
 ## Administrator lockout and manual recovery
 
-The administrator password is protected by an account-wide failure counter, not a per-IP counter. Five incorrect password attempts inside the current one-hour failure window lock administrator sign-in. The lock remains in place until manually cleared; waiting for the hour to pass does not unlock it. The lock applies only to Kairo administrator password login and does not lock out standard users or the Cloudflare dashboard.
+The administrator password is protected by an account-wide failure counter, not a per-IP counter. Five incorrect password attempts inside the current one-hour failure window lock administrator sign-in. The lock remains in place until manually cleared; waiting for the hour to pass does not unlock it. When the fifth failure triggers the lock, all existing Kairo administrator sessions are also revoked. The lock applies only to Kairo administrator password login and does not lock out standard users or the Cloudflare dashboard.
 
 To unlock the administrator:
 
