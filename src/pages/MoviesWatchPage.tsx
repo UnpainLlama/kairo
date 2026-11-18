@@ -67,7 +67,7 @@ export default function MoviesWatchPage() {
       writeLocalMediaPlayback(accountId, snapshot);
       lastLocalSaveAt.current = now;
     }
-    const shouldSend = reason !== 'open' && (reason !== 'timeupdate' || now - lastRemoteSaveAt.current >= PLAYBACK_SERVER_SYNC_INTERVAL_MS);
+    const shouldSend = reason !== 'timeupdate' || now - lastRemoteSaveAt.current >= PLAYBACK_SERVER_SYNC_INTERVAL_MS;
     if (shouldSend) {
       lastRemoteSaveAt.current = now;
       void syncMediaPlayback(accountId, snapshot, reason === 'pagehide' || reason === 'ended' || reason === 'close');
