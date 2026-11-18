@@ -182,7 +182,7 @@ export function registerAdminRoutes(app: any) {
     const displayName = typeof body?.displayName === 'string' ? body.displayName.trim() : '';
     const accessEmail = normalizeAccessEmail(body?.accessEmail);
     if (!username || displayName.length < 2 || displayName.length > 40 || !accessEmail || !passwordOf(body?.password)) {
-      return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid username, approved email address, display name, and password of at least 12 characters.');
+      return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid username, approved email address, display name, and password of at least 15 characters.');
     }
     try {
       const uid = crypto.randomUUID(), identityId = crypto.randomUUID();
