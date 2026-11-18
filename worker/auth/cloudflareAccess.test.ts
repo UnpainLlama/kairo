@@ -35,7 +35,8 @@ async function signedAccessToken(options: { email?: string; audience?: string; e
   const input = header + '.' + payload;
   const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', pair.privateKey, new TextEncoder().encode(input));
   const signaturePart = base64url(new Uint8Array(signature));
-  const token = input + '.' + (options.tamper ? signaturePart.slice(0, -1) + (signaturePart.endsWith('A') ? 'B' : 'A') : signaturePart);
+  const tamperedSignature = (signaturePart.startsWith('A') ? 'B' : 'A') + signaturePart.slice(1);
+  const token = input + '.' + (options.tamper ? tamperedSignature : signaturePart);
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ keys: [jwk] }), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
