@@ -254,7 +254,7 @@ export function createMalSource(
     const filtered = mapRows(rows);
     const items = filtered.slice(offset, offset + q.limit);
     const moreInWindow = offset + q.limit < filtered.length;
-    const hasNextPage = moreInWindow || collected.hasMore;
+    const hasNextPage = moreInWindow;
     return { items, total: collected.hasMore ? null : filtered.length, hasNextPage, limit: q.limit };
   }
 
