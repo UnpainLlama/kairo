@@ -12,8 +12,8 @@ The external-player surfaces are sandboxed in code. Anime and Movie are separate
 
 - CineSrc movie iframe: `allow-scripts allow-same-origin allow-presentation`.
 - Generic Anime provider iframe, isolated in `src/components/AnimeEmbedPlayer.tsx`: the same sandbox tokens.
-- YouTube IFrame Player API: a MutationObserver applies the same sandbox tokens when the
-  API inserts its player iframe.
+- YouTube IFrame Player API: Kairo creates the iframe with sandbox restrictions in its
+  initial markup, then attaches the official API to that existing iframe.
 
 Sandbox is declared before `src` in the Anime and Movie components. The YouTube component creates a sandboxed iframe directly in its initial markup and attaches the official API to that existing iframe. These tokens preserve player JavaScript, its own origin/storage, and presentation mode. They
 do **not** grant popups, forms, or top-level navigation. `allow` and `allowFullScreen`
