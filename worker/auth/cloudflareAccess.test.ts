@@ -1,9 +1,33 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { resetAccessJwksCacheForTests, verifyCloudflareAccessAssertion } from './cloudflareAccess';
+import { hasActiveAccessAccount, resetAccessJwksCacheForTests, verifyCloudflareAccessAssertion } from './cloudflareAccess';
 
 afterEach(() => {
   vi.unstubAllGlobals();
   resetAccessJwksCacheForTests();
+  it('requires an active Kairo invitation for every verified Access identity', async () => {
+    let status: 'active' | 'suspended' = 'active';
+    const db = {
+      prepare(sql: string) {
+        return {
+          bind: (email: string) => ({
+            first: async () => {
+              expect(sql).toContain("account_status = 'active'");
+              return email.toLowerCase() === 'invited.user@gmail.com' && status === 'active'
+                ? { id: 'invited-account' }
+                : null;
+            },
+          }),
+        };
+      },
+    } as unknown as D1Database;
+
+    await expect(hasActiveAccessAccount(db, 'INVITED.USER@gmail.com')).resolves.toBe(true);
+    status = 'suspended';
+    await expect(hasActiveAccessAccount(db, 'invited.user@gmail.com')).resolves.toBe(false);
+    status = 'active';
+    await expect(hasActiveAccessAccount(db, 'someone.else@gmail.com')).resolves.toBe(false);
+  });
+
 });
 
 function base64url(value: Uint8Array | string): string {
