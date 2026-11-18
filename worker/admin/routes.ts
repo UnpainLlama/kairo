@@ -96,7 +96,7 @@ export function registerAdminRoutes(app: any) {
     if (typeof expected !== 'string' || expected.length < 32 || !supplied || !sameSecret(expected, supplied)) {
       return fail(c, 404, 'NOT_FOUND', 'Not found.');
     }
-    const setupState = await c.env.DB.prepare('SELECT admin_bootstrap_completed_at AS completedAt FROM app_security_state WHERE singleton_id=1').first<{ completedAt: number | null }>();
+    const setupState = await c.env.DB.prepare('SELECT admin_bootstrap_completed_at AS completedAt FROM app_security_state WHERE singleton_id=1').first() as { completedAt: number | null } | null;
     if (!setupState || setupState.completedAt !== null) return fail(c, 404, 'NOT_FOUND', 'Not found.');
     const body: any = await c.req.json().catch(() => null);
     const username = usernameOf(body?.username);
@@ -143,7 +143,7 @@ export function registerAdminRoutes(app: any) {
     try {
       const [accounts, count] = await Promise.all([
         c.env.DB.prepare("SELECT id,username,access_email AS accessEmail,display_name AS displayName,account_status AS status,created_at AS createdAt FROM user_profiles WHERE role='user' ORDER BY created_at ASC").all(),
-        c.env.DB.prepare("SELECT COUNT(*) AS count FROM user_profiles WHERE role='user'").first<{ count: number }>(),
+        c.env.DB.prepare("SELECT COUNT(*) AS count FROM user_profiles WHERE role='user'").first() as Promise<{ count: number } | null>,
       ]);
       return ok(c, { accounts: accounts.results ?? [], standardAccountCount: Number(count?.count ?? 0), standardAccountLimit: 15 });
     } catch {
