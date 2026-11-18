@@ -21,7 +21,7 @@ describe('API origin protection', () => {
       headers: { Origin: 'https://attacker.example' },
     }, env);
     expect(response.status).toBe(403);
-    expect((await response.json()).error.code).toBe('ORIGIN_FORBIDDEN');
+    expect(((await response.json()) as { error: { code: string } }).error.code).toBe('ORIGIN_FORBIDDEN');
   });
 
   it('allows a matching Origin or same-origin Referer', async () => {
