@@ -19,7 +19,7 @@ type YouTubePlayer = {
 type YouTubeApi = {
   PlayerState: { UNSTARTED: number; ENDED: number; PLAYING: number; PAUSED: number; BUFFERING: number; CUED: number };
   Player: new (host: HTMLElement, options: {
-    videoId: string;
+    videoId?: string;
     width?: string | number;
     height?: string | number;
     playerVars?: Record<string, string | number>;
@@ -97,7 +97,7 @@ function loadYouTubeIframeApi(): Promise<YouTubeApi> {
 }
 
 export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, onProgress, initialPlayerState }: Props) {
-  const hostRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const playerRef = useRef<YouTubePlayer | null>(null);
   const onProgressRef = useRef(onProgress);
   const startSecondsRef = useRef(startSeconds);
@@ -149,36 +149,12 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
       return true;
     };
 
-    // The official IFrame API creates its own iframe. Observe insertion before the
-    // iframe's first navigation and apply the same restrictions as the other players:
-    // scripts and same-origin storage remain available to YouTube, but popups and
-    // top-level navigation are not granted.
-    const sandboxYouTubeFrames = () => {
-      hostRef.current?.querySelectorAll('iframe').forEach((frame) => {
-        frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-presentation');
-        frame.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
-      });
-    };
-    const frameObserver = new MutationObserver(sandboxYouTubeFrames);
-    if (hostRef.current) {
-      frameObserver.observe(hostRef.current, { childList: true, subtree: true });
-      sandboxYouTubeFrames();
-    }
+
 
     void loadYouTubeIframeApi().then((api) => {
-      if (cancelled || !hostRef.current) return;
-      const player = new api.Player(hostRef.current, {
-        videoId,
-        width: '100%',
-        height: '100%',
-        playerVars: {
-          autoplay: 0,
-          controls: 1,
-          enablejsapi: 1,
-          origin: window.location.origin,
-          playsinline: 1,
-          rel: 0,
-        },
+      if (cancelled || !iframeRef.current) return;
+      // Attach to our own iframe so sandbox restrictions are present in markup before its first navigation.
+      const player = new api.Player(iframeRef.current, {
         events: {
           onReady: (event) => {
             if (cancelled) return;
@@ -253,7 +229,6 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
     document.addEventListener('visibilitychange', visibilityChange);
     return () => {
       cancelled = true;
-      frameObserver.disconnect();
       stopTimer();
       if (resumeTimerRef.current !== null) {
         window.clearInterval(resumeTimerRef.current);
@@ -269,7 +244,19 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
 
   return (
     <div className="yt-iframe-player">
-      <div className="yt-iframe-host" ref={hostRef} aria-label={title} />
+      <div className="yt-iframe-host" aria-label={title}>
+        <iframe
+          key={videoId}
+          ref={iframeRef}
+          className="yt-iframe-frame"
+          title={title}
+          sandbox="allow-scripts allow-same-origin allow-presentation"
+          allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+          allowFullScreen
+          referrerPolicy="strict-origin-when-cross-origin"
+          src={`https://www.youtube.com/embed/${videoId}?enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}&playsinline=1&rel=0`}
+        />
+      </div>
       {!ready && !error && <div className="yt-player-overlay" role="status">Loading YouTube player…</div>}
       {error && <div className="yt-player-overlay yt-player-error" role="alert">{error}</div>}
     </div>

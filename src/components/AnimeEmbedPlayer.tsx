@@ -37,13 +37,13 @@ export default function AnimeEmbedPlayer({ src, title, provider, progressKey, on
   return (
     <div className="kc-external-player kc-anime-embed-player" data-provider={provider} data-media-domain="anime">
       <iframe
-        className="kc-player-frame"
-        src={src}
-        title={title}
         sandbox="allow-scripts allow-same-origin allow-presentation"
         allow="autoplay; encrypted-media; picture-in-picture; fullscreen; accelerometer; gyroscope"
         allowFullScreen
         referrerPolicy="strict-origin-when-cross-origin"
+        className="kc-player-frame"
+        title={title}
+        src={src}
       />
       <span className="kc-external-provider-label">{provider} anime player</span>
     </div>

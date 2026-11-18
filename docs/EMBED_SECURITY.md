@@ -15,7 +15,7 @@ The external-player surfaces are sandboxed in code. Anime and Movie are separate
 - YouTube IFrame Player API: a MutationObserver applies the same sandbox tokens when the
   API inserts its player iframe.
 
-These tokens preserve player JavaScript, its own origin/storage, and presentation mode. They
+Sandbox is declared before `src` in the Anime and Movie components. The YouTube component creates a sandboxed iframe directly in its initial markup and attaches the official API to that existing iframe. These tokens preserve player JavaScript, its own origin/storage, and presentation mode. They
 do **not** grant popups, forms, or top-level navigation. `allow` and `allowFullScreen`
 continue to grant the media/fullscreen capabilities separately. `allow-same-origin` is
 needed for CineSrc's origin-checked postMessage API and for the official player to retain its

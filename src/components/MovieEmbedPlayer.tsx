@@ -232,12 +232,12 @@ export default function MovieEmbedPlayer({ tmdbId, title, posterUrl = null, init
         key={attempt}
         ref={frameRef}
         className="nf-player-frame"
-        src={embedUrl}
-        title={title}
         sandbox="allow-scripts allow-same-origin allow-presentation"
         allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
         allowFullScreen
         referrerPolicy="strict-origin-when-cross-origin"
+        title={title}
+        src={embedUrl}
         onLoad={() => { setLoaded(true); setFailed(false); }}
       />
       {!loaded && !failed && <>{backButton}<span className="nf-spinner" role="status" aria-label="Loading" /></>}
