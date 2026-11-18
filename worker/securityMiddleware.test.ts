@@ -37,6 +37,25 @@ describe('API origin protection', () => {
     expect(refererResponse.status).toBe(404);
   });
 
+  it('fails closed for protected API paths when Access is enforced but no assertion is present', async () => {
+    const response = await worker.request('https://kairo.test/api/v1/me', { method: 'GET' }, {
+      ACCESS_ENFORCED: 'true',
+      ACCESS_TEAM_DOMAIN: 'kairo-team.cloudflareaccess.com',
+      ACCESS_AUD: 'kairo-test-aud',
+    });
+    expect(response.status).toBe(401);
+    expect(((await response.json()) as { error: { code: string } }).error.code).toBe('ACCESS_REQUIRED');
+  });
+
+  it('keeps the public liveness probe minimal while Access is enforced', async () => {
+    const response = await worker.request('https://kairo.test/api/health', { method: 'GET' }, {
+      ACCESS_ENFORCED: 'true',
+    });
+    const payload = (await response.json()) as { success: boolean; data: Record<string, unknown> };
+    expect(response.status).toBe(200);
+    expect(payload.data).toEqual({ status: 'ok', service: 'kairo-api' });
+  });
+
   it('does not require Origin on safe read-only methods', async () => {
     const response = await worker.request(url, { method: 'GET' }, env);
     expect(response.status).toBe(404);
