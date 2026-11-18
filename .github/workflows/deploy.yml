@@ -35,22 +35,25 @@ jobs:
         run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
       - name: Report dependency security advisories
         run: |
-          npm audit --json > npm-audit.json || true
+          npm audit --json > npm-audit-all.json || true
+          npm audit --omit=dev --json > npm-audit-production.json || true
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
-          const report = JSON.parse(fs.readFileSync('npm-audit.json', 'utf8'));
-          const entries = Object.entries(report.vulnerabilities ?? {});
-          if (entries.length === 0) {
-            console.log('npm audit: no reported vulnerabilities');
-          } else {
-            console.log('npm audit vulnerability summary:');
+          function printAudit(file, label) {
+            let report = {};
+            try { report = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+            const entries = Object.entries(report.vulnerabilities ?? {});
+            console.log(label + ': ' + (entries.length === 0 ? 'no reported vulnerabilities' : entries.length + ' affected packages'));
             for (const [name, item] of entries) {
-              console.log(`- ${name}: severity=${item.severity}, direct=${item.isDirect}, range=${item.range}, fixAvailable=${JSON.stringify(item.fixAvailable)}`);
+              console.log(`- ${name}: severity=${item.severity}, direct=${item.isDirect}, range=${item.range}, paths=${(item.nodes ?? []).join(',')}, fixAvailable=${JSON.stringify(item.fixAvailable)}`);
               for (const advisory of item.via ?? []) {
-                if (typeof advisory === 'object') console.log(`  - ${advisory.title ?? advisory.name ?? 'Advisory'}: ${advisory.url ?? ''}`);
+                if (typeof advisory === 'string') console.log(`  - dependency: ${advisory}`);
+                else console.log(`  - ${advisory.title ?? advisory.name ?? 'Advisory'}: ${advisory.url ?? ''} (range: ${advisory.range ?? 'unspecified'})`);
               }
             }
           }
+          printAudit('npm-audit-production.json', 'Production dependency audit (dev dependencies omitted)');
+          printAudit('npm-audit-all.json', 'Full dependency audit');
           NODE
       - name: Typecheck
         run: npm run typecheck
