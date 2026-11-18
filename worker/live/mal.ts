@@ -132,7 +132,7 @@ function matchesFilters(row: Row, query: BrowseQuery): boolean {
   if (query.year !== undefined && meta.year !== query.year) return false;
   if (query.format && meta.format !== query.format) return false;
   if (query.status && meta.status !== query.status) return false;
-  if (query.season && (meta.season !== query.season || meta.year !== query.year)) return false;
+  if (query.season && (meta.season !== query.season || (query.year !== undefined && meta.year !== query.year))) return false;
   return true;
 }
 
@@ -221,13 +221,16 @@ export function createMalSource(
 
   async function collectedBrowse(q: BrowseQuery, signal: AbortSignal): Promise<Paged> {
     if (q.status === 'hiatus' || ((q.q?.trim().length ?? 0) > 0 && (q.q?.trim().length ?? 0) < 3)) return { items: [], total: 0, hasNextPage: false, limit: q.limit };
+    const searchQuery = q.q?.trim().slice(0, 64) || undefined;
+    const filterQuery: BrowseQuery = searchQuery === undefined ? q : { ...q, q: searchQuery };
     let path = '/anime/ranking';
     let params: Record<string, string | number | boolean | undefined> = ranked(q.sort, q.status, q.format).params;
-    if (q.q?.trim()) {
+    if (searchQuery) {
       path = '/anime';
-      params = { q: q.q.trim().slice(0, 64) };
-    } else if (q.season && q.year !== undefined) {
-      path = `/anime/season/${q.year}/${q.season}`;
+      params = { q: searchQuery };
+    } else if (q.season) {
+      const seasonalYear = q.year ?? new Date(now()).getUTCFullYear();
+      path = `/anime/season/${seasonalYear}/${q.season}`;
       params = { sort: q.sort === 'rating' ? 'anime_score' : 'anime_num_list_users' };
     } else if (q.sort === 'latest') {
       // MAL has no updates feed; use a bounded airing catalogue window and order by start date.
@@ -245,7 +248,7 @@ export function createMalSource(
     }
 
     const collected = await window(path, params, signal);
-    let rows = collected.rows.filter((row) => !isAdult(row.node) && matchesFilters(row, q));
+    let rows = collected.rows.filter((row) => !isAdult(row.node) && matchesFilters(row, filterQuery));
     if (q.sort === 'latest') rows = [...rows].sort((a, b) => rowDate(b) - rowDate(a));
     else if (q.sort === 'rating') rows = [...rows].sort((a, b) => Number(b.node.mean ?? 0) - Number(a.node.mean ?? 0));
     const filtered = mapRows(rows);
@@ -271,7 +274,7 @@ export function createMalSource(
         const body = await window(`/anime/season/${date.getUTCFullYear()}/${season}`, { sort: 'anime_num_list_users' }, signal);
         const rows = [...body.rows].sort((a, b) => rowDate(b) - rowDate(a));
         const mapped = mapRows(rows);
-        return { items: mapped.slice(offset, offset + n), total: body.hasMore ? null : mapped.length, hasNextPage: offset + n < mapped.length || body.hasMore, limit: n };
+        return { items: mapped.slice(offset, offset + n), total: body.hasMore ? null : mapped.length, hasNextPage: offset + n < mapped.length, limit: n };
       }
       const rankingType = kind === 'featured' ? 'airing' : 'bypopularity';
       const result = await page('/anime/ranking', { ranking_type: rankingType }, n, offset, signal);

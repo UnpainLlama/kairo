@@ -86,14 +86,14 @@ jobs:
       - name: Guard - manual staging deploys must use the reconciled staging branch
         if: github.event_name == 'workflow_dispatch' && env.TARGET == 'staging'
         run: |
-          if [ "${{ github.ref }}" != "refs/heads/staging" ]; then
+          if [ "$GITHUB_REF" != "refs/heads/staging" ]; then
             echo "::error::Manual staging deploys must be dispatched from the reconciled 'staging' branch. Do not deploy feature branches directly."
             exit 1
           fi
       - name: Guard - production needs explicit approval
         if: env.TARGET == 'production'
         run: |
-          if [ "${{ github.ref }}" != "refs/heads/main" ]; then echo "::error::Production deploys only run from main."; exit 1; fi
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then echo "::error::Production deploys only run from main."; exit 1; fi
           if [ "${{ vars.PRODUCTION_DEPLOY_APPROVED }}" != "true" ]; then
             echo "::error::Production deploy is not approved. The owner must set the repository variable PRODUCTION_DEPLOY_APPROVED=true."; exit 1
           fi
@@ -108,9 +108,22 @@ jobs:
           if grep -q "REPLACE_WITH_${WANT}_" wrangler.jsonc; then
             echo "::error file=wrangler.jsonc::Replace the REPLACE_WITH_${WANT}_... placeholders with your real Cloudflare IDs. See docs/DEPLOYMENT.md."; exit 1
           fi
-          if [ "$TARGET" = "staging" ] && grep -Eq 'REPLACE_WITH_STAGING_ACCESS_(TEAM_DOMAIN|AUD)' wrangler.jsonc; then
-            echo "::error file=wrangler.jsonc::Set ACCESS_TEAM_DOMAIN and ACCESS_AUD from the Kairo staging Access application before deploying."; exit 1
+          if grep -Eq "REPLACE_WITH_${WANT}_ACCESS_(TEAM_DOMAIN|AUD)" wrangler.jsonc; then
+            echo "::error file=wrangler.jsonc::Set the ${TARGET} ACCESS_TEAM_DOMAIN and ACCESS_AUD from that environment's Kairo Access application before deploying."; exit 1
           fi
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const raw = fs.readFileSync('wrangler.jsonc', 'utf8')
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            .replace(/^\s*\/\/.*$/gm, '');
+          const config = JSON.parse(raw);
+          const vars = config.env?.[process.env.TARGET]?.vars ?? {};
+          if (vars.ACCESS_ENFORCED !== 'true' || !vars.ACCESS_TEAM_DOMAIN || !vars.ACCESS_AUD ||
+              vars.ACCESS_TEAM_DOMAIN.startsWith('REPLACE_WITH_') || vars.ACCESS_AUD.startsWith('REPLACE_WITH_')) {
+            console.error(`::error::${process.env.TARGET} must have ACCESS_ENFORCED=true and a configured Access team domain and AUD tag.`);
+            process.exit(1);
+          }
+          NODE
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:

@@ -95,6 +95,53 @@ describe('MyAnimeList API v2 mapping', () => {
     await expect(source.list('featured', 1, 12, signal)).rejects.toMatchObject({ kind: 'unavailable' });
   });
 
+
+  it('matches only the 64-character query actually sent to MAL', async () => {
+    const longQuery = 'A'.repeat(65);
+    let requested = '';
+    const source = createMalSource(async (url) => {
+      requested = new URL(url).searchParams.get('q') ?? '';
+      return json({ data: [{ node: anime(91, {
+        title: 'A'.repeat(64),
+        alternative_titles: { en: null, ja: null, synonyms: [] },
+      }) }], paging: {} });
+    }, 'test-client', { pacer: instant });
+    const result = await source.browse({ q: longQuery, sort: 'relevance', page: 1, limit: 24 }, signal);
+    expect(requested).toBe('A'.repeat(64));
+    expect(result.items.map((item) => item.card.id)).toEqual(['m91']);
+  });
+
+  it('uses the current MAL season when no year is selected', async () => {
+    let requestedPath = '';
+    const source = createMalSource(async (url) => {
+      requestedPath = new URL(url).pathname;
+      return json({ data: [{ node: anime(92) }], paging: {} });
+    }, 'test-client', { pacer: instant, now: () => '2026-11-18T00:00:00.000Z' });
+    const result = await source.browse({ season: 'fall', sort: 'popularity', page: 1, limit: 24 }, signal);
+    expect(requestedPath).toBe('/v2/anime/season/2026/fall');
+    expect(result.items.map((item) => item.card.id)).toEqual(['m92']);
+  });
+
+  it('filters a season across matching search results when the year is left as Any year', async () => {
+    const source = createMalSource(async () => json({ data: [
+      { node: anime(93, { start_season: { year: 2025, season: 'fall' } }) },
+      { node: anime(94, { start_season: { year: 2026, season: 'spring' } }) },
+    ], paging: {} }), 'test-client', { pacer: instant });
+    const result = await source.browse({ q: 'English 93', season: 'fall', sort: 'relevance', page: 1, limit: 24 }, signal);
+    expect(result.items.map((item) => item.card.id)).toEqual(['m93']);
+  });
+
+  it('does not advertise pages beyond its bounded 500-row filter scan', async () => {
+    const rows = Array.from({ length: 500 }, (_, index) => ({
+      node: anime(index + 1, { media_type: index === 0 ? 'movie' : 'tv' }),
+    }));
+    const source = createMalSource(async () => json({ data: rows, paging: { next: 'https://api.myanimelist.net/v2/anime/ranking?offset=500' } }), 'test-client', { pacer: instant });
+    const result = await source.browse({ format: 'movie', sort: 'popularity', page: 1, limit: 24 }, signal);
+    expect(result.items.map((item) => item.card.id)).toEqual(['m1']);
+    expect(result.hasNextPage).toBe(false);
+    expect(result.total).toBeNull();
+  });
+
   it('derives genres from the returned MAL ranked sample instead of inventing a genre API', async () => {
     const source = createMalSource(async () => json({ data: [
       { node: anime(1) }, { node: anime(2, { genres: [{ id: 1, name: 'Action' }, { id: 3, name: 'Drama' }] }) },

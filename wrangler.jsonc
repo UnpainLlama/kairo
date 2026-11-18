@@ -111,6 +111,9 @@
 
       "vars": {
         "APP_ENV": "production",
+        "ACCESS_ENFORCED": "true",
+        "ACCESS_TEAM_DOMAIN": "REPLACE_WITH_PRODUCTION_ACCESS_TEAM_DOMAIN",
+        "ACCESS_AUD": "REPLACE_WITH_PRODUCTION_ACCESS_AUD",
         "ZOKOANIME_EMBED_ENABLED": "false",
         "METADATA_PROVIDERS": "anilist",
         "CATALOG_SOURCE": "live",
