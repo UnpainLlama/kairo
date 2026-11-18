@@ -158,6 +158,7 @@ export function createMalSource(
       method: 'GET',
       headers: { Accept: 'application/json', 'User-Agent': USER_AGENT, 'X-MAL-CLIENT-ID': clientId.trim() },
       signal,
+      redirect: 'manual',
     }, HOST);
     if (response.status === 404) throw new ProviderError('not_found', 'MyAnimeList has no matching anime.');
     if (response.status === 400 || response.status === 422) throw new ProviderError('invalid_response', 'MyAnimeList rejected the catalogue request.');

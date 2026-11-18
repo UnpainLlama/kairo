@@ -49,9 +49,11 @@ describe('MyAnimeList API v2 mapping', () => {
   it('keeps the client ID server-side and uses official ranking and paging parameters', async () => {
     let requestUrl = '';
     let clientId = '';
+    let redirectMode: RequestRedirect | undefined;
     const source = createMalSource(async (url, init) => {
       requestUrl = url;
       clientId = new Headers(init?.headers).get('X-MAL-CLIENT-ID') ?? '';
+      redirectMode = init?.redirect;
       return json({ data: [{ node: anime(7), ranking: { rank: 1 } }], paging: { next: 'https://api.myanimelist.net/v2/anime/ranking?offset=12' } });
     }, 'private-test-id', { pacer: instant });
     const result = await source.list('trending', 1, 12, signal);
@@ -61,6 +63,7 @@ describe('MyAnimeList API v2 mapping', () => {
     expect(parsed.searchParams.get('fields')).toContain('genres');
     expect(parsed.searchParams.get('nsfw')).toBeNull();
     expect(clientId).toBe('private-test-id');
+    expect(redirectMode).toBe('manual');
     expect(result.items[0]?.card.id).toBe('m7');
     expect(result.hasNextPage).toBe(true);
   });
@@ -88,6 +91,16 @@ describe('MyAnimeList API v2 mapping', () => {
     expect(new URL(urls[0]!).searchParams.get('nsfw')).toBeNull();
     expect(title.card.id).toBe('m42');
     expect(related.map((item) => item.card.id)).toEqual(['m43']);
+  });
+
+  it('does not follow redirects from the MAL API host', async () => {
+    let requestedRedirectMode: RequestRedirect | undefined;
+    const source = createMalSource(async (_url, init) => {
+      requestedRedirectMode = init?.redirect;
+      return new Response(null, { status: 302, headers: { Location: 'https://attacker.example/collect' } });
+    }, 'test-client', { pacer: instant });
+    await expect(source.list('featured', 1, 12, signal)).rejects.toMatchObject({ kind: 'unavailable' });
+    expect(requestedRedirectMode).toBe('manual');
   });
 
   it('returns an unavailable configuration error when no Worker client ID is set', async () => {

@@ -22,7 +22,7 @@ MAL's API reference is published at https://myanimelist.net/apiconfig/references
 
 1. The Worker looks in `METADATA_CACHE` (Workers KV when bound; otherwise Cloudflare Cache API/memory).
 2. It tries `LIVE_PROVIDERS` in order. Defaults are `mal,anilist`; local and staging configuration also include HiAnime for legacy identifiers.
-3. A MAL outage or rate-limit error on browse/search routes causes the next configured catalogue source to be tried. Search/season requests with no valid MAL matches also allow fallback. New `m…` detail/related/episode requests require the MAL Client ID unless Jikan is separately enabled as a catalogue fallback; existing `a…` and `h…` IDs resolve through their respective configured providers. `/api/v1/providers` reports MAL as disabled and lists `mal:client_id_missing` until the secret is set.
+3. A MAL outage or rate-limit error on browse/search routes causes the next configured catalogue source to be tried. Any successful empty browse/filter result also advances to the next source, which preserves filters that MAL cannot express (for example hiatus) when AniList is configured. New `m…` detail/related/episode requests require the MAL Client ID unless Jikan is separately enabled as a catalogue fallback; existing `a…` and `h…` IDs resolve through their respective configured providers. `/api/v1/providers` reports MAL as disabled and lists `mal:client_id_missing` until the secret is set.
 4. If every source fails, a recent stale cache entry is served; without one, the route returns `503 PROVIDER_UNAVAILABLE`.
 5. Live provider responses stay in expiring cache entries and are not written into D1.
 

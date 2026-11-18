@@ -162,7 +162,8 @@ export function browse(deps: Deps, q: BrowseQuery): Promise<Outcome<Paged>> {
     key: `${liveCacheScope(deps)}:browse:${encodeURIComponent(key)}`,
     ttl: q.q ? TTL.search : TTL.list,
     candidates: deps.sources.map((source) => ({ source, run: (signal) => source.browse(q, signal) })),
-    fallbackWhenEmpty: q.q?.trim() || q.season ? (value) => value.items.length === 0 : undefined,
+    // Any empty filtered browse can reflect an upstream coverage gap (e.g. MAL has no hiatus filter).
+    fallbackWhenEmpty: (value) => value.items.length === 0,
   });
 }
 

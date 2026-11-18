@@ -181,6 +181,17 @@ describe('Pacer', () => {
 });
 
 describe('service and handlers', () => {
+  it('falls back to AniList when MAL cannot serve an otherwise valid filter such as hiatus', async () => {
+    const mal = createMalSource(async () => json({ data: [] }), 'test-client', { pacer: instant });
+    const ani = createAniListSource(async () => aniPage([media(77, { status: 'HIATUS' })]));
+    const d = deps(async () => json({}), { sources: [mal, ani] });
+    const response = await call(d, 'browse', req({ status: 'hiatus', sort: 'popularity' }));
+    expect(response.body).toMatchObject({
+      data: { items: [{ id: 'a77', status: 'hiatus' }] },
+      meta: { source: 'anilist', degraded: true },
+    });
+  });
+
   it('marks the MAL catalogue disabled until a Worker Client ID is configured', async () => {
     const mal = createMalSource(async () => json({ data: [] }), undefined, { pacer: instant });
     const d = deps(async () => json({}), { sources: [mal] });
