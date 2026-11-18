@@ -104,7 +104,7 @@ All administrator routes verify the session role server-side. The console path i
 
 ## 3. Authenticated user routes
 
-Kairo uses closed access: public standard-account registration and Google sign-in are disabled. Cloudflare Access is the outer staging entrance and is configured with exact individual email addresses, not a Gmail-domain wildcard. The Worker verifies the signed Cloudflare Access application JWT (signature, issuer, audience and token times) and binds each Kairo account and session to the verified Access email. A Kairo username/password is required for personal features; invited visitors may browse the catalogue without a Kairo account.
+Kairo uses closed access: public standard-account registration and Google sign-in are disabled. Cloudflare Access is the outer staging entrance and is configured with exact individual email addresses, not a Gmail-domain wildcard. The Worker verifies the signed Cloudflare Access application JWT (signature, issuer, audience and token times), then checks that its verified email maps to an active Kairo profile on every API request. Each Kairo account and session is bound to that verified Access email. A Kairo username/password is required for personal features; invited visitors may browse the catalogue without a Kairo account.
 
 Standard accounts are created by an administrator with a username, password, and unique approved Access email. Changing the assigned email revokes all sessions for that account. The Cloudflare Access allowlist must be maintained separately by the operator.
 
