@@ -6,7 +6,7 @@ import { clearSessionCookie, findSessionUser, revokeSession } from './auth/sessi
 import { registerAuthRoutes } from './auth/routes';
 import { registerYouTubeMediaRoutes } from './youtube/routes';
 import { registerAdminRoutes, rotateAdminConsolePath } from './admin/routes';
-import { verifyCloudflareAccessAssertion } from './auth/cloudflareAccess';
+import { hasActiveAccessAccount, verifyCloudflareAccessAssertion } from './auth/cloudflareAccess';
 import { GENRES_SQL, buildListQuery, buildRelatedQuery, buildSearchQuery } from './repositories/catalog';
 import { BASE_RECORD_SQL, INSERT_PROVIDER_ID_SQL, PROVIDER_IDS_SQL } from './repositories/providerIds';
 import { buildRegistry, createCache, resolveUnified, sharedBreaker, toBaseRecord, type BaseRow } from './metadata/service';
@@ -96,6 +96,16 @@ app.use('/api/*', async (c, next) => {
     return c.json({ success: false, error: { code: 'ACCESS_REQUIRED', message: 'A valid approved Cloudflare Access identity is required.' } }, 401);
   }
   c.set('accessEmail', identity.email);
+  // The Access email selector is checked at login, not on every active token.
+  // Keep a live Kairo-side allow check so suspending/removing an invite blocks API use immediately.
+  // Initial admin bootstrap is the only exception and remains protected by the signed Access JWT
+  // plus the one-time bootstrap Worker secret.
+  if (pathname !== '/api/v1/admin/bootstrap') {
+    const activeInvite = await hasActiveAccessAccount(c.env.DB, identity.email);
+    if (!activeInvite) {
+      return c.json({ success: false, error: { code: 'ACCESS_INVITE_REQUIRED', message: 'This email is not currently invited to Kairo.' } }, 403);
+    }
+  }
   return next();
 });
 
