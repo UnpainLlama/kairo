@@ -113,10 +113,41 @@ jobs:
           fi
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
-          const raw = fs.readFileSync('wrangler.jsonc', 'utf8')
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/^\s*\/\/.*$/gm, '');
-          const config = JSON.parse(raw);
+          const stripJsoncComments = (source) => {
+            let output = '';
+            let inString = false;
+            let escaped = false;
+            for (let i = 0; i < source.length; i += 1) {
+              const current = source[i];
+              const next = source[i + 1];
+              if (inString) {
+                output += current;
+                if (escaped) escaped = false;
+                else if (current === '\\') escaped = true;
+                else if (current === '"') inString = false;
+                continue;
+              }
+              if (current === '"') {
+                inString = true;
+                output += current;
+                continue;
+              }
+              if (current === '/' && next === '/') {
+                while (i < source.length && source[i] !== '\n') i += 1;
+                output += '\n';
+                continue;
+              }
+              if (current === '/' && next === '*') {
+                i += 2;
+                while (i < source.length && !(source[i] === '*' && source[i + 1] === '/')) i += 1;
+                i += 1;
+                continue;
+              }
+              output += current;
+            }
+            return output;
+          };
+          const config = JSON.parse(stripJsoncComments(fs.readFileSync('wrangler.jsonc', 'utf8')));
           const vars = config.env?.[process.env.TARGET]?.vars ?? {};
           if (vars.ACCESS_ENFORCED !== 'true' || !vars.ACCESS_TEAM_DOMAIN || !vars.ACCESS_AUD ||
               vars.ACCESS_TEAM_DOMAIN.startsWith('REPLACE_WITH_') || vars.ACCESS_AUD.startsWith('REPLACE_WITH_')) {

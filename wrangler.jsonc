@@ -91,7 +91,7 @@
       }
     },
 
-    // Production - unchanged; do not deploy until approved
+    // Production - fail-closed template; do not deploy until approved
     "production": {
       "d1_databases": [
         {
