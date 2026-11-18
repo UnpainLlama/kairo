@@ -14,7 +14,7 @@ const HOST = 'api.myanimelist.net';
 const PAGE_LIMIT = 100;
 const SCAN_LIMIT = 500;
 const LIST_FIELDS = 'alternative_titles,start_date,mean,rank,popularity,nsfw,media_type,status,num_episodes,start_season,genres,main_picture';
-const DETAIL_FIELDS = LIST_FIELDS + ',end_date,synopsis,recommendations,studios';
+const DETAIL_FIELDS = LIST_FIELDS + ',end_date,synopsis,recommendations{node{id,title,main_picture,nsfw,media_type,status,num_episodes,start_date,start_season,mean,genres,alternative_titles},num_recommendations},studios';
 const sharedPacer = new Pacer(1000);
 
 export const MAL_ATTRIBUTION: Attribution = {

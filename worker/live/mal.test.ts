@@ -88,6 +88,7 @@ describe('MyAnimeList API v2 mapping', () => {
     const related = await source.related(ref!, 10, signal);
     expect(new URL(urls[0]!).pathname).toBe('/v2/anime/42');
     expect(new URL(urls[0]!).searchParams.get('fields')).toContain('synopsis');
+    expect(new URL(urls[0]!).searchParams.get('fields')).toContain('recommendations{node{id,title,main_picture,nsfw,media_type,status,num_episodes,start_date,start_season,mean,genres,alternative_titles},num_recommendations}');
     expect(new URL(urls[0]!).searchParams.get('nsfw')).toBeNull();
     expect(title.card.id).toBe('m42');
     expect(related.map((item) => item.card.id)).toEqual(['m43']);
