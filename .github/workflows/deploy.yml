@@ -33,6 +33,25 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      - name: Report dependency security advisories
+        run: |
+          npm audit --json > npm-audit.json || true
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const report = JSON.parse(fs.readFileSync('npm-audit.json', 'utf8'));
+          const entries = Object.entries(report.vulnerabilities ?? {});
+          if (entries.length === 0) {
+            console.log('npm audit: no reported vulnerabilities');
+          } else {
+            console.log('npm audit vulnerability summary:');
+            for (const [name, item] of entries) {
+              console.log(`- ${name}: severity=${item.severity}, direct=${item.isDirect}, range=${item.range}, fixAvailable=${JSON.stringify(item.fixAvailable)}`);
+              for (const advisory of item.via ?? []) {
+                if (typeof advisory === 'object') console.log(`  - ${advisory.title ?? advisory.name ?? 'Advisory'}: ${advisory.url ?? ''}`);
+              }
+            }
+          }
+          NODE
       - name: Typecheck
         run: npm run typecheck
       - name: Test
