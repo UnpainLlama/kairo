@@ -91,7 +91,7 @@ export default function AdminPage() {
       await request('/api/v1/admin/accounts/' + encodeURIComponent(account.id) + '/status', 'PATCH', {
         status: account.status === 'active' ? 'suspended' : 'active',
       });
-      setNotice(account.status === 'active' ? 'Account suspended.' : 'Account reactivated.');
+      setNotice(account.status === 'active' ? 'Account suspended. Kairo API access is blocked immediately and existing Kairo sessions were revoked. Remove the email from Cloudflare Access and revoke its Access session to complete perimeter offboarding.' : 'Account reactivated. Ensure its approved email is still in the Cloudflare Access allowlist.');
       await load();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not update account.'); }
     finally { setBusy(false); }
