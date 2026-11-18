@@ -71,6 +71,7 @@ function OpaqueProviderEmbed({ src, title, provider, progressKey, onProgress, pl
       className="kc-player-frame"
       src={src}
       title={title}
+      sandbox="allow-scripts allow-same-origin allow-presentation"
       allow="autoplay; encrypted-media; picture-in-picture; fullscreen; accelerometer; gyroscope"
       allowFullScreen
       referrerPolicy="strict-origin-when-cross-origin"
