@@ -90,13 +90,20 @@ Suspending a Kairo account revokes its Kairo sessions and blocks personal featur
 
 ## Administrator lockout and manual recovery
 
-The administrator password is protected by an account-wide failure counter, not a per-IP counter. Five incorrect password attempts inside the current one-hour failure window lock administrator sign-in. The lock remains in place until manually cleared; waiting for the hour to pass does not unlock it. When the fifth failure triggers the lock, all existing Kairo administrator sessions are also revoked. The lock applies only to Kairo administrator password login and does not lock out standard users or the Cloudflare dashboard.
+The administrator password is protected by an account-wide failure counter, not a per-IP counter. Five incorrect password attempts inside the current one-hour failure window lock administrator sign-in. The lock remains in place until manually cleared; waiting for the hour to pass does not unlock it. When the fifth failure triggers the lock, all existing Kairo administrator sessions are revoked and session resolution checks the lock state as a second enforcement layer. The lock applies only to Kairo administrator password login and does not lock out standard users or the Cloudflare dashboard.
 
 To unlock the administrator:
 
 1. Sign into the Cloudflare dashboard with your Cloudflare operator account.
 2. Open **Workers & Pages → D1 → kairo-db-staging → Console**. Confirm the database name is `kairo-db-staging`; do not select production.
-3. Run:
+3. In the D1 console, first revoke any administrator sessions so the operator always signs in again after recovery:
+
+   ```sql
+   DELETE FROM sessions
+   WHERE user_id IN (SELECT id FROM user_profiles WHERE role = 'admin');
+   ```
+
+4. Then clear the lock:
 
    ```sql
    UPDATE admin_login_security
@@ -107,7 +114,7 @@ To unlock the administrator:
    WHERE singleton_id = 1;
    ```
 
-4. Return to the staging site and sign in with the administrator's assigned Cloudflare Access email, Kairo username, and password.
+5. Return to the staging site and sign in with the administrator's assigned Cloudflare Access email, Kairo username, and password.
 
 Keep the Cloudflare account itself protected with a strong unique password and its own MFA. The D1 console is the emergency unlock path; never expose an unlock endpoint in the public Kairo interface.
 
