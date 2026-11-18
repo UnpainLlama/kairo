@@ -181,6 +181,18 @@ describe('Pacer', () => {
 });
 
 describe('service and handlers', () => {
+  it('marks the MAL catalogue disabled until a Worker Client ID is configured', async () => {
+    const mal = createMalSource(async () => json({ data: [] }), undefined, { pacer: instant });
+    const d = deps(async () => json({}), { sources: [mal] });
+    const response = await call(d, 'providers', req());
+    expect(response.body).toMatchObject({
+      data: {
+        items: [{ id: 'mal', enabled: false }],
+        unknownConfigured: ['mal:client_id_missing'],
+      },
+    });
+  });
+
   it('enriches live catalogue cards with TMDB artwork without changing their Kairo ids', async () => {
     const artworkProvider: ArtworkProvider = {
       id: 'tmdb',
