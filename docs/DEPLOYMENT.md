@@ -78,6 +78,8 @@ Open these in a browser (replace the host with your staging URL):
 | `METADATA_CACHE` | KV binding | `wrangler.jsonc` per environment | Short-lived provider response cache (needed on workers.dev) |
 | `APP_ENV` | var | `wrangler.jsonc` | `development`, `staging`, `production` |
 | `APP_BASE_URL` | Worker variable | `wrangler.jsonc` per environment | Canonical public origin used to construct OAuth callback and return URLs |
+| `ACCESS_ENFORCED` | Worker variable | `wrangler.jsonc` per environment | Must be `true` for staging and production; Worker API routes fail closed without a valid Access identity |
+| `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` | Worker variables | `wrangler.jsonc` per environment | Exact Cloudflare Access team issuer and application audience. Staging and production use their own app settings; both are checked by the deploy workflow before deployment |
 | `GOOGLE_CLIENT_ID` | Worker variable | `wrangler.jsonc` per environment | OAuth client used only for administrator-only YouTube authorization |
 | `METADATA_PROVIDERS` | var | `wrangler.jsonc` | Enabled metadata providers. `anilist` now; add `kitsu` only after its terms are verified |
 | `ALLOWED_ORIGIN` | var, optional | not set | Only for cross-origin API use |
@@ -128,7 +130,7 @@ Playback position is written locally at most once per second and synced to the s
 - Migration `0007_youtube_oauth.sql` remains pending on staging until a reviewed staging deployment applies it. Production remains blocked and untouched.
 
 ## 8. Production (blocked)
-Production deploys are blocked by design until you approve. They need all of: a separate D1 database and KV namespace, their IDs in the `production` block, a separate token in the `production` environment, the variable `PRODUCTION_DEPLOY_APPROVED=true`, a run from `main`, and your approval as required reviewer. Do none of this until staging is proven with a real catalogue.
+Production deploys are blocked by design until you approve. They need all of: a separate D1 database and KV namespace, their IDs in the `production` block, a separate token in the `production` environment, a separately configured production Cloudflare Access application with its own team domain and AUD tag, `ACCESS_ENFORCED=true`, the variable `PRODUCTION_DEPLOY_APPROVED=true`, a run from `main`, and your approval as required reviewer. The committed production Access values are placeholders, and the workflow refuses to deploy while either placeholder remains or enforcement is not `true`. Do not put production Access values or credentials in the staging configuration. Do none of this until staging is proven with a real catalogue.
 
 ### Approved playback host allowlist
 
