@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hashPassword, PASSWORD_HASH_ITERATIONS, verifyPassword } from './password';
+import { hashPassword, isNewPasswordValid, PASSWORD_HASH_ITERATIONS, verifyPassword } from './password';
 
 describe('password hashing', () => {
   it('uses versioned PBKDF2-SHA256 hashes with unique salts', async () => {
@@ -24,4 +24,13 @@ describe('password hashing', () => {
     await expect(hashPassword('a'.repeat(1025))).rejects.toThrow(RangeError);
     expect(await verifyPassword('', 'malformed')).toBe(false);
   });
+  it('requires at least 15 Unicode code points for newly set passwords', () => {
+    expect(isNewPasswordValid('a'.repeat(14))).toBe(false);
+    expect(isNewPasswordValid('a'.repeat(15))).toBe(true);
+    expect(isNewPasswordValid('😀'.repeat(14))).toBe(false);
+    expect(isNewPasswordValid('😀'.repeat(15))).toBe(true);
+    expect(isNewPasswordValid('a'.repeat(1025))).toBe(false);
+    expect(isNewPasswordValid(null)).toBe(false);
+  });
+
 });
