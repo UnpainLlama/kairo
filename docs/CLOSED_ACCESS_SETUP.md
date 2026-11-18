@@ -49,9 +49,14 @@ Cloudflare Access protects the static application and the `workers.dev` URL at t
 5. To change the email assigned to an existing Kairo account, use **Change approved email** in the administrator console. This revokes the account's existing Kairo sessions. Add the new email to the Cloudflare Access policy and remove the old one if it should no longer enter the site.
 6. Existing accounts created before the email-binding migration have no `access_email`. Assign an approved email to each account in the administrator console before that user attempts Kairo sign-in.
 
-Cloudflare's allowlist and Kairo's account-email mapping are separate controls. Adding an email to the Kairo account does not automatically update Cloudflare Access; the operator must keep both lists aligned.
+Cloudflare's allowlist and Kairo's active-account email mapping are separate controls. Adding an email to a Kairo account does not automatically update Cloudflare Access; the operator must keep both lists aligned. The Worker checks the signed Access identity against an active Kairo profile on every API request. This is necessary because Cloudflare identity-based email selectors are evaluated at login, not continuously during an already-issued application session.
 
-Suspending a Kairo account revokes its Kairo sessions and blocks personal features, but it does not remove the address from Cloudflare Access. To block that person from the entire site, also remove the email from the Cloudflare Access Allow policy.
+To disable an invited user immediately:
+1. Use the Kairo administrator console to suspend their account. This revokes their Kairo sessions and the Worker immediately rejects their Access identity on API requests, including catalogue APIs, even if their Cloudflare application token has not expired.
+2. Remove that exact email from the Cloudflare Access Allow policy so they cannot obtain a new Access application session.
+3. For immediate edge-level session revocation as well, go to **Zero Trust → Team & Resources → Users**, select the user, and choose **Action → Revoke**. Cloudflare notes that revocation can take 20–30 seconds to invalidate previously issued tokens.
+
+If you only remove an email from the Access policy, an already-issued Access application token can remain usable for the rest of its configured session. The Kairo-side active-account check is therefore the immediate in-app off switch.
 
 ## Database migration and first administrator setup
 
