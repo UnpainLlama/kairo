@@ -23,7 +23,7 @@ This document describes the current closed-access branch. Public registration an
 - Session tokens are 256-bit cryptographically random opaque values. D1 stores only the SHA-256 hash of the token.
 - Session cookies are HttpOnly, SameSite=Lax, Path=/, and Secure on HTTPS. Cookie prefix hardening and a server-enforced idle timeout remain follow-up work.
 - Administrator sessions expire after eight hours; standard sessions expire after 30 days. Session lookup checks account status, session expiry, and—when Access is enforced—the stored session email against the current signed Access identity and current profile email binding.
-- Changing a standard account's Access email or password revokes its sessions. Suspending an account also revokes sessions. Removing an email from Cloudflare Access blocks that identity from the entire site; suspending a Kairo account alone only disables its Kairo account features and does not edit the Cloudflare allowlist.
+- Changing a standard account's Access email or password revokes its Kairo sessions. Suspending an account immediately blocks its Access identity from all Kairo APIs through the live active-profile check and revokes its Kairo sessions. Removing the email from the Cloudflare Access policy prevents new Access sessions, but an already-issued token remains valid until expiry or revocation. For immediate edge-level revocation, revoke the user's Access token in Zero Trust as documented in `docs/CLOSED_ACCESS_SETUP.md`.
 - A permanent administrator bootstrap-completion marker is stored in D1. Removing the temporary Worker secret after initial setup is still required operational housekeeping.
 
 ## YouTube connection
