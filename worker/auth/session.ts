@@ -98,6 +98,10 @@ export async function findSessionUser(db: D1Database, cookieHeader: string | nul
      INNER JOIN user_profiles p ON p.id = s.user_id
      WHERE s.token_hash = ? AND s.expires_at > ?
        AND p.account_status = 'active'
+       AND (p.role <> 'admin' OR NOT EXISTS (
+         SELECT 1 FROM admin_login_security als
+         WHERE als.singleton_id = 1 AND als.locked_at IS NOT NULL
+       ))
        AND (? IS NULL OR (lower(s.access_email) = lower(?) AND lower(p.access_email) = lower(?)))
      LIMIT 1`
   ).bind(await hashToken(token), now, accessEmail ?? null, accessEmail ?? null, accessEmail ?? null).first<SessionRow>();
