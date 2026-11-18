@@ -75,6 +75,8 @@
         "APP_ENV": "staging",
         "APP_BASE_URL": "https://kairo-anime-platform-staging.unpainllama.workers.dev",
         "ACCESS_ENFORCED": "true",
+        "ACCESS_TEAM_DOMAIN": "REPLACE_WITH_STAGING_ACCESS_TEAM_DOMAIN",
+        "ACCESS_AUD": "REPLACE_WITH_STAGING_ACCESS_AUD",
         "CATALOG_SOURCE": "live",
         "EPISODE_PROVIDERS": "hianime,jikan",
         "GOOGLE_CLIENT_ID": "805356560035-p3ooq75mvr5cn02s0u98dv7k3vspt49k.apps.googleusercontent.com",
