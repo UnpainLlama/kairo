@@ -36,7 +36,10 @@ jobs:
       - name: Report dependency security advisories
         run: |
           npm audit --json > npm-audit-all.json || true
-          npm audit --omit=dev --json > npm-audit-production.json || true
+          set +e
+          npm audit --omit=dev --json > npm-audit-production.json
+          production_audit_status=$?
+          set -e
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
           function printAudit(file, label) {
@@ -55,6 +58,10 @@ jobs:
           printAudit('npm-audit-production.json', 'Production dependency audit (dev dependencies omitted)');
           printAudit('npm-audit-all.json', 'Full dependency audit');
           NODE
+          if [ "$production_audit_status" -ne 0 ]; then
+            echo "::error::Production dependency audit failed. Resolve production dependency advisories before this change can pass CI."
+            exit 1
+          fi
       - name: Typecheck
         run: npm run typecheck
       - name: Test
@@ -76,6 +83,13 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
+      - name: Guard - manual staging deploys must use the reconciled staging branch
+        if: github.event_name == 'workflow_dispatch' && env.TARGET == 'staging'
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/staging" ]; then
+            echo "::error::Manual staging deploys must be dispatched from the reconciled 'staging' branch. Do not deploy feature branches directly."
+            exit 1
+          fi
       - name: Guard - production needs explicit approval
         if: env.TARGET == 'production'
         run: |
