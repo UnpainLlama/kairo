@@ -72,6 +72,27 @@ app.use('/api/*', async (c, next) => {
 });
 
 app.use('/api/*', async (c, next) => {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(c.req.method.toUpperCase())) return next();
+  const expectedOrigin = new URL(c.req.url).origin;
+  const origin = c.req.header('Origin');
+  let requestOrigin = origin ?? null;
+  if (!requestOrigin) {
+    const referer = c.req.header('Referer');
+    if (referer) {
+      try { requestOrigin = new URL(referer).origin; } catch { requestOrigin = null; }
+    }
+  }
+  if (requestOrigin !== expectedOrigin) {
+    return c.json({
+      success: false,
+      error: { code: 'ORIGIN_FORBIDDEN', message: 'This request origin is not allowed.' },
+      meta: { requestId: c.get('requestId') },
+    }, 403);
+  }
+  return next();
+});
+
+app.use('/api/*', async (c, next) => {
   const pathname = new URL(c.req.url).pathname;
   // These two minimal probes are public only when Cloudflare's Worker destination
   // has exact public path overrides for these paths. Every other API requires Access.
