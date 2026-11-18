@@ -49,7 +49,7 @@ describe('MyAnimeList API v2 mapping', () => {
   it('keeps the client ID server-side and uses official ranking and paging parameters', async () => {
     let requestUrl = '';
     let clientId = '';
-    let redirectMode: RequestRedirect | undefined;
+    let redirectMode: string | undefined;
     const source = createMalSource(async (url, init) => {
       requestUrl = url;
       clientId = new Headers(init?.headers).get('X-MAL-CLIENT-ID') ?? '';
@@ -94,7 +94,7 @@ describe('MyAnimeList API v2 mapping', () => {
   });
 
   it('does not follow redirects from the MAL API host', async () => {
-    let requestedRedirectMode: RequestRedirect | undefined;
+    let requestedRedirectMode: string | undefined;
     const source = createMalSource(async (_url, init) => {
       requestedRedirectMode = init?.redirect;
       return new Response(null, { status: 302, headers: { Location: 'https://attacker.example/collect' } });
