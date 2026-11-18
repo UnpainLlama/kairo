@@ -9,7 +9,15 @@ const ADMIN_FAILURE_WINDOW = 60 * 60 * 1000;
 const enc = new TextEncoder();
 const ok = (c:any,data:any,status=200)=>c.json({success:true,data,meta:{requestId:c.get('requestId')}},status);
 const fail = (c:any,status:number,code:string,message:string)=>c.json({success:false,error:{code,message},meta:{requestId:c.get('requestId')}},status);
-const originOk = (c:any)=>!c.req.header('Origin')||c.req.header('Origin')===new URL(c.req.url).origin;
+const originOk = (c:any) => {
+ const expected = new URL(c.req.url).origin;
+ const origin = c.req.header('Origin');
+ if (origin) return origin === expected;
+ const referer = c.req.header('Referer');
+ if (!referer) return false;
+ try { return new URL(referer).origin === expected; } catch { return false; }
+};
+const DUMMY_PASSWORD_HASH = 'pbkdf2-sha256$v=1$i=100000$ejnB5tT4AlueZ6EMPY9KIQ$3UdaF6Gf1pQXNBO54EBkav2TlbqJ6eZMybPDsGwEkO4';
 const usernameOf=(v:unknown):string|null=>{if(typeof v!=='string')return null;const s=v.trim();return s.length>=3&&s.length<=64&&/^[A-Za-z0-9._-]+$/.test(s)?s:null};
 async function sha(value:string){const d=await crypto.subtle.digest('SHA-256',enc.encode(value));return [...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,'0')).join('')}
 async function permit(db:D1Database,action:string,ip:string,identity:string,limit:number){
@@ -83,8 +91,11 @@ export function registerAuthRoutes(app:Hono<any>){
    const accessEmail=normalizeAccessEmail(c.get('accessEmail'));
    const accessEnforced=c.env.ACCESS_ENFORCED==='true';
    if(!row||row.accountStatus!=='active'||!row.passwordHash||
-      (accessEnforced&&(!accessEmail||row.accessEmail?.toLowerCase()!==accessEmail)))
+      (accessEnforced&&(!accessEmail||row.accessEmail?.toLowerCase()!==accessEmail))) {
+    // Keep unknown, suspended, and wrong-Access-identity paths close to a real password check.
+    await verifyPassword(password, DUMMY_PASSWORD_HASH);
     return fail(c,401,'INVALID_CREDENTIALS','Username or password is incorrect.');
+   }
 
    if(row.role==='admin'){
     if(await adminLoginLocked(c.env.DB))return fail(c,423,'ADMIN_ACCOUNT_LOCKED','Administrator sign-in is locked. Contact the site operator to restore access.');
