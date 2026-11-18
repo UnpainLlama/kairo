@@ -34,7 +34,13 @@ const REQUIRED_LIVE_TABLES = [
   'watch_progress', 'viewing_history', 'data_sources', 'anime_provider_ids',
   'anime_relations', 'anime_field_sources', 'auth_identities', 'password_credentials',
   'sessions', 'email_verification_tokens', 'password_reset_tokens', 'provider_connections',
-  'auth_rate_limits', 'google_oauth_states', 'user_watch_history', 'youtube_oauth_states',
+  'auth_rate_limits', 'google_oauth_states', 'user_watch_history', 'user_watch_history_tombstones',
+  'user_watch_history_clear_markers', 'user_movie_library_refs', 'user_media_playback',
+  'movies', 'movie_external_ids', 'movie_genres', 'movie_genre_links', 'movie_credits',
+  'movie_availability_offers', 'user_movie_library',
+  'youtube_oauth_states', 'youtube_feed_channels', 'youtube_feed_cursors',
+  'youtube_watch_history', 'youtube_watch_later', 'admin_console_access',
+  'app_security_state', 'admin_login_security',
 ] as const;
 
 export function currentSeason(d: Date): { season: 'winter' | 'spring' | 'summer' | 'fall'; year: number } {
@@ -282,8 +288,21 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
         }
         // 0003 also extends the original profile table; verify those columns, not just its existence.
         await req.env.DB.prepare(
-          'SELECT id, identity_subject, display_name, email, email_verified_at, account_status, role FROM user_profiles LIMIT 0'
+          'SELECT id, identity_subject, display_name, username, email, email_verified_at, access_email, account_status, role FROM user_profiles LIMIT 0'
         ).all();
+        await req.env.DB.prepare(
+          'SELECT id, user_id, token_hash, access_email, expires_at FROM sessions LIMIT 0'
+        ).all();
+        await req.env.DB.prepare(
+          'SELECT user_id, channel_id, channel_title, upload_playlist_id FROM youtube_feed_channels LIMIT 0'
+        ).all();
+        await req.env.DB.prepare(
+          'SELECT user_id, media_type, media_key, session_id, sequence FROM user_media_playback LIMIT 0'
+        ).all();
+        const securityState = await req.env.DB.prepare(
+          'SELECT admin_bootstrap_completed_at FROM app_security_state WHERE singleton_id = 1'
+        ).first<{ admin_bootstrap_completed_at: number | null }>();
+        if (!securityState) throw new Error('app_security_state singleton row is missing');
         return okBody(req, { status: 'ready', catalogSource: 'live', database: 'ok', schema: 'ok', cache: req.env.METADATA_CACHE ? 'kv' : 'none', providers: deps.sources.map((s) => s.id), episodeProviders: deps.episodeProviders.map((p) => p.id), artworkProvider: deps.artworkProvider?.id ?? null, unknownEpisodeProviders: deps.unknownEpisodeProviders });
       } catch (error) {
         console.error(JSON.stringify({ event: 'live_readiness_failed', requestId: req.requestId, message: error instanceof Error ? error.message : 'unknown' }));
