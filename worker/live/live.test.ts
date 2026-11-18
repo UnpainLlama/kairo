@@ -6,6 +6,7 @@ import type { ArtworkProvider } from '../artwork/tmdb';
 import { CircuitBreaker } from '../metadata/breaker';
 import { createAniListSource, buildPageQuery } from './anilist';
 import { createJikanSource, mapJikanAnime, Pacer } from './jikan';
+import { createMalSource } from './mal';
 import { createJikanEpisodeProvider } from '../episodes/providers/jikan';
 import { createLiveHandlers, parseBrowse, currentSeason } from './handlers';
 import { makeSlug, parseRef, slugify } from './ids';

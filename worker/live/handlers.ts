@@ -257,9 +257,9 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
     async providers(req) {
       const deps = depsFor(req);
       return okBody(req, {
-        items: deps.sources.map((s, i) => ({ id: s.id, displayName: s.displayName, enabled: true, priority: i + 1, maxPageSize: s.maxLimit, capabilities: { list: true, search: true, details: true, episodes: false }, attribution: s.attribution })),
+        items: deps.sources.map((s, i) => ({ id: s.id, displayName: s.displayName, enabled: s.id !== 'mal' || Boolean(req.env.MAL_CLIENT_ID?.trim()), priority: i + 1, maxPageSize: s.maxLimit, capabilities: { list: true, search: true, details: true, episodes: false }, attribution: s.attribution })),
         episodeProviders: deps.episodeProviders.map((p, i) => ({ id: p.id, displayName: p.displayName, enabled: true, priority: i + 1, termsVerified: p.termsVerified, capabilities: { episodes: true, servers: typeof p.listServers === 'function' } })),
-        unknownConfigured: [],
+        unknownConfigured: deps.sources.some((s) => s.id === 'mal') && !req.env.MAL_CLIENT_ID?.trim() ? ['mal:client_id_missing'] : [],
         unknownEpisodeProviders: deps.unknownEpisodeProviders,
         artworkProvider: { id: 'tmdb', displayName: 'The Movie Database', enabled: Boolean(deps.artworkProvider) },
       });

@@ -144,7 +144,7 @@ const candidatesFor = <T>(deps: Deps, ref: Ref, run: (s: CatalogSource, signal: 
   deps.sources.filter((s) => s.supports(ref)).map((source) => ({ source, run: (signal) => run(source, signal) }));
 
 // Version and provider order are part of every live cache key. This prevents
-// pre-AniList HiAnime ids in KV from being served after the catalogue changes.
+// pre-MAL provider ids in KV from being served after the catalogue changes.
 const liveCacheScope = (deps: Deps): string => `live:v4:${deps.sources.map((source) => source.id).join(',') || 'none'}`;
 
 export function getList(deps: Deps, kind: ListKind, page: number, limit: number): Promise<Outcome<Paged>> {
@@ -175,7 +175,7 @@ export function getGenres(deps: Deps): Promise<Outcome<{ name: string; count: nu
 }
 
 export function getTitle(deps: Deps, ref: Ref): Promise<Outcome<LiveTitle>> {
-  // MyAnimeList ids try Jikan first. AniList ids can only come from AniList.
+  // MAL ids resolve through MAL first; Jikan is available only when explicitly configured. AniList ids resolve through AniList.
   const ordered = ref.kind === 'm' ? [...deps.sources].sort((a, b) => {
     const priority = (id: SourceId) => id === 'mal' ? 0 : id === 'jikan' ? 1 : id === 'anilist' ? 2 : 3;
     return priority(a.id) - priority(b.id);
@@ -189,7 +189,7 @@ export function getTitle(deps: Deps, ref: Ref): Promise<Outcome<LiveTitle>> {
 
 export async function getRelated(deps: Deps, ref: Ref, limit: number): Promise<Outcome<LiveTitle[]>> {
   const candidates: Candidate<LiveTitle[]>[] = candidatesFor(deps, ref, (s, signal) => s.related(ref, limit, signal));
-  // An AniList title can still get Jikan recommendations through its MyAnimeList id, if AniList itself is unavailable.
+  // An AniList title can get MAL/Jikan recommendations through its MyAnimeList id, if AniList itself is unavailable.
   if (ref.kind === 'a') {
     for (const source of deps.sources) {
       if (source.supports(ref) || !source.supports({ kind: 'm', id: 1 })) continue;
