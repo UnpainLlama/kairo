@@ -109,7 +109,7 @@ export async function findSessionUser(db: D1Database, cookieHeader: string | nul
        ))
        AND (? IS NULL OR (lower(s.access_email) = lower(?) AND lower(p.access_email) = lower(?)))
      LIMIT 1`
-  ).bind(await hashToken(token), now, accessEmail ?? null, accessEmail ?? null, accessEmail ?? null).first<SessionRow>();
+  ).bind(tokenHash, now, accessEmail ?? null, accessEmail ?? null, accessEmail ?? null).first<SessionRow>();
   if (!row) return null;
   // Persist activity at most once every five minutes. This makes idle expiry server-enforced
   // without writing to D1 for every API request.
