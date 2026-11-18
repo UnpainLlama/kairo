@@ -13,13 +13,13 @@ function registeredRoutes() {
   return routes;
 }
 
-function context(body: unknown, db: D1Database) {
+function context(body: unknown, db: D1Database, origin: string | null = 'https://kairo-anime-platform-staging.unpainllama.workers.dev') {
   const headers = new Map<string, string>();
   const requestHeaders: Record<string, string> = {
-    origin: 'https://kairo-anime-platform-staging.unpainllama.workers.dev',
     'user-agent': 'Kairo auth tests',
     'cf-connecting-ip': '192.0.2.10',
   };
+  if (origin) requestHeaders.origin = origin;
   return {
     env: { DB: db },
     req: {
@@ -72,6 +72,16 @@ describe('closed-access authentication', () => {
     expect(routes.has('POST /api/v1/auth/register')).toBe(false);
     expect(routes.has('GET /api/v1/auth/google')).toBe(false);
     expect(routes.has('POST /api/v1/auth/admin-code/verify')).toBe(false);
+  });
+
+  it('rejects login POSTs without a same-origin Origin or Referer before querying credentials', async () => {
+    const { db, calls } = mockDb({ role: 'user', passwordHash: 'unused' });
+    const handler = registeredRoutes().get('POST /api/v1/auth/login');
+    const missing = await handler!(context({ username: 'KairoTester', password: 'some-long-password-here' }, db, null));
+    const foreign = await handler!(context({ username: 'KairoTester', password: 'some-long-password-here' }, db, 'https://attacker.example'));
+    expect(missing.status).toBe(403);
+    expect(foreign.status).toBe(403);
+    expect(calls).toHaveLength(0);
   });
 
   it('signs in a standard account with a username and password', async () => {
