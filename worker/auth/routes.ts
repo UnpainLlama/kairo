@@ -6,7 +6,6 @@ import { registerYouTubeAuthRoutes } from './youtube';
 
 const WINDOW = 900000;
 const ADMIN_FAILURE_WINDOW = 60 * 60 * 1000;
-const ADMIN_FAILURE_LIMIT = 5;
 const enc = new TextEncoder();
 const ok = (c:any,data:any,status=200)=>c.json({success:true,data,meta:{requestId:c.get('requestId')}},status);
 const fail = (c:any,status:number,code:string,message:string)=>c.json({success:false,error:{code,message},meta:{requestId:c.get('requestId')}},status);
