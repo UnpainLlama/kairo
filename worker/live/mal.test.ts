@@ -40,7 +40,7 @@ describe('MyAnimeList API v2 mapping', () => {
   it('rejects malformed identifiers and filters non-white NSFW grades', async () => {
     expect(() => mapMalAnime({ ...anime(1), id: 0 }, 'now')).toThrow(ProviderError);
     const source = createMalSource(async () => json({ data: [
-      { node: anime(1) }, { node: anime(2, { nsfw: 'gray' }) },
+      { node: anime(1) }, { node: anime(2, { nsfw: 'gray' }) }, { node: anime(4, { nsfw: undefined }) },
     ] }), 'test-client', { pacer: instant });
     const result = await source.list('featured', 1, 12, signal);
     expect(result.items.map((item) => item.card.id)).toEqual(['m1']);
@@ -59,6 +59,7 @@ describe('MyAnimeList API v2 mapping', () => {
     expect(parsed.origin + parsed.pathname).toBe('https://api.myanimelist.net/v2/anime/ranking');
     expect(parsed.searchParams.get('ranking_type')).toBe('bypopularity');
     expect(parsed.searchParams.get('fields')).toContain('genres');
+    expect(parsed.searchParams.get('nsfw')).toBeNull();
     expect(clientId).toBe('private-test-id');
     expect(result.items[0]?.card.id).toBe('m7');
     expect(result.hasNextPage).toBe(true);

@@ -114,7 +114,7 @@
         "ZOKOANIME_EMBED_ENABLED": "false",
         "METADATA_PROVIDERS": "anilist",
         "CATALOG_SOURCE": "live",
-        "LIVE_PROVIDERS": "mal,anilist",
+        "LIVE_PROVIDERS": "anilist,jikan",
         "MOVIES_TMDB_ENABLED": "false",
         "MOVIES_TMDB_TERMS_APPROVED": "false",
         "MOVIES_INGESTION_ENABLED": "false"

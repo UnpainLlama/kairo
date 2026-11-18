@@ -42,7 +42,8 @@ const isSafeImage = (value: unknown): string | null => {
 const isAdult = (raw: Record<string, unknown>): boolean => {
   const nsfw = typeof raw.nsfw === 'string' ? raw.nsfw.toLowerCase() : '';
   const rating = typeof raw.rating === 'string' ? raw.rating.toLowerCase() : '';
-  return (nsfw !== '' && nsfw !== 'white') || rating === 'rx' || rating.startsWith('rx ');
+  // The official API does not offer a dependable SFW query filter. Fail closed if grade is absent.
+  return nsfw !== 'white' || rating === 'rx' || rating.startsWith('rx ');
 };
 
 function seasonYear(raw: unknown): number | null {
@@ -167,7 +168,7 @@ export function createMalSource(
   }
 
   async function page(path: string, params: Record<string, string | number | boolean | undefined>, limit: number, offset: number, signal: AbortSignal): Promise<ApiPage> {
-    const body = await get(path, { ...params, fields: params.fields ?? LIST_FIELDS, nsfw: false, limit, offset }, signal);
+    const body = await get(path, { ...params, fields: params.fields ?? LIST_FIELDS, limit, offset }, signal);
     if (!Array.isArray(body.data)) throw new ProviderError('invalid_response', 'MyAnimeList returned no anime data array.');
     const paging = isObject(body.paging) ? body.paging : {};
     return { rows: unwrapRows(body.data), hasNextPage: typeof paging.next === 'string' && paging.next.length > 0 };
@@ -219,7 +220,7 @@ export function createMalSource(
   };
 
   async function collectedBrowse(q: BrowseQuery, signal: AbortSignal): Promise<Paged> {
-    if (q.status === 'hiatus') return { items: [], total: 0, hasNextPage: false, limit: q.limit };
+    if (q.status === 'hiatus' || ((q.q?.trim().length ?? 0) > 0 && (q.q?.trim().length ?? 0) < 3)) return { items: [], total: 0, hasNextPage: false, limit: q.limit };
     let path = '/anime/ranking';
     let params: Record<string, string | number | boolean | undefined> = ranked(q.sort, q.status, q.format).params;
     if (q.q?.trim()) {
@@ -294,7 +295,7 @@ export function createMalSource(
 
     async byRef(ref, signal) {
       if (ref.kind !== 'm') throw new ProviderError('not_found', 'MyAnimeList only resolves MyAnimeList ids.');
-      const body = await get(`/anime/${ref.id}`, { fields: DETAIL_FIELDS, nsfw: false }, signal);
+      const body = await get(`/anime/${ref.id}`, { fields: DETAIL_FIELDS }, signal);
       const value = isObject(body.data) ? body.data : body;
       if (!isObject(value) || isAdult(value)) throw new ProviderError('not_found', 'MyAnimeList has no matching anime.');
       return toLiveTitle(mapMalAnime(value, now()), 'mal');

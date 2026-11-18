@@ -12,7 +12,7 @@ The public API contract consumed by the React Anime pages is unchanged: `/catalo
 - Search requests use a maximum page size of 100. Ranking and season endpoints support up to 500 entries per request. KAIRO caps broad local filter scans at the first 500 results.
 - Fields requested include alternate titles, synopsis (details), mean score, media type, airing status, dates/season, episode count, genres, NSFW grade, popularity/rank and main picture.
 - Only HTTPS artwork from `cdn.myanimelist.net` is accepted. MAL does not provide the banner image field used by the old AniList hero cards; the UI falls back to poster artwork.
-- KAIRO drops results whose MAL `nsfw` grade is not `white`, and omits Hentai/Erotica genre labels.
+- KAIRO drops results whose MAL `nsfw` grade is not `white` (fail-closed when the grade is absent), and omits Hentai/Erotica genre labels. This filtering is performed locally because the API does not offer a dependable SFW query filter.
 
 **Important API coverage limits:** MAL v2 has no standalone genre-directory endpoint and no general genre/status/year/order filter for catalogue search. KAIRO derives its genre selector and counts from the first 500 all-time ranked entries; those counts are sample counts, not MAL's total genre counts. Seasonal, genre, year, format and status combinations are filtered within a bounded window of up to 500 MAL ranking/search/season entries. Search results are checked against returned titles and aliases because MAL can return non-matching titles for no-result queries. MAL also has no catalogue endpoint for episode lists or playable video streams.
 
@@ -54,7 +54,7 @@ Set `LIVE_PROVIDERS` in `wrangler.jsonc` to choose catalogue priority. The defau
 
 - Local development: `mal,anilist,hianime`
 - Staging: `mal,anilist,hianime`
-- Production configuration: `mal,anilist` (not deployed by this change)
+- Production configuration remains `anilist,jikan` until the MAL Client ID and applicable terms have been reviewed; not deployed by this change
 
 Provide a registered Client ID in a gitignored local `.dev.vars` file or Worker secret:
 
