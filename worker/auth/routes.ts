@@ -47,7 +47,11 @@ async function recordAdminLoginFailure(db:D1Database,now=Date.now()):Promise<boo
    RETURNING failed_attempts AS failedAttempts,locked_at AS lockedAt`)
    .bind(now,now,now-ADMIN_FAILURE_WINDOW,now-ADMIN_FAILURE_WINDOW,now,now-ADMIN_FAILURE_WINDOW,now,now)
    .first<{failedAttempts:number;lockedAt:number|null}>();
- if(row)return row.lockedAt!==null;
+ if(row && row.lockedAt!==null){
+  // The lock must terminate already-issued console sessions too, not just new logins.
+  await db.prepare("DELETE FROM sessions WHERE user_id IN (SELECT id FROM user_profiles WHERE role='admin')").run();
+  return true;
+ }
  return adminLoginLocked(db);
 }
 
