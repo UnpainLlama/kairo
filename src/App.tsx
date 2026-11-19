@@ -44,7 +44,6 @@ const menuItems: NavItem[] = [
   { to: '/browse/trending', label: 'Trending', icon: Flame },
   { to: '/browse/anime', label: 'Anime', icon: Tv },
   { to: '/movies', label: 'Movies', icon: Film },
-  { to: '/browse/anime', label: 'Discover', icon: Compass },
   { to: '/search', label: 'Search', icon: Search },
   { to: '/browse/seasonal', label: 'Seasonal', icon: CalendarDays },
   { to: '/history', label: 'History', icon: History },
