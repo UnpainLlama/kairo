@@ -22,6 +22,9 @@ describe('Access-native Kairo authentication', () => {
     const response = await login!({
       header: () => undefined,
       get: (name: string) => name === 'requestId' ? 'auth-test-request' : undefined,
+      json: (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+        status, headers: { 'Content-Type': 'application/json' },
+      }),
     });
     const payload = await response.json() as { success: boolean; error?: { code: string } };
 
