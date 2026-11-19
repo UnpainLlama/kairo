@@ -70,11 +70,11 @@ function BrowseContent({ category }: { category: string }) {
   }, [validRoute]);
 
   useEffect(() => {
-    if (!validRoute || !config) { setLoading(false); return; }
+    if (!validRoute) { setLoading(false); return; }
     const controller = new AbortController();
     if (page === 1) setLoading(true); else setMore(true);
     setError(null);
-    const query = new URLSearchParams({ kind: config.kind, page: String(page) });
+    const query = new URLSearchParams({ kind: config?.kind ?? 'popular', page: String(page) });
     if (genreId) query.set('genres', genreId);
     apiGet<MoviePageData>('/movies/discover?' + query.toString(), controller.signal)
       .then(result => {
