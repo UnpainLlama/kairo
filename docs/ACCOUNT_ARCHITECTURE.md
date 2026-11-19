@@ -24,14 +24,14 @@ Cloudflare Access authentication is converted into the internal application sess
 1. The browser passes through Cloudflare Access using the invited email.
 2. The Worker verifies the Access assertion and resolves/provisions the profile.
 3. The first `GET /api/v1/me` creates a Kairo HttpOnly, Secure, SameSite=Lax session cookie automatically.
-4. Subsequent API calls resolve that session and check that its stored Access email still matches the current verified Access email and active profile.
-5. If the internal session expires while the Access identity remains valid, `/api/v1/me` establishes a replacement session without asking for another Kairo credential.
+4. Every authenticated API call checks that the session and profile match both the current verified Access email and the immutable Access JWT `sub`, and that the profile remains active.
+5. If the internal session expires or is revoked while the Access browser session remains valid, `/api/v1/me` clears the stale Kairo cookie and returns `ACCESS_REAUTH_REQUIRED`; the user must sign out of and back into Cloudflare Access before a new Kairo session is created.
 
 The internal `kairo_session` cookie is an implementation session, not a second user sign-in. It is never exposed to JavaScript or stored in localStorage. The stable `user_profiles.id` resolved by `/api/v1/me` owns Anime, Movies and YouTube account data.
 
 Standard-account provisioning and sign-in are not exposed as a public username/password workflow. The legacy `POST /api/v1/auth/login` endpoint returns `410 ACCESS_SIGN_IN_ONLY`. The former Kairo password fields and password-reset workflow are no longer part of normal account management.
 
-The administrator's eight-hour absolute session and 60-minute idle timeout remain. Standard sessions have a 30-day absolute lifetime and 14-day idle timeout. The server checks account status and current Access email on every authenticated API request. The former password-failure lockout does not block an Access-authenticated administrator.
+The administrator's eight-hour absolute session and 60-minute idle timeout remain. Standard sessions have a 30-day absolute lifetime and 14-day idle timeout. The server checks account status, current Access email and Access JWT subject on every authenticated API request. The former password-failure lockout does not block an Access-authenticated administrator.
 
 ## Guest mode
 
@@ -50,7 +50,7 @@ Kairo's signed-in state depends on both the Cloudflare Access identity and the i
 
 The Kairo sign-out action therefore navigates to Cloudflare Access logout at `/cdn-cgi/access/logout`. Cloudflare owns the Access cookies and logout lifecycle. API access remains fail-closed when the Access assertion is absent, regardless of any stale Kairo cookie.
 
-Browser-local media data is separate from both cookie layers. Clearing cookies does not necessarily clear guest localStorage, and clearing localStorage does not revoke a server-side account.
+Browser-local media data is separate from both cookie layers. Signing out clears only the signed-in account's namespaced local media cache (not guest data or server records), then ends the Cloudflare Access session. Clearing localStorage does not revoke a server-side account.
 
 ## Account and media data boundaries
 
