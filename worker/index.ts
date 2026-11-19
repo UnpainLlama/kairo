@@ -59,7 +59,7 @@ interface Bindings {
   MOVIES_INGESTION_ENABLED?: string;
 }
 
-type Variables = { requestId: string; accessEmail: string | null };
+type Variables = { requestId: string; accessEmail: string | null; accessSubject: string | null };
 type AppContext = Context<{ Bindings: Bindings; Variables: Variables }>;
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -100,6 +100,7 @@ app.use('/api/*', async (c, next) => {
   // has exact public path overrides for these paths. Every other API requires Access.
   if (pathname === '/api/health' || pathname === '/api/ready') {
     c.set('accessEmail', null);
+    c.set('accessSubject', null);
     return next();
   }
   if (c.env.ACCESS_ENFORCED !== 'true') {
@@ -119,6 +120,7 @@ app.use('/api/*', async (c, next) => {
     return c.json({ success: false, error: { code: 'ACCESS_REQUIRED', message: 'A valid approved Cloudflare Access identity is required.' } }, 401);
   }
   c.set('accessEmail', identity.email);
+  c.set('accessSubject', identity.subject);
   // The Access email selector is checked at login, not on every active token.
   // Keep a live Kairo-side allow check so suspending/removing an invite blocks API use immediately.
   // Initial admin bootstrap is the only exception and remains protected by the signed Access JWT
@@ -126,7 +128,7 @@ app.use('/api/*', async (c, next) => {
   // Resolve/provision new Access users only during the account bootstrap endpoint.
   // All other API calls perform the active-account check without creating profiles.
   if (pathname !== '/api/v1/admin/bootstrap' && pathname !== '/api/v1/me') {
-    const activeInvite = await hasActiveAccessAccount(c.env.DB, identity.email);
+    const activeInvite = await hasActiveAccessAccount(c.env.DB, identity.email, identity.subject);
     if (!activeInvite) {
       return c.json({ success: false, error: { code: 'ACCESS_ACCOUNT_DISABLED', message: 'This Access identity does not have an active Kairo account. Contact the site administrator.' } }, 403);
     }
@@ -283,7 +285,7 @@ app.post('/api/v1/movies/ingest', async (c) => {
   if (c.env.MOVIES_INGESTION_ENABLED !== 'true' || !moviesProviderEnabled(c)) {
     return fail(c, 503, 'MOVIES_INGESTION_DISABLED', 'Movie ingestion is disabled until the metadata provider terms and persistence rules are approved.');
   }
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to continue.');
   if (user.role !== 'admin') return fail(c, 403, 'ADMIN_REQUIRED', 'Administrator access is required.');
   const body: unknown = await c.req.json().catch(() => null);
@@ -322,7 +324,7 @@ app.post('/api/v1/movies/ingest/:externalId', async (c) => {
   if (c.env.MOVIES_INGESTION_ENABLED !== 'true' || !moviesProviderEnabled(c)) {
     return fail(c, 503, 'MOVIES_INGESTION_DISABLED', 'Movie ingestion is disabled until the metadata provider terms and persistence rules are approved.');
   }
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to continue.');
   if (user.role !== 'admin') return fail(c, 403, 'ADMIN_REQUIRED', 'Administrator access is required.');
   const externalId = c.req.param('externalId');
@@ -575,7 +577,7 @@ app.get('/api/v1/me', async (c) => {
     if (!accessEmail) return fail(c, 401, 'ACCESS_REQUIRED', 'Authenticate with your approved email through Cloudflare Access.');
     try {
       // First-time provisioning belongs to /me, not arbitrary API middleware.
-      if (!await hasActiveAccessAccount(c.env.DB, accessEmail)) {
+      if (!await hasActiveAccessAccount(c.env.DB, accessEmail, c.get('accessSubject') as string | null | undefined)) {
         return fail(c, 403, 'ACCESS_ACCOUNT_DISABLED', 'This Access identity does not have an active Kairo account. Contact the site administrator.');
       }
       const bootstrap = await c.env.DB.prepare(
@@ -596,6 +598,7 @@ app.get('/api/v1/me', async (c) => {
       const session = await createSession(c.env.DB, account.id, {
         ttlSeconds,
         accessEmail,
+        accessSubject: c.get('accessSubject') as string | null | undefined,
       });
       c.header('Set-Cookie', sessionCookie(session.token, new URL(c.req.url).protocol === 'https:', session.ttlSeconds));
       const user = await findSessionUser(c.env.DB, `kairo_session=${session.token}`, Date.now(), accessEmail);
@@ -613,7 +616,7 @@ app.get('/api/v1/me', async (c) => {
 });
 
 app.get('/api/v1/me/playback', async (c) => {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to restore playback progress.');
   const mediaType = c.req.query('mediaType');
   const mediaKey = c.req.query('mediaKey');
@@ -655,7 +658,7 @@ app.get('/api/v1/me/playback', async (c) => {
 app.delete('/api/v1/me/playback', async (c) => {
   const origin = c.req.header('Origin');
   if (origin && origin !== new URL(c.req.url).origin) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to delete playback progress.');
   const mediaType = c.req.query('mediaType');
   const mediaKey = c.req.query('mediaKey');
@@ -678,7 +681,7 @@ app.delete('/api/v1/me/playback', async (c) => {
 app.post('/api/v1/me/playback', async (c) => {
   const origin = c.req.header('Origin');
   if (origin && origin !== new URL(c.req.url).origin) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync playback progress.');
   let body: unknown;
   try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
@@ -745,7 +748,7 @@ app.post('/api/v1/me/playback', async (c) => {
 });
 
 app.get('/api/v1/me/history/sync', async (c) => {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to restore watch history.');
   const slug = c.req.query('slug');
   const episodeNumber = c.req.query('episodeNumber');
@@ -797,7 +800,7 @@ app.post('/api/v1/me/history/sync', async (c) => {
   if (origin && origin !== new URL(c.req.url).origin) {
     return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
   }
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync watch history.');
   let body: unknown;
   try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
@@ -890,7 +893,7 @@ app.post('/api/v1/me/history/sync', async (c) => {
 });
 
 app.put('/api/v1/me/library/:animeId', async (c) => {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to update your Anime library.');
   const animeId = parseId(c.req.param('animeId'));
   if (!animeId) return fail(c, 400, 'VALIDATION_ERROR', 'The Anime identifier is invalid.');
@@ -925,7 +928,7 @@ app.put('/api/v1/me/library/:animeId', async (c) => {
 });
 
 app.delete('/api/v1/me/library/:animeId', async (c) => {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to update your Anime library.');
   const animeId = parseId(c.req.param('animeId'));
   if (!animeId) return fail(c, 400, 'VALIDATION_ERROR', 'The Anime identifier is invalid.');
@@ -939,7 +942,7 @@ app.delete('/api/v1/me/library/:animeId', async (c) => {
 });
 
 app.get('/api/v1/me/movies/library', async (c) => {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your Movies library.');
   try {
     const result = await c.env.DB.prepare(`
@@ -960,7 +963,7 @@ app.post('/api/v1/me/movies/library', async (c) => {
   if (origin && origin !== new URL(c.req.url).origin) {
     return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
   }
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync your Movies library.');
   let body: unknown;
   try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
@@ -1004,7 +1007,7 @@ app.delete('/api/v1/me/movies/library/:providerId/:externalId', async (c) => {
   if (origin && origin !== new URL(c.req.url).origin) {
     return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
   }
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to manage your Movies library.');
   const providerId = c.req.param('providerId').trim().toLowerCase();
   const externalId = c.req.param('externalId').trim();
@@ -1023,7 +1026,7 @@ app.delete('/api/v1/me/movies/library/:providerId/:externalId', async (c) => {
 });
 
 app.get('/api/v1/me/library', async (c) => {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your library.');
   try {
     const result = await c.env.DB.prepare(
