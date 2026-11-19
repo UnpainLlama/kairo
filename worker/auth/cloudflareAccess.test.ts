@@ -89,7 +89,7 @@ describe('Cloudflare Access application JWT verification', () => {
 });
 
 describe('Cloudflare Access account resolution', () => {
-  function memoryDb(initial: Array<{id:string;email:string|null;accessEmail:string|null;accountStatus:string;role:'user'|'admin'}> = [], rejectInsert = false) {
+  function memoryDb(initial: Array<{id:string;email:string|null;accessEmail:string|null;accountStatus:string;role:'user'|'admin'}> = [], rejectInsert = false, bootstrapPending = false) {
     const rows = initial.map(row => ({ ...row }));
     const statements: string[] = [];
     const db = {
@@ -100,6 +100,9 @@ describe('Cloudflare Access account resolution', () => {
         return {
           bind: (...values: unknown[]) => ({
             first: async () => {
+              if (sql.includes('FROM app_security_state')) {
+                return bootstrapPending ? { completedAt: null, adminExists: 0 } : null;
+              }
               if (sql.includes('WHERE access_email = ?')) {
                 const email = String(values[0]).toLowerCase();
                 const row = rows.find(item => item.accessEmail?.toLowerCase() === email);
@@ -154,6 +157,13 @@ describe('Cloudflare Access account resolution', () => {
     }]);
     await expect(hasActiveAccessAccount(db, 'member@gmail.com')).resolves.toBe(false);
     expect(db.rows).toHaveLength(1);
+  });
+
+  it('does not claim the first administrator email as a standard account before bootstrap', async () => {
+    const db = memoryDb([], false, true);
+    await expect(hasActiveAccessAccount(db, 'first.admin@gmail.com')).resolves.toBe(true);
+    expect(db.rows).toHaveLength(0);
+    expect(db.statements.some(sql => sql.includes('FROM app_security_state'))).toBe(true);
   });
 
   it('automatically provisions a standard account for a verified Access email', async () => {
