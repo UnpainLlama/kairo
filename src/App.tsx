@@ -271,6 +271,15 @@ export default function App() {
   }
 
   if (adminPath && pathname === adminPath) return <AdminOnly><AdminPage /></AdminOnly>;
+  if (account.status === 'limit-reached') {
+    return (
+      <main className="kc-access-denied" style={{ minHeight: '100vh', display: 'grid', placeContent: 'center', padding: 32, textAlign: 'center' }}>
+        <h1>Kairo accounts are full</h1>
+        <p>All 15 standard-account places are currently allocated. Contact the Kairo administrator if you need access.</p>
+        <a href="/cdn-cgi/access/logout">Sign out of Cloudflare Access</a>
+      </main>
+    );
+  }
   if (account.status === 'denied') {
     return (
       <main className="kc-access-denied" style={{ minHeight: '100vh', display: 'grid', placeContent: 'center', padding: 32, textAlign: 'center' }}>
