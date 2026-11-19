@@ -111,7 +111,7 @@ function MenuLink({ to, label, icon: Icon, end, onNavigate }: NavItem & { onNavi
 }
 
 export default function App() {
-  const { pathname, search } = useLocation();
+  const { pathname } = useLocation();
   const account = useKairoAccount();
   const isAdmin = account.status === 'signed-in' && account.role === 'admin';
   const [adminPath, setAdminPath] = useState<string | null>(null);
