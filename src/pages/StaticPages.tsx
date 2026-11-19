@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Clock, Heart, LogIn, LogOut, Search, Settings, Trash2, UserRound, Pause, Play, ArrowUpDown } from 'lucide-react';
 import { EmptyState, LoadingState } from '../components/catalog';
 import { useKairoAccount } from '../lib/AccountProvider';
@@ -73,7 +73,7 @@ async function syncWatchHistory(userId: string, options: { deleted?: Array<{ slu
   }
 }
 export function ProfilePage() {
-  const {user,loaded,unavailable,retry}=useCurrentUser(); const navigate=useNavigate();
+  const {user,loaded,unavailable,retry}=useCurrentUser();
   const [history,setHistory]=useState<WatchEntry[]>(()=>readHistory(null)); const [historyScope,setHistoryScope]=useState<string|null>(null); const [playbackItems,setPlaybackItems]=useState<MediaPlaybackSnapshot[]>([]); const [libraryCount,setLibraryCount]=useState<number|null>(null);
   const [error,setError]=useState(''); const [busy,setBusy]=useState(false);
   useEffect(()=>{let active=true;fetch('/api/v1/me/library',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(p=>{if(active)setLibraryCount(Array.isArray(p?.data?.items)?p.data.items.length:0)}).catch(()=>{if(active)setLibraryCount(null)});return()=>{active=false}},[user?.id]);
