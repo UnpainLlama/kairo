@@ -889,6 +889,55 @@ app.post('/api/v1/me/history/sync', async (c) => {
   }
 });
 
+app.put('/api/v1/me/library/:animeId', async (c) => {
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to update your Anime library.');
+  const animeId = parseId(c.req.param('animeId'));
+  if (!animeId) return fail(c, 400, 'VALIDATION_ERROR', 'The Anime identifier is invalid.');
+  let body: unknown;
+  try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(c, 400, 'VALIDATION_ERROR', 'Provide an Anime library entry.');
+  const value = body as Record<string, unknown>;
+  const statuses = ['watching', 'plan_to_watch', 'completed', 'on_hold', 'dropped'] as const;
+  const status = value.status;
+  const isFavorite = value.isFavorite;
+  if ((status !== null && !(statuses as readonly unknown[]).includes(status)) || typeof isFavorite !== 'boolean') {
+    return fail(c, 400, 'VALIDATION_ERROR', 'The Anime library status or favorite flag is invalid.');
+  }
+  try {
+    const anime = await c.env.DB.prepare('SELECT id FROM anime WHERE id = ? LIMIT 1').bind(animeId).first<{ id: string }>();
+    if (!anime) return fail(c, 404, 'RESOURCE_NOT_FOUND', 'The requested Anime title was not found.');
+    if (status === null && !isFavorite) {
+      await c.env.DB.prepare('DELETE FROM user_library WHERE user_id = ? AND anime_id = ?').bind(user.id, animeId).run();
+      return ok(c, { removed: true, animeId });
+    }
+    await c.env.DB.prepare(`
+      INSERT INTO user_library (user_id, anime_id, status, is_favorite, added_at, updated_at)
+      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT(user_id, anime_id) DO UPDATE SET
+        status=excluded.status, is_favorite=excluded.is_favorite, updated_at=CURRENT_TIMESTAMP
+    `).bind(user.id, animeId, status ?? 'plan_to_watch', isFavorite ? 1 : 0).run();
+    return ok(c, { saved: true, animeId, status: status ?? 'plan_to_watch', isFavorite });
+  } catch (error) {
+    logError(c, 'anime_library_write_failed', error);
+    return fail(c, 503, 'LIBRARY_UNAVAILABLE', 'Could not save this Anime title to your account.');
+  }
+});
+
+app.delete('/api/v1/me/library/:animeId', async (c) => {
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to update your Anime library.');
+  const animeId = parseId(c.req.param('animeId'));
+  if (!animeId) return fail(c, 400, 'VALIDATION_ERROR', 'The Anime identifier is invalid.');
+  try {
+    await c.env.DB.prepare('DELETE FROM user_library WHERE user_id = ? AND anime_id = ?').bind(user.id, animeId).run();
+    return ok(c, { removed: true, animeId });
+  } catch (error) {
+    logError(c, 'anime_library_delete_failed', error);
+    return fail(c, 503, 'LIBRARY_UNAVAILABLE', 'Could not remove this Anime title from your account.');
+  }
+});
+
 app.get('/api/v1/me/movies/library', async (c) => {
   const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your Movies library.');
