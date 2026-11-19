@@ -23,8 +23,8 @@ export default function SearchPage() {
   const state = parseSearchState(params);
   const searching = canSearch(state.q);
 
-  const update = (patch: Partial<SearchState>) => setParams(toUrlParams({ ...state, ...patch, page: patch.page ?? 1 }));
-  const reset = () => setParams(toUrlParams({ ...EMPTY_SEARCH, q: state.q }));
+  const update = (patch: Partial<SearchState>) => setParams(toUrlParams({ ...state, ...patch, page: patch.page ?? 1 }), { replace: true });
+  const reset = () => setParams(toUrlParams({ ...EMPTY_SEARCH, q: state.q }), { replace: true });
 
   const genres = useApi<ItemList<GenreCount>>('/catalog/genres');
   const results = useApi<ItemList<CatalogCard>>(toApiPath(state));
