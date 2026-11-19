@@ -27,13 +27,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: Install dependencies
-        run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
+        run: test -f package-lock.json && npm ci
       - name: Verify staging and production Access configuration
         run: node scripts/validate-wrangler-access.mjs
       - name: Report dependency security advisories
@@ -104,7 +104,7 @@ jobs:
             echo "::error::Production deploy is not approved. The owner must set the repository variable PRODUCTION_DEPLOY_APPROVED=true."; exit 1
           fi
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Guard - Cloudflare credentials and resource IDs
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
@@ -119,16 +119,32 @@ jobs:
           fi
           node scripts/validate-wrangler-access.mjs --require-values
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: Install dependencies
-        run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
-      # Migrations are additive-only, so the previous Worker keeps working against the new schema while the deploy happens.
-      - name: Apply D1 migrations
-        run: npx wrangler d1 migrations apply DB --remote --env "$TARGET"
+        run: test -f package-lock.json && npm ci
+      # Build before touching the remote database so a build failure cannot leave migrations applied without a deploy.
       - name: Build for the target environment
         run: CLOUDFLARE_ENV="$TARGET" npm run build
+      # Store a pre-migration export as a short-lived, access-controlled GitHub Actions artifact.
+      - name: Back up remote D1 before migrations
+        run: |
+          set -euo pipefail
+          BACKUP_FILE="$RUNNER_TEMP/kairo-d1-$TARGET-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.sql"
+          npx wrangler d1 export DB --remote --env "$TARGET" --output "$BACKUP_FILE" --skip-confirmation
+          test -s "$BACKUP_FILE"
+          echo "KAIRO_D1_BACKUP=$BACKUP_FILE" >> "$GITHUB_ENV"
+      - name: Store pre-migration D1 backup
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: kairo-d1-${{ env.TARGET }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.KAIRO_D1_BACKUP }}
+          retention-days: 14
+          if-no-files-found: error
+      # Wrangler captures an additional managed backup during d1 migrations apply.
+      - name: Apply D1 migrations
+        run: npx wrangler d1 migrations apply DB --remote --env "$TARGET"
       - name: Deploy Worker and static assets
         run: CLOUDFLARE_ENV="$TARGET" npx wrangler deploy 2>&1 | tee deploy.log
       - name: Note that remote health probes are disabled
