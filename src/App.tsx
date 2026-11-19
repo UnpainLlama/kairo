@@ -120,7 +120,11 @@ export default function App() {
   const isMoviesWatchMode = pathname.startsWith('/movies/') && pathname.endsWith('/watch');
   const activeNavItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : navItems;
   const activeMenuItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : menuItems;
-  const activeMobileItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : mobileNavItems;
+  const activeMobileItems = isYouTubeMode
+    ? youtubeNavItems
+    : isMoviesMode
+      ? moviesNavItems
+      : [...mobileNavItems, { to: '/movies', label: 'Movies', icon: Film }, ...(isAdmin ? [{ to: '/youtube', label: 'YouTube', icon: Play }] : [])];
   const [menuOpen, setMenuOpen] = useState(false);
   const currentUser = account.status === 'signed-in' ? { displayName: account.displayName ?? 'Account', email: account.email, username: account.username } : null;
   const navigate = useNavigate();
