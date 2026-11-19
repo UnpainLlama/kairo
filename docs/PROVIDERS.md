@@ -17,7 +17,7 @@ embed requires no Kairo Worker secret. It does not replace the TMDB catalogue AP
 
 ## Anime metadata providers
 
-KAIRO now uses the official MyAnimeList API v2 as its first-choice live Anime catalogue source. AniList remains a compatibility fallback for older AniList IDs and requests MAL cannot serve; HiAnime is optional for legacy HiAnime catalogue IDs. Jikan is no longer in the default catalogue priority. See [LIVE_CATALOGUE.md](LIVE_CATALOGUE.md) for the active order, MAL API coverage limits and secret setup.
+KAIRO uses AniList as its first-choice live Anime catalogue and discovery source. MAL is the secondary compatibility provider; HiAnime remains optional for legacy HiAnime IDs. Jikan remains separate for episode discovery and is not in the default catalogue order. See [LIVE_CATALOGUE.md](LIVE_CATALOGUE.md) for the active priority, seasonal/discovery behavior and provider setup.
 
 Movie playback is intentionally separate and remains CineSrc-only. The Anime route uses its own `KairoMediaPlayer` and `AnimeEmbedPlayer`; it never mounts the Movie CineSrc iframe.
 

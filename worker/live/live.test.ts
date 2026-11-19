@@ -10,7 +10,7 @@ import { createMalSource } from './mal';
 import { createJikanEpisodeProvider } from '../episodes/providers/jikan';
 import { createLiveHandlers, parseBrowse, currentSeason } from './handlers';
 import { makeSlug, parseRef, slugify } from './ids';
-import type { Deps } from './service';
+import { parseSourceList, type Deps } from './service';
 import type { CatalogSource, LiveTitle } from './types';
 import type { LiveRequest } from './types';
 
@@ -43,6 +43,13 @@ function deps(handler: (url: string, init?: RequestInit) => Promise<Response>, o
 const req = (query: Record<string, string> = {}, params: Record<string, string> = {}, env: LiveRequest['env'] = {}): LiveRequest => ({ query, param: (n) => params[n], requestId: 'r1', env });
 const call = (d: Deps, name: keyof ReturnType<typeof createLiveHandlers>, r: LiveRequest) => createLiveHandlers(async () => json({}), () => d)[name](r);
 const isAni = (url: string) => url === 'https://graphql.anilist.co';
+
+describe('provider configuration', () => {
+  it('defaults to AniList first with MAL as the catalogue fallback', () => {
+    expect(parseSourceList(undefined)).toEqual(['anilist', 'mal']);
+    expect(parseSourceList('anilist,mal,hianime')).toEqual(['anilist', 'mal', 'hianime']);
+  });
+});
 
 describe('ids', () => {
   it('slugifies and parses refs', () => {
@@ -101,6 +108,31 @@ describe('AniList source', () => {
     expect(body!.variables).toMatchObject({ search: 'naruto', format_in: ['MOVIE'], status: 'FINISHED', season: 'FALL', seasonYear: 2026, genre: 'Action', sort: ['SEARCH_MATCH'] });
     await src.browse({ sort: 'relevance', page: 1, limit: 24 }, signal);
     expect(body!.variables.sort).toEqual(['POPULARITY_DESC']);
+  });
+  it('uses AniList-native seasonal trending and genre discovery queries', async () => {
+    const requests: { query: string; variables: Record<string, unknown> }[] = [];
+    const src = createAniListSource(async (_url, init) => {
+      const request = JSON.parse(String(init?.body)) as { query: string; variables: Record<string, unknown> };
+      requests.push(request);
+      return request.query.includes('GenreCollection')
+        ? json({ data: { GenreCollection: ['Action', 'Drama'] } })
+        : aniPage([media(88)]);
+    }, () => NOW);
+
+    await src.browse({ sort: 'trending', season: 'fall', year: 2026, page: 1, limit: 24 }, signal);
+    expect(requests[0]?.variables).toMatchObject({
+      season: 'FALL', seasonYear: 2026, sort: ['TRENDING_DESC'],
+    });
+    expect(requests[0]?.query).toContain('season: $season');
+    expect(requests[0]?.query).toContain('seasonYear: $seasonYear');
+
+    expect((await src.genres(signal)).map((item) => item.name)).toEqual(['Action', 'Drama']);
+    expect(requests[1]?.query).toContain('GenreCollection');
+
+    await src.browse({ sort: 'popularity', genre: 'Adventure', page: 1, limit: 12 }, signal);
+    expect(requests[2]?.variables).toMatchObject({
+      genre: 'Adventure', sort: ['POPULARITY_DESC'],
+    });
   });
   it('lists genres without Hentai and looks up by MAL id', async () => {
     let q = '';
@@ -269,13 +301,25 @@ describe('service and handlers', () => {
     expect(tmdbCalls).toBe(0);
   });
 
-  it('falls back to Jikan when AniList has no seasonal browse results', async () => {
-    const d = deps(async (u) => isAni(u) ? aniPage([]) : jikanList([jikanAnime(3)]));
-    const response = await call(d, 'browse', req({ season: 'fall', year: '2026', sort: 'popularity', page: '1', limit: '24' }));
-    expect(response).toMatchObject({
-      status: 200,
-      body: { data: { items: [{ id: 'm3' }] }, meta: { source: 'jikan', degraded: true } },
+  it('keeps empty AniList seasonal and discovery results instead of substituting a different provider catalogue', async () => {
+    let fallbackCalls = 0;
+    const d = deps(async (u) => {
+      if (isAni(u)) return aniPage([]);
+      fallbackCalls += 1;
+      return jikanList([jikanAnime(3)]);
     });
+    const seasonal = await call(d, 'browse', req({ season: 'fall', year: '2026', sort: 'popularity', page: '1', limit: '24' }));
+    const discovery = await call(d, 'browse', req({ genre: 'Action', sort: 'popularity', page: '1', limit: '12' }));
+
+    expect(seasonal).toMatchObject({
+      status: 200,
+      body: { data: { items: [] }, meta: { source: 'anilist' } },
+    });
+    expect(discovery).toMatchObject({
+      status: 200,
+      body: { data: { items: [] }, meta: { source: 'anilist' } },
+    });
+    expect(fallbackCalls).toBe(0);
   });
 
   it('resolves legacy HiAnime title ids while AniList remains the primary catalogue', async () => {
