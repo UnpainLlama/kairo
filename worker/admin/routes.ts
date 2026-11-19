@@ -132,8 +132,6 @@ export function registerAdminRoutes(app: any) {
       ]);
       if (Number(results[0]?.meta?.changes ?? 0) !== 1 || Number(results[1]?.meta?.changes ?? 0) !== 1) return fail(c, 409, 'ADMIN_ALREADY_EXISTS', 'Administrator setup is no longer available.');
       const session = await createSession(c.env.DB, uid, {
-        userAgent: c.req.header('User-Agent') ?? undefined,
-        ipPrefix: c.req.header('CF-Connecting-IP') ?? 'unknown',
         ttlSeconds: 8 * 60 * 60,
         accessEmail: c.env.ACCESS_ENFORCED === 'true' ? accessEmail : null,
       });
