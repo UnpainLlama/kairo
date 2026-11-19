@@ -123,7 +123,9 @@ app.use('/api/*', async (c, next) => {
   // Keep a live Kairo-side allow check so suspending/removing an invite blocks API use immediately.
   // Initial admin bootstrap is the only exception and remains protected by the signed Access JWT
   // plus the one-time bootstrap Worker secret.
-  if (pathname !== '/api/v1/admin/bootstrap') {
+  // Resolve/provision new Access users only during the account bootstrap endpoint.
+  // All other API calls perform the active-account check without creating profiles.
+  if (pathname !== '/api/v1/admin/bootstrap' && pathname !== '/api/v1/me') {
     const activeInvite = await hasActiveAccessAccount(c.env.DB, identity.email);
     if (!activeInvite) {
       return c.json({ success: false, error: { code: 'ACCESS_ACCOUNT_DISABLED', message: 'This Access identity does not have an active Kairo account. Contact the site administrator.' } }, 403);
@@ -572,13 +574,17 @@ app.get('/api/v1/me', async (c) => {
   if (c.env.ACCESS_ENFORCED === 'true') {
     if (!accessEmail) return fail(c, 401, 'ACCESS_REQUIRED', 'Authenticate with your approved email through Cloudflare Access.');
     try {
+      // First-time provisioning belongs to /me, not arbitrary API middleware.
+      if (!await hasActiveAccessAccount(c.env.DB, accessEmail)) {
+        return fail(c, 403, 'ACCESS_ACCOUNT_DISABLED', 'This Access identity does not have an active Kairo account. Contact the site administrator.');
+      }
       const bootstrap = await c.env.DB.prepare(
         `SELECT admin_bootstrap_completed_at AS completedAt,
                 EXISTS (SELECT 1 FROM user_profiles WHERE role = 'admin') AS adminExists
          FROM app_security_state WHERE singleton_id = 1`,
       ).first<{ completedAt: number | null; adminExists: number }>();
       if (bootstrap && bootstrap.completedAt === null && Number(bootstrap.adminExists) === 0) {
-        return fail(c, 401, 'AUTH_REQUIRED', 'The initial Kairo administrator must complete one-time setup.');
+        return fail(c, 401, 'ADMIN_SETUP_REQUIRED', 'The initial Kairo administrator must complete one-time setup.');
       }
       const account = await c.env.DB.prepare(
         "SELECT id, role, account_status AS accountStatus FROM user_profiles WHERE access_email = ? COLLATE NOCASE LIMIT 1",
