@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { flushPendingMediaPlayback } from './mediaPlayback';
+import { resolveAccountResponse } from './accountState';
 
-export type AccountStatus = 'loading' | 'guest' | 'signed-in' | 'denied' | 'unavailable';
+export type AccountStatus = 'loading' | 'guest' | 'signed-in' | 'denied' | 'setup-required' | 'reauth-required' | 'unavailable';
 export type KairoAccountState = {
   status: AccountStatus;
   accountId: string | null;
@@ -43,36 +44,24 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       try {
         const response = await fetch('/api/v1/me', {
           credentials: 'same-origin',
-          headers: { Accept: 'application/json' },
+          headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
           cache: 'no-store',
         });
         const payload = await response.json().catch(() => null);
         const errorCode = payload?.error?.code;
-        if (response.status === 401 && errorCode === 'AUTH_REQUIRED') {
-          // Local development can run without Cloudflare Access. In that mode,
-          // the absence of a Kairo session is a true guest state.
-          if (active) {
-            clearIdentity();
-            setStatus('guest');
-          }
-          return;
-        }
-        if (
-          (response.status === 401 && errorCode === 'ACCESS_REQUIRED') ||
-          (response.status === 403 && typeof errorCode === 'string' && errorCode.startsWith('ACCESS_'))
-        ) {
-          // An Access denial is not a guest account and must never expose the
-          // guest UI as a fallback for an unapproved or suspended identity.
-          if (active) {
-            clearIdentity();
-            setStatus('denied');
-          }
-          return;
-        }
-        if (!response.ok) throw new Error('Account lookup failed.');
         const user = payload?.data?.user;
-        if (!payload?.success || typeof user?.id !== 'string' || !user.id.trim()) {
-          throw new Error('Account response was invalid.');
+        const resolution = resolveAccountResponse(
+          response.status,
+          errorCode,
+          payload?.success === true && typeof user?.id === 'string' && Boolean(user.id.trim()),
+        );
+        if (resolution === 'unavailable') throw new Error('Account lookup failed.');
+        if (resolution !== 'signed-in') {
+          if (active) {
+            clearIdentity();
+            setStatus(resolution);
+          }
+          return;
         }
         if (active) {
           setAccountId(user.id);
@@ -83,7 +72,8 @@ export function AccountProvider({ children }: { children: ReactNode }) {
           setStatus('signed-in');
         }
       } catch {
-        if (active) setStatus('unavailable');
+        // A transient network failure must not discard a previously verified identity.
+        if (active) setStatus(accountId ? 'signed-in' : 'unavailable');
       }
     };
 
