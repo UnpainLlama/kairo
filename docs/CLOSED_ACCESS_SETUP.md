@@ -23,11 +23,9 @@ This branch implements the agreed staging access model:
 1. In Cloudflare, open **Workers & Pages** and select the staging Worker corresponding to `kairo-anime-platform-staging.unpainllama.workers.dev`.
 2. Open its **Access** tab and choose **Protect this Worker**. Protect the staging Worker (including the URL/preview endpoints that belong to that Worker). Do not select the account-wide option.
 3. In Zero Trust, ensure **One-time PIN** is enabled as a login method.
-4. In the Worker destination's path overrides, make exactly these two paths public so the repository's credential-free deployment health check can run:
-   - `/api/health`
-   - `/api/ready`
+4. Keep `/api/health` and `/api/ready` protected by Cloudflare Access. Remote anonymous health/readiness probes are disabled by default in the deployment workflow, so no public path overrides or application-wide Bypass policy are needed. The endpoint handlers remain in the Worker and are exercised by CI tests; the deployment summary will explicitly say that live HTTP/D1 readiness was not inspected. If you later configure exact public path overrides for both paths, you can opt back into those remote probes by setting the GitHub Actions variable `KAIRO_REMOTE_HEALTH_CHECKS_ENABLED=true`.
 
-   These handlers return only a generic health status when Access enforcement is enabled. No other path may be public. Do not create an application-wide Bypass/Everyone policy. Cloudflare documents Worker destination path overrides in its [Access application API](https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/applications/methods/create/).
+   Do not create an application-wide Bypass/Everyone policy. Cloudflare documents Worker destination path overrides in its [Access application API](https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/applications/methods/create/).
 5. Create an **Allow** policy for the protected Worker application. Add each invited email as an individual **Emails** selector value. The policy should contain the administrator's email and only the invited standard-user emails, up to 16 addresses total.
 6. Do not use **Emails ending in**, **Email domain**, **Login Methods: One-time PIN** as an Include rule by itself, **Everyone**, or **All valid emails**. The allowlist must identify individual addresses.
 7. Set the Access application session duration to 24 hours as the initial setting.

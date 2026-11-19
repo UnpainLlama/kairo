@@ -130,9 +130,20 @@ jobs:
         run: CLOUDFLARE_ENV="$TARGET" npm run build
       - name: Deploy Worker and static assets
         run: CLOUDFLARE_ENV="$TARGET" npx wrangler deploy 2>&1 | tee deploy.log
-      - name: Verify health and database connectivity
+      - name: Note that remote health probes are disabled
+        if: vars.KAIRO_REMOTE_HEALTH_CHECKS_ENABLED != 'true'
         run: |
-          URL=$(grep -o 'https://[A-Za-z0-9._-]*\.workers\.dev' deploy.log | head -1 || true)
+          {
+            echo "### Remote health probes skipped"
+            echo "The /api/health and /api/ready handlers remain in the Worker and are covered by CI tests."
+            echo "This deployment did not make anonymous requests to those Access-protected paths, so live HTTP/D1 readiness was not verified by this workflow."
+            echo "To enable these remote probes later, set KAIRO_REMOTE_HEALTH_CHECKS_ENABLED=true only after exact public path overrides are configured for both endpoints."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify health and database connectivity
+        if: vars.KAIRO_REMOTE_HEALTH_CHECKS_ENABLED == 'true'
+        run: |
+          set -euo pipefail
+          URL=$(grep -oE 'https://[A-Za-z0-9._-]+[.]workers[.]dev' deploy.log | head -1 || true)
           if [ "$TARGET" = "production" ]; then
             URL="${URL:-$PRODUCTION_URL}"
           else
@@ -143,16 +154,24 @@ jobs:
           for path in /api/health /api/ready; do
             ok=0
             for i in 1 2 3 4 5 6; do
-              code=$(curl -s -o body.json -w '%{http_code}' "$URL$path" || true)
-              if [ "$code" = "200" ] && grep -q '"success":true' body.json; then ok=1; break; fi
-              echo "$path -> HTTP $code (attempt $i), retrying in 10s"; sleep 10
+              code=$(curl -sS --connect-timeout 15 --max-time 30 -o probe-body.json -w '%{http_code}' "$URL$path" || true)
+              if [ "$code" = "200" ] && jq -e '.success == true' probe-body.json >/dev/null 2>&1; then
+                ok=1
+                echo "$path OK: $(cat probe-body.json)"
+                break
+              fi
+              echo "$path -> HTTP ${code:-request-failed} (attempt $i), retrying in 10s"
+              sleep 10
             done
-            if [ "$ok" != "1" ]; then echo "::error::$URL$path did not return a healthy response."; cat body.json; exit 1; fi
-            echo "$path OK: $(cat body.json)"
+            if [ "$ok" != "1" ]; then
+              echo "::error::$URL$path did not return a healthy JSON response."
+              cat probe-body.json 2>/dev/null || true
+              exit 1
+            fi
           done
           if [ "$TARGET" = "staging" ]; then
             echo "::notice::Staging readiness intentionally omits cache details behind Cloudflare Access."
           else
-            grep -q '"cache":"kv"' body.json || echo "::warning::The KV cache binding is not active (ready reports cache != kv)."
+            grep -q '"cache":"kv"' probe-body.json || echo "::warning::The KV cache binding is not active (ready reports cache != kv)."
           fi
-          { echo "### Deployed $TARGET"; echo "$URL"; echo; echo '```json'; cat body.json; echo; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          { echo "### Deployed $TARGET"; echo "$URL"; echo; echo 'JSON response:'; cat probe-body.json; } >> "$GITHUB_STEP_SUMMARY"
