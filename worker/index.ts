@@ -1161,6 +1161,7 @@ export default {
         env.DB.prepare("DELETE FROM sessions WHERE COALESCE(last_used_at, created_at) < datetime('now', '-30 days')"),
         env.DB.prepare('DELETE FROM auth_rate_limits WHERE window_started_at < ?').bind(Date.now() - 48 * 60 * 60 * 1000),
         env.DB.prepare('DELETE FROM youtube_oauth_states WHERE expires_at <= ? OR consumed_at IS NOT NULL').bind(Date.now()),
+        env.DB.prepare('DELETE FROM google_oauth_states WHERE expires_at <= ? OR consumed_at IS NOT NULL').bind(Date.now()),
       ]).catch((error) => {
         console.error(JSON.stringify({ event: 'expired_auth_data_cleanup_failed', message: error instanceof Error ? error.message : 'unknown' }));
       }),
