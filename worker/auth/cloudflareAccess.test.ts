@@ -97,43 +97,45 @@ describe('Cloudflare Access account resolution', () => {
       statements,
       prepare(sql: string) {
         statements.push(sql);
+        const statement = (values: unknown[] = []) => ({
+          first: async () => {
+            if (sql.includes('FROM app_security_state')) {
+              return bootstrapPending ? { completedAt: null, adminExists: 0 } : null;
+            }
+            if (sql.includes('WHERE access_email = ?')) {
+              const email = String(values[0]).toLowerCase();
+              const row = rows.find(item => item.accessEmail?.toLowerCase() === email);
+              return row ? { id: row.id, accountStatus: row.accountStatus } : null;
+            }
+            if (sql.includes('WHERE email = ?')) {
+              const email = String(values[0]).toLowerCase();
+              const row = rows.find(item => item.email?.toLowerCase() === email);
+              return row ? { id: row.id, accountStatus: row.accountStatus, accessEmail: row.accessEmail } : null;
+            }
+            return null;
+          },
+          run: async () => {
+            if (sql.includes('UPDATE user_profiles SET access_email')) {
+              const email = String(values[0]);
+              const id = String(values[1]);
+              const row = rows.find(item => item.id === id && item.accessEmail === null);
+              if (row) row.accessEmail = email;
+              return { meta: { changes: row ? 1 : 0 } };
+            }
+            if (sql.includes('INSERT OR IGNORE INTO user_profiles')) {
+              if (rejectInsert) throw new Error('account allocation limit reached');
+              const [id, _identitySubject, _displayName, email, _username, accessEmail] = values as string[];
+              if (!rows.some(item => item.accessEmail?.toLowerCase() === accessEmail.toLowerCase())) {
+                rows.push({ id, email, accessEmail, accountStatus: 'active', role: 'user' });
+              }
+              return { meta: { changes: 1 } };
+            }
+            return { meta: { changes: 0 } };
+          },
+        });
         return {
-          bind: (...values: unknown[]) => ({
-            first: async () => {
-              if (sql.includes('FROM app_security_state')) {
-                return bootstrapPending ? { completedAt: null, adminExists: 0 } : null;
-              }
-              if (sql.includes('WHERE access_email = ?')) {
-                const email = String(values[0]).toLowerCase();
-                const row = rows.find(item => item.accessEmail?.toLowerCase() === email);
-                return row ? { id: row.id, accountStatus: row.accountStatus } : null;
-              }
-              if (sql.includes('WHERE email = ?')) {
-                const email = String(values[0]).toLowerCase();
-                const row = rows.find(item => item.email?.toLowerCase() === email);
-                return row ? { id: row.id, accountStatus: row.accountStatus, accessEmail: row.accessEmail } : null;
-              }
-              return null;
-            },
-            run: async () => {
-              if (sql.includes('UPDATE user_profiles SET access_email')) {
-                const email = String(values[0]);
-                const id = String(values[1]);
-                const row = rows.find(item => item.id === id && item.accessEmail === null);
-                if (row) row.accessEmail = email;
-                return { meta: { changes: row ? 1 : 0 } };
-              }
-              if (sql.includes('INSERT OR IGNORE INTO user_profiles')) {
-                if (rejectInsert) throw new Error('account allocation limit reached');
-                const [id, _identitySubject, _displayName, email, _username, accessEmail] = values as string[];
-                if (!rows.some(item => item.accessEmail?.toLowerCase() === accessEmail.toLowerCase())) {
-                  rows.push({ id, email, accessEmail, accountStatus: 'active', role: 'user' });
-                }
-                return { meta: { changes: 1 } };
-              }
-              return { meta: { changes: 0 } };
-            },
-          }),
+          ...statement(),
+          bind: (...values: unknown[]) => statement(values),
         };
       },
     };
