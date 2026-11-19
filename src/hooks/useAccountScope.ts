@@ -6,7 +6,7 @@ export function useAccountScope() {
   return {
     accountId: account.accountId,
     resolved: account.status === 'guest' || account.status === 'signed-in',
-    error: account.status === 'unavailable',
+    error: account.status === 'unavailable' || account.status === 'denied',
     loading: account.status === 'loading',
     retry: account.retry,
   };
