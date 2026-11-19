@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
-import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import {
   Bell, Bookmark, CalendarDays, ChevronRight, Compass, Film, Flame, History, ListVideo,
   Home, LogIn, Menu, PlayCircle, Search, Settings, Tv, UserRound, Play,
@@ -112,14 +112,23 @@ function MenuLink({ to, label, icon: Icon, end, onNavigate }: NavItem & { onNavi
 
 export default function App() {
   const location = useLocation();
+  const navigationType = useNavigationType();
   const { pathname } = location;
   const account = useKairoAccount();
   const isAdmin = account.status === 'signed-in' && account.role === 'admin';
   const [adminPath, setAdminPath] = useState<string | null>(null);
-  const isYouTubeMode = isAdmin && pathname.startsWith('/youtube');
-  const isMoviesMode = pathname === '/movies' || pathname.startsWith('/movies/');
+  const [lastSectionMode, setLastSectionMode] = useState<'anime' | 'movies' | 'youtube'>(() => {
+    try {
+      const saved = window.sessionStorage.getItem('kairo:last-section');
+      return saved === 'movies' || saved === 'youtube' ? saved : 'anime';
+    } catch { return 'anime'; }
+  });
+  const sharedChromePath = ['/history', '/profile', '/library', '/favorites', '/settings', '/about', '/search', '/login'].includes(pathname);
+  const isYouTubeMode = isAdmin && (pathname.startsWith('/youtube') || (sharedChromePath && lastSectionMode === 'youtube'));
+  const isMoviesMode = pathname === '/movies' || pathname.startsWith('/movies/') || (sharedChromePath && lastSectionMode === 'movies');
   const isMoviesWatchMode = pathname.startsWith('/movies/') && pathname.endsWith('/watch');
-  const activeNavItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : navItems;
+  const animeNavItems = [...navItems, { to: '/movies', label: 'Movies', icon: Film }, ...(isAdmin ? [{ to: '/youtube', label: 'YouTube', icon: Play }] : [])];
+  const activeNavItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : animeNavItems;
   const activeMenuItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : menuItems;
   const activeMobileItems = isYouTubeMode
     ? youtubeNavItems
@@ -130,6 +139,32 @@ export default function App() {
   const currentUser = account.status === 'signed-in' ? { displayName: account.displayName ?? 'Account', email: account.email, username: account.username } : null;
   const navigate = useNavigate();
   const menuRef = useRef<HTMLDivElement>(null);
+  const previousLocation = useRef({ key: location.key, pathname });
+  const scrollPositions = useRef(new Map<string, number>());
+
+  useEffect(() => {
+    let mode: 'anime' | 'movies' | 'youtube' | null = null;
+    if (pathname === '/' || pathname.startsWith('/browse/') || pathname.startsWith('/anime/') || pathname.startsWith('/watch/')) mode = 'anime';
+    else if (pathname === '/movies' || pathname.startsWith('/movies/')) mode = 'movies';
+    else if (pathname.startsWith('/youtube')) mode = 'youtube';
+    if (!mode) return;
+    setLastSectionMode(mode);
+    try { window.sessionStorage.setItem('kairo:last-section', mode); } catch { /* Session storage is optional. */ }
+  }, [pathname]);
+
+  useEffect(() => {
+    const previous = previousLocation.current;
+    if (previous.key !== location.key) {
+      scrollPositions.current.set(previous.key, window.scrollY);
+    }
+    if (previous.pathname !== pathname) {
+      const savedPosition = scrollPositions.current.get(location.key);
+      if (navigationType === 'POP') window.scrollTo({ top: savedPosition ?? 0, left: 0, behavior: 'auto' });
+      else window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      document.getElementById('main')?.focus();
+    }
+    previousLocation.current = { key: location.key, pathname };
+  }, [location.key, navigationType, pathname]);
 
   useEffect(() => {
     let active = true;
@@ -169,13 +204,40 @@ export default function App() {
     };
   }, [isAdmin, pathname, adminPath, navigate]);
 
-  // Query-string changes often open/close detail modals; they must not reset the page behind them.
-  // Focus the main landmark only for actual route changes so keyboard and screen-reader users
-  // are moved to the new page content without disturbing modal navigation.
   useEffect(() => {
-    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-    document.getElementById('main')?.focus();
-  }, [pathname]);
+    const isMovieRoute = pathname === '/movies' || pathname.startsWith('/movies/');
+    const isVideoRoute = pathname.startsWith('/youtube');
+    const titles: Record<string, string> = {
+      '/': 'Discover Anime, Movies and Video',
+      '/search': isMovieRoute || (sharedChromePath && lastSectionMode === 'movies') ? 'Search Movies' : 'Search Anime',
+      '/history': 'Watch History',
+      '/profile': 'Profile',
+      '/library': 'My Library',
+      '/favorites': 'Favorites',
+      '/settings': 'Settings',
+      '/about': 'About Kairo',
+      '/login': 'Kairo Access',
+      '/movies': 'Movies',
+      '/movies/search': 'Search Movies',
+      '/movies/library': 'My Movies List',
+      '/youtube': 'YouTube Feed',
+      '/youtube/search': 'Search YouTube',
+      '/youtube/channels': 'YouTube Channels',
+    };
+    let pageTitle = titles[pathname];
+    if (!pageTitle && pathname.startsWith('/movies/browse/')) pageTitle = 'Browse Movies';
+    if (!pageTitle && pathname.startsWith('/movies/') && pathname.endsWith('/watch')) pageTitle = 'Watch Movie';
+    if (!pageTitle && pathname.startsWith('/movies/')) pageTitle = 'Movie Details';
+    if (!pageTitle && pathname.startsWith('/youtube/watch/')) pageTitle = 'Watch YouTube';
+    if (!pageTitle && pathname.startsWith('/browse/')) pageTitle = 'Browse Anime';
+    if (!pageTitle && pathname.startsWith('/anime/')) pageTitle = 'Anime Details';
+    if (!pageTitle && pathname.startsWith('/watch/')) pageTitle = 'Watch Anime';
+    if (!pageTitle && adminPath && pathname === adminPath) pageTitle = 'Administrator Console';
+    document.title = `${pageTitle ?? 'Page Not Found'} | Kairo`;
+    const description = document.querySelector<HTMLMetaElement>('meta[name="description"]');
+    description?.setAttribute('content', 'Kairo — discover anime, movies and videos, and keep your personal watch history and library in one place.');
+    void isVideoRoute;
+  }, [adminPath, lastSectionMode, pathname, sharedChromePath]);
 
   const logout = () => {
     // Kairo sign-in is the Cloudflare Access session. Clearing only the internal
