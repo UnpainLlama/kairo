@@ -130,7 +130,17 @@ jobs:
         run: CLOUDFLARE_ENV="$TARGET" npm run build
       - name: Deploy Worker and static assets
         run: CLOUDFLARE_ENV="$TARGET" npx wrangler deploy 2>&1 | tee deploy.log
+      - name: Note that remote health probes are disabled
+        if: vars.KAIRO_REMOTE_HEALTH_CHECKS_ENABLED != 'true'
+        run: |
+          {
+            echo "### Remote health probes skipped"
+            echo "The /api/health and /api/ready handlers remain in the Worker and are covered by CI tests."
+            echo "This deployment did not make anonymous requests to those Access-protected paths, so live HTTP/D1 readiness was not verified by this workflow."
+            echo "To enable these remote probes later, set KAIRO_REMOTE_HEALTH_CHECKS_ENABLED=true only after exact public path overrides are configured for both endpoints."
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Verify health endpoints or confirm Cloudflare Access protection
+        if: vars.KAIRO_REMOTE_HEALTH_CHECKS_ENABLED == 'true'
         run: |
           set -euo pipefail
           URL=$(grep -oE 'https://[A-Za-z0-9._-]+[.]workers[.]dev' deploy.log | head -1 || true)
