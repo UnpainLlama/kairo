@@ -53,8 +53,8 @@ Do not expose stack traces, SQL, provider tokens, internal hostnames, or secret 
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/health` | Minimal public liveness probe (no dependencies); only public Access path override |
-| GET | `/api/ready` | Minimal public readiness probe (verifies D1/schema; 503 if unavailable); only public Access path override. Detailed dependency fields are omitted when Access enforcement is enabled. |
+| GET | `/api/health` | Minimal liveness probe (no dependencies). Cloudflare Access protects it unless an exact public Worker destination override is explicitly configured. |
+| GET | `/api/ready` | Readiness probe (verifies D1/schema; 503 if unavailable). Cloudflare Access protects it unless an exact public Worker destination override is explicitly configured. Detailed dependency fields are omitted when Access enforcement is enabled. |
 | GET | `/api/v1/catalog/featured` | Featured titles |
 | GET | `/api/v1/catalog/trending?page=1&limit=24` | Trending titles |
 | GET | `/api/v1/catalog/latest?page=1&limit=24` | Recently updated titles |
