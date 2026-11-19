@@ -95,10 +95,10 @@ Ratings are on a 0-10 scale. See docs/PROVIDERS.md.
 | POST | `/api/v1/admin/bootstrap` | One-time administrator provisioning; requires `ADMIN_BOOTSTRAP_TOKEN` and is disabled after an admin exists. |
 | GET | `/api/v1/admin/console-path` | Return the current 30-minute console path to an authenticated administrator only. |
 | GET | `/api/v1/admin/accounts` | List standard accounts, their unique Cloudflare Access email bindings, and the 15-account allocation count. |
-| POST | `/api/v1/admin/accounts` | Create a standard username/password account bound to one approved Access email while below the cap. |
-| PATCH | `/api/v1/admin/accounts/:id/access-email` | Change a standard account's unique Access email and revoke its sessions. |
+| POST | `/api/v1/admin/accounts` | Retired. Returns `410 ACCESS_ACCOUNT_AUTO_PROVISIONED`; standard accounts are created on first approved Access visit. |
+| PATCH | `/api/v1/admin/accounts/:id/access-email` | Change a standard account's unique Access email and revoke its sessions; update the Cloudflare Access Allow policy to match. |
 | PATCH | `/api/v1/admin/accounts/:id/status` | Suspend or reactivate a standard account. |
-| POST | `/api/v1/admin/accounts/:id/password` | Reset a standard account password and revoke its active sessions. |
+| POST | `/api/v1/admin/accounts/:id/password` | Retired. Returns `410 ACCESS_SIGN_IN_ONLY`; Kairo passwords are no longer used. |
 
 All administrator routes verify the session role server-side. The console path is an obscurity layer, not an authentication mechanism. A staging Cron Trigger rotates it every 30 minutes. The database enforces a single administrator role; suspended standard accounts continue to count toward the 15-account allocation limit.
 
