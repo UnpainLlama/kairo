@@ -4,6 +4,7 @@ import { Clock, Heart, LogIn, LogOut, Search, Settings, Trash2, UserRound, Pause
 import { EmptyState, LoadingState } from '../components/catalog';
 import { useKairoAccount } from '../lib/AccountProvider';
 import { historyPausedStorageKey, readWatchHistory, watchProgressStorageKey, writeWatchHistory } from '../lib/accountStorage';
+import { clearAccountScopedBrowserData } from '../lib/accountScopedStorage';
 import { deleteMediaPlayback, listLocalMediaPlayback, syncMediaPlayback, writeLocalMediaPlayback, type MediaPlaybackSnapshot } from '../lib/mediaPlayback';
 
 type AccountUser = { id: string; displayName: string; email: string | null; username?: string | null; role?: 'user' | 'admin'; emailVerifiedAt?: string | null };
@@ -34,7 +35,8 @@ function useCurrentUser() {
     retry: account.retry,
   };
 }
-function signOut() {
+function signOut(userId: string | null | undefined) {
+  clearAccountScopedBrowserData(userId);
   // Cloudflare Access owns the real sign-in session. End it at the Access edge;
   // deleting only the internal Kairo cookie would sign the user straight back in.
   window.location.assign('/cdn-cgi/access/logout');
@@ -146,7 +148,7 @@ export function ProfilePage() {
     return()=>{active=false};
   },[user?.id,history,historyScope]);
   const watched=history.length; const completed=history.filter(x=>progressOf(x)>=95).length;
-  function logout(){setBusy(true);setError('');signOut()}
+  function logout(){setBusy(true);setError('');signOut(user?.id)}
   if(!loaded && !unavailable)return <LoadingState label="Loading profile"/>;
   if(unavailable)return <section className="kc-profile-page"><EmptyState title="Account status unavailable">Reconnect to Kairo to load this profile without mixing it with guest data. <button type="button" className="kc-link" onClick={retry}>Retry</button></EmptyState></section>;
   if(!user)return <section className="kc-profile-page"><div className="kc-profile-hero"><div className="kc-profile-avatar"><UserRound size={34}/></div><div><span className="kc-section-kicker">KAIRO ACCOUNT</span><h1>Your profile</h1><p>Use your approved Cloudflare Access email to sign in. Kairo links your account automatically; no second password is needed.</p></div><a className="kc-btn kc-btn-primary" href="/cdn-cgi/access/login"><LogIn size={15}/> Continue with approved email</a></div><EmptyState title="Your profile starts here">Once Cloudflare Access verifies your approved email, Kairo automatically restores your account and syncs activity across devices. Your local watch history remains available in guest mode.</EmptyState></section>;
