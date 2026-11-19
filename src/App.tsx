@@ -339,14 +339,16 @@ export default function App() {
                       {isAdmin && <MenuLink to="/youtube" label="YouTube" icon={Play} onNavigate={closeMenu} />}
                     </>
                   ) : (
-                    isAdmin && <NavLink to={isYouTubeMode ? '/' : '/youtube'} className={({ isActive }) => `kc-menu-tile${isActive ? ' active' : ''}`} onClick={closeMenu}>
-                      {isYouTubeMode
-                        ? <Tv size={17} strokeWidth={1.8} aria-hidden="true" />
-                        : <Play size={17} strokeWidth={1.8} aria-hidden="true" />}
-                      <span>{isYouTubeMode ? 'Anime' : 'YouTube'}</span>
-                      <ChevronRight size={13} className="kc-menu-chevron" aria-hidden="true" />
-                    </NavLink>
-                    {isAdmin && <MenuLink to="/admin" label="Admin console" icon={Settings} onNavigate={closeMenu} />}
+                    <>
+                      {isAdmin && <NavLink to={isYouTubeMode ? '/' : '/youtube'} className={({ isActive }) => `kc-menu-tile${isActive ? ' active' : ''}`} onClick={closeMenu}>
+                        {isYouTubeMode
+                          ? <Tv size={17} strokeWidth={1.8} aria-hidden="true" />
+                          : <Play size={17} strokeWidth={1.8} aria-hidden="true" />}
+                        <span>{isYouTubeMode ? 'Anime' : 'YouTube'}</span>
+                        <ChevronRight size={13} className="kc-menu-chevron" aria-hidden="true" />
+                      </NavLink>}
+                      {isAdmin && <MenuLink to="/admin" label="Admin console" icon={Settings} onNavigate={closeMenu} />}
+                    </>
                   )}
                 </div>
                 {!isYouTubeMode && !isMoviesMode && <>
