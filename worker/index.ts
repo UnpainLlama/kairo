@@ -17,6 +17,7 @@ import { createMovieCatalogService } from './movies/service';
 import { movieIdentity, persistMovieDetail, persistMovieSummary, searchStoredMovies } from './movies/repository';
 import type { MovieDiscoverQuery, MovieListKind } from './movies/types';
 import { ProviderError } from './metadata/types';
+import { consumeRateLimit } from './auth/rateLimit';
 
 interface Bindings {
   DB: D1Database;
@@ -139,9 +140,46 @@ app.use('/api/*', async (c, next) => {
 app.use('/api/*', async (c, next) => {
   const origin = c.env.ALLOWED_ORIGIN;
   if (origin) {
-    return cors({ origin, allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], allowHeaders: ['Content-Type', 'Authorization', 'X-Kairo-Bootstrap'], credentials: true })(c, next);
+    return cors({ origin, allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], allowHeaders: ['Content-Type', 'Authorization', 'X-Kairo-Bootstrap', 'X-Requested-With'], credentials: true })(c, next);
   }
   await next();
+});
+
+// Bound the most expensive public catalogue and provider endpoints by a hashed client key.
+// The raw Cloudflare client IP is never written to D1 by this limiter.
+app.use('/api/v1/*', async (c, next) => {
+  if (c.req.method !== 'GET') return next();
+  const pathname = new URL(c.req.url).pathname;
+  let bucket: string | null = null;
+  let limit = 0;
+  const windowMs = 15 * 60 * 1000;
+  if (pathname === '/api/v1/catalog/search' || pathname === '/api/v1/movies/search') {
+    bucket = 'catalog-search';
+    limit = 40;
+  } else if (
+    pathname.startsWith('/api/v1/catalog/') ||
+    pathname === '/api/v1/movies/discover' ||
+    pathname === '/api/v1/movies/genres'
+  ) {
+    bucket = 'catalog-read';
+    limit = 120;
+  } else if (/^\/api\/v1\/anime\/[^/]+\/episodes\/[^/]+\/servers(?:\/[^/]+\/playback)?$/.test(pathname)) {
+    bucket = 'episode-source';
+    limit = 24;
+  }
+  if (!bucket) return next();
+  const clientKey = c.req.header('CF-Connecting-IP') ?? c.get('accessSubject') ?? c.get('accessEmail') ?? 'unknown';
+  try {
+    const allowed = await consumeRateLimit(c.env.DB, String(clientKey), bucket, limit, windowMs);
+    if (!allowed) {
+      c.header('Retry-After', '60');
+      return fail(c, 429, 'RATE_LIMITED', 'Too many requests. Please wait a minute and try again.');
+    }
+  } catch (error) {
+    logError(c, 'api_rate_limit_unavailable', error);
+    return fail(c, 503, 'RATE_LIMIT_UNAVAILABLE', 'This service is temporarily unable to verify its request limit.');
+  }
+  return next();
 });
 
 app.use('/api/v1/me', async (c, next) => {
