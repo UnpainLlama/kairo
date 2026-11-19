@@ -5,6 +5,7 @@ import { ApiError, apiGet } from '../lib/api';
 import type { MovieGenre, MoviePage as MoviePageData, MovieSummary } from '../lib/movies';
 import { GridSkeleton, MovieGrid, useSentinel } from '../components/MovieCard';
 import { TitleModal } from '../components/TitleDetail';
+import { NotFoundPage } from './StaticPages';
 import { MyListProvider } from '../lib/useMyList';
 import '../styles-netflix.css';
 
@@ -48,7 +49,8 @@ function GenreMenu({ genres, activeId }: { genres: MovieGenre[]; activeId: strin
 function BrowseContent({ category }: { category: string }) {
   const genreRaw = category.startsWith('genre-') ? category.slice(6) : null;
   const genreId = genreRaw && /^\d{1,8}$/.test(genreRaw) ? genreRaw : null;
-  const config = CATEGORIES[category] ?? { title: 'Popular Movies', kind: 'popular' };
+  const config = CATEGORIES[category] ?? null;
+  const validRoute = config !== null || genreId !== null;
   const [items, setItems] = useState<MovieSummary[]>([]);
   const [genres, setGenres] = useState<MovieGenre[]>([]);
   const [page, setPage] = useState(1);
@@ -59,14 +61,16 @@ function BrowseContent({ category }: { category: string }) {
   const [retry, setRetry] = useState(0);
 
   useEffect(() => {
+    if (!validRoute) return;
     const controller = new AbortController();
     apiGet<{ items: MovieGenre[] }>('/movies/genres?language=en-US', controller.signal)
       .then(result => { if (!controller.signal.aborted) setGenres(result.items); })
       .catch(() => undefined);
     return () => controller.abort();
-  }, []);
+  }, [validRoute]);
 
   useEffect(() => {
+    if (!validRoute || !config) { setLoading(false); return; }
     const controller = new AbortController();
     if (page === 1) setLoading(true); else setMore(true);
     setError(null);
@@ -88,11 +92,13 @@ function BrowseContent({ category }: { category: string }) {
       })
       .finally(() => { if (!controller.signal.aborted) { setLoading(false); setMore(false); } });
     return () => controller.abort();
-  }, [config.kind, genreId, page, retry]);
+  }, [config?.kind, genreId, page, retry, validRoute]);
 
   const genreName = useMemo(() => genres.find(genre => genre.externalId === genreId)?.name, [genres, genreId]);
-  const title = genreId ? (genreName ? genreName + ' Movies' : 'Movies') : config.title;
+  const title = genreId ? (genreName ? genreName + ' Movies' : 'Movies') : config?.title ?? 'Movies';
   const sentinel = useSentinel(() => setPage(current => current + 1), !loading && !more && !error && page < totalPages && items.length > 0, items.length);
+
+  if (!validRoute) return <NotFoundPage />;
 
   return (
     <div className="nf nf-bleed nf-page">
