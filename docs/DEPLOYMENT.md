@@ -13,7 +13,7 @@ This is the authoritative deployment guide. It replaces the older steps in `READ
 
 Each environment has its own database and cache, so staging can never touch production data. The environment is chosen at build time with `CLOUDFLARE_ENV` (the Cloudflare Vite plugin's mechanism) and Wrangler's `--env` for migrations. Bindings and variables are not inherited between environments, so `wrangler.jsonc` declares them per environment.
 
-The deploy workflow (`.github/workflows/deploy.yml`) runs: typecheck, tests and build, then (only when requested) the guards, D1 migrations, build, deploy, and a health check that fails the run if `/api/health` or `/api/ready` is unhealthy.
+The deploy workflow (`.github/workflows/deploy.yml`) runs typecheck, tests and build, then (only when requested) the guards, D1 migrations, build and deploy. It probes `/api/health` and `/api/ready`: a valid Worker JSON response is accepted, and a verified redirect to the Cloudflare Access login is also accepted as proof that the edge is protecting the Worker. In the latter case, the summary explicitly says that the live handler/D1 response was not inspected.
 
 IDs for D1 and KV are identifiers, not credentials, so they may be committed to the public repo. Cloudflare API tokens, OAuth client secrets, and encryption keys are credentials: keep them only in the appropriate GitHub or Cloudflare secret stores. Never paste a secret into chat, a file, or the repo.
 
@@ -63,12 +63,12 @@ Open these in a browser (replace the host with your staging URL):
 
 | URL | Expect |
 |---|---|
-| `/api/health` | JSON, `"success":true`, `"environment":"staging"` |
-| `/api/ready` | `"database":"ok"`, `"schema":"ok"`, and `"cache":"kv"`. In live catalogue mode this still verifies D1 because account, library and watch-history routes depend on it. |
+| `/api/health` | When the exact path is public: JSON with `"success":true`. When protected by Access: redirect to the Cloudflare Access login until the user signs in. |
+| `/api/ready` | When the exact path is public: JSON success after D1/schema checks. When protected by Access: redirect to the Cloudflare Access login until the user signs in. In live catalogue mode readiness checks D1 because account, library and watch-history routes depend on it. |
 | `/api/v1/providers` | The configured live catalogue providers, independent episode providers, attribution details and artwork provider. Do not assume the legacy DB-mode AniList/Kitsu response. |
 | `/` | The site loads and displays results from the configured live catalogue providers. The catalogue is not expected to be empty in live mode. |
 
-`/api/ready` returns 503 if D1 is unreachable, if any required migration table is missing, or if the extended `user_profiles` account columns are unavailable. It does not call external catalogue providers, so the readiness probe does not consume their rate limits.
+`/api/ready` returns 503 if D1 is unreachable, if any required migration table is missing, or if the extended `user_profiles` account columns are unavailable. It does not call external catalogue providers, so the readiness probe does not consume their rate limits. With `ACCESS_ENFORCED=true`, the Worker intentionally returns only a generic ready status; if Cloudflare Access protects the path at the edge, unauthenticated deployment probes receive an Access login redirect instead. CI tests exercise the handler and readiness schema checks using test bindings, but that is not a substitute for a live D1 response. The deploy summary distinguishes this case rather than presenting a redirect as a successful database probe.
 
 ## 4. Environment variables and bindings
 
