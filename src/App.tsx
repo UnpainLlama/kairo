@@ -272,6 +272,7 @@ export default function App() {
     return <Navigate to={`/login?reauth=required&continue=${encodeURIComponent(pathname + location.search)}`} replace />;
   }
 
+  if (pathname === '/admin') return <AdminOnly><AdminPage /></AdminOnly>;
   if (adminPath && pathname === adminPath) return <AdminOnly><AdminPage /></AdminOnly>;
   if (account.status === 'limit-reached') {
     return (
@@ -345,6 +346,7 @@ export default function App() {
                       <span>{isYouTubeMode ? 'Anime' : 'YouTube'}</span>
                       <ChevronRight size={13} className="kc-menu-chevron" aria-hidden="true" />
                     </NavLink>
+                    {isAdmin && <MenuLink to="/admin" label="Admin console" icon={Settings} onNavigate={closeMenu} />}
                   )}
                 </div>
                 {!isYouTubeMode && !isMoviesMode && <>
