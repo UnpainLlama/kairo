@@ -1,3 +1,36 @@
+# Current implementation snapshot — 2026-11-19
+
+> This status snapshot supersedes the older phase logs and gap lists below. The older sections are retained as historical notes and should not be read as the current repository state.
+
+## Current verified baseline
+
+- GitHub Actions CI runs TypeScript typecheck, Vitest, production dependency audit and build.
+- The fix/audit-findings branch is being used to remediate the consolidated 51-finding audit. The current PR is kept separate from main.
+- Kairo interactive identity is Cloudflare Access only. Internal sessions are bound to the verified Access email and JWT subject. Expired/revoked Kairo sessions require an explicit Access logout/login rather than silent renewal.
+- First-admin provisioning is separated from guest mode. The unmounted legacy Google sign-in implementation is removed; Google OAuth remains solely for the separate optional YouTube authorization.
+- Account-scoped Anime library CRUD is implemented; Movies and Anime libraries are both reflected in the profile count.
+- Account-specific browser cache is cleared on sign-out; guest cache and server-side account records are not removed.
+- Expired sessions, rate-limit buckets and consumed/expired OAuth transactions are cleaned by the scheduled Worker. Historical session IP and user-agent fields are cleared by migration 0019; new Kairo sessions no longer populate those fields.
+- YouTube token encryption uses AES-GCM with account/purpose-bound AAD for new ciphertext and a read-only v1 compatibility path for previously stored rows.
+- Catalogue, Movies search/discovery and episode-source reads use a hashed D1 rate limiter.
+- HiAnime redirects are followed manually with HTTPS/host validation on every hop.
+- Deployment workflow is non-cancellable during migration, installs with npm ci, pins Actions by SHA, builds before migrations, saves a pre-migration D1 export, and now requires successful remote /api/health and /api/ready probes before deploy proceeds.
+- Production Wrangler values remain fail-closed placeholders until the owner configures the actual production D1, KV, Cloudflare Access and OAuth values.
+
+## Remaining release gates (cannot be proven by source-only CI)
+
+1. Configure exact Cloudflare Access destination overrides for /api/health and /api/ready in the deployment environment, then set KAIRO_REMOTE_HEALTH_CHECKS_ENABLED=true. Deploy now blocks when this variable is missing or either probe fails.
+2. Verify ACCESS_ENFORCED, bootstrap state and migrations 0015–0020 against each real D1 database; source code does not prove those migrations have been applied remotely.
+3. Supply real production APP_BASE_URL, GOOGLE_CLIENT_ID, Access team domain/AUD, D1 ID, KV ID and Worker secrets using Cloudflare/GitHub environment configuration. Never replace these with guessed values or commit secrets.
+4. Confirm ownership, authorization and provider terms for every enabled Anime, HiAnime and embed/playback domain. Keep unverified domains removed and ZokoAnime disabled until approved.
+5. Review the third-party HiAnime/mirror integration and TMDB/CineSrc terms with the relevant provider/legal owners before production release.
+6. Inspect real browser CSP reports and test playback, modal navigation, scroll restoration, focus and screen-reader flows on desktop and mobile before enforcing CSP.
+7. Confirm the real account cap against production records (including suspended/deleted/legacy profiles), and verify Access JWT expiry/revocation behaviour in the live Access application.
+8. Run authenticated staging end-to-end checks against real Cloudflare Access, D1, KV, Google OAuth and provider APIs. Unit tests use fixtures and are not a substitute for live provider/integration tests.
+
+No production deployment, remote database migration or live-provider/legal approval is implied by the code changes above.
+
+---
 # Implementation status
 
 Working log for the master build prompt. Update after each session.
