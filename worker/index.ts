@@ -594,8 +594,6 @@ app.get('/api/v1/me', async (c) => {
       }
       const ttlSeconds = account.role === 'admin' ? 8 * 60 * 60 : 30 * 24 * 60 * 60;
       const session = await createSession(c.env.DB, account.id, {
-        userAgent: c.req.header('User-Agent') ?? undefined,
-        ipPrefix: c.req.header('CF-Connecting-IP') ?? 'unknown',
         ttlSeconds,
         accessEmail,
       });
@@ -1042,8 +1040,18 @@ export default {
   // Expose Hono's in-process request helper for Worker integration tests only.
   request: app.request.bind(app),
   scheduled(_controller: ScheduledController, env: Bindings, context: ExecutionContext) {
-    context.waitUntil(rotateAdminConsolePath(env.DB).catch((error) => {
-      console.error(JSON.stringify({ event: 'admin_console_rotation_failed', message: error instanceof Error ? error.message : 'unknown' }));
-    }));
+    context.waitUntil(Promise.all([
+      rotateAdminConsolePath(env.DB).catch((error) => {
+        console.error(JSON.stringify({ event: 'admin_console_rotation_failed', message: error instanceof Error ? error.message : 'unknown' }));
+      }),
+      env.DB.batch([
+        env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(Date.now()),
+        env.DB.prepare("DELETE FROM sessions WHERE COALESCE(last_used_at, created_at) < datetime('now', '-30 days')"),
+        env.DB.prepare('DELETE FROM auth_rate_limits WHERE window_started_at < ?').bind(Date.now() - 48 * 60 * 60 * 1000),
+        env.DB.prepare('DELETE FROM youtube_oauth_states WHERE expires_at <= ? OR consumed_at IS NOT NULL').bind(Date.now()),
+      ]).catch((error) => {
+        console.error(JSON.stringify({ event: 'expired_auth_data_cleanup_failed', message: error instanceof Error ? error.message : 'unknown' }));
+      }),
+    ]));
   },
 };
