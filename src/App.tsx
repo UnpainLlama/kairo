@@ -111,7 +111,8 @@ function MenuLink({ to, label, icon: Icon, end, onNavigate }: NavItem & { onNavi
 }
 
 export default function App() {
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const { pathname } = location;
   const account = useKairoAccount();
   const isAdmin = account.status === 'signed-in' && account.role === 'admin';
   const [adminPath, setAdminPath] = useState<string | null>(null);
@@ -199,6 +200,13 @@ export default function App() {
   }, [menuOpen]);
 
   const closeMenu = (_event?: MouseEvent<HTMLAnchorElement>) => setMenuOpen(false);
+
+  if (account.status === 'setup-required' && pathname !== '/login') {
+    return <Navigate to="/login?setup=admin" replace />;
+  }
+  if (account.status === 'reauth-required' && pathname !== '/login') {
+    return <Navigate to={`/login?reauth=required&continue=${encodeURIComponent(pathname + location.search)}`} replace />;
+  }
 
   if (adminPath && pathname === adminPath) return <AdminOnly><AdminPage /></AdminOnly>;
   if (account.status === 'denied') {
