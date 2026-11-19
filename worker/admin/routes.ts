@@ -134,6 +134,7 @@ export function registerAdminRoutes(app: any) {
       const session = await createSession(c.env.DB, uid, {
         ttlSeconds: 8 * 60 * 60,
         accessEmail: c.env.ACCESS_ENFORCED === 'true' ? accessEmail : null,
+        accessSubject: c.env.ACCESS_ENFORCED === 'true' ? (c.get('accessSubject') as string | null | undefined) ?? null : null,
       });
       c.header('Set-Cookie', sessionCookie(session.token, new URL(c.req.url).protocol === 'https:', session.ttlSeconds));
       const path = await ensureConsolePath(c.env.DB);
