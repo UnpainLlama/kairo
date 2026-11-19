@@ -8,6 +8,7 @@ import { deleteMediaPlayback, listLocalMediaPlayback, syncMediaPlayback, writeLo
 
 type AccountUser = { id: string; displayName: string; email: string | null; username?: string | null; role?: 'user' | 'admin'; emailVerifiedAt?: string | null };
 type WatchEntry = { slug: string; title: string; posterUrl: string | null; episodeNumber: number; episodeTitle: string; progressKey: string; durationSeconds: number | null; updatedAt: number };
+type AnimeLibraryRow = { animeId: string; slug: string; title: string; posterUrl: string | null; status: string; isFavorite: boolean | number };
 function readHistory(userId: string | null): WatchEntry[] {
   return readWatchHistory<WatchEntry>(userId).filter((x) => x && typeof x.slug === 'string' && typeof x.title === 'string');
 }
@@ -202,6 +203,9 @@ export function AccountPage({ title }: { title: string }) {
   const [youtubeLoaded,setYoutubeLoaded]=useState(false);
   const [youtubeBusy,setYoutubeBusy]=useState(false);
   const [youtubeError,setYoutubeError]=useState('');
+  const [animeLibrary,setAnimeLibrary]=useState<AnimeLibraryRow[]>([]);
+  const [animeLibraryLoaded,setAnimeLibraryLoaded]=useState(false);
+  const [animeLibraryError,setAnimeLibraryError]=useState('');
   const pendingConnect=new URLSearchParams(location.search).get('connect');
   const pendingConnectStarted=useRef<string|null>(null);
   useEffect(()=>{
@@ -220,6 +224,27 @@ export function AccountPage({ title }: { title: string }) {
       .finally(()=>{if(active)setYoutubeLoaded(true)});
     return()=>{active=false};
   },[title,user?.id,location.key]);
+  useEffect(()=>{
+    let active=true;
+    if(title!=='My Library'&&title!=='Favorites'){setAnimeLibraryLoaded(true);return()=>{active=false};}
+    if(!user){setAnimeLibrary([]);setAnimeLibraryLoaded(true);return()=>{active=false};}
+    setAnimeLibraryLoaded(false);
+    setAnimeLibraryError('');
+    fetch('/api/v1/me/library',{credentials:'same-origin',headers:{Accept:'application/json'},cache:'no-store'})
+      .then(async response=>{
+        const payload=await response.json().catch(()=>null);
+        if(!response.ok||!payload?.success||!Array.isArray(payload?.data?.items))throw new Error(payload?.error?.message??'Could not load your Anime library.');
+        if(active)setAnimeLibrary(payload.data.items as AnimeLibraryRow[]);
+      })
+      .catch(error=>{if(active)setAnimeLibraryError(error instanceof Error?error.message:'Could not load your Anime library.')})
+      .finally(()=>{if(active)setAnimeLibraryLoaded(true)});
+    return()=>{active=false};
+  },[title,user?.id]);
+
+  const filteredAnimeLibrary=title==='Favorites'
+    ? animeLibrary.filter(item=>item.isFavorite===true||Number(item.isFavorite)===1)
+    : animeLibrary;
+
   const youtubeStatus=new URLSearchParams(location.search).get('youtube');
   const youtubeMessages:Record<string,string>={
     connected:'YouTube is connected. Kairo can now request access to your subscriptions.',
@@ -246,8 +271,15 @@ export function AccountPage({ title }: { title: string }) {
     }catch(error){setYoutubeError(error instanceof Error?error.message:'Could not disconnect YouTube.')}
     finally{setYoutubeBusy(false)}
   }
+  const isAnimeLibraryPage=title==='My Library'||title==='Favorites';
   return <><header className="kc-page-head"><h1>{title}</h1></header>
-    {title==='Settings'&&unavailable?<EmptyState title="Account status unavailable">Kairo could not verify your account. Your private settings remain locked. <button type="button" className="kc-link" onClick={retry}>Retry</button></EmptyState>
+    {isAnimeLibraryPage&&unavailable?<EmptyState title="Account status unavailable">Kairo could not verify your account, so your personal library remains locked. <button type="button" className="kc-link" onClick={retry}>Retry</button></EmptyState>
+    :isAnimeLibraryPage&&loaded&&!user?<EmptyState title="Sign in to view your library"><Link className="kc-link" to="/login">Continue with approved email</Link> to view your saved Anime titles.</EmptyState>
+    :isAnimeLibraryPage&&user&&!animeLibraryLoaded?<LoadingState label="Loading your Anime library"/>
+    :isAnimeLibraryPage&&animeLibraryError?<EmptyState title="Library unavailable">{animeLibraryError} <button type="button" className="kc-link" onClick={()=>setAnimeLibraryLoaded(false)}>Retry</button></EmptyState>
+    :isAnimeLibraryPage&&user&&filteredAnimeLibrary.length===0?<EmptyState title={title==='Favorites'?'No favorites yet':'Your Anime library is empty'}>Open an Anime title and use its library controls to save it here. <Link className="kc-link" to="/browse/anime">Browse Anime</Link></EmptyState>
+    :isAnimeLibraryPage&&user?<section className="kc-account-panel"><ul className="kc-anime-library-list">{filteredAnimeLibrary.map(item=><li key={item.animeId}><Link to={'/anime/'+encodeURIComponent(item.slug)}><strong>{item.title}</strong></Link><span>{item.status.replaceAll('_',' ')}{item.isFavorite===true||Number(item.isFavorite)===1?' · Favorite':''}</span></li>)}</ul></section>
+    :title==='Settings'&&unavailable?<EmptyState title="Account status unavailable">Kairo could not verify your account. Your private settings remain locked. <button type="button" className="kc-link" onClick={retry}>Retry</button></EmptyState>
     :title==='Settings'&&loaded&&user?<section className="kc-account-panel">
       <h2>Account</h2><p>Signed in as <strong>{user.email ?? user.displayName}</strong> through Cloudflare Access.</p>
       {user.role==='admin'&&<><h3>YouTube</h3>
