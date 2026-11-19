@@ -1,97 +1,59 @@
 # Technical architecture
 
-## 1. Deployment model
+Current implementation map, reviewed 19 November 2026. PRODUCT_SPEC.md remains design intent; this file describes the repository as it exists.
 
-Use one Cloudflare Worker deployment to serve the React SPA assets and `/api/*` application routes. The Cloudflare Vite plugin runs the Worker in a Workers-like environment during local development and creates the deployment output. D1 provides relational persistence. KV is optional for short-lived public metadata caching. R2 is optional for artwork the project owns or is licensed to store.
-
-## 2. High-level flow
-
+## Runtime flow
+One Vite build produces the React SPA and Hono Worker. The same Cloudflare Worker serves static assets and /api/*.
 ```text
-Browser (React + Vite)
-  |-- / assets ----------------------> Cloudflare Workers Static Assets
-  |
-  |-- /api/v1/* ---------------------> Cloudflare Worker API (Hono)
-                                          |-- D1: catalogue + user data
-                                          |-- KV: optional public cache
-                                          |-- Identity provider: OIDC/OAuth
-                                          |-- Metadata provider adapters
-                                          |-- Authorized playback adapters
-                                          `-- R2: optional authorized artwork
+index.html -> src/main.tsx -> AccountProvider + BrowserRouter -> src/App.tsx
+  Anime pages -> same-origin /api/v1/catalog/* and /api/v1/anime/*
+  Movies pages -> same-origin /api/v1/movies/*
+  AdminOnly YouTube pages -> same-origin /api/v1/youtube/*
+
+worker/index.ts (Hono)
+  security/origin middleware
+  Cloudflare Access JWT -> active email -> internal Kairo session
+  Anime handlers -> live service -> AniList -> MAL -> optional HiAnime
+    episode discovery -> HiAnime/Jikan; TMDB artwork enrichment is optional
+  Movies API -> TMDB provider/service/repository
+  YouTube OAuth/feed + official YouTube Data API media routes
+  account-owned D1 routes + KV cache
 ```
 
-## 3. Frontend boundaries
+## Frontend
+- src/main.tsx mounts React, AccountProvider, BrowserRouter and App.
+- src/App.tsx owns the route table, shared shell/SearchBar and AdminOnly YouTube gate.
+- src/pages contains Anime, Movies, YouTube and shared account screens.
+- src/components contains reusable cards/search/dropdowns and separate Anime/Movie/YouTube players.
+- src/lib contains API contracts/client, account/browser persistence, search/season helpers, Movie/YouTube helpers and shared playback state.
+- src/hooks contains account-scope hooks.
+- src/styles.css contains the general shell/Anime styles; src/styles-netflix.css contains Movies Noir styles.
+Do not assume old architecture sketches' src/features, src/theme or src/types directories exist.
 
-- `src/pages/` owns route-level compositions.
-- `src/components/` owns reusable UI.
-- `src/features/` groups search, catalogue, library, profile, and player logic.
-- `src/lib/api.ts` is the only general HTTP client entry point.
-- `src/theme/` owns theme tokens and persistence.
-- `src/types/` owns shared frontend contracts.
+## Worker
+- worker/index.ts is the Hono composition root and middleware/route wiring.
+- worker/auth and worker/admin implement Access identity, Kairo sessions, YouTube OAuth and admin operations.
+- worker/live contains AniList-first live Anime adapters, handlers, fallback/cache and contracts.
+- worker/episodes and worker/hianime contain independent episode providers and parser/client.
+- worker/metadata contains provider-neutral normalization, matching, provenance/merge and legacy D1 metadata enrichment.
+- worker/artwork contains optional TMDB Anime enrichment.
+- worker/movies is an independent TMDB Movies domain.
+- worker/youtube contains official YouTube media routes.
+- worker/providers validates playback results and constructs the opt-in ZokoAnime URL.
+- worker/repositories and worker/lib contain D1 query helpers and request validation.
 
-Do not call provider APIs directly from UI components. The frontend talks only to the application API.
+## Identity and ownership
+Cloudflare Access is the only interactive Kairo sign-in authority in protected environments. The Worker verifies the Access application JWT, resolves/provisions the profile and creates an internal opaque HttpOnly kairo_session bound to the current verified Access email. Local development can be guest when ACCESS_ENFORCED is not true; missing Access in staging/production is denied.
+One administrator is provisioned once; D1 enforces one administrator and a 15-standard-account cap. All YouTube pages and routes are administrator-only. Account ownership always comes from the validated server session/current Access identity.
 
-## 4. Worker boundaries
+## Provider boundaries
+**Anime:** local/staging LIVE_PROVIDERS=anilist,mal,hianime. AniList provides IDs, banners, native season/year/genre/status/format filters, trending, search, details and relations. A successful empty AniList seasonal/genre result is authoritative. MAL is secondary and needs MAL_CLIENT_ID; HiAnime is optional compatibility. Jikan is not default catalogue.
+Episode discovery uses separate EPISODE_PROVIDERS (local Jikan; staging HiAnime then Jikan). Discovery is not a playable source. Only a Worker-returned HTTPS URL on an allowlisted host with valid expiry may reach a player. ZokoAnime remains disabled by default. TMDB Anime enrichment fills missing fields without changing identity.
+**Movies:** TMDB discovery/search/details/genres/credits. Requires TMDB_ACCESS_TOKEN and feature/terms flags. D1 ingestion is disabled. CineSrc is the only Movie iframe, addressed by numeric TMDB ID.
+**YouTube:** official YouTube Data API and IFrame Player API; administrator-only curated saved-channel feed, search, watch, Kairo History and Watch Later. No guest general discovery or subscription import.
 
-- Route handlers validate request input and call service functions.
-- Services own business logic.
-- Repositories own D1 queries.
-- Provider adapters normalize third-party authorized data into internal types.
-- Authentication middleware validates identity-provider tokens/sessions.
-- Authorization checks resource ownership at every user-data boundary.
-- Error middleware returns stable JSON envelopes and request IDs.
+## Persistence and security
+D1 stores account/media data; KV caches expiring provider metadata, not sessions or personal data. Live AniList payloads are not copied into D1 as a mirror. Shared playback snapshots cover anime/movie/youtube; periodic cloud sync is 60 seconds plus event-driven flushes. Mutating routes validate Origin/Referer and SQL is parameterized. Iframe sandboxing is active; static CSP remains report-only pending staging review. GitHub remote health probes are skipped by default because Access protects the paths.
 
-## 5. Provider adapter contracts
-
-Metadata provider interface (illustrative):
-
-```ts
-export interface AnimeMetadataProvider {
-  readonly id: string;
-  search(input: { query: string; page: number; limit: number }): Promise<CatalogPage>;
-  getTitle(providerTitleId: string): Promise<AnimeRecord | null>;
-  getEpisodes(providerTitleId: string): Promise<EpisodeRecord[]>;
-}
-```
-
-Playback provider interface (illustrative):
-
-```ts
-export interface AuthorizedPlaybackProvider {
-  readonly id: string;
-  resolve(input: { providerEpisodeId: string; requestedAudio?: string }): Promise<AuthorizedPlaybackResult>;
-}
-```
-
-`AuthorizedPlaybackResult` identifies the provider and may describe either an HLS manifest (with subtitle tracks and variants supplied by the provider) or an approved iframe embed URL. Both forms may include an expiry. Never place provider secrets in the browser. Do not treat arbitrary user-supplied URLs as playable sources. The backend must allowlist provider hosts, require HTTPS, reject credentials and non-standard ports, and validate expiry before returning a source. Iframe sources are not equivalent to direct media extraction; the client must render them in a restricted player frame.
-
-## 6. Data ownership
-
-- Canonical anime and episode records may be shared catalogue data.
-- User profile, preference, library, and progress rows must be scoped to the authenticated subject ID.
-- Never infer identity from a client-supplied `userId` field.
-- Keep provider identifiers namespaced by provider ID to avoid collisions.
-- Keep cache entries public and non-sensitive. Never cache personalized responses under a shared cache key.
-
-## 7. Caching
-
-- Cache public catalogue metadata only when the provider terms permit it.
-- Use short TTLs for rapidly changing episode updates and longer TTLs for stable metadata.
-- Use a versioned cache key and provider ID.
-- Cache misses must not break the request.
-- Do not put access tokens, cookies, user progress, or private account data in KV.
-
-## 8. Playback and media
-
-The Watch page requests playback only after a user selects a discovered server. It renders a provider iframe only when the Worker returns a validated `protocol: "embed"` result, using a sandboxed iframe and no-referrer policy. A server ID is an opaque identifier, never a URL. The current route intentionally returns `SOURCE_UNAVAILABLE` until an approved resolver is configured. The app may use HLS.js for browser playback of authorized HLS manifests. Anime playback uses Kairo's media player for authorized HLS/files and approved provider embeds. YouTube playback uses the official YouTube IFrame API directly. Cross-origin controls remain provider-owned; media is not re-streamed through Kairo. Keep player logic behind a `PlaybackAdapter` so providers can change independently. Only accept source URLs returned by a configured, approved provider. Use secure HTTPS, provider entitlement checks, source expiry handling, and appropriate CORS configuration. Do not proxy third-party media unless the provider contract explicitly permits it.
-
-## 9. Optional Cloudflare products
-
-- **KV:** public metadata cache.
-- **R2:** original/authorized posters, banners, avatars, and artwork. Use signed upload/download flows if private objects are needed.
-- **Turnstile:** only for appropriate public forms where bot protection is useful; don't build a mechanism to circumvent other providers' challenges.
-- **Queues:** optional background catalogue sync when permitted by provider terms.
-- **Analytics Engine:** optional aggregate usage metrics, avoiding personal or sensitive payloads.
-
-Add these bindings only when the feature is implemented and configured. Do not leave dummy IDs in production bindings.
-
-Playback resolution is fail-closed: configure `HIANIME_PLAYBACK_ALLOWED_HOSTS` as a comma-separated list of exact hosts or `*.subdomain` patterns for playback hosts explicitly approved for use. ZokoAnime iframe generation is separately controlled by `ZOKOANIME_EMBED_ENABLED` and remains disabled until terms and permissions are reviewed. An empty value disables source resolution. The HiAnime adapter accepts only plain HTTPS URL fields returned by its source endpoint; it does not decrypt source payloads or bypass challenges. Validated HLS manifests can play through native browser HLS support, and approved embed URLs render in a sandboxed iframe.
+## Environments
+Use docs/DEPLOYMENT.md. Production Wrangler D1/KV/Access values are placeholders and flags remain fail-closed. CI fixture tests and a successful staging deployment do not prove live third-party service availability or production readiness.

@@ -1,67 +1,41 @@
-# Implementation roadmap and acceptance checklist
+# Implementation roadmap
 
-## Phase 0 — Foundation
+This replaces the original blank-slate checklist. See IMPLEMENTATION_STATUS.md for current completion.
 
-- [ ] Install dependencies and generate package lock.
-- [ ] Replace Worker name and D1 ID.
-- [ ] Create Cloudflare D1 and apply initial migration.
-- [ ] Run local app and verify `/api/health`.
-- [ ] Push repo to GitHub and configure Actions secrets.
+## Completed in source
+- [x] React/Vite SPA and routed Anime, Movies and administrator YouTube workspaces.
+- [x] Hono Worker API, input validation, JSON envelopes and same-origin mutation guard.
+- [x] AniList-first Anime catalogue with native seasonal/trending/genre discovery, search/details/related and fallback/cache.
+- [x] Optional TMDB Anime art enrichment and independent TMDB Movies API.
+- [x] Separate episode discovery and fail-closed playback URL validation.
+- [x] Cloudflare Access JWT validation, HttpOnly Kairo sessions, account provisioning/linking and one-time admin bootstrap.
+- [x] Account-scoped history/library and unified Anime/Movie/YouTube playback with retry/order handling.
+- [x] CineSrc-only Movie playback.
+- [x] Admin-only YouTube curated feed/search/watch, official iframe player, Kairo History and Watch Later.
+- [x] 18 additive D1 migrations, CI verification/deploy workflow and automated tests.
+- [x] Per-file and per-folder handoff documentation.
 
-## Phase 1 — Design system
+## Remaining tasks
+### Staging/provider verification
+- [ ] Authenticated staging check of /api/v1/providers, Anime featured/seasonal/details/episodes, Movies discovery/search/detail and admin YouTube routes.
+- [ ] Record live response checks separately from fixture tests; monitor AniList rate limits/fallback.
+### Anime playback/provider policy
+- [ ] Confirm permitted episode/server providers and a specific resolver that returns validated playable sources.
+- [ ] Verify iframe sandbox, expiry, subtitles and progress restore in staging.
+- [ ] Review Jikan/HiAnime terms; keep Kitsu disabled until verified; keep Manami importer unbuilt until licence/retention review.
+### Movies and YouTube
+- [ ] Keep Movie ingestion off until licence/storage/attribution approved.
+- [ ] Decide separately on YouTube guest discovery or subscriptions import; current Kairo feed is curated, not subscriptions.
+- [ ] Preserve AdminOnly checks in React and Worker.
+### Security/accessibility
+- [ ] Review report-only CSP reports before enforcing CSP.
+- [ ] Re-run keyboard/screen-reader/reduced-motion/responsive/contrast checks.
+- [ ] Verify guest/account isolation, deletion markers and multi-tab playback ordering.
+### Production
+- [ ] Provision production D1/KV/Access/secrets; remove placeholders.
+- [ ] Review/apply migrations after backup/change review.
+- [ ] Complete provider legal/policy checks; document rollback/restore.
+- [ ] Obtain explicit production approval before setting PRODUCTION_DEPLOY_APPROVED=true.
 
-- [ ] Extract design tokens into CSS variables.
-- [ ] Implement four theme palettes and persistent selection.
-- [ ] Complete nav rail, mobile nav, cards, chips, buttons, dialogs, toasts, skeletons, and typography.
-- [ ] Add licensed/original hero character artwork and source manifest.
-- [ ] Check contrast and reduced-motion behavior.
-
-## Phase 2 — Catalogue
-
-- [ ] Define canonical anime/episode TypeScript models.
-- [ ] Implement provider adapter interface.
-- [ ] Configure one authorized metadata source.
-- [ ] Add catalogue ingestion/sync process if permitted.
-- [ ] Implement trending/latest/search/genres/details/episodes/related.
-- [ ] Add cache only where provider terms allow it.
-
-## Phase 3 — User identity and library
-
-- [ ] Select and configure an identity provider.
-- [ ] Implement session validation in Worker.
-- [ ] Add profile and preferences routes.
-- [ ] Implement library CRUD with ownership checks.
-- [ ] Implement favorites and viewing history.
-- [ ] Add export/delete flows as required by privacy policy.
-
-## Phase 4 — Player and progress
-
-- [ ] Connect an authorized playback provider.
-- [ ] Validate provider response and URL host.
-- [ ] Implement HLS.js player for authorized HLS.
-- [ ] Implement subtitle selection and variant menu when available.
-- [ ] Save/resume progress with debounce and retry boundaries.
-- [ ] Add unavailable-source, expired-source, and retry UI.
-
-## Phase 5 — Quality
-
-- [ ] Add unit and integration tests.
-- [ ] Add accessibility checks and keyboard test pass.
-- [ ] Test mobile widths and touch controls.
-- [ ] Test provider timeout and invalid response handling.
-- [ ] Verify no secrets are committed.
-- [ ] Run typecheck, lint, tests, and production build.
-
-## Phase 6 — Release
-
-- [ ] Apply reviewed remote D1 migrations.
-- [ ] Configure production secrets.
-- [ ] Confirm GitHub Actions deployment.
-- [ ] Add custom domain and verify TLS.
-- [ ] Verify health, catalogue, player, and account routes.
-- [ ] Configure error monitoring and privacy-conscious analytics.
-- [ ] Publish content-provider attribution and privacy/terms pages.
-
-## Release acceptance criteria
-
-A release candidate is acceptable only when all critical routes have real loading/error/empty states, no primary control is inert, protected data is authenticated and ownership-checked, no demo content is mistaken for live provider content, API errors are stable, and the Cloudflare deployment can be reproduced from a clean checkout using the documentation.
+## Release acceptance
+Every user-data route derives ownership server-side; providers are authorized; media embeds are sandboxed/source-validated; production config has no placeholders; migrations and provider terms are reviewed; automated checks and real staging integration checks pass.

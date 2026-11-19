@@ -1,43 +1,44 @@
 # Kairo
 
-Kairo is a closed-access React, TypeScript, Vite and Cloudflare Workers media-discovery application for Anime, Movies and administrator-only YouTube features.
+Closed-access React/TypeScript media discovery app served by a Cloudflare Worker.
 
-## Project areas
+## Start here
+- [Detailed AI/engineer handoff](docs/REPO_HANDOFF.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [API contract](docs/API_CONTRACT.md)
+- [Access identity](docs/ACCOUNT_ARCHITECTURE.md)
+- [Current deployment runbook](docs/DEPLOYMENT.md)
+- [AniList-first Anime catalogue](docs/LIVE_CATALOGUE.md)
+- [Movies architecture](docs/MOVIES_ARCHITECTURE.md) and [CineSrc setup](docs/CINESRC_SETUP.md)
+- [YouTube implementation status](docs/YOUTUBE_PROVIDER_PLAN.md)
 
-- **Anime:** catalogue discovery, metadata enrichment, episode discovery and provider-gated playback.
-- **Movies:** TMDB-powered catalogue search and details, with **CineSrc as the only movie playback provider**.
-- **YouTube (administrator only):** video/channel discovery and a saved channel feed through the official YouTube Data API. Standard accounts and anonymous visitors cannot access YouTube pages or APIs.
+Every tracked file and folder has a companion guide: adjacent <filename>_readme.md files and folder _readme.md indexes. The root _readme.md indexes top-level files.
 
-## Movie provider boundary
-
-TMDB supplies Movies discovery, search, metadata and the numeric movie IDs used by Kairo. CineSrc is the sole Movie playback provider and is embedded through its documented iframe URL:
-
-`https://cinesrc.st/embed/movie/{tmdb_id}`
-
-There is no VidLink integration, alternate Movie player, or Kairo-side stream extraction fallback. CineSrc's iframe embed does not require a Kairo Worker secret. See [docs/CINESRC_SETUP.md](docs/CINESRC_SETUP.md) and the [official CineSrc documentation](https://cinesrc.st/docs).
+## Product areas
+- **Anime:** AniList primary, MAL secondary compatibility fallback, optional HiAnime; independent episode discovery and fail-closed playback.
+- **Movies:** TMDB catalogue/metadata; CineSrc is the only Movie playback provider. No VidLink or stream extraction.
+- **YouTube:** administrator-only official Data API and IFrame API integration, Kairo-curated channels, History and Watch Later. Not public guest discovery or imported YouTube subscriptions.
 
 ## Local development
-
 Requirements: Node.js 22 and npm.
-
 ```bash
 npm ci
 npm run dev
 ```
 
-Useful checks:
-
 ```bash
 npm run typecheck
 npm test
 npm run build
+npm run db:migrate:local
 ```
 
-External video-frame sandboxing and the report-only resource whitelist are documented in [docs/EMBED_SECURITY.md](docs/EMBED_SECURITY.md). Closed-access account provisioning, one-time administrator setup, and staging-only activation are documented in [docs/CLOSED_ACCESS_SETUP.md](docs/CLOSED_ACCESS_SETUP.md). Cloudflare environments, D1 migrations, Worker secrets and release gates are documented in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Start with [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the wider system design.
+## Important boundaries
+- Cloudflare Access is the only interactive Kairo sign-in authority in protected environments. No standard username/password login.
+- The Worker derives ownership from verified Access identity/internal HttpOnly session; never trust a client-supplied user ID.
+- Keep Anime, Movies and YouTube schemas/providers separate. Keep migrations additive and never edit one already applied to shared D1.
+- Keep credentials in .dev.vars locally or Worker secrets, never in source/Vite variables.
+- Anime playback accepts only Worker-returned validated sources. Never accept arbitrary browser URLs or proxy third-party streams.
+- Anonymous deployment health probes are skipped by default because Cloudflare Access protects those paths; successful deployment does not prove live DB readiness.
 
-## Repository conventions
-
-- Keep secrets in Cloudflare Worker secrets or local git-ignored files; never commit credentials.
-- Keep migrations additive and versioned.
-- Keep provider integrations behind their current domain boundaries.
-- Retain automated tests and CI checks; remove scratch prototypes and one-off setup artifacts once superseded.
+See [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) for the current implementation and limitations.
