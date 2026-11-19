@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { flushPendingMediaPlayback } from './mediaPlayback';
 import { resolveAccountResponse } from './accountState';
 
-export type AccountStatus = 'loading' | 'guest' | 'signed-in' | 'denied' | 'setup-required' | 'reauth-required' | 'unavailable';
+export type AccountStatus = 'loading' | 'guest' | 'signed-in' | 'denied' | 'limit-reached' | 'setup-required' | 'reauth-required' | 'unavailable';
 export type KairoAccountState = {
   status: AccountStatus;
   accountId: string | null;
