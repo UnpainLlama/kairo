@@ -578,6 +578,17 @@ app.get('/api/v1/me', async (c) => {
     try {
       // First-time provisioning belongs to /me, not arbitrary API middleware.
       if (!await hasActiveAccessAccount(c.env.DB, accessEmail, c.get('accessSubject') as string | null | undefined)) {
+        const existingProfile = await c.env.DB.prepare(
+          'SELECT id FROM user_profiles WHERE access_email = ? COLLATE NOCASE OR (access_email IS NULL AND email = ? COLLATE NOCASE) LIMIT 1',
+        ).bind(accessEmail, accessEmail).first<{ id: string }>();
+        if (!existingProfile) {
+          const allocation = await c.env.DB.prepare(
+            "SELECT COUNT(*) AS total FROM user_profiles WHERE role = 'user'",
+          ).first<{ total: number }>();
+          if (Number(allocation?.total ?? 0) >= 15) {
+            return fail(c, 403, 'ACCESS_ACCOUNT_LIMIT_REACHED', 'All 15 Kairo standard-account places are allocated. Contact the Kairo administrator to request access.');
+          }
+        }
         return fail(c, 403, 'ACCESS_ACCOUNT_DISABLED', 'This Access identity does not have an active Kairo account. Contact the site administrator.');
       }
       const bootstrap = await c.env.DB.prepare(
