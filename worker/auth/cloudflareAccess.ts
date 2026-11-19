@@ -196,38 +196,61 @@ export async function verifyCloudflareAccessAssertion(
  * Legacy profiles whose verified email matches but which predate access_email
  * are linked in place so their existing libraries and history are preserved.
  */
-export async function hasActiveAccessAccount(db: D1Database, emailValue: string): Promise<boolean> {
+export async function hasActiveAccessAccount(db: D1Database, emailValue: string, subjectValue?: string | null): Promise<boolean> {
   const email = normalizeAccessEmail(emailValue);
-  if (!email) return false;
+  const subject = typeof subjectValue === 'string' ? subjectValue.trim() : '';
+  if (!email || !subject || subject.length > 255 || /[\\u0000-\\u001f]/.test(subject)) return false;
+
+  async function bindExistingProfile(id: string, existingSubject: string | null, accountStatus: string): Promise<boolean> {
+    if (accountStatus !== 'active' || (existingSubject && existingSubject !== subject)) return false;
+    try {
+      if (!existingSubject) {
+        await db.prepare(
+          'UPDATE user_profiles SET access_subject = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND access_subject IS NULL',
+        ).bind(subject, id).run();
+      }
+      const verified = await db.prepare(
+        'SELECT id, account_status AS accountStatus, access_subject AS accessSubject FROM user_profiles WHERE id = ? LIMIT 1',
+      ).bind(id).first<{ id: string; accountStatus: string; accessSubject: string | null }>();
+      if (!verified || verified.accountStatus !== 'active' || verified.accessSubject !== subject) return false;
+
+      // Upgrade still-valid internal sessions created before subject binding without
+      // changing their token or extending their expiry.
+      await db.prepare(
+        'UPDATE sessions SET access_subject = ? WHERE user_id = ? AND lower(access_email) = lower(?) AND access_subject IS NULL',
+      ).bind(subject, id, email).run();
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   const byAccessEmail = await db.prepare(
-    'SELECT id, account_status AS accountStatus FROM user_profiles WHERE access_email = ? COLLATE NOCASE LIMIT 1',
-  ).bind(email).first<{ id: string; accountStatus: string }>();
-  if (byAccessEmail) return byAccessEmail.accountStatus === 'active';
+    'SELECT id, account_status AS accountStatus, access_subject AS accessSubject FROM user_profiles WHERE access_email = ? COLLATE NOCASE LIMIT 1',
+  ).bind(email).first<{ id: string; accountStatus: string; accessSubject: string | null }>();
+  if (byAccessEmail) return bindExistingProfile(byAccessEmail.id, byAccessEmail.accessSubject, byAccessEmail.accountStatus);
 
   const legacy = await db.prepare(
-    'SELECT id, account_status AS accountStatus, access_email AS accessEmail FROM user_profiles WHERE email = ? COLLATE NOCASE LIMIT 1',
-  ).bind(email).first<{ id: string; accountStatus: string; accessEmail: string | null }>();
+    'SELECT id, account_status AS accountStatus, access_email AS accessEmail, access_subject AS accessSubject FROM user_profiles WHERE email = ? COLLATE NOCASE LIMIT 1',
+  ).bind(email).first<{ id: string; accountStatus: string; accessEmail: string | null; accessSubject: string | null }>();
   if (legacy) {
-    if (legacy.accountStatus !== 'active' || legacy.accessEmail) return false;
+    if (legacy.accountStatus !== 'active' || legacy.accessEmail || (legacy.accessSubject && legacy.accessSubject !== subject)) return false;
     try {
       await db.prepare(
-        "UPDATE user_profiles SET access_email = ?, email_verified_at = COALESCE(email_verified_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP WHERE id = ? AND access_email IS NULL AND account_status = 'active'",
-      ).bind(email, legacy.id).run();
+        "UPDATE user_profiles SET access_email = ?, access_subject = ?, email_verified_at = COALESCE(email_verified_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP WHERE id = ? AND access_email IS NULL AND access_subject IS NULL AND account_status = 'active'",
+      ).bind(email, subject, legacy.id).run();
     } catch {
-      // A conflicting email binding must fail closed.
+      // A conflicting email or subject binding must fail closed.
     }
     const linked = await db.prepare(
-      'SELECT id, account_status AS accountStatus FROM user_profiles WHERE access_email = ? COLLATE NOCASE LIMIT 1',
-    ).bind(email).first<{ id: string; accountStatus: string }>();
-    return Boolean(linked?.id && linked.accountStatus === 'active');
+      'SELECT id, account_status AS accountStatus, access_subject AS accessSubject FROM user_profiles WHERE access_email = ? COLLATE NOCASE LIMIT 1',
+    ).bind(email).first<{ id: string; accountStatus: string; accessSubject: string | null }>();
+    return Boolean(linked?.id && linked.accountStatus === 'active' && linked.accessSubject === subject);
   }
 
   // Before the first administrator has been bootstrapped, Access-approved
   // visitors may reach the one-time setup page but must not be auto-created as
-  // standard users. The bootstrap token protects the only route that can create
-  // the initial administrator. This also avoids a first /api/v1/me request
-  // claiming the intended admin email as a standard account.
+  // standard users.
   try {
     const bootstrap = await db.prepare(
       `SELECT admin_bootstrap_completed_at AS completedAt,
@@ -236,12 +259,9 @@ export async function hasActiveAccessAccount(db: D1Database, emailValue: string)
     ).first<{ completedAt: number | null; adminExists: number }>();
     if (bootstrap && bootstrap.completedAt === null && Number(bootstrap.adminExists) === 0) return true;
   } catch {
-    // An unavailable security-state table is not a reason to grant access.
     return false;
   }
 
-  // Username is no longer a credential. Keep a deterministic, non-email handle
-  // only for legacy UI/schema fields that still expect one.
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(email));
   const suffix = [...new Uint8Array(digest).slice(0, 8)]
     .map((byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -249,7 +269,7 @@ export async function hasActiveAccessAccount(db: D1Database, emailValue: string)
   const localPart = (email.split('@')[0] ?? '').split('+')[0];
   const displayName = localPart
     .replace(/[._-]+/g, ' ')
-    .replace(/\s+/g, ' ')
+    .replace(/\\s+/g, ' ')
     .trim()
     .slice(0, 40) || 'Kairo member';
 
@@ -257,19 +277,17 @@ export async function hasActiveAccessAccount(db: D1Database, emailValue: string)
     await db.prepare(
       `INSERT OR IGNORE INTO user_profiles
         (id, identity_subject, display_name, email, email_verified_at, username,
-         access_email, account_status, role)
-       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, 'active', 'user')`,
-    ).bind(crypto.randomUUID(), 'cloudflare-access:' + email, displayName, email, username, email).run();
+         access_email, access_subject, account_status, role)
+       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, 'active', 'user')`,
+    ).bind(crypto.randomUUID(), 'cloudflare-access:' + email, displayName, email, username, email, subject).run();
   } catch {
-    // The account cap, unique indexes, or schema constraints may reject a new
-    // profile. Do not grant access when account provisioning did not succeed.
     return false;
   }
 
   const provisioned = await db.prepare(
-    'SELECT id, account_status AS accountStatus FROM user_profiles WHERE access_email = ? COLLATE NOCASE LIMIT 1',
-  ).bind(email).first<{ id: string; accountStatus: string }>();
-  return Boolean(provisioned?.id && provisioned.accountStatus === 'active');
+    'SELECT id, account_status AS accountStatus, access_subject AS accessSubject FROM user_profiles WHERE access_email = ? COLLATE NOCASE LIMIT 1',
+  ).bind(email).first<{ id: string; accountStatus: string; accessSubject: string | null }>();
+  return Boolean(provisioned?.id && provisioned.accountStatus === 'active' && provisioned.accessSubject === subject);
 }
 
 /** Test-only reset so JWKS rotation and cache cases remain isolated between tests. */
