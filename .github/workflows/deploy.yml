@@ -139,7 +139,7 @@ jobs:
             echo "This deployment did not make anonymous requests to those Access-protected paths, so live HTTP/D1 readiness was not verified by this workflow."
             echo "To enable these remote probes later, set KAIRO_REMOTE_HEALTH_CHECKS_ENABLED=true only after exact public path overrides are configured for both endpoints."
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Verify health endpoints or confirm Cloudflare Access protection
+      - name: Verify health and database connectivity
         if: vars.KAIRO_REMOTE_HEALTH_CHECKS_ENABLED == 'true'
         run: |
           set -euo pipefail
@@ -150,52 +150,28 @@ jobs:
             URL="${URL:-$STAGING_URL}"
           fi
           if [ -z "$URL" ]; then echo "::error::Could not find the deployed URL in the deploy log. Set the repository variable STAGING_URL."; exit 1; fi
-
           echo "Checking $URL"
-          RESULTS=""
-          REMOTE_ACCESS_INTERCEPTED=0
           for path in /api/health /api/ready; do
-            probe_result=""
+            ok=0
             for i in 1 2 3 4 5 6; do
-              code=$(curl -sS --connect-timeout 15 --max-time 30 -D probe-headers.txt -o probe-body.json -w '%{http_code}' "$URL$path" || true)
-              location=$(sed -n 's/^[Ll]ocation:[[:space:]]*//p' probe-headers.txt 2>/dev/null | head -1 | tr -d '\r' || true)
-
+              code=$(curl -sS --connect-timeout 15 --max-time 30 -o probe-body.json -w '%{http_code}' "$URL$path" || true)
               if [ "$code" = "200" ] && jq -e '.success == true' probe-body.json >/dev/null 2>&1; then
-                probe_result="HTTP 200 - Worker returned JSON"
-                echo "$path OK: $probe_result"
+                ok=1
+                echo "$path OK: $(cat probe-body.json)"
                 break
               fi
-
-              # Access protects the whole Worker unless exact path overrides are configured.
-              # A 302 to the account Access login is an expected protected response, not a Worker failure.
-              if [ "$code" = "302" ] && printf '%s' "$location" | grep -Eiq '^https://[^/]+[.]cloudflareaccess[.]com/cdn-cgi/access/login([/?]|$)'; then
-                probe_result="HTTP 302 - Cloudflare Access login (protected)"
-                REMOTE_ACCESS_INTERCEPTED=1
-                echo "::notice::$URL$path is intercepted by Cloudflare Access; the unauthenticated Worker response cannot be inspected."
-                break
-              fi
-
               echo "$path -> HTTP ${code:-request-failed} (attempt $i), retrying in 10s"
               sleep 10
             done
-
-            if [ -z "$probe_result" ]; then
-              echo "::error::$URL$path returned neither a successful Worker JSON response nor a verified Cloudflare Access login redirect."
+            if [ "$ok" != "1" ]; then
+              echo "::error::$URL$path did not return a healthy JSON response."
               cat probe-body.json 2>/dev/null || true
               exit 1
             fi
-            RESULTS="$RESULTS| $path | $probe_result |"$'\n'
           done
-
-          {
-            echo "### Deployed $TARGET"
-            echo "$URL"
-            echo
-            echo "| Endpoint | Verification |"
-            echo "|---|---|"
-            printf '%b' "$RESULTS"
-            if [ "$REMOTE_ACCESS_INTERCEPTED" = "1" ]; then
-              echo
-              echo "> Cloudflare Access intercepted at least one unauthenticated probe. This confirms edge protection is active; it does not claim the live Worker handler or D1 readiness response was inspected. The Worker endpoint contracts and D1 readiness logic are tested in CI using test bindings, and the remote D1 migrations were applied earlier in this workflow."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$TARGET" = "staging" ]; then
+            echo "::notice::Staging readiness intentionally omits cache details behind Cloudflare Access."
+          else
+            grep -q '"cache":"kv"' probe-body.json || echo "::warning::The KV cache binding is not active (ready reports cache != kv)."
+          fi
+          { echo "### Deployed $TARGET"; echo "$URL"; echo; echo 'JSON response:'; cat probe-body.json; } >> "$GITHUB_STEP_SUMMARY"
