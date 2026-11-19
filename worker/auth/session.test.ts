@@ -58,13 +58,16 @@ describe('session primitives', () => {
             first: async () => {
               queryLog.push({ sql, values });
               const requestedEmail = values[2] as string | null;
+              const requestedSubject = values[5] as string | null;
               if (requestedEmail && requestedEmail.toLowerCase() !== 'invited@gmail.com') return null;
+              if (requestedSubject && requestedSubject !== 'access-subject-1') return null;
               return {
                 userId: 'standard-user',
                 displayName: 'Invited User',
                 email: null,
                 username: 'InvitedUser',
                 accessEmail: 'invited@gmail.com',
+                accessSubject: 'access-subject-1',
                 emailVerifiedAt: null,
                 role,
               };
@@ -78,11 +81,11 @@ describe('session primitives', () => {
       },
     } as unknown as D1Database;
 
-    await expect(findSessionUser(db, `kairo_session=${token}`, 1234, 'another@gmail.com')).resolves.toBeNull();
-    const user = await findSessionUser(db, `kairo_session=${token}`, 1234, 'INVITED@gmail.com');
-    expect(user).toMatchObject({ id: 'standard-user', accessEmail: 'invited@gmail.com', role: 'user' });
+    await expect(findSessionUser(db, `kairo_session=${token}`, 1234, 'another@gmail.com', 'access-subject-1')).resolves.toBeNull();
+    const user = await findSessionUser(db, `kairo_session=${token}`, 1234, 'INVITED@gmail.com', 'access-subject-1');
+    expect(user).toMatchObject({ id: 'standard-user', accessEmail: 'invited@gmail.com', accessSubject: 'access-subject-1', role: 'user' });
     expect(queryLog.every(entry => entry.sql.includes('lower(s.access_email)') && entry.sql.includes('lower(p.access_email)'))).toBe(true);
-    expect(queryLog[1].values.slice(2)).toEqual(['INVITED@gmail.com', 'INVITED@gmail.com', 'INVITED@gmail.com']);
+    expect(queryLog[1].values.slice(2)).toEqual(['INVITED@gmail.com', 'INVITED@gmail.com', 'INVITED@gmail.com', 'access-subject-1', 'access-subject-1']);
     expect(queryLog[1].sql).not.toContain('admin_login_security');
     expect(queryLog[1].sql).toContain("datetime('now', '-60 minutes')");
     expect(queryLog[1].sql).toContain("datetime('now', '-14 days')");
@@ -90,7 +93,7 @@ describe('session primitives', () => {
     expect(writes[0]).toContain("datetime('now', '-5 minutes')");
 
     role = 'admin';
-    const admin = await findSessionUser(db, `kairo_session=${token}`, 1234, 'invited@gmail.com');
+    const admin = await findSessionUser(db, `kairo_session=${token}`, 1234, 'invited@gmail.com', 'access-subject-1');
     expect(admin).toMatchObject({ id: 'standard-user', role: 'admin' });
   });
 
