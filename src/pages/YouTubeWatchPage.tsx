@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import YouTubeVideoCard, { type YouTubeCardVideo } from '../components/YouTubeVideoCard';
-import { ArrowLeft, Bookmark, BookmarkCheck, ExternalLink, History, Youtube } from 'lucide-react';
+import { ArrowLeft, Bookmark, BookmarkCheck, ExternalLink, History, Play } from 'lucide-react';
 import YouTubeIframePlayer from '../components/YouTubeIframePlayer';
 import { useAccountScope } from '../hooks/useAccountScope';
 import { addGuestYouTubeWatchLater, saveGuestYouTubeProgress, readGuestYouTubeHistory, readGuestYouTubeWatchLater } from '../lib/youtubeLocalLibrary';
@@ -332,7 +332,7 @@ export default function YouTubeWatchPage() {
         <aside className="kc-queue yt-watch-sidebar yt-up-next" aria-label="Up next">
           <div className="kc-queue-head">
             <div><span className="kc-section-kicker">UP NEXT</span><h2>Recommended videos</h2></div>
-            <Youtube size={18} />
+            <Play size={18} />
           </div>
           {relatedVideos.length > 0 ? (
             <div className="yt-recommended-list">
