@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 're
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import {
   Bell, Bookmark, CalendarDays, ChevronRight, Compass, Film, Flame, History, ListVideo,
-  Home, LogIn, Menu, PlayCircle, Search, Settings, Tv, UserRound, Play,
+  Home, LogIn, Menu, PlayCircle, Search, Settings, Tv, UserRound, Play, Clock, Heart, Info,
   type LucideIcon,
 } from 'lucide-react';
 import SearchBar from './components/SearchBar';
@@ -43,6 +43,7 @@ const navItems: NavItem[] = [
 const menuItems: NavItem[] = [
   { to: '/', label: 'Home', icon: Home, end: true },
   { to: '/browse/trending', label: 'Trending', icon: Flame },
+  { to: '/browse/latest', label: 'Latest', icon: Clock },
   { to: '/browse/anime', label: 'Anime', icon: Tv },
   { to: '/movies', label: 'Movies', icon: Film },
   { to: '/search', label: 'Search', icon: Search },
@@ -355,6 +356,9 @@ export default function App() {
                   <div className="kc-menu-section-label">Navigate</div>
                   <div className="kc-menu-grid">
                     {menuItems.slice(4).map((item) => <MenuLink key={item.label} {...item} onNavigate={closeMenu} />)}
+                    {currentUser && <MenuLink to="/library" label="My Library" icon={Bookmark} onNavigate={closeMenu} />}
+                    {currentUser && <MenuLink to="/favorites" label="Favorites" icon={Heart} onNavigate={closeMenu} />}
+                    <MenuLink to="/about" label="About Kairo" icon={Info} onNavigate={closeMenu} />
                     <button type="button" className="kc-menu-tile kc-menu-disabled" disabled title="Schedule is not available yet">
                       <CalendarDays size={17} strokeWidth={1.8} aria-hidden="true" /><span>Schedule</span><small>Soon</small>
                     </button>
