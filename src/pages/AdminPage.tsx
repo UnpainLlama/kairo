@@ -24,7 +24,6 @@ export default function AdminPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [accessEmail, setAccessEmail] = useState('');
   const [emailEditId, setEmailEditId] = useState<string | null>(null);
   const [emailEditValue, setEmailEditValue] = useState('');
 
@@ -127,6 +126,6 @@ export default function AdminPage() {
         To remove access, remove the email from the Cloudflare Access Allow policy and suspend the account
         here. Changing an email binding below must also be reflected in the Cloudflare Access policy.
       </p>
-    </section>ion>
+    </section>
   </main>;
 }
