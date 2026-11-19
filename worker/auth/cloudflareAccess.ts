@@ -184,13 +184,75 @@ export async function verifyCloudflareAccessAssertion(
 }
 
 
-/** A signed Access token is not sufficient on its own: Kairo also checks that the
- * email still belongs to an active invited account on every API request. */
-export async function hasActiveAccessAccount(db: D1Database, email: string): Promise<boolean> {
-  const row = await db.prepare(
-    "SELECT id FROM user_profiles WHERE access_email = ? COLLATE NOCASE AND account_status = 'active' LIMIT 1",
-  ).bind(email).first<{ id: string }>();
-  return Boolean(row?.id);
+/**
+ * Resolve a verified Cloudflare Access email to its Kairo account.
+ *
+ * Cloudflare Access is the invitation boundary: its per-application Allow policy
+ * must contain individual email addresses. A valid, signed Access assertion is
+ * therefore sufficient to create the corresponding standard Kairo profile.
+ * Existing profiles retain their role and account status; suspended/deleted
+ * profiles are never silently reactivated.
+ *
+ * Legacy profiles whose verified email matches but which predate access_email
+ * are linked in place so their existing libraries and history are preserved.
+ */
+export async function hasActiveAccessAccount(db: D1Database, emailValue: string): Promise<boolean> {
+  const email = normalizeAccessEmail(emailValue);
+  if (!email) return false;
+
+  const byAccessEmail = await db.prepare(
+    'SELECT id, account_status AS accountStatus FROM user_profiles WHERE access_email = ? COLLATE NOCASE LIMIT 1',
+  ).bind(email).first<{ id: string; accountStatus: string }>();
+  if (byAccessEmail) return byAccessEmail.accountStatus === 'active';
+
+  const legacy = await db.prepare(
+    'SELECT id, account_status AS accountStatus, access_email AS accessEmail FROM user_profiles WHERE email = ? COLLATE NOCASE LIMIT 1',
+  ).bind(email).first<{ id: string; accountStatus: string; accessEmail: string | null }>();
+  if (legacy) {
+    if (legacy.accountStatus !== 'active' || legacy.accessEmail) return false;
+    try {
+      await db.prepare(
+        "UPDATE user_profiles SET access_email = ?, email_verified_at = COALESCE(email_verified_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP WHERE id = ? AND access_email IS NULL AND account_status = 'active'",
+      ).bind(email, legacy.id).run();
+    } catch {
+      // A conflicting email binding must fail closed.
+    }
+    const linked = await db.prepare(
+      'SELECT id, account_status AS accountStatus FROM user_profiles WHERE access_email = ? COLLATE NOCASE LIMIT 1',
+    ).bind(email).first<{ id: string; accountStatus: string }>();
+    return Boolean(linked?.id && linked.accountStatus === 'active');
+  }
+
+  // Username is no longer a credential. Keep a deterministic, non-email handle
+  // only for legacy UI/schema fields that still expect one.
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(email));
+  const suffix = [...new Uint8Array(digest).slice(0, 8)]
+    .map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  const username = 'access_' + suffix;
+  const localPart = (email.split('@')[0] ?? '').split('+')[0];
+  const displayName = localPart
+    .replace(/[._-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 40) || 'Kairo member';
+
+  try {
+    await db.prepare(
+      `INSERT OR IGNORE INTO user_profiles
+        (id, identity_subject, display_name, email, email_verified_at, username,
+         access_email, account_status, role)
+       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, 'active', 'user')`,
+    ).bind(crypto.randomUUID(), 'cloudflare-access:' + email, displayName, email, username, email).run();
+  } catch {
+    // The account cap, unique indexes, or schema constraints may reject a new
+    // profile. Do not grant access when account provisioning did not succeed.
+    return false;
+  }
+
+  const provisioned = await db.prepare(
+    'SELECT id, account_status AS accountStatus FROM user_profiles WHERE access_email = ? COLLATE NOCASE LIMIT 1',
+  ).bind(email).first<{ id: string; accountStatus: string }>();
+  return Boolean(provisioned?.id && provisioned.accountStatus === 'active');
 }
 
 /** Test-only reset so JWKS rotation and cache cases remain isolated between tests. */
