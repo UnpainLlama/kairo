@@ -9,6 +9,7 @@ describe('account response classification', () => {
 
   it('requires Access reauthentication for missing or expired Access assertions', () => {
     expect(resolveAccountResponse(401, 'ACCESS_REQUIRED', false)).toBe('reauth-required');
+    expect(resolveAccountResponse(401, 'ACCESS_REAUTH_REQUIRED', false)).toBe('reauth-required');
     expect(resolveAccountResponse(401, undefined, false)).toBe('reauth-required');
   });
 
