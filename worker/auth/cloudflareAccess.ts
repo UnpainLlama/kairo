@@ -200,23 +200,6 @@ export async function hasActiveAccessAccount(db: D1Database, emailValue: string)
   const email = normalizeAccessEmail(emailValue);
   if (!email) return false;
 
-  // Before the first administrator has been bootstrapped, Access-approved
-  // visitors may reach the one-time setup page but must not be auto-created as
-  // standard users. The bootstrap token protects the only route that can create
-  // the initial administrator. This also avoids a first /api/v1/me request
-  // claiming the intended admin email as a standard account.
-  try {
-    const bootstrap = await db.prepare(
-      `SELECT admin_bootstrap_completed_at AS completedAt,
-              EXISTS (SELECT 1 FROM user_profiles WHERE role = 'admin') AS adminExists
-       FROM app_security_state WHERE singleton_id = 1`,
-    ).first<{ completedAt: number | null; adminExists: number }>();
-    if (bootstrap && bootstrap.completedAt === null && Number(bootstrap.adminExists) === 0) return true;
-  } catch {
-    // An unavailable security-state table is not a reason to grant access.
-    return false;
-  }
-
   const byAccessEmail = await db.prepare(
     'SELECT id, account_status AS accountStatus FROM user_profiles WHERE access_email = ? COLLATE NOCASE LIMIT 1',
   ).bind(email).first<{ id: string; accountStatus: string }>();
@@ -238,6 +221,23 @@ export async function hasActiveAccessAccount(db: D1Database, emailValue: string)
       'SELECT id, account_status AS accountStatus FROM user_profiles WHERE access_email = ? COLLATE NOCASE LIMIT 1',
     ).bind(email).first<{ id: string; accountStatus: string }>();
     return Boolean(linked?.id && linked.accountStatus === 'active');
+  }
+
+  // Before the first administrator has been bootstrapped, Access-approved
+  // visitors may reach the one-time setup page but must not be auto-created as
+  // standard users. The bootstrap token protects the only route that can create
+  // the initial administrator. This also avoids a first /api/v1/me request
+  // claiming the intended admin email as a standard account.
+  try {
+    const bootstrap = await db.prepare(
+      `SELECT admin_bootstrap_completed_at AS completedAt,
+              EXISTS (SELECT 1 FROM user_profiles WHERE role = 'admin') AS adminExists
+       FROM app_security_state WHERE singleton_id = 1`,
+    ).first<{ completedAt: number | null; adminExists: number }>();
+    if (bootstrap && bootstrap.completedAt === null && Number(bootstrap.adminExists) === 0) return true;
+  } catch {
+    // An unavailable security-state table is not a reason to grant access.
+    return false;
   }
 
   // Username is no longer a credential. Keep a deterministic, non-email handle
