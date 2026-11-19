@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Play, Plus, ThumbsUp, X } from 'lucide-react';
 import { movieHref, movieYear, type MovieSummary } from '../lib/movies';
 import { useMyList } from '../lib/useMyList';
@@ -7,14 +7,23 @@ import '../styles-netflix.css';
 
 /** Opens the title details modal by writing ?mid=<id> to the current page. */
 export function useOpenTitle() {
-  const [, setParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   return useCallback((movie: Pick<MovieSummary, 'externalId'>, replace = false) => {
-    setParams(current => {
-      const next = new URLSearchParams(current);
-      next.set('mid', movie.externalId);
-      return next;
-    }, { replace });
-  }, [setParams]);
+    const next = new URLSearchParams(location.search);
+    next.set('mid', movie.externalId);
+    const currentState = location.state && typeof location.state === 'object'
+      ? location.state as Record<string, unknown>
+      : {};
+    const background = currentState.modalBackground &&
+      typeof currentState.modalBackground === 'object'
+      ? currentState.modalBackground as { pathname?: unknown; search?: unknown }
+      : { pathname: location.pathname, search: location.search };
+    navigate(
+      { pathname: location.pathname, search: `?${next.toString()}` },
+      { replace, state: { modalBackground: background } },
+    );
+  }, [location, navigate]);
 }
 
 export function watchHref(movie: Pick<MovieSummary, 'externalId'>): string {
