@@ -3,14 +3,14 @@
 This branch implements the agreed staging access model:
 
 - Cloudflare Access is the outer entrance to the staging Worker. Only explicitly listed email addresses may enter.
-- Cloudflare Access One-time PIN sends a short-lived PIN to each invited email. It is separate from Kairo account authentication.
+- Cloudflare Access One-time PIN sends a short-lived PIN to each invited email. Successful Access authentication is the user's Kairo sign-in; there is no second Kairo username/password process.
 - Configure individual email addresses in Cloudflare Access. Do not allow an entire Gmail domain, all valid emails, or Everyone.
 - The intended allocation is one administrator email plus up to 15 standard-user emails (16 total).
 - Kairo's Worker verifies the signed Cloudflare Access application JWT, including RS256 signature, team issuer, application audience, token times, and human identity email. It never trusts a user-supplied email header.
 - Every Kairo account is bound to one unique Access email. The Kairo session is also bound to that email and is rejected when the current Access identity differs.
-- Invited visitors can browse the catalogue after Cloudflare Access sign-in without entering their Kairo username/password. Each invited email is still assigned an active Kairo profile; Kairo credentials are required only for personal/cloud features.
-- The single administrator is provisioned once using a temporary Worker bootstrap secret and a password. The bootstrap completion state is permanent in D1.
-- Administrator sign-in does not use Kairo MFA. Five incorrect password attempts within a one-hour window lock the administrator login until an operator manually unlocks it through the Cloudflare D1 console.
+- On first successful Access visit, Kairo automatically provisions a standard profile from the verified email. Existing profiles are restored/linked; suspended or deleted profiles are not reactivated. The 15-standard-account limit still applies.
+- The first administrator is provisioned once using a temporary Worker bootstrap secret and the verified Access email; no Kairo password is created. The bootstrap completion state is permanent in D1.
+- There is no Kairo username/password sign-in or password-based admin lockout. Cloudflare Access is the only interactive authentication layer. The Worker still enforces the administrator role for YouTube and console routes.
 - Administrator sessions expire after eight hours; standard-account sessions retain the existing 30-day lifetime.
 - The administrator has a separate console, manages standard accounts, and is the only Kairo role allowed to use YouTube features.
 - The admin console URL is generated from 256 bits of cryptographic randomness and rotates every 30 minutes. The URL is not an authentication factor; the server-side administrator session remains the access control.
@@ -42,21 +42,22 @@ Cloudflare Access protects the static application and the `workers.dev` URL at t
 
 ## User invitation and account binding
 
-1. Add an invited email to the exact-email Cloudflare Access policy.
-2. In Kairo's administrator console, create the standard account and supply the same approved email address, username, display name, and password.
-3. Share the Kairo username and password with the intended user through a separate secure channel.
-4. The user opens the staging URL, enters their email at Cloudflare's Access screen, receives a PIN, and completes Access sign-in. They can browse the catalogue without signing in to Kairo, or enter their Kairo username/password for personal features.
-5. To change the email assigned to an existing Kairo account, use **Change approved email** in the administrator console. This revokes the account's existing Kairo sessions. Add the new email to the Cloudflare Access policy and remove the old one if it should no longer enter the site.
-6. Existing accounts created before the email-binding migration have no `access_email`. Assign an approved email to each account in the administrator console before that user attempts Kairo sign-in.
+1. Add the person's exact email address to the Kairo Cloudflare Access application's Allow policy.
+2. Give the person that email address. They open the Kairo URL and complete Cloudflare Access One-time PIN sign-in.
+3. On the first approved visit, the Worker automatically creates a standard Kairo profile for that verified email and `/api/v1/me` creates the internal HttpOnly session. No separate Kairo username/password is issued.
+4. Existing active profiles are restored by their Access email. A legacy profile with a matching email and no Access binding is linked in place, preserving its user ID and media data. Suspended/deleted profiles remain blocked.
+5. The standard account allocation limit is 15. If the limit is reached, provisioning fails closed; free a slot or review the existing allocation before inviting another standard user.
 
-Cloudflare's allowlist and Kairo's active-account email mapping are separate controls. Adding an email to a Kairo account does not automatically update Cloudflare Access; the operator must keep both lists aligned. The Worker checks the signed Access identity against an active Kairo profile on every API request. This is necessary because Cloudflare identity-based email selectors are evaluated at login, not continuously during an already-issued application session.
+The Cloudflare Access Allow policy is the invitation list. Adding an email to this policy authorizes first-visit Kairo provisioning; therefore the policy must contain only individual intended email addresses. Do not use a Gmail-domain rule, Everyone, or all valid emails.
+
+To change an existing user's email, update the Kairo Access email binding and the Cloudflare Access Allow policy together. The two are separate controls. Changing the Kairo binding revokes existing Kairo sessions.
 
 To disable an invited user immediately:
-1. Use the Kairo administrator console to suspend their account. This revokes their Kairo sessions and the Worker immediately rejects their Access identity on API requests, including catalogue APIs, even if their Cloudflare application token has not expired.
+1. Suspend their Kairo profile in the administrator console. This blocks account APIs immediately, even if their Cloudflare token has not expired.
 2. Remove that exact email from the Cloudflare Access Allow policy so they cannot obtain a new Access application session.
-3. For immediate edge-level session revocation as well, go to **Zero Trust → Team & Resources → Users**, select the user, and choose **Action → Revoke**. Cloudflare notes that revocation can take 20–30 seconds to invalidate previously issued tokens.
+3. Revoke their Cloudflare Access session from the Zero Trust dashboard where immediate edge-level revocation is required. Cloudflare notes that revocation can take 20–30 seconds.
 
-If you only remove an email from the Access policy, an already-issued Access application token can remain usable for the rest of its configured session. The Kairo-side active-account check is therefore the immediate in-app off switch.
+Kairo's menu Sign out action navigates to `/cdn-cgi/access/logout`. Deleting only the internal Kairo cookie is not a full sign-out because a still-valid Cloudflare Access identity would allow `/api/v1/me` to create another internal session.
 
 ## Database migration and first administrator setup
 
@@ -87,50 +88,30 @@ If you only remove an email from the Access policy, an already-issued Access app
 
    Store the output as a staging Worker **Secret** named `ADMIN_BOOTSTRAP_TOKEN`. Do not add it to `wrangler.jsonc`, source control, browser code, issue comments, or shell history. The Access team domain and AUD are not secrets; configure those as ordinary staging Worker variables.
 
-5. While signed into Cloudflare Access using the administrator's allowlisted email, open the staging site's `/login?setup=admin` page. Enter the temporary bootstrap token, administrator username, display name, approved email address, and a strong unique password. The email entered in the form must match the verified Cloudflare Access identity on the request.
-6. The bootstrap endpoint creates the admin profile, Access email binding, email/password identity, and password hash; records permanent bootstrap completion in D1; creates an eight-hour admin session; and returns the current admin console path.
+5. While signed into Cloudflare Access using the administrator's allowlisted email, open the staging site's `/login?setup=admin` page. Enter the temporary bootstrap token and (optionally) a display name. The verified Access email on the request is the admin identity; there is no username or password form.
+6. The bootstrap endpoint creates the admin profile and Access email binding; records permanent bootstrap completion in D1; creates an eight-hour internal admin session; and returns the current admin console path.
 7. Immediately delete the `ADMIN_BOOTSTRAP_TOKEN` staging Worker secret after successful provisioning. The D1 completion marker permanently closes the setup endpoint even if the administrator record is later changed or removed.
 8. Verify that the administrator can sign in only from the assigned Access email and that the console path rotates every 30 minutes.
 9. Deploy to staging only after the migration and security tests have been reviewed and explicitly approved. Do not deploy production as part of this work.
 
-## Administrator lockout and manual recovery
+## Administrator access recovery
 
-The administrator password is protected by an account-wide failure counter, not a per-IP counter. Five incorrect password attempts inside the current one-hour failure window lock administrator sign-in. The lock remains in place until manually cleared; waiting for the hour to pass does not unlock it. When the fifth failure triggers the lock, all existing Kairo administrator sessions are revoked and session resolution checks the lock state as a second enforcement layer. The lock applies only to Kairo administrator password login and does not lock out standard users or the Cloudflare dashboard.
+There is no longer a Kairo administrator password or password-failure lockout. If the administrator cannot enter Kairo:
 
-To unlock the administrator:
+1. Confirm the administrator's exact email remains in the Kairo Cloudflare Access application's Allow policy.
+2. Confirm the admin profile is active and its `access_email` matches the verified email.
+3. Check that staging `ACCESS_ENFORCED`, `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` are correct.
+4. Use Cloudflare Access logout at `/cdn-cgi/access/logout`, then authenticate again with the intended administrator email.
+5. If the account was suspended, deliberately reactivate it in Kairo and ensure the exact email is again included in the Cloudflare Access policy.
 
-1. Sign into the Cloudflare dashboard with your Cloudflare operator account.
-2. Open **Workers & Pages → D1 → kairo-db-staging → Console**. Confirm the database name is `kairo-db-staging`; do not select production.
-3. In the D1 console, first revoke any administrator sessions so the operator always signs in again after recovery:
-
-   ```sql
-   DELETE FROM sessions
-   WHERE user_id IN (SELECT id FROM user_profiles WHERE role = 'admin');
-   ```
-
-4. Then clear the lock:
-
-   ```sql
-   UPDATE admin_login_security
-   SET failed_attempts = 0,
-       window_started_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000,
-       locked_at = NULL,
-       updated_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000
-   WHERE singleton_id = 1;
-   ```
-
-5. Return to the staging site and sign in with the administrator's assigned Cloudflare Access email, Kairo username, and password.
-
-Keep the Cloudflare account itself protected with a strong unique password and its own MFA. The D1 console is the emergency unlock path; never expose an unlock endpoint in the public Kairo interface.
+Do not clear or edit the legacy `admin_login_security` table as an authentication recovery step. It belongs to the retired password-login design and is not used to authorize Access-native sessions.
 
 ## Remaining security work before production
 
-- Kairo administrator MFA is intentionally not included in this design. Password-only Kairo administrator authentication is a consciously accepted risk, not an ASVS Level 2 MFA implementation.
-- Kairo currently uses PBKDF2-HMAC-SHA-256 at 100,000 iterations. This is below the 600,000-iteration PBKDF2-HMAC-SHA-256 parameter listed by OWASP ASVS 5.0.0 for Level A, and below the 600,000 value in the OWASP Password Storage Cheat Sheet for FIPS-140-constrained deployments. The 100,000 Workerd ceiling is based on previously observed runtime behavior and the still-open Workerd issue #1346; current deployed-runtime behavior has not been verified because staging has not been configured. Benchmark a stronger supported KDF/work factor in staging before production.
+- Kairo user sign-in is delegated to Cloudflare Access and its One-time PIN identity method. The Worker still validates the signed application JWT and binds each internal session to the verified email. Administrator MFA is therefore governed by the configured Cloudflare Access authentication policy; verify its current MFA/reauthentication settings before production.
 - The GitHub Actions dependency audit reports no production dependency vulnerabilities after moving `@vitejs/plugin-react` into `devDependencies`. The full build/test toolchain audit still reports five high-severity package findings, led by `picomatch` versions through 4.0.7 (GHSA-fc5q-39xc-vjpf / CVE-2026-112366). The [GitHub advisory for picomatch](https://github.com/advisories/GHSA-fc5q-39xc-vjpf) (CVE-2026-112366) currently does not identify a patched release; npm's suggested Vite 6.2.7 and Vitest 3.1.4 changes are major downgrades and were not applied. The CI report and weekly Dependabot updates remain enabled.
-- New passwords for first-admin setup, account creation and password resets now require at least 15 Unicode code points (existing passwords remain usable until reset). A common/breached-password blocklist is still outstanding.
-- Login performs a dummy PBKDF2 verification for unknown, suspended or wrong-Access-identity accounts to reduce username timing differences. All state-changing API requests (POST, PUT, PATCH and DELETE) require a matching Origin or Referer; administrator bootstrap attempts are additionally rate-limited by source IP.
+- Legacy password-hash tables and password utilities remain in the additive schema/code history for compatibility; new Kairo profiles do not receive password credentials and the normal login route returns 410. All state-changing API requests (POST, PUT, PATCH and DELETE) require a matching Origin or Referer; administrator bootstrap attempts are additionally rate-limited by source IP.
 - Static assets now receive baseline security headers from `public/_headers`. A complete CSP remains deferred because the video player embeds several external providers; headers and embed compatibility need live staging verification.
-- Session idle expiry is now enforced server-side: administrators are idle-expired after 60 minutes, standard accounts after 14 days; successful requests refresh activity at most once every five minutes. The existing absolute limits remain eight hours for administrators and 30 days for standard users. A tailored CSP still needs video embed compatibility testing; administrator credential recovery/rotation beyond the documented manual D1 unlock remains outstanding.
+- Session idle expiry is enforced server-side: administrators are idle-expired after 60 minutes, standard accounts after 14 days; successful requests refresh activity at most once every five minutes. The absolute limits remain eight hours for administrators and 30 days for standard users. A tailored CSP still needs video embed compatibility testing.
 - Cloudflare Access dashboard configuration, actual allowed email entries, team domain, AUD tag, live response headers, and D1 state must be verified in the staging environment. Source-code changes alone do not create the Access application or populate its allowlist.
 - No migration, Worker secret, Cloudflare Access policy, or deployment is performed by the code change itself.
