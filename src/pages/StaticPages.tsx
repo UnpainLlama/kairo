@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Clock, Heart, LogIn, LogOut, Search, Settings, Trash2, UserRound, Pause, Play, ArrowUpDown } from 'lucide-react';
 import { EmptyState, LoadingState } from '../components/catalog';
 import { useKairoAccount } from '../lib/AccountProvider';
@@ -18,7 +18,13 @@ function progressOf(entry: WatchEntry): number {
 function useCurrentUser() {
   const account = useKairoAccount();
   const user: AccountUser | null = account.status === 'signed-in' && account.accountId
-    ? { id: account.accountId, displayName: account.displayName ?? 'Account', email: account.email }
+    ? {
+        id: account.accountId,
+        displayName: account.displayName ?? 'Account',
+        email: account.email,
+        username: account.username,
+        role: account.role ?? undefined,
+      }
     : null;
   return {
     user,
@@ -27,11 +33,10 @@ function useCurrentUser() {
     retry: account.retry,
   };
 }
-async function signOut() {
-  const response=await fetch('/api/v1/auth/logout',{method:'POST',credentials:'same-origin',headers:{Accept:'application/json'}});
-  const payload=await response.json().catch(()=>null);
-  if(!response.ok||!payload?.success) throw new Error(payload?.error?.message??'Could not sign out. Please try again.');
-  window.dispatchEvent(new Event('kairo:auth-change'));
+function signOut() {
+  // Cloudflare Access owns the real sign-in session. End it at the Access edge;
+  // deleting only the internal Kairo cookie would sign the user straight back in.
+  window.location.assign('/cdn-cgi/access/logout');
 }
 
 async function syncWatchHistory(userId: string, options: { deleted?: Array<{ slug: string; episodeNumber: number }>; clear?: boolean } = {}): Promise<WatchEntry[] | null> {
@@ -74,7 +79,7 @@ async function syncWatchHistory(userId: string, options: { deleted?: Array<{ slu
   }
 }
 export function ProfilePage() {
-  const {user,loaded,unavailable,retry}=useCurrentUser(); const navigate=useNavigate();
+  const {user,loaded,unavailable,retry}=useCurrentUser();
   const [history,setHistory]=useState<WatchEntry[]>(()=>readHistory(null)); const [historyScope,setHistoryScope]=useState<string|null>(null); const [playbackItems,setPlaybackItems]=useState<MediaPlaybackSnapshot[]>([]); const [libraryCount,setLibraryCount]=useState<number|null>(null);
   const [error,setError]=useState(''); const [busy,setBusy]=useState(false);
   useEffect(()=>{let active=true;fetch('/api/v1/me/library',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(p=>{if(active)setLibraryCount(Array.isArray(p?.data?.items)?p.data.items.length:0)}).catch(()=>{if(active)setLibraryCount(null)});return()=>{active=false}},[user?.id]);
@@ -140,12 +145,12 @@ export function ProfilePage() {
     return()=>{active=false};
   },[user?.id,history,historyScope]);
   const watched=history.length; const completed=history.filter(x=>progressOf(x)>=95).length;
-  async function logout(){setBusy(true);setError('');try{await signOut();navigate('/login',{replace:true})}catch(e){setError(e instanceof Error?e.message:'Sign out failed.')}finally{setBusy(false)}}
+  function logout(){setBusy(true);setError('');signOut()}
   if(!loaded && !unavailable)return <LoadingState label="Loading profile"/>;
   if(unavailable)return <section className="kc-profile-page"><EmptyState title="Account status unavailable">Reconnect to Kairo to load this profile without mixing it with guest data. <button type="button" className="kc-link" onClick={retry}>Retry</button></EmptyState></section>;
-  if(!user)return <section className="kc-profile-page"><div className="kc-profile-hero"><div className="kc-profile-avatar"><UserRound size={34}/></div><div><span className="kc-section-kicker">KAIRO ACCOUNT</span><h1>Your profile</h1><p>Sign in to keep your Kairo account and viewing activity together.</p></div><Link className="kc-btn kc-btn-primary" to="/login"><LogIn size={15}/> Sign in</Link></div><EmptyState title="Your profile starts here">Sign in with an administrator-issued account to sync your profile and viewing activity. Your local watch history remains available on this device.</EmptyState></section>;
+  if(!user)return <section className="kc-profile-page"><div className="kc-profile-hero"><div className="kc-profile-avatar"><UserRound size={34}/></div><div><span className="kc-section-kicker">KAIRO ACCOUNT</span><h1>Your profile</h1><p>Use your approved Cloudflare Access email to sign in. Kairo links your account automatically; no second password is needed.</p></div><a className="kc-btn kc-btn-primary" href="/cdn-cgi/access/login"><LogIn size={15}/> Continue with approved email</a></div><EmptyState title="Your profile starts here">Once Cloudflare Access verifies your approved email, Kairo automatically restores your account and syncs activity across devices. Your local watch history remains available in guest mode.</EmptyState></section>;
   return <section className="kc-profile-page">
-    <div className="kc-profile-hero"><div className="kc-profile-avatar"><UserRound size={34}/></div><div className="kc-profile-heading"><span className="kc-section-kicker">KAIRO ACCOUNT</span><h1>{user.displayName}</h1><p>@{user.username??'account'}</p></div><Link className="kc-btn" to="/settings"><Settings size={15}/> Account settings</Link></div>
+    <div className="kc-profile-hero"><div className="kc-profile-avatar"><UserRound size={34}/></div><div className="kc-profile-heading"><span className="kc-section-kicker">KAIRO ACCOUNT</span><h1>{user.displayName}</h1><p>{user.email ?? 'Authenticated through Cloudflare Access'}</p></div><Link className="kc-btn" to="/settings"><Settings size={15}/> Account settings</Link></div>
     <div className="kc-profile-stats">
       <article><span><Clock size={17}/></span><b>{watched}</b><small>Recent episodes</small></article>
       <article><span><Play size={17}/></span><b>{completed}</b><small>Completed episodes</small></article>
@@ -183,7 +188,7 @@ export function HistoryPage() {
   if(!loaded && !unavailable)return <LoadingState label="Loading history"/>;
   if(unavailable)return <section className="kc-history-page"><EmptyState title="Account status unavailable">Your history is locked until Kairo can verify the session, so account data cannot be mixed with guest data. <button type="button" className="kc-link" onClick={retry}>Retry</button></EmptyState></section>;
   return <section className="kc-history-page">
-    <header className="kc-page-head"><span className="kc-section-kicker">YOUR ACTIVITY</span><h1>Watch history</h1><p>Pick up where you left off. Sign in to sync history across your devices.</p></header>
+    <header className="kc-page-head"><span className="kc-section-kicker">YOUR ACTIVITY</span><h1>Watch history</h1><p>Guest history stays on this device; verified Kairo accounts sync history across devices automatically.</p></header>
     <div className="kc-history-toolbar"><label className="kc-history-search"><Search size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search your history…" aria-label="Search watch history"/></label><label className="kc-history-sort"><ArrowUpDown size={15}/><select value={sort} onChange={e=>setSort(e.target.value)} aria-label="Sort history"><option value="recent">Last watched</option><option value="title">A–Z</option><option value="progress">Progress</option></select></label><button className={`kc-btn ${paused?'kc-btn-primary':''}`} onClick={togglePaused} type="button">{paused?<Play size={14}/>:<Pause size={14}/>} {paused?'Resume history':'Pause history'}</button><button className="kc-btn kc-btn-danger" type="button" onClick={()=>setConfirmClear(true)} disabled={!items.length}><Trash2 size={14}/> Clear</button></div>
     {paused&&<p className="kc-history-paused" role="status">History recording is paused. New episodes won’t be added until you resume.</p>}
     {confirmClear&&<div className="kc-history-confirm" role="alert"><span>Clear all watch history for this account on this browser and synced account?</span><button className="kc-btn kc-btn-danger" onClick={clearHistory}>Clear history</button><button className="kc-btn" onClick={()=>setConfirmClear(false)}>Cancel</button></div>}
@@ -192,22 +197,13 @@ export function HistoryPage() {
 }
 export function AccountPage({ title }: { title: string }) {
   const location=useLocation();
-  const [user,setUser]=useState<AccountUser|null>(null);
-  const [loaded,setLoaded]=useState(false);
+  const {user,loaded,unavailable,retry}=useCurrentUser();
   const [youtubeConnected,setYoutubeConnected]=useState(false);
   const [youtubeLoaded,setYoutubeLoaded]=useState(false);
   const [youtubeBusy,setYoutubeBusy]=useState(false);
   const [youtubeError,setYoutubeError]=useState('');
   const pendingConnect=new URLSearchParams(location.search).get('connect');
   const pendingConnectStarted=useRef<string|null>(null);
-  useEffect(()=>{
-    let active=true;
-    fetch('/api/v1/me',{credentials:'same-origin'}).then(r=>r.ok?r.json():null)
-      .then(p=>{if(active)setUser(p?.data?.user??null)})
-      .catch(()=>{if(active)setUser(null)})
-      .finally(()=>{if(active)setLoaded(true)});
-    return()=>{active=false};
-  },[location.key]);
   useEffect(()=>{
     if(title!=='Settings'||!user||user.role!=='admin'||pendingConnect!=='youtube')return;
     if(pendingConnectStarted.current===pendingConnect)return;
@@ -228,8 +224,8 @@ export function AccountPage({ title }: { title: string }) {
   const youtubeMessages:Record<string,string>={
     connected:'YouTube is connected. Kairo can now request access to your subscriptions.',
     cancelled:'You cancelled the YouTube connection.',
-    sign_in_required:'Sign in to Kairo before connecting YouTube.',
-    reauth_required:'Please sign in again, then retry connecting YouTube.',
+    sign_in_required:'Authenticate with your approved Cloudflare Access email before connecting YouTube.',
+    reauth_required:'Your Cloudflare Access session has expired. Authenticate again, then retry connecting YouTube.',
     invalid_response:'The YouTube authorization response could not be verified. Please try again.',
     expired:'The YouTube connection request expired. Please try again.',
     token_exchange_failed:'Google could not complete the YouTube authorization. Please try again.',
@@ -251,8 +247,9 @@ export function AccountPage({ title }: { title: string }) {
     finally{setYoutubeBusy(false)}
   }
   return <><header className="kc-page-head"><h1>{title}</h1></header>
-    {title==='Settings'&&loaded&&user?<section className="kc-account-panel">
-      <h2>Account</h2><p>Signed in as <strong>{user.displayName}</strong> · @{user.username ?? 'account'}</p>
+    {title==='Settings'&&unavailable?<EmptyState title="Account status unavailable">Kairo could not verify your account. Your private settings remain locked. <button type="button" className="kc-link" onClick={retry}>Retry</button></EmptyState>
+    :title==='Settings'&&loaded&&user?<section className="kc-account-panel">
+      <h2>Account</h2><p>Signed in as <strong>{user.email ?? user.displayName}</strong> through Cloudflare Access.</p>
       {user.role==='admin'&&<><h3>YouTube</h3>
       <p>Connect YouTube separately to let Kairo read your subscriptions. This does not change how you sign in to Kairo.</p>
       {!youtubeLoaded?<p className="kc-auth-copy" role="status">Checking YouTube connection…</p>
@@ -261,7 +258,7 @@ export function AccountPage({ title }: { title: string }) {
       {youtubeStatus&&<p role="status" className="kc-auth-copy">{youtubeMessages[youtubeStatus]??'YouTube connection status updated.'}</p>}
       {youtubeError&&<p role="alert" className="kc-auth-error">{youtubeError}</p>}</>}
     </section>
-    :title==='Settings'&&loaded?<EmptyState title="Sign in to manage your account"><Link className="kc-link" to="/login">Sign in</Link> to manage your account.</EmptyState>
+    :title==='Settings'&&loaded?<EmptyState title="Sign in to manage your account"><a className="kc-link" href="/cdn-cgi/access/login">Continue with approved email</a> to manage your account.</EmptyState>
     :<EmptyState title="Not available yet">{title} features are still being built. You can still <Link className="kc-link" to="/search">search</Link> and browse.</EmptyState>}
   </>;
 }

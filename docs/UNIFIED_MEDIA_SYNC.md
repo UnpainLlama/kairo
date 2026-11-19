@@ -1,8 +1,8 @@
 # Unified media persistence and sync
 
-**Status:** Initial shared implementation, November 2026.
+**Status:** Shared media sync with Cloudflare Access-native identity, November 2026.
 
-Kairo has one account identity across Anime, Movies and YouTube. The signed-in user's stable user_profiles.id, resolved from GET /api/v1/me by the HttpOnly Kairo session cookie, is the owner key used by each media service. The browser must never invent an account ID or infer signed-in status from a failed network request.
+Kairo has one account identity across Anime, Movies and YouTube. Cloudflare Access is the only user sign-in. After the Access JWT is verified, the Worker resolves or provisions the profile for that exact approved email. GET /api/v1/me automatically creates the internal HttpOnly Kairo session used by existing services; its stable user_profiles.id is the owner key for every media domain. The browser must never invent an account ID or infer signed-in status from a failed network request.
 
 ## Guest mode
 
@@ -16,11 +16,11 @@ Guest keys use a dedicated guest namespace. A guest action never calls a signed-
 
 **Browser clearing detail:** localStorage is separate from cookies. Clearing only cookies does not necessarily erase guest lists or progress. To remove guest data, the user must clear Kairo's site data/storage (or the browser's broader site data), which may include cookies, localStorage and other site storage.
 
-Signing in does not silently attach guest activity to an account. Guest and account data remain separate to avoid attributing activity to the wrong person on shared devices. An explicit guest-to-account import can be added as a separate, user-confirmed flow.
+When Access enforcement is disabled (local development only), signing in is not available and the browser remains in guest mode. On Access-protected staging/production, missing or invalid Access identity is denied rather than treated as a guest. Guest and account data remain separate to avoid attributing activity to the wrong person on shared devices. An explicit guest-to-account import can be added as a separate, user-confirmed flow.
 
 ## Kairo account mode
 
-After the shared account provider resolves the current session, signed-in writes are stored against the same Kairo user ID in D1. That data is then available on other devices after the same account signs in.
+After the shared account provider resolves the verified Access identity and internal session, signed-in writes are stored against the same Kairo user ID in D1. That data is then available on other devices after the same approved email authenticates through Cloudflare Access. No separate Kairo username/password is required.
 
 | Media | Account-owned server data | Browser copy |
 |---|---|---|
@@ -37,7 +37,7 @@ The three media areas are separate data domains; they share account identity, no
 - src/lib/browserPersistence.ts provides guarded JSON/text reads and writes and shared storage change notifications.
 - Feature-specific modules retain their own schemas, keys and validation so one media domain cannot accidentally deserialize another domain's state.
 
-HttpOnly session cookies remain the authentication mechanism. No session token, password, Google token or YouTube OAuth token is written to browser storage.
+The internal Kairo session is an HttpOnly cookie, bound to the currently verified Access email. No session token, password, Google token or YouTube OAuth token is written to browser storage. Signing out goes through Cloudflare Access logout; removing only the internal cookie would otherwise cause /api/v1/me to recreate it while the Access session remains valid.
 
 ## Sync and conflict behavior
 
@@ -74,4 +74,4 @@ This is account-backed cross-device sync, not a fully offline-first replication 
 - Guest-to-account migration is not automatic and is not part of this initial sync implementation.
 - Browser-local caches can be cleared independently of the Kairo account's D1 records. Clearing site data does not delete server-side account data.
 
-These boundaries are surfaced in the product rather than implying that browser storage is cloud sync.
+These boundaries are surfaced in the product rather than implying that browser storage is cloud sync. Cloudflare Access's per-application Allow policy is the invitation list: only exact approved email addresses should be included; do not use a domain-wide or Everyone rule.

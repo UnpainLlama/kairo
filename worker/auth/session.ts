@@ -103,10 +103,6 @@ export async function findSessionUser(db: D1Database, cookieHeader: string | nul
          ELSE datetime('now', '-14 days')
        END
        AND p.account_status = 'active'
-       AND (p.role <> 'admin' OR NOT EXISTS (
-         SELECT 1 FROM admin_login_security als
-         WHERE als.singleton_id = 1 AND als.locked_at IS NOT NULL
-       ))
        AND (? IS NULL OR (lower(s.access_email) = lower(?) AND lower(p.access_email) = lower(?)))
      LIMIT 1`
   ).bind(tokenHash, now, accessEmail ?? null, accessEmail ?? null, accessEmail ?? null).first<SessionRow>();

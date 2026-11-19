@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { flushPendingMediaPlayback } from './mediaPlayback';
 
-export type AccountStatus = 'loading' | 'guest' | 'signed-in' | 'unavailable';
+export type AccountStatus = 'loading' | 'guest' | 'signed-in' | 'denied' | 'unavailable';
 export type KairoAccountState = {
   status: AccountStatus;
   accountId: string | null;
@@ -40,12 +40,24 @@ export function AccountProvider({ children }: { children: ReactNode }) {
           headers: { Accept: 'application/json' },
           cache: 'no-store',
         });
-        if (response.status === 401) {
+        const payload = await response.json().catch(() => null);
+        const errorCode = payload?.error?.code;
+        if (response.status === 401 && errorCode === 'AUTH_REQUIRED') {
+          // Local development can run without Cloudflare Access. In that mode,
+          // the absence of a Kairo session is a true guest state.
           if (active) setStatus('guest');
           return;
         }
+        if (
+          (response.status === 401 && errorCode === 'ACCESS_REQUIRED') ||
+          (response.status === 403 && typeof errorCode === 'string' && errorCode.startsWith('ACCESS_'))
+        ) {
+          // An Access denial is not a guest account and must never expose the
+          // guest UI as a fallback for an unapproved or suspended identity.
+          if (active) setStatus('denied');
+          return;
+        }
         if (!response.ok) throw new Error('Account lookup failed.');
-        const payload = await response.json();
         const user = payload?.data?.user;
         if (!payload?.success || typeof user?.id !== 'string' || !user.id.trim()) {
           throw new Error('Account response was invalid.');
@@ -53,7 +65,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         if (active) {
           setAccountId(user.id);
           setDisplayName(typeof user.displayName === 'string' ? user.displayName : null);
-          setEmail(typeof user.email === 'string' ? user.email : null);
+          setEmail(typeof user.accessEmail === 'string' ? user.accessEmail : typeof user.email === 'string' ? user.email : null);
           setUsername(typeof user.username === 'string' ? user.username : null);
           setRole(user.role === 'admin' ? 'admin' : 'user');
           setStatus('signed-in');

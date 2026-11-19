@@ -1,15 +1,7 @@
 import { normalizeAccessEmail } from '../auth/cloudflareAccess';
-import { hashPassword, isNewPasswordValid } from '../auth/password';
 import { createSession, sessionCookie, findSessionUser } from '../auth/session';
 
 const enc = new TextEncoder();
-const usernameOf = (value: unknown): string | null => {
-  if (typeof value !== 'string') return null;
-  const valueTrimmed = value.trim();
-  return valueTrimmed.length >= 3 && valueTrimmed.length <= 64 && /^[A-Za-z0-9._-]+$/.test(valueTrimmed)
-    ? valueTrimmed : null;
-};
-const passwordOf = isNewPasswordValid;
 const fail = (c: any, status: number, code: string, message: string) =>
   c.json({ success: false, error: { code, message } }, status);
 const ok = (c: any, data: unknown, status = 200) =>
@@ -120,29 +112,25 @@ export function registerAdminRoutes(app: any) {
     const setupState = await c.env.DB.prepare('SELECT admin_bootstrap_completed_at AS completedAt FROM app_security_state WHERE singleton_id=1').first() as { completedAt: number | null } | null;
     if (!setupState || setupState.completedAt !== null) return fail(c, 404, 'NOT_FOUND', 'Not found.');
     const body: any = await c.req.json().catch(() => null);
-    const username = usernameOf(body?.username);
-    const displayName = typeof body?.displayName === 'string' ? body.displayName.trim() : '';
     const assertedEmail = normalizeAccessEmail(c.get('accessEmail'));
     const submittedEmail = normalizeAccessEmail(body?.accessEmail);
     const accessEmail = c.env.ACCESS_ENFORCED === 'true' ? assertedEmail : (submittedEmail ?? assertedEmail);
-    if (!username || displayName.length < 2 || displayName.length > 40 || !passwordOf(body?.password) ||
-        !accessEmail || (assertedEmail && submittedEmail && assertedEmail !== submittedEmail)) {
-      return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid username, display name, approved email address, and password of at least 15 characters.');
+    const requestedName = typeof body?.displayName === 'string' ? body.displayName.trim() : '';
+    const displayName = requestedName.length >= 2 && requestedName.length <= 40
+      ? requestedName
+      : (accessEmail?.split('@')[0] ?? 'Kairo administrator').slice(0, 40);
+    if (!accessEmail || (assertedEmail && submittedEmail && assertedEmail !== submittedEmail)) {
+      return fail(c, 400, 'VALIDATION_ERROR', 'Administrator setup must use the verified Cloudflare Access email.');
     }
     try {
-      const uid = crypto.randomUUID(), identityId = crypto.randomUUID(), now = Date.now();
-      const passwordHash = await hashPassword(body.password);
+      const uid = crypto.randomUUID(), now = Date.now();
       const results = await c.env.DB.batch([
-        c.env.DB.prepare("INSERT INTO user_profiles (id,identity_subject,display_name,username,access_email,account_status,role) SELECT ?,?,?,?,?, 'active','admin' WHERE EXISTS (SELECT 1 FROM app_security_state WHERE singleton_id=1 AND admin_bootstrap_completed_at IS NULL) AND NOT EXISTS (SELECT 1 FROM user_profiles WHERE role='admin')")
-          .bind(uid, 'closed-admin:' + crypto.randomUUID(), displayName, username, accessEmail),
-        c.env.DB.prepare("INSERT INTO auth_identities (id,user_id,provider,provider_subject) SELECT ?,id,'email',? FROM user_profiles WHERE id=?")
-          .bind(identityId, username, uid),
-        c.env.DB.prepare('INSERT INTO password_credentials (auth_identity_id,password_hash) SELECT ?,? FROM auth_identities WHERE id=?')
-          .bind(identityId, passwordHash, identityId),
+        c.env.DB.prepare("INSERT INTO user_profiles (id,identity_subject,display_name,email,email_verified_at,access_email,account_status,role) SELECT ?,?,?,?,?,?, 'active','admin' WHERE EXISTS (SELECT 1 FROM app_security_state WHERE singleton_id=1 AND admin_bootstrap_completed_at IS NULL) AND NOT EXISTS (SELECT 1 FROM user_profiles WHERE role='admin')")
+          .bind(uid, 'cloudflare-admin:' + accessEmail, displayName, accessEmail, new Date(now).toISOString(), accessEmail),
         c.env.DB.prepare("UPDATE app_security_state SET admin_bootstrap_completed_at=? WHERE singleton_id=1 AND admin_bootstrap_completed_at IS NULL AND EXISTS (SELECT 1 FROM user_profiles WHERE id=? AND role='admin')")
           .bind(now, uid),
       ]);
-      if (Number(results[0]?.meta?.changes ?? 0) !== 1 || Number(results[3]?.meta?.changes ?? 0) !== 1) return fail(c, 409, 'ADMIN_ALREADY_EXISTS', 'Administrator setup is no longer available.');
+      if (Number(results[0]?.meta?.changes ?? 0) !== 1 || Number(results[1]?.meta?.changes ?? 0) !== 1) return fail(c, 409, 'ADMIN_ALREADY_EXISTS', 'Administrator setup is no longer available.');
       const session = await createSession(c.env.DB, uid, {
         userAgent: c.req.header('User-Agent') ?? undefined,
         ipPrefix: c.req.header('CF-Connecting-IP') ?? 'unknown',
@@ -151,9 +139,9 @@ export function registerAdminRoutes(app: any) {
       });
       c.header('Set-Cookie', sessionCookie(session.token, new URL(c.req.url).protocol === 'https:', session.ttlSeconds));
       const path = await ensureConsolePath(c.env.DB);
-      return ok(c, { created: true, signedIn: true, administrator: true, username, path }, 201);
+      return ok(c, { created: true, signedIn: true, administrator: true, accessEmail, path }, 201);
     } catch {
-      return fail(c, 409, 'ADMIN_SETUP_FAILED', 'Administrator setup could not be completed. Check that the username is unique.');
+      return fail(c, 409, 'ADMIN_SETUP_FAILED', 'Administrator setup could not be completed. Check the verified email binding and database schema.');
     }
   });
 
@@ -172,36 +160,9 @@ export function registerAdminRoutes(app: any) {
     }
   });
 
-  app.post('/api/v1/admin/accounts', async (c: any) => {
+  app.post('/api/v1/admin/accounts', (c: any) => {
     noStore(c);
-    if (!originAllowed(c)) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
-    const admin = await currentAdmin(c);
-    if (!admin) return fail(c, 404, 'NOT_FOUND', 'Not found.');
-    const body: any = await c.req.json().catch(() => null);
-    const username = usernameOf(body?.username);
-    const displayName = typeof body?.displayName === 'string' ? body.displayName.trim() : '';
-    const accessEmail = normalizeAccessEmail(body?.accessEmail);
-    if (!username || displayName.length < 2 || displayName.length > 40 || !accessEmail || !passwordOf(body?.password)) {
-      return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid username, approved email address, display name, and password of at least 15 characters.');
-    }
-    try {
-      const uid = crypto.randomUUID(), identityId = crypto.randomUUID();
-      const passwordHash = await hashPassword(body.password);
-      const results = await c.env.DB.batch([
-        c.env.DB.prepare("INSERT INTO user_profiles (id,identity_subject,display_name,username,access_email,account_status,role) SELECT ?,?,?,?,?, 'active','user' WHERE (SELECT COUNT(*) FROM user_profiles WHERE role='user') < 15")
-          .bind(uid, 'closed-user:' + crypto.randomUUID(), displayName, username, accessEmail),
-        c.env.DB.prepare("INSERT INTO auth_identities (id,user_id,provider,provider_subject) SELECT ?,id,'email',? FROM user_profiles WHERE id=?")
-          .bind(identityId, username, uid),
-        c.env.DB.prepare('INSERT INTO password_credentials (auth_identity_id,password_hash) SELECT ?,? FROM auth_identities WHERE id=?')
-          .bind(identityId, passwordHash, identityId),
-      ]);
-      if (Number(results[0]?.meta?.changes ?? 0) !== 1) {
-        return fail(c, 409, 'ACCOUNT_LIMIT_REACHED', 'All 15 standard accounts have already been allocated.');
-      }
-      return ok(c, { created: true, account: { id: uid, username, accessEmail, displayName, status: 'active' } }, 201);
-    } catch {
-      return fail(c, 409, 'ACCOUNT_CREATE_FAILED', 'The account could not be created. Check that its username is unique.');
-    }
+    return fail(c, 410, 'ACCESS_ACCOUNT_AUTO_PROVISIONED', 'New Kairo accounts are provisioned automatically when an email on the Cloudflare Access Allow policy signs in. Do not create a separate username or password.');
   });
 
   app.patch('/api/v1/admin/accounts/:id/access-email', async (c: any) => {
@@ -242,28 +203,8 @@ export function registerAdminRoutes(app: any) {
     return ok(c, { updated: true, status: body.status, sessionsRevoked: body.status === 'suspended' });
   });
 
-  app.post('/api/v1/admin/accounts/:id/password', async (c: any) => {
+  app.post('/api/v1/admin/accounts/:id/password', (c: any) => {
     noStore(c);
-    if (!originAllowed(c)) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
-    const admin = await currentAdmin(c);
-    if (!admin) return fail(c, 404, 'NOT_FOUND', 'Not found.');
-    const body: any = await c.req.json().catch(() => null);
-    if (!passwordOf(body?.password)) return fail(c, 400, 'VALIDATION_ERROR', 'Password must contain at least 15 characters.');
-    try {
-      const target = c.req.param('id');
-      const exists = await c.env.DB.prepare("SELECT id FROM user_profiles WHERE id=? AND role='user' AND account_status IN ('active','suspended')").bind(target).first();
-      if (!exists) return fail(c, 404, 'ACCOUNT_NOT_FOUND', 'That standard account was not found.');
-      const hash = await hashPassword(body.password);
-      await c.env.DB.batch([
-        c.env.DB.prepare("INSERT INTO auth_identities (id,user_id,provider,provider_subject) SELECT ?,id,'email',username FROM user_profiles WHERE id=? AND role='user' AND account_status IN ('active','suspended') ON CONFLICT(user_id,provider) DO NOTHING")
-          .bind(crypto.randomUUID(), target),
-        c.env.DB.prepare("INSERT INTO password_credentials (auth_identity_id,password_hash) SELECT id,? FROM auth_identities WHERE user_id=? AND provider='email' ON CONFLICT(auth_identity_id) DO UPDATE SET password_hash=excluded.password_hash,password_changed_at=CURRENT_TIMESTAMP")
-          .bind(hash, target),
-        c.env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(target),
-      ]);
-      return ok(c, { passwordReset: true, sessionsRevoked: true });
-    } catch {
-      return fail(c, 503, 'ADMIN_UNAVAILABLE', 'The password could not be reset.');
-    }
+    return fail(c, 410, 'ACCESS_SIGN_IN_ONLY', 'Kairo accounts no longer use passwords. Access is controlled by the Cloudflare Access email policy.');
   });
 }

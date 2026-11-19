@@ -46,12 +46,11 @@ describe('session primitives', () => {
     expect(clearSessionCookie()).toContain('Max-Age=0');
     expect(clearSessionCookie(false)).not.toContain('Secure');
   });
-  it('binds sessions to the current verified Cloudflare Access email and blocks admin sessions while locked', async () => {
+  it('binds sessions to the current verified Cloudflare Access email and ignores retired password lockouts', async () => {
     const token = createOpaqueToken();
     const queryLog: Array<{ sql: string; values: unknown[] }> = [];
     const writes: string[] = [];
     let role: 'user' | 'admin' = 'user';
-    let adminLocked = false;
     const db = {
       prepare(sql: string) {
         return {
@@ -60,7 +59,6 @@ describe('session primitives', () => {
               queryLog.push({ sql, values });
               const requestedEmail = values[2] as string | null;
               if (requestedEmail && requestedEmail.toLowerCase() !== 'invited@gmail.com') return null;
-              if (role === 'admin' && adminLocked && sql.includes('admin_login_security')) return null;
               return {
                 userId: 'standard-user',
                 displayName: 'Invited User',
@@ -85,15 +83,15 @@ describe('session primitives', () => {
     expect(user).toMatchObject({ id: 'standard-user', accessEmail: 'invited@gmail.com', role: 'user' });
     expect(queryLog.every(entry => entry.sql.includes('lower(s.access_email)') && entry.sql.includes('lower(p.access_email)'))).toBe(true);
     expect(queryLog[1].values.slice(2)).toEqual(['INVITED@gmail.com', 'INVITED@gmail.com', 'INVITED@gmail.com']);
-    expect(queryLog[1].sql).toContain('NOT EXISTS (');
+    expect(queryLog[1].sql).not.toContain('admin_login_security');
     expect(queryLog[1].sql).toContain("datetime('now', '-60 minutes')");
     expect(queryLog[1].sql).toContain("datetime('now', '-14 days')");
     expect(writes).toHaveLength(1);
     expect(writes[0]).toContain("datetime('now', '-5 minutes')");
 
     role = 'admin';
-    adminLocked = true;
-    await expect(findSessionUser(db, `kairo_session=${token}`, 1234, 'invited@gmail.com')).resolves.toBeNull();
+    const admin = await findSessionUser(db, `kairo_session=${token}`, 1234, 'invited@gmail.com');
+    expect(admin).toMatchObject({ id: 'standard-user', role: 'admin' });
   });
 
 });

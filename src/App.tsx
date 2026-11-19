@@ -124,7 +124,6 @@ export default function App() {
   const activeMobileItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : mobileNavItems;
   const [menuOpen, setMenuOpen] = useState(false);
   const currentUser = account.status === 'signed-in' ? { displayName: account.displayName ?? 'Account', email: account.email, username: account.username } : null;
-  const [authBusy, setAuthBusy] = useState(false);
   const navigate = useNavigate();
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -168,10 +167,10 @@ export default function App() {
 
   useEffect(() => { window.scrollTo({ top: 0, left: 0, behavior: 'auto' }); }, [pathname, search]);
 
-  const logout = async () => {
-    setAuthBusy(true);
-    try { const response=await fetch('/api/v1/auth/logout',{method:'POST',credentials:'same-origin',headers:{Accept:'application/json'}}); const payload=await response.json().catch(()=>null); if(!response.ok||!payload?.success) throw new Error(payload?.error?.message??'Could not sign out.'); window.dispatchEvent(new Event('kairo:auth-change')); setMenuOpen(false); navigate('/login'); }
-    catch(error) { window.alert(error instanceof Error?error.message:'Could not sign out.'); } finally { setAuthBusy(false); }
+  const logout = () => {
+    // Kairo sign-in is the Cloudflare Access session. Clearing only the internal
+    // Kairo cookie would silently recreate it on the next /api/v1/me request.
+    window.location.assign('/cdn-cgi/access/logout');
   };
 
   useEffect(() => {
@@ -193,6 +192,16 @@ export default function App() {
   const closeMenu = (_event?: MouseEvent<HTMLAnchorElement>) => setMenuOpen(false);
 
   if (adminPath && pathname === adminPath) return <AdminOnly><AdminPage /></AdminOnly>;
+  if (account.status === 'denied') {
+    return (
+      <main className="kc-access-denied" style={{ minHeight: '100vh', display: 'grid', placeContent: 'center', padding: 32, textAlign: 'center' }}>
+        <h1>Access not authorized</h1>
+        <p>This Kairo identity is not active. Only email addresses approved in the Kairo Cloudflare Access application can enter.</p>
+        <p>Check that you used the email address you were invited with.</p>
+        <a href="/cdn-cgi/access/logout">Sign out of Cloudflare Access</a>
+      </main>
+    );
+  }
 
   return (
     <div className={`kc-app${pathname === '/' ? ' kc-home-view' : ''}${isYouTubeMode ? ' yt-app' : ''}${isMoviesMode ? ' mv-app' : ''}${isMoviesWatchMode ? ' mv-watch-app' : ''}`}>
@@ -262,7 +271,7 @@ export default function App() {
                 </>}
                 <div className="kc-menu-footer">
                   <Link to="/settings" onClick={closeMenu}><Settings size={15} aria-hidden="true" />Settings</Link>
-                  {currentUser ? <button type="button" onClick={() => void logout()} disabled={authBusy}><LogIn size={15} aria-hidden="true" />{authBusy ? 'Signing out…' : 'Sign out'}</button> : <Link to="/login" onClick={closeMenu}><LogIn size={15} aria-hidden="true" />Login</Link>}
+                  {currentUser ? <button type="button" onClick={logout}><LogIn size={15} aria-hidden="true" />Sign out of Access</button> : <Link to="/login" onClick={closeMenu}><LogIn size={15} aria-hidden="true" />Access help</Link>}
                 </div>
               </section>
             )}

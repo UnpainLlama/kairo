@@ -95,29 +95,31 @@ Ratings are on a 0-10 scale. See docs/PROVIDERS.md.
 | POST | `/api/v1/admin/bootstrap` | One-time administrator provisioning; requires `ADMIN_BOOTSTRAP_TOKEN` and is disabled after an admin exists. |
 | GET | `/api/v1/admin/console-path` | Return the current 30-minute console path to an authenticated administrator only. |
 | GET | `/api/v1/admin/accounts` | List standard accounts, their unique Cloudflare Access email bindings, and the 15-account allocation count. |
-| POST | `/api/v1/admin/accounts` | Create a standard username/password account bound to one approved Access email while below the cap. |
-| PATCH | `/api/v1/admin/accounts/:id/access-email` | Change a standard account's unique Access email and revoke its sessions. |
+| POST | `/api/v1/admin/accounts` | Retired. Returns `410 ACCESS_ACCOUNT_AUTO_PROVISIONED`; standard accounts are created on first approved Access visit. |
+| PATCH | `/api/v1/admin/accounts/:id/access-email` | Change a standard account's unique Access email and revoke its sessions; update the Cloudflare Access Allow policy to match. |
 | PATCH | `/api/v1/admin/accounts/:id/status` | Suspend or reactivate a standard account. |
-| POST | `/api/v1/admin/accounts/:id/password` | Reset a standard account password and revoke its active sessions. |
+| POST | `/api/v1/admin/accounts/:id/password` | Retired. Returns `410 ACCESS_SIGN_IN_ONLY`; Kairo passwords are no longer used. |
 
 All administrator routes verify the session role server-side. The console path is an obscurity layer, not an authentication mechanism. A staging Cron Trigger rotates it every 30 minutes. The database enforces a single administrator role; suspended standard accounts continue to count toward the 15-account allocation limit.
 
 ## 3. Authenticated user routes
 
-Kairo uses closed access: public standard-account registration and Google sign-in are disabled. Cloudflare Access is the outer staging entrance and is configured with exact individual email addresses, not a Gmail-domain wildcard. The Worker verifies the signed Cloudflare Access application JWT (signature, issuer, audience and token times), then checks that its verified email maps to an active Kairo profile on every API request. Each Kairo account and session is bound to that verified Access email. A Kairo username/password is required for personal features; invited visitors may browse the catalogue without entering Kairo credentials; their email must still be assigned to an active Kairo profile.
+Kairo uses Cloudflare Access as its only interactive sign-in authority. The Kairo Access application's Allow policy must list exact email addresses individually; do not allow Everyone or a whole email domain. The Worker verifies the signed Cloudflare Access application JWT (signature, issuer, audience and token times), then provisions or resolves the Kairo profile bound to that verified email. An Access identity without an active profile cannot access account APIs; suspended/deleted accounts are not silently reactivated.
 
-Standard accounts are created by an administrator with a username, password, and unique approved Access email. Changing the assigned email revokes all sessions for that account. The Cloudflare Access allowlist must be maintained separately by the operator.
+Invited users do not enter a Kairo username or password. On first approved visit, the Worker automatically provisions a standard profile (subject to the 15-account allocation limit). Existing active profiles are linked by their verified email without changing their user ID or media data. The first `GET /api/v1/me` automatically creates the internal HttpOnly Kairo session needed by account services. A missing Access assertion is an Access denial, not guest mode.
 
-The single administrator is created once through `POST /api/v1/admin/bootstrap`, protected by the temporary `ADMIN_BOOTSTRAP_TOKEN` Worker secret and current verified Access identity. The endpoint also records permanent bootstrap completion in D1. Administrator login uses username/password and creates an eight-hour session; standard-account sessions retain the existing 30-day lifetime. Five incorrect administrator passwords within the one-hour failure window lock the administrator login until manually cleared in the staging D1 console.
+In local development only, where `ACCESS_ENFORCED` is not `true`, a request with no Kairo session resolves as a guest. Guest media remains browser-local and is never sent to D1. Staging and production are Access-protected.
+
+The single administrator is provisioned once through `POST /api/v1/admin/bootstrap`, protected by the temporary `ADMIN_BOOTSTRAP_TOKEN` Worker secret and current verified Access identity. The endpoint binds the admin profile to that email and records permanent bootstrap completion in D1. It does not create a Kairo password. Remove the bootstrap secret immediately after successful administrator setup.
 
 Authentication routes:
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/v1/auth/login` | Sign in using username/password matched to the current verified Access email. Administrator sessions last eight hours; standard sessions last 30 days. |
-| POST | `/api/v1/admin/bootstrap` | One-time administrator creation; requires the `X-Kairo-Bootstrap` header and the current verified Access email; permanently disabled after initialization. |
+| POST | `/api/v1/auth/login` | Retired. Returns `410 ACCESS_SIGN_IN_ONLY`; use the approved Cloudflare Access email instead. |
+| POST | `/api/v1/admin/bootstrap` | One-time administrator provisioning; requires `X-Kairo-Bootstrap` and the current verified Access email; permanently disabled after initialization. |
 
-The bootstrap token is temporary and should be removed from the staging Worker secrets immediately after successful administrator setup. Passwords are stored as salted PBKDF2 hashes; plaintext passwords are never stored. The current administrator authentication intentionally has no Kairo MFA; see `docs/CLOSED_ACCESS_SETUP.md` for outstanding production security work and the manual lockout recovery procedure.
+Cloudflare Access is the invitation boundary. If its Allow policy is broader than the intended email list, any email accepted by that policy may receive a standard Kairo profile on first visit. The Kairo menu's sign-out action uses `/cdn-cgi/access/logout`; deleting only the internal Kairo cookie is not a full sign-out.
 
 These routes require a valid Kairo session and server-side ownership checks.
 
