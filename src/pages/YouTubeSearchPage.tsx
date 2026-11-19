@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import YouTubeVideoCard, { type YouTubeCardVideo } from '../components/YouTubeVideoCard';
-import { ArrowUpRight, Check, Plus, Search, Youtube } from 'lucide-react';
+import { ArrowUpRight, Check, Plus, Search, Play } from 'lucide-react';
 
 type SearchMode = 'videos' | 'channels';
 type ChannelResult = { channelId: string; title: string; description: string; thumbnailUrl: string | null; url: string; isAdded: boolean };
@@ -227,7 +227,7 @@ export default function YouTubeSearchPage() {
           {channels.map(channel => (
             <article className="yt-result-card" key={channel.channelId}>
               <a href={channel.url} target="_blank" rel="noopener noreferrer" className="yt-result-avatar" aria-label={'Open ' + channel.title + ' on YouTube'}>
-                {channel.thumbnailUrl ? <img src={channel.thumbnailUrl} alt="" loading="lazy" /> : <Youtube size={26} />}
+                {channel.thumbnailUrl ? <img src={channel.thumbnailUrl} alt="" loading="lazy" /> : <Play size={26} />}
               </a>
               <div className="yt-result-copy"><h3><a href={channel.url} target="_blank" rel="noopener noreferrer">{channel.title} <ArrowUpRight size={13} /></a></h3><p>{channel.description || 'YouTube channel'}</p></div>
               <button type="button" className={'yt-button ' + (channel.isAdded ? 'yt-button-added' : 'yt-button-primary')} disabled={channel.isAdded || adding === channel.channelId} onClick={() => void addChannel(channel)}>

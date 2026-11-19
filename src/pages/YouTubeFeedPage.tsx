@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowUpRight, Plus, RefreshCw, Youtube } from 'lucide-react';
+import { ArrowUpRight, Plus, RefreshCw, Play } from 'lucide-react';
 import YouTubeVideoCard, { type YouTubeCardVideo } from '../components/YouTubeVideoCard';
 
 type SavedChannel = { channelId: string; title: string; description: string; thumbnailUrl: string | null; addedAt?: string };
@@ -167,16 +167,16 @@ export default function YouTubeFeedPage() {
         </div>}
 
         {!loading && !error && channels.length === 0 && <div className="yt-empty yt-home-empty">
-          <Youtube size={30} /><h3>Your home feed starts with subscriptions</h3><p>Find creators you enjoy and add their channels. Their latest public uploads will appear here.</p>
+          <Play size={30} /><h3>Your home feed starts with subscriptions</h3><p>Find creators you enjoy and add their channels. Their latest public uploads will appear here.</p>
           <Link to="/youtube/search" className="yt-button yt-button-primary"><Plus size={15} /> Find channels</Link>
         </div>}
 
         {!loading && !error && channels.length > 0 && videos.length === 0 && !nextCursor && <div className="yt-empty">
-          <Youtube size={28} /><h3>No recent uploads yet</h3><p>When your selected channels publish new videos, they’ll appear here.</p>
+          <Play size={28} /><h3>No recent uploads yet</h3><p>When your selected channels publish new videos, they’ll appear here.</p>
         </div>}
 
         {!loading && !error && videos.length > 0 && visibleVideos.length === 0 && <div className="yt-empty">
-          <Youtube size={25} /><h3>No videos from {selectedChannelTitle ?? 'this channel'} yet</h3><p>Choose another channel or switch back to All.</p>
+          <Play size={25} /><h3>No videos from {selectedChannelTitle ?? 'this channel'} yet</h3><p>Choose another channel or switch back to All.</p>
           <button type="button" className="yt-button yt-button-quiet" onClick={() => setSelectedChannel('all')}>Show all videos</button>
         </div>}
 

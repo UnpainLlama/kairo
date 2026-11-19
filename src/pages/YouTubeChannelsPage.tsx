@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Trash2, Youtube } from 'lucide-react';
+import { Plus, Trash2, Play } from 'lucide-react';
 
 type SavedChannel = { channelId: string; title: string; description: string; thumbnailUrl: string | null; addedAt?: string };
 
@@ -51,7 +51,7 @@ export default function YouTubeChannelsPage() {
       <div className="yt-channel-count"><b>{channels.length}</b> channels selected</div>
       {error && <div className="yt-notice" role="alert">{error}</div>}
       {loading && <div className="yt-loading" role="status">Loading your channels…</div>}
-      {!loading && channels.length === 0 && <div className="yt-empty"><Youtube size={28} /><h3>Your channel list is empty</h3><p>Search for creators and add them to your feed. You can change this list whenever you like.</p><Link to="/youtube/search" className="yt-button yt-button-primary">Find channels <Plus size={15} /></Link></div>}
+      {!loading && channels.length === 0 && <div className="yt-empty"><Play size={28} /><h3>Your channel list is empty</h3><p>Search for creators and add them to your feed. You can change this list whenever you like.</p><Link to="/youtube/search" className="yt-button yt-button-primary">Find channels <Plus size={15} /></Link></div>}
       {!loading && channels.length > 0 && <div className="yt-managed-channels">
         {channels.map(channel => <article className="yt-managed-channel" key={channel.channelId}>
           <span className="yt-managed-avatar">{channel.thumbnailUrl ? <img src={channel.thumbnailUrl} alt="" loading="lazy" /> : channel.title.slice(0, 1)}</span>

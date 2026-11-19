@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Clock3, Youtube } from 'lucide-react';
+import { Clock3, Play } from 'lucide-react';
 
 export type YouTubeCardVideo = {
   videoId: string;
@@ -62,7 +62,7 @@ export default function YouTubeVideoCard({ video, relatedVideos = [], channelAva
         state={navigationState}
         aria-label={'Watch ' + video.title + ' in Kairo'}
       >
-        {video.thumbnailUrl ? <img src={video.thumbnailUrl} alt="" loading="lazy" /> : <span><Youtube size={28} /></span>}
+        {video.thumbnailUrl ? <img src={video.thumbnailUrl} alt="" loading="lazy" /> : <span><Play size={28} /></span>}
         {video.durationSeconds != null && <span className="yt-video-duration"><Clock3 size={11} />{formatDuration(video.durationSeconds)}</span>}
       </Link>
       <div className="yt-video-meta">
