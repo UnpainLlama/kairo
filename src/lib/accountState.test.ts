@@ -12,6 +12,10 @@ describe('account response classification', () => {
     expect(resolveAccountResponse(401, undefined, false)).toBe('reauth-required');
   });
 
+  it('reports the full 15-account allocation separately from a rejected identity', () => {
+    expect(resolveAccountResponse(403, 'ACCESS_ACCOUNT_LIMIT_REACHED', false)).toBe('limit-reached');
+  });
+
   it('does not downgrade a rejected identity to guest mode', () => {
     expect(resolveAccountResponse(403, 'ACCESS_ACCOUNT_DISABLED', false)).toBe('denied');
   });
