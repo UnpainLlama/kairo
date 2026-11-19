@@ -88,28 +88,106 @@ describe('Cloudflare Access application JWT verification', () => {
   });
 });
 
-describe('Cloudflare Access invitation status', () => {
-  it('requires an active Kairo invitation for every verified Access identity', async () => {
-    let status: 'active' | 'suspended' = 'active';
+describe('Cloudflare Access account resolution', () => {
+  function memoryDb(initial: Array<{id:string;email:string|null;accessEmail:string|null;accountStatus:string;role:'user'|'admin'}> = [], rejectInsert = false) {
+    const rows = initial.map(row => ({ ...row }));
+    const statements: string[] = [];
     const db = {
+      rows,
+      statements,
       prepare(sql: string) {
+        statements.push(sql);
         return {
-          bind: (email: string) => ({
+          bind: (...values: unknown[]) => ({
             first: async () => {
-              expect(sql).toContain("account_status = 'active'");
-              return email.toLowerCase() === 'invited.user@gmail.com' && status === 'active'
-                ? { id: 'invited-account' }
-                : null;
+              if (sql.includes('WHERE access_email = ?')) {
+                const email = String(values[0]).toLowerCase();
+                const row = rows.find(item => item.accessEmail?.toLowerCase() === email);
+                return row ? { id: row.id, accountStatus: row.accountStatus } : null;
+              }
+              if (sql.includes('WHERE email = ?')) {
+                const email = String(values[0]).toLowerCase();
+                const row = rows.find(item => item.email?.toLowerCase() === email);
+                return row ? { id: row.id, accountStatus: row.accountStatus, accessEmail: row.accessEmail } : null;
+              }
+              return null;
+            },
+            run: async () => {
+              if (sql.includes('UPDATE user_profiles SET access_email')) {
+                const email = String(values[0]);
+                const id = String(values[1]);
+                const row = rows.find(item => item.id === id && item.accessEmail === null);
+                if (row) row.accessEmail = email;
+                return { meta: { changes: row ? 1 : 0 } };
+              }
+              if (sql.includes('INSERT OR IGNORE INTO user_profiles')) {
+                if (rejectInsert) throw new Error('account allocation limit reached');
+                const [id, _identitySubject, _displayName, email, _username, accessEmail] = values as string[];
+                if (!rows.some(item => item.accessEmail?.toLowerCase() === accessEmail.toLowerCase())) {
+                  rows.push({ id, email, accessEmail, accountStatus: 'active', role: 'user' });
+                }
+                return { meta: { changes: 1 } };
+              }
+              return { meta: { changes: 0 } };
             },
           }),
         };
       },
-    } as unknown as D1Database;
+    };
+    return db as unknown as D1Database & { rows: typeof rows; statements: string[] };
+  }
 
-    await expect(hasActiveAccessAccount(db, 'INVITED.USER@gmail.com')).resolves.toBe(true);
-    status = 'suspended';
-    await expect(hasActiveAccessAccount(db, 'invited.user@gmail.com')).resolves.toBe(false);
-    status = 'active';
-    await expect(hasActiveAccessAccount(db, 'someone.else@gmail.com')).resolves.toBe(false);
+  it('keeps an existing active account and preserves its role', async () => {
+    const db = memoryDb([{
+      id: 'admin-account', email: 'admin@gmail.com', accessEmail: 'admin@gmail.com',
+      accountStatus: 'active', role: 'admin',
+    }]);
+    await expect(hasActiveAccessAccount(db, 'ADMIN@gmail.com')).resolves.toBe(true);
+    expect(db.rows).toHaveLength(1);
+    expect(db.rows[0].role).toBe('admin');
+  });
+
+  it('does not reactivate a suspended account', async () => {
+    const db = memoryDb([{
+      id: 'suspended-account', email: 'member@gmail.com', accessEmail: 'member@gmail.com',
+      accountStatus: 'suspended', role: 'user',
+    }]);
+    await expect(hasActiveAccessAccount(db, 'member@gmail.com')).resolves.toBe(false);
+    expect(db.rows).toHaveLength(1);
+  });
+
+  it('automatically provisions a standard account for a verified Access email', async () => {
+    const db = memoryDb();
+    await expect(hasActiveAccessAccount(db, 'New.Member+Kairo@gmail.com')).resolves.toBe(true);
+    expect(db.rows).toHaveLength(1);
+    expect(db.rows[0]).toMatchObject({
+      email: 'new.member+kairo@gmail.com',
+      accessEmail: 'new.member+kairo@gmail.com',
+      accountStatus: 'active',
+      role: 'user',
+    });
+    expect(db.statements.some(sql => sql.includes('INSERT OR IGNORE INTO user_profiles'))).toBe(true);
+  });
+
+  it('links a legacy profile by its email without replacing its account data', async () => {
+    const db = memoryDb([{
+      id: 'legacy-account', email: 'legacy@gmail.com', accessEmail: null,
+      accountStatus: 'active', role: 'user',
+    }]);
+    await expect(hasActiveAccessAccount(db, 'LEGACY@gmail.com')).resolves.toBe(true);
+    expect(db.rows).toHaveLength(1);
+    expect(db.rows[0].id).toBe('legacy-account');
+    expect(db.rows[0].accessEmail).toBe('legacy@gmail.com');
+  });
+
+  it('does not bypass a suspended legacy profile or provisioning failure', async () => {
+    const suspended = memoryDb([{
+      id: 'legacy-account', email: 'legacy@gmail.com', accessEmail: null,
+      accountStatus: 'suspended', role: 'user',
+    }]);
+    await expect(hasActiveAccessAccount(suspended, 'legacy@gmail.com')).resolves.toBe(false);
+
+    const full = memoryDb([], true);
+    await expect(hasActiveAccessAccount(full, 'new.member@gmail.com')).resolves.toBe(false);
   });
 });
