@@ -206,6 +206,7 @@ export function AccountPage({ title }: { title: string }) {
   const [animeLibrary,setAnimeLibrary]=useState<AnimeLibraryRow[]>([]);
   const [animeLibraryLoaded,setAnimeLibraryLoaded]=useState(false);
   const [animeLibraryError,setAnimeLibraryError]=useState('');
+  const [animeLibraryRetry,setAnimeLibraryRetry]=useState(0);
   const pendingConnect=new URLSearchParams(location.search).get('connect');
   const pendingConnectStarted=useRef<string|null>(null);
   useEffect(()=>{
@@ -239,7 +240,7 @@ export function AccountPage({ title }: { title: string }) {
       .catch(error=>{if(active)setAnimeLibraryError(error instanceof Error?error.message:'Could not load your Anime library.')})
       .finally(()=>{if(active)setAnimeLibraryLoaded(true)});
     return()=>{active=false};
-  },[title,user?.id]);
+  },[title,user?.id,animeLibraryRetry]);
 
   const filteredAnimeLibrary=title==='Favorites'
     ? animeLibrary.filter(item=>item.isFavorite===true||Number(item.isFavorite)===1)
@@ -275,8 +276,9 @@ export function AccountPage({ title }: { title: string }) {
   return <><header className="kc-page-head"><h1>{title}</h1></header>
     {isAnimeLibraryPage&&unavailable?<EmptyState title="Account status unavailable">Kairo could not verify your account, so your personal library remains locked. <button type="button" className="kc-link" onClick={retry}>Retry</button></EmptyState>
     :isAnimeLibraryPage&&loaded&&!user?<EmptyState title="Sign in to view your library"><Link className="kc-link" to="/login">Continue with approved email</Link> to view your saved Anime titles.</EmptyState>
+    :isAnimeLibraryPage&&!loaded&&!unavailable?<LoadingState label="Checking your account"/>
     :isAnimeLibraryPage&&user&&!animeLibraryLoaded?<LoadingState label="Loading your Anime library"/>
-    :isAnimeLibraryPage&&animeLibraryError?<EmptyState title="Library unavailable">{animeLibraryError} <button type="button" className="kc-link" onClick={()=>setAnimeLibraryLoaded(false)}>Retry</button></EmptyState>
+    :isAnimeLibraryPage&&animeLibraryError?<EmptyState title="Library unavailable">{animeLibraryError} <button type="button" className="kc-link" onClick={()=>setAnimeLibraryRetry(value=>value+1)}>Retry</button></EmptyState>
     :isAnimeLibraryPage&&user&&filteredAnimeLibrary.length===0?<EmptyState title={title==='Favorites'?'No favorites yet':'Your Anime library is empty'}>Open an Anime title and use its library controls to save it here. <Link className="kc-link" to="/browse/anime">Browse Anime</Link></EmptyState>
     :isAnimeLibraryPage&&user?<section className="kc-account-panel"><ul className="kc-anime-library-list">{filteredAnimeLibrary.map(item=><li key={item.animeId}><Link to={'/anime/'+encodeURIComponent(item.slug)}><strong>{item.title}</strong></Link><span>{item.status.replaceAll('_',' ')}{item.isFavorite===true||Number(item.isFavorite)===1?' · Favorite':''}</span></li>)}</ul></section>
     :title==='Settings'&&unavailable?<EmptyState title="Account status unavailable">Kairo could not verify your account. Your private settings remain locked. <button type="button" className="kc-link" onClick={retry}>Retry</button></EmptyState>
