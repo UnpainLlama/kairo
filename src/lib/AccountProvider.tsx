@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { flushPendingMediaPlayback } from './mediaPlayback';
-import { resolveAccountResponse } from './accountState';
+import { isAccessLoginRedirect, resolveAccountResponse } from './accountState';
 
 export type AccountStatus = 'loading' | 'guest' | 'signed-in' | 'denied' | 'limit-reached' | 'setup-required' | 'reauth-required' | 'unavailable';
 export type KairoAccountState = {
@@ -50,6 +50,18 @@ export function AccountProvider({ children }: { children: ReactNode }) {
           headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
           cache: 'no-store',
         });
+        if (isAccessLoginRedirect({
+          status: response.status,
+          redirected: response.redirected,
+          url: response.url,
+          contentType: response.headers.get('content-type'),
+        })) {
+          if (active) {
+            clearIdentity();
+            setStatus('reauth-required');
+          }
+          return;
+        }
         const payload = await response.json().catch(() => null);
         const errorCode = payload?.error?.code;
         const user = payload?.data?.user;
