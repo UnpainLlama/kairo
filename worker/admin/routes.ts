@@ -9,7 +9,7 @@ const ok = (c: any, data: unknown, status = 200) =>
 
 
 async function currentAdmin(c: any) {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
   return user?.role === 'admin' ? user : null;
 }
 
@@ -125,8 +125,8 @@ export function registerAdminRoutes(app: any) {
     try {
       const uid = crypto.randomUUID(), now = Date.now();
       const results = await c.env.DB.batch([
-        c.env.DB.prepare("INSERT INTO user_profiles (id,identity_subject,display_name,email,email_verified_at,access_email,account_status,role) SELECT ?,?,?,?,?,?, 'active','admin' WHERE EXISTS (SELECT 1 FROM app_security_state WHERE singleton_id=1 AND admin_bootstrap_completed_at IS NULL) AND NOT EXISTS (SELECT 1 FROM user_profiles WHERE role='admin')")
-          .bind(uid, 'cloudflare-admin:' + accessEmail, displayName, accessEmail, new Date(now).toISOString(), accessEmail),
+        c.env.DB.prepare("INSERT INTO user_profiles (id,identity_subject,display_name,email,email_verified_at,access_email,access_subject,account_status,role) SELECT ?,?,?,?,?,?,?, 'active','admin' WHERE EXISTS (SELECT 1 FROM app_security_state WHERE singleton_id=1 AND admin_bootstrap_completed_at IS NULL) AND NOT EXISTS (SELECT 1 FROM user_profiles WHERE role='admin')")
+          .bind(uid, 'cloudflare-admin:' + accessEmail, displayName, accessEmail, new Date(now).toISOString(), accessEmail, c.env.ACCESS_ENFORCED === 'true' ? c.get('accessSubject') : null),
         c.env.DB.prepare("UPDATE app_security_state SET admin_bootstrap_completed_at=? WHERE singleton_id=1 AND admin_bootstrap_completed_at IS NULL AND EXISTS (SELECT 1 FROM user_profiles WHERE id=? AND role='admin')")
           .bind(now, uid),
       ]);
