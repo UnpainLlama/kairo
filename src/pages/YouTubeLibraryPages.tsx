@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowUpRight, Bookmark, History, Trash2, Youtube } from 'lucide-react';
+import { ArrowUpRight, Bookmark, History, Trash2, Play } from 'lucide-react';
 import { useAccountScope } from '../hooks/useAccountScope';
 import { deleteMediaPlayback } from '../lib/mediaPlayback';
 import {
@@ -116,7 +116,7 @@ function YouTubeLibrary({ kind }: { kind: LibraryKind }) {
             return (
               <article className="yt-library-item" key={item.videoId}>
                 <Link to={'/youtube/watch/' + item.videoId} className="yt-library-thumb" aria-label={'Open ' + item.title}>
-                  {item.thumbnailUrl ? <img src={item.thumbnailUrl} alt="" loading="lazy" /> : <Youtube size={24} />}
+                  {item.thumbnailUrl ? <img src={item.thumbnailUrl} alt="" loading="lazy" /> : <Play size={24} />}
                   {kind === 'history' && <span className="yt-library-progress"><i style={{ width: progress + '%' }} /></span>}
                 </Link>
                 <div className="yt-library-copy">
