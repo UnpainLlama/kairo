@@ -128,16 +128,18 @@ async function decryptToken(value: string, encodedKey: string, userId: string, p
   if ((version !== 'v1' && version !== 'v2') || !iv || !ciphertext) {
     throw new Error('Unsupported encrypted token format');
   }
-  const algorithm: AesGcmParams = {
-    name: 'AES-GCM',
-    iv: decodeBase64Url(iv),
-    ...(version === 'v2' ? { additionalData: tokenAad(userId, purpose) } : {}),
-  };
-  const plaintext = await crypto.subtle.decrypt(
-    algorithm,
-    await encryptionKey(encodedKey),
-    decodeBase64Url(ciphertext),
-  );
+  const key = await encryptionKey(encodedKey);
+  const encrypted = decodeBase64Url(ciphertext);
+  const nonce = decodeBase64Url(iv);
+  // v1 is read-only compatibility for existing rows; all new writes use v2
+  // with account and token-purpose AAD to prevent cross-row token substitution.
+  const plaintext = version === 'v2'
+    ? await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: nonce, additionalData: tokenAad(userId, purpose) },
+        key,
+        encrypted,
+      )
+    : await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce }, key, encrypted);
   return new TextDecoder().decode(plaintext);
 }
 function callbackUrl(c: YouTubeContext): string | null {
