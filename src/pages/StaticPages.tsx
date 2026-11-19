@@ -18,7 +18,13 @@ function progressOf(entry: WatchEntry): number {
 function useCurrentUser() {
   const account = useKairoAccount();
   const user: AccountUser | null = account.status === 'signed-in' && account.accountId
-    ? { id: account.accountId, displayName: account.displayName ?? 'Account', email: account.email }
+    ? {
+        id: account.accountId,
+        displayName: account.displayName ?? 'Account',
+        email: account.email,
+        username: account.username,
+        role: account.role ?? undefined,
+      }
     : null;
   return {
     user,
@@ -191,22 +197,13 @@ export function HistoryPage() {
 }
 export function AccountPage({ title }: { title: string }) {
   const location=useLocation();
-  const [user,setUser]=useState<AccountUser|null>(null);
-  const [loaded,setLoaded]=useState(false);
+  const {user,loaded,unavailable,retry}=useCurrentUser();
   const [youtubeConnected,setYoutubeConnected]=useState(false);
   const [youtubeLoaded,setYoutubeLoaded]=useState(false);
   const [youtubeBusy,setYoutubeBusy]=useState(false);
   const [youtubeError,setYoutubeError]=useState('');
   const pendingConnect=new URLSearchParams(location.search).get('connect');
   const pendingConnectStarted=useRef<string|null>(null);
-  useEffect(()=>{
-    let active=true;
-    fetch('/api/v1/me',{credentials:'same-origin'}).then(r=>r.ok?r.json():null)
-      .then(p=>{if(active)setUser(p?.data?.user??null)})
-      .catch(()=>{if(active)setUser(null)})
-      .finally(()=>{if(active)setLoaded(true)});
-    return()=>{active=false};
-  },[location.key]);
   useEffect(()=>{
     if(title!=='Settings'||!user||user.role!=='admin'||pendingConnect!=='youtube')return;
     if(pendingConnectStarted.current===pendingConnect)return;
@@ -250,7 +247,8 @@ export function AccountPage({ title }: { title: string }) {
     finally{setYoutubeBusy(false)}
   }
   return <><header className="kc-page-head"><h1>{title}</h1></header>
-    {title==='Settings'&&loaded&&user?<section className="kc-account-panel">
+    {title==='Settings'&&unavailable?<EmptyState title="Account status unavailable">Kairo could not verify your account. Your private settings remain locked. <button type="button" className="kc-link" onClick={retry}>Retry</button></EmptyState>
+    :title==='Settings'&&loaded&&user?<section className="kc-account-panel">
       <h2>Account</h2><p>Signed in as <strong>{user.email ?? user.displayName}</strong> through Cloudflare Access.</p>
       {user.role==='admin'&&<><h3>YouTube</h3>
       <p>Connect YouTube separately to let Kairo read your subscriptions. This does not change how you sign in to Kairo.</p>
