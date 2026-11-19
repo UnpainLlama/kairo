@@ -29,7 +29,7 @@ function summaryOf(movie: MovieDetail): MovieSummary {
 }
 
 async function loadRemoteMovies(items: RemoteEntry[], signal: AbortSignal): Promise<{ movies: MovieSummary[]; missing: number }> {
-  const refs = items.filter(item => item.providerId === 'tmdb' && /^\d{1,12}$/.test(item.externalId)).slice(0, 100);
+  const refs = items.filter(item => item.providerId === 'tmdb' && /^\d{1,12}$/.test(item.externalId)).slice(0, 200);
   const movies: MovieSummary[] = [];
   for (let offset = 0; offset < refs.length; offset += 8) {
     const loaded = await Promise.all(refs.slice(offset, offset + 8).map(ref =>
