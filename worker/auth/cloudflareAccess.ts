@@ -199,7 +199,7 @@ export async function verifyCloudflareAccessAssertion(
 export async function hasActiveAccessAccount(db: D1Database, emailValue: string, subjectValue?: string | null): Promise<boolean> {
   const email = normalizeAccessEmail(emailValue);
   const subject = typeof subjectValue === 'string' ? subjectValue.trim() : '';
-  if (!email || !subject || subject.length > 255 || /[\\u0000-\\u001f]/.test(subject)) return false;
+  if (!email || !subject || subject.length > 255 || /[\u0000-\u001f]/.test(subject)) return false;
 
   async function bindExistingProfile(id: string, existingSubject: string | null, accountStatus: string): Promise<boolean> {
     if (accountStatus !== 'active' || (existingSubject && existingSubject !== subject)) return false;
@@ -269,7 +269,7 @@ export async function hasActiveAccessAccount(db: D1Database, emailValue: string,
   const localPart = (email.split('@')[0] ?? '').split('+')[0];
   const displayName = localPart
     .replace(/[._-]+/g, ' ')
-    .replace(/\\s+/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 40) || 'Kairo member';
 
