@@ -55,6 +55,37 @@ function validateTarget(config, target, requireValues) {
   if (!vars || vars.ACCESS_ENFORCED !== 'true') {
     throw new Error(`${target}: ACCESS_ENFORCED must be the string "true".`);
   }
+
+  const appBaseUrl = vars.APP_BASE_URL;
+  const googleClientId = vars.GOOGLE_CLIENT_ID;
+  const appBasePlaceholder = `REPLACE_WITH_${target.toUpperCase()}_APP_BASE_URL`;
+  const googleClientPlaceholder = `REPLACE_WITH_${target.toUpperCase()}_GOOGLE_CLIENT_ID`;
+  if (typeof appBaseUrl !== 'string' || !appBaseUrl.trim() ||
+      typeof googleClientId !== 'string' || !googleClientId.trim()) {
+    throw new Error(`${target}: APP_BASE_URL and GOOGLE_CLIENT_ID must be declared in this environment's vars block.`);
+  }
+  const isAppBasePlaceholder = appBaseUrl === appBasePlaceholder;
+  const isGoogleClientPlaceholder = googleClientId === googleClientPlaceholder;
+  if (requireValues && (appBaseUrl.startsWith('REPLACE_WITH_') || googleClientId.startsWith('REPLACE_WITH_'))) {
+    throw new Error(`${target}: replace APP_BASE_URL and GOOGLE_CLIENT_ID placeholders before deployment.`);
+  }
+  if (!requireValues && (appBaseUrl.startsWith('REPLACE_WITH_') || googleClientId.startsWith('REPLACE_WITH_'))) {
+    if (!isAppBasePlaceholder || !isGoogleClientPlaceholder) {
+      throw new Error(`${target}: only exact APP_BASE_URL and GOOGLE_CLIENT_ID placeholders are allowed before deployment.`);
+    }
+    console.log(`${target}: APP_BASE_URL and Google OAuth client ID placeholders await environment provisioning.`);
+  } else {
+    let base;
+    try { base = new URL(appBaseUrl); }
+    catch { throw new Error(`${target}: APP_BASE_URL must be an absolute URL.`); }
+    if (base.protocol !== 'https:' || base.username || base.password || base.port ||
+        base.pathname !== '/' || base.search || base.hash) {
+      throw new Error(`${target}: APP_BASE_URL must be an HTTPS origin without a path, query, or fragment.`);
+    }
+    if (!/^[0-9]+-[A-Za-z0-9_-]+\\.apps\\.googleusercontent\\.com$/.test(googleClientId)) {
+      throw new Error(`${target}: GOOGLE_CLIENT_ID must be a Google OAuth Web client ID.`);
+    }
+  }
   const teamDomain = vars.ACCESS_TEAM_DOMAIN;
   const audience = vars.ACCESS_AUD;
   if (typeof teamDomain !== 'string' || !teamDomain.trim() ||
