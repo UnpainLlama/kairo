@@ -16,3 +16,19 @@ export function resolveAccountResponse(
   if (status >= 200 && status < 300 && hasValidUser) return 'signed-in';
   return 'unavailable';
 }
+/** Cloudflare Access can redirect fetch() to its HTML login page before the Worker returns JSON. */
+export function isAccessLoginRedirect(response: {
+  status: number;
+  redirected: boolean;
+  url: string;
+  contentType: string | null;
+}): boolean {
+  const finalPath = (() => {
+    try { return new URL(response.url).pathname; }
+    catch { return ''; }
+  })();
+  return response.redirected && (
+    finalPath.startsWith('/cdn-cgi/access/') ||
+    response.contentType?.toLowerCase().includes('text/html') === true
+  );
+}
