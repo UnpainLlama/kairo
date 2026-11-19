@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { flushPendingMediaPlayback } from './mediaPlayback';
 import { resolveAccountResponse } from './accountState';
 
@@ -23,6 +23,9 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState<string | null>(null);
   const [username, setUsername] = useState<string | null>(null);
   const [role, setRole] = useState<'user' | 'admin' | null>(null);
+  const accountIdRef = useRef(accountId);
+
+  useEffect(() => { accountIdRef.current = accountId; }, [accountId]);
 
   useEffect(() => {
     let active = true;
@@ -73,7 +76,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         }
       } catch {
         // A transient network failure must not discard a previously verified identity.
-        if (active) setStatus(accountId ? 'signed-in' : 'unavailable');
+        if (active) setStatus(accountIdRef.current ? 'signed-in' : 'unavailable');
       }
     };
 
