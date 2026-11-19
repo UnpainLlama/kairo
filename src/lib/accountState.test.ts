@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveAccountResponse } from './accountState';
+import { isAccessLoginRedirect, resolveAccountResponse } from './accountState';
 
 describe('account response classification', () => {
   it('keeps first-admin setup distinct from guest mode', () => {
@@ -25,5 +25,26 @@ describe('account response classification', () => {
     expect(resolveAccountResponse(200, undefined, true)).toBe('signed-in');
     expect(resolveAccountResponse(200, undefined, false)).toBe('unavailable');
     expect(resolveAccountResponse(503, 'ACCOUNT_SESSION_UNAVAILABLE', false)).toBe('unavailable');
+  });
+});
+
+
+describe('Access login redirect detection', () => {
+  it('recognises a redirected Access HTML login response', () => {
+    expect(isAccessLoginRedirect({
+      status: 200,
+      redirected: true,
+      url: 'https://kairo.example/cdn-cgi/access/login',
+      contentType: 'text/html; charset=utf-8',
+    })).toBe(true);
+  });
+
+  it('does not mistake a normal JSON API response for an Access login', () => {
+    expect(isAccessLoginRedirect({
+      status: 200,
+      redirected: false,
+      url: 'https://kairo.example/api/v1/me',
+      contentType: 'application/json',
+    })).toBe(false);
   });
 });
