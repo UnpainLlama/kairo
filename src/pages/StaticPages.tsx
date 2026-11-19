@@ -85,7 +85,22 @@ export function ProfilePage() {
   const {user,loaded,unavailable,retry}=useCurrentUser();
   const [history,setHistory]=useState<WatchEntry[]>(()=>readHistory(null)); const [historyScope,setHistoryScope]=useState<string|null>(null); const [playbackItems,setPlaybackItems]=useState<MediaPlaybackSnapshot[]>([]); const [libraryCount,setLibraryCount]=useState<number|null>(null);
   const [error,setError]=useState(''); const [busy,setBusy]=useState(false);
-  useEffect(()=>{let active=true;fetch('/api/v1/me/library',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(p=>{if(active)setLibraryCount(Array.isArray(p?.data?.items)?p.data.items.length:0)}).catch(()=>{if(active)setLibraryCount(null)});return()=>{active=false}},[user?.id]);
+  useEffect(()=>{
+    let active=true;
+    if(!user){setLibraryCount(0);return()=>{active=false};}
+    const countFor=async(path:string):Promise<number|null>=>{
+      try{
+        const response=await fetch(path,{credentials:'same-origin',headers:{Accept:'application/json'},cache:'no-store'});
+        const payload=response.ok?await response.json():null;
+        return payload?.success&&Array.isArray(payload?.data?.items)?payload.data.items.length:null;
+      }catch{return null;}
+    };
+    Promise.all([countFor('/api/v1/me/library'),countFor('/api/v1/me/movies/library')]).then(([anime,movies])=>{
+      if(!active)return;
+      setLibraryCount(anime===null&&movies===null?null:(anime??0)+(movies??0));
+    });
+    return()=>{active=false};
+  },[user?.id]);
   useEffect(()=>{let active=true;const scope=user?.id??null;setHistoryScope(scope);setHistory(readHistory(scope));if(user?.id)syncWatchHistory(user.id).then(items=>{if(active&&items)setHistory(items)});return()=>{active=false}},[user?.id]);
   useEffect(()=>{const refresh=()=>setHistory(readHistory(user?.id??null));window.addEventListener('storage',refresh);window.addEventListener('kairo:history-change',refresh);return()=>{window.removeEventListener('storage',refresh);window.removeEventListener('kairo:history-change',refresh)}},[user?.id]);
   useEffect(()=>{
@@ -157,7 +172,7 @@ export function ProfilePage() {
     <div className="kc-profile-stats">
       <article><span><Clock size={17}/></span><b>{watched}</b><small>Recent episodes</small></article>
       <article><span><Play size={17}/></span><b>{completed}</b><small>Completed episodes</small></article>
-      <article><span><Heart size={17}/></span><b>{libraryCount===null?'—':libraryCount}</b><small>Library titles</small></article>
+      <article><span><Heart size={17}/></span><b>{libraryCount===null?'—':libraryCount}</b><small>Anime &amp; Movies titles</small></article>
     </div>
     <div className="kc-profile-content">
       <div className="kc-profile-section-head"><div><span className="kc-section-kicker">YOUR ACTIVITY</span><h2>Continue watching</h2></div><Link className="kc-more" to="/history">Anime history <ArrowUpDown size={14}/></Link></div>
