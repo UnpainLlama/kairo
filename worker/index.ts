@@ -2,7 +2,7 @@
 import { Hono, type Context, type Next } from 'hono';
 import { cors } from 'hono/cors';
 import { boundedInt, parseId, parsePagination, parseSearchParams } from './lib/validation';
-import { clearSessionCookie, createSession, findSessionUser, revokeSession, sessionCookie } from './auth/session';
+import { clearSessionCookie, createSession, findSessionUser, readSessionCookie, revokeSession, sessionCookie } from './auth/session';
 import { registerAuthRoutes } from './auth/routes';
 import { registerYouTubeMediaRoutes } from './youtube/routes';
 import { registerAdminRoutes, rotateAdminConsolePath } from './admin/routes';
@@ -118,6 +118,7 @@ app.use('/api/*', async (c, next) => {
     { ACCESS_TEAM_DOMAIN: teamDomain, ACCESS_AUD: audience },
   );
   if (!identity) {
+    c.header('Set-Cookie', clearSessionCookie(new URL(c.req.url).protocol === 'https:'));
     return c.json({ success: false, error: { code: 'ACCESS_REQUIRED', message: 'A valid approved Cloudflare Access identity is required.' } }, 401);
   }
   c.set('accessEmail', identity.email);
@@ -612,7 +613,17 @@ app.get('/api/v1/me', async (c) => {
   // account-scoped APIs (history, libraries, playback and YouTube OAuth) retain a
   // stable user id without asking the user for a second username/password.
   if (c.env.ACCESS_ENFORCED === 'true') {
-    if (!accessEmail) return fail(c, 401, 'ACCESS_REQUIRED', 'Authenticate with your approved email through Cloudflare Access.');
+    if (!accessEmail) {
+      c.header('Set-Cookie', clearSessionCookie(new URL(c.req.url).protocol === 'https:'));
+      return fail(c, 401, 'ACCESS_REQUIRED', 'Authenticate with your approved email through Cloudflare Access.');
+    }
+    // A present but invalidated Kairo cookie means the session expired or was revoked.
+    // Do not silently mint a replacement for an already-authenticated Access browser:
+    // require a fresh Access login, especially for the shorter administrator idle window.
+    if (readSessionCookie(cookieHeader)) {
+      c.header('Set-Cookie', clearSessionCookie(new URL(c.req.url).protocol === 'https:'));
+      return fail(c, 401, 'ACCESS_REAUTH_REQUIRED', 'Your Kairo session expired. Reauthenticate through Cloudflare Access to continue.');
+    }
     try {
       // First-time provisioning belongs to /me, not arbitrary API middleware.
       if (!await hasActiveAccessAccount(c.env.DB, accessEmail, c.get('accessSubject') as string | null | undefined)) {
