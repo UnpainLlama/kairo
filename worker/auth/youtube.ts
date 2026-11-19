@@ -520,7 +520,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
 
   app.get('/api/v1/auth/youtube/status', async (c: YouTubeContext) => {
     const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined, c.get?.('accessSubject') as string | null | undefined);
-    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to manage YouTube.' } }, 401);
+    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'A Kairo administrator session is required to manage YouTube.' } }, 401);
     try {
       const row = await c.env.DB.prepare(
         "SELECT connected_at,updated_at,scopes_json FROM provider_connections WHERE user_id=? AND provider='youtube' LIMIT 1"
@@ -539,7 +539,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
       return c.json({ success: false, error: { code: 'ORIGIN_FORBIDDEN', message: 'This request origin is not allowed.' } }, 403);
     }
     const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined, c.get?.('accessSubject') as string | null | undefined);
-    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to manage YouTube.' } }, 401);
+    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'A Kairo administrator session is required to manage YouTube.' } }, 401);
     try {
       const row = await c.env.DB.prepare(
         "SELECT encrypted_refresh_token FROM provider_connections WHERE user_id=? AND provider='youtube' LIMIT 1"
@@ -563,7 +563,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
   app.get('/api/v1/youtube/channels', async (c: YouTubeContext) => {
     c.header('Cache-Control', 'no-store');
     const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined, c.get?.('accessSubject') as string | null | undefined);
-    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to manage your Kairo channels.' } }, 401);
+    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'A Kairo administrator session is required to manage your Kairo channels.' } }, 401);
     try {
       const result = await c.env.DB.prepare(
         "SELECT channel_id AS channelId, channel_title AS title, description, thumbnail_url AS thumbnailUrl, added_at AS addedAt FROM youtube_feed_channels WHERE user_id=? ORDER BY added_at DESC, channel_title COLLATE NOCASE"
@@ -578,7 +578,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
   app.get('/api/v1/youtube/channels/search', async (c: YouTubeContext) => {
     c.header('Cache-Control', 'no-store');
     const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined, c.get?.('accessSubject') as string | null | undefined);
-    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to search YouTube channels.' } }, 401);
+    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'A Kairo administrator session is required to search YouTube channels.' } }, 401);
     const term = new URL(c.req.url).searchParams.get('q')?.trim() ?? '';
     if (term.length < 2 || term.length > 80 || /[\u0000-\u001F\u007F]/.test(term)) {
       return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Enter a channel name or topic between 2 and 80 characters.' } }, 400);
@@ -741,7 +741,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
       return c.json({ success: false, error: { code: 'ORIGIN_FORBIDDEN', message: 'This request origin is not allowed.' } }, 403);
     }
     const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined, c.get?.('accessSubject') as string | null | undefined);
-    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to add channels.' } }, 401);
+    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'A Kairo administrator session is required to add channels.' } }, 401);
     let body: any;
     try { body = await c.req.json(); } catch { return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Provide valid JSON.' } }, 400); }
     const channelId = typeof body?.channelId === 'string' ? body.channelId.trim() : '';
@@ -785,7 +785,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
       return c.json({ success: false, error: { code: 'ORIGIN_FORBIDDEN', message: 'This request origin is not allowed.' } }, 403);
     }
     const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined, c.get?.('accessSubject') as string | null | undefined);
-    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to remove channels.' } }, 401);
+    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'A Kairo administrator session is required to remove channels.' } }, 401);
     const channelId = c.req.param('channelId');
     if (!/^[A-Za-z0-9_-]{6,64}$/.test(channelId)) {
       return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Choose a valid YouTube channel.' } }, 400);
@@ -802,7 +802,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
   app.get('/api/v1/youtube/feed', async (c: YouTubeContext) => {
     c.header('Cache-Control', 'no-store');
     const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined, c.get?.('accessSubject') as string | null | undefined);
-    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to view your Kairo feed.' } }, 401);
+    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'A Kairo administrator session is required to view your Kairo feed.' } }, 401);
     if (!await allowYouTubeRequest(c, user.id, 'feed-page', 30)) {
       return c.json({ success: false, error: { code: 'RATE_LIMITED', message: 'Your feed is loading too quickly. Please try again in 15 minutes.' } }, 429);
     }
