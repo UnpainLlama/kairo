@@ -325,7 +325,7 @@ app.post('/api/v1/movies/ingest', async (c) => {
     return fail(c, 503, 'MOVIES_INGESTION_DISABLED', 'Movie ingestion is disabled until the metadata provider terms and persistence rules are approved.');
   }
   const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to continue.');
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to continue.');
   if (user.role !== 'admin') return fail(c, 403, 'ADMIN_REQUIRED', 'Administrator access is required.');
   const body: unknown = await c.req.json().catch(() => null);
   if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(c, 400, 'VALIDATION_ERROR', 'A JSON request body is required.');
@@ -364,7 +364,7 @@ app.post('/api/v1/movies/ingest/:externalId', async (c) => {
     return fail(c, 503, 'MOVIES_INGESTION_DISABLED', 'Movie ingestion is disabled until the metadata provider terms and persistence rules are approved.');
   }
   const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to continue.');
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to continue.');
   if (user.role !== 'admin') return fail(c, 403, 'ADMIN_REQUIRED', 'Administrator access is required.');
   const externalId = c.req.param('externalId');
   try {
@@ -677,7 +677,7 @@ app.get('/api/v1/me', async (c) => {
 
 app.get('/api/v1/me/playback', async (c) => {
   const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to restore playback progress.');
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to restore playback progress.');
   const mediaType = c.req.query('mediaType');
   const mediaKey = c.req.query('mediaKey');
   if (mediaType && !['anime', 'movie', 'youtube'].includes(mediaType)) return fail(c, 400, 'VALIDATION_ERROR', 'The media type is invalid.');
@@ -719,7 +719,7 @@ app.delete('/api/v1/me/playback', async (c) => {
   const origin = c.req.header('Origin');
   if (origin && origin !== new URL(c.req.url).origin) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
   const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to delete playback progress.');
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to delete playback progress.');
   const mediaType = c.req.query('mediaType');
   const mediaKey = c.req.query('mediaKey');
   if (!mediaType || !['anime', 'movie', 'youtube'].includes(mediaType) ||
@@ -742,7 +742,7 @@ app.post('/api/v1/me/playback', async (c) => {
   const origin = c.req.header('Origin');
   if (origin && origin !== new URL(c.req.url).origin) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
   const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync playback progress.');
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to sync playback progress.');
   let body: unknown;
   try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
   if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(c, 400, 'VALIDATION_ERROR', 'Provide a playback progress record.');
@@ -809,7 +809,7 @@ app.post('/api/v1/me/playback', async (c) => {
 
 app.get('/api/v1/me/history/sync', async (c) => {
   const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to restore watch history.');
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to restore watch history.');
   const slug = c.req.query('slug');
   const episodeNumber = c.req.query('episodeNumber');
   try {
@@ -861,7 +861,7 @@ app.post('/api/v1/me/history/sync', async (c) => {
     return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
   }
   const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync watch history.');
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to sync watch history.');
   let body: unknown;
   try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
   const request = body as { items?: unknown; deleted?: unknown; clear?: unknown } | null;
@@ -954,7 +954,7 @@ app.post('/api/v1/me/history/sync', async (c) => {
 
 app.put('/api/v1/me/library/:animeId', async (c) => {
   const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to update your Anime library.');
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to update your Anime library.');
   const animeId = parseId(c.req.param('animeId'));
   if (!animeId) return fail(c, 400, 'VALIDATION_ERROR', 'The Anime identifier is invalid.');
   let body: unknown;
@@ -989,7 +989,7 @@ app.put('/api/v1/me/library/:animeId', async (c) => {
 
 app.delete('/api/v1/me/library/:animeId', async (c) => {
   const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to update your Anime library.');
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to update your Anime library.');
   const animeId = parseId(c.req.param('animeId'));
   if (!animeId) return fail(c, 400, 'VALIDATION_ERROR', 'The Anime identifier is invalid.');
   try {
@@ -1003,7 +1003,7 @@ app.delete('/api/v1/me/library/:animeId', async (c) => {
 
 app.get('/api/v1/me/movies/library', async (c) => {
   const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your Movies library.');
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to access your Movies library.');
   try {
     const result = await c.env.DB.prepare(`
       SELECT provider_id AS providerId, external_id AS externalId, status,
@@ -1024,7 +1024,7 @@ app.post('/api/v1/me/movies/library', async (c) => {
     return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
   }
   const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync your Movies library.');
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to sync your Movies library.');
   let body: unknown;
   try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
   if (!body || typeof body !== 'object') return fail(c, 400, 'VALIDATION_ERROR', 'Provide a movie library entry.');
@@ -1068,7 +1068,7 @@ app.delete('/api/v1/me/movies/library/:providerId/:externalId', async (c) => {
     return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
   }
   const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to manage your Movies library.');
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to manage your Movies library.');
   const providerId = c.req.param('providerId').trim().toLowerCase();
   const externalId = c.req.param('externalId').trim();
   if (providerId !== 'tmdb' || !/^\d{1,12}$/.test(externalId)) {
@@ -1087,7 +1087,7 @@ app.delete('/api/v1/me/movies/library/:providerId/:externalId', async (c) => {
 
 app.get('/api/v1/me/library', async (c) => {
   const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your library.');
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to access your library.');
   try {
     const result = await c.env.DB.prepare(
       `SELECT l.anime_id AS animeId, l.status, l.is_favorite AS isFavorite,
