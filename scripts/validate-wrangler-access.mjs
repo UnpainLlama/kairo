@@ -82,7 +82,7 @@ function validateTarget(config, target, requireValues) {
         base.pathname !== '/' || base.search || base.hash) {
       throw new Error(`${target}: APP_BASE_URL must be an HTTPS origin without a path, query, or fragment.`);
     }
-    if (!/^[0-9]+-[A-Za-z0-9_-]+\\.apps\\.googleusercontent\\.com$/.test(googleClientId)) {
+    if (!/^[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$/.test(googleClientId)) {
       throw new Error(`${target}: GOOGLE_CLIENT_ID must be a Google OAuth Web client ID.`);
     }
   }
