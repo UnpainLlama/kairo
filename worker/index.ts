@@ -566,7 +566,7 @@ app.get('/api/v1/anime/:id/metadata', async (c) => {
 app.get('/api/v1/me', async (c) => {
   const accessEmail = c.get('accessEmail') as string | null | undefined;
   const cookieHeader = c.req.header('Cookie') ?? null;
-  const existing = await findSessionUser(c.env.DB, cookieHeader, Date.now(), accessEmail);
+  const existing = await findSessionUser(c.env.DB, cookieHeader, Date.now(), accessEmail, c.get('accessSubject') as string | null | undefined);
   if (existing) return ok(c, { user: existing }, { authProvider: c.env.ACCESS_ENFORCED === 'true' ? 'cloudflare_access' : 'local_session' });
 
   // In the closed-access deployment, Cloudflare Access is the only interactive
@@ -601,7 +601,7 @@ app.get('/api/v1/me', async (c) => {
         accessSubject: c.get('accessSubject') as string | null | undefined,
       });
       c.header('Set-Cookie', sessionCookie(session.token, new URL(c.req.url).protocol === 'https:', session.ttlSeconds));
-      const user = await findSessionUser(c.env.DB, `kairo_session=${session.token}`, Date.now(), accessEmail);
+      const user = await findSessionUser(c.env.DB, `kairo_session=${session.token}`, Date.now(), accessEmail, c.get('accessSubject') as string | null | undefined);
       if (!user) return fail(c, 503, 'ACCOUNT_SESSION_UNAVAILABLE', 'Your Kairo account was found but its session could not be established.');
       return ok(c, { user }, { authProvider: 'cloudflare_access', sessionCreated: true });
     } catch (error) {
