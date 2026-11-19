@@ -75,7 +75,7 @@ type ResolveSpec<T> = {
   key: string;
   ttl: { fresh: number; stale: number };
   candidates: Candidate<T>[];
-  /** Search may continue to the next catalogue when a provider successfully returns zero matches. */
+  /** Text search may continue to the next catalogue when a provider returns zero matches. */
   fallbackWhenEmpty?: (value: T) => boolean;
 };
 
@@ -162,8 +162,9 @@ export function browse(deps: Deps, q: BrowseQuery): Promise<Outcome<Paged>> {
     key: `${liveCacheScope(deps)}:browse:${encodeURIComponent(key)}`,
     ttl: q.q ? TTL.search : TTL.list,
     candidates: deps.sources.map((source) => ({ source, run: (signal) => source.browse(q, signal) })),
-    // Any empty filtered browse can reflect an upstream coverage gap (e.g. MAL has no hiatus filter).
-    fallbackWhenEmpty: (value) => value.items.length === 0,
+    // AniList supports the full season/genre/status filter set, so an empty result there is authoritative.
+    // Keep empty-result fallback for text searches and when a less capable provider is explicitly first.
+    fallbackWhenEmpty: (value) => value.items.length === 0 && (Boolean(q.q?.trim()) || deps.sources[0]?.id !== 'anilist'),
   });
 }
 
@@ -371,8 +372,8 @@ const FACTORIES: Record<SourceId, (f: FetchLike, baseUrl?: string, malClientId?:
 };
 
 export function parseSourceList(csv: string | undefined): SourceId[] {
-  const wanted = (csv ?? 'mal,anilist').split(',').map((s) => s.trim().toLowerCase()).filter((s): s is SourceId => s in FACTORIES);
-  return wanted.length > 0 ? [...new Set(wanted)] : ['mal', 'anilist'];
+  const wanted = (csv ?? 'anilist,mal').split(',').map((s) => s.trim().toLowerCase()).filter((s): s is SourceId => s in FACTORIES);
+  return wanted.length > 0 ? [...new Set(wanted)] : ['anilist', 'mal'];
 }
 
 export function buildDeps(env: LiveEnv, fetchImpl: FetchLike, onError?: Deps['onError']): Deps {
