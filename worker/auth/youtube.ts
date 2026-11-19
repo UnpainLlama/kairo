@@ -111,16 +111,30 @@ function encryptionKey(encoded: string): Promise<CryptoKey> {
   const bytes = decodeBase64Url(encoded);
   return crypto.subtle.importKey('raw', bytes, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
 }
-async function encryptToken(token: string, encodedKey: string): Promise<string> {
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await encryptionKey(encodedKey), enc.encode(token));
-  return `v1.${base64Url(iv)}.${base64Url(new Uint8Array(ciphertext))}`;
+function tokenAad(userId: string, purpose: 'access' | 'refresh'): Uint8Array {
+  return enc.encode(`kairo:youtube-token:v2:${userId}:${purpose}`);
 }
-async function decryptToken(value: string, encodedKey: string): Promise<string> {
+async function encryptToken(token: string, encodedKey: string, userId: string, purpose: 'access' | 'refresh'): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv, additionalData: tokenAad(userId, purpose) },
+    await encryptionKey(encodedKey),
+    enc.encode(token),
+  );
+  return `v2.${base64Url(iv)}.${base64Url(new Uint8Array(ciphertext))}`;
+}
+async function decryptToken(value: string, encodedKey: string, userId: string, purpose: 'access' | 'refresh'): Promise<string> {
   const [version, iv, ciphertext] = value.split('.');
-  if (version !== 'v1' || !iv || !ciphertext) throw new Error('Unsupported encrypted token format');
+  if ((version !== 'v1' && version !== 'v2') || !iv || !ciphertext) {
+    throw new Error('Unsupported encrypted token format');
+  }
+  const algorithm: AesGcmParams = {
+    name: 'AES-GCM',
+    iv: decodeBase64Url(iv),
+    ...(version === 'v2' ? { additionalData: tokenAad(userId, purpose) } : {}),
+  };
   const plaintext = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: decodeBase64Url(iv) },
+    algorithm,
     await encryptionKey(encodedKey),
     decodeBase64Url(ciphertext),
   );
@@ -468,16 +482,20 @@ export function registerYouTubeAuthRoutes(app: any): void {
         return redirectTo(c, '/settings?youtube=invalid_grant');
       }
       callbackStage = 'refresh_token_encryption';
-      const encryptedRefresh = tokens.refresh_token
-        ? await encryptToken(tokens.refresh_token, key!)
-        : existing?.encrypted_refresh_token;
-      if (!encryptedRefresh) {
+      let refreshToken = tokens.refresh_token ?? null;
+      if (!refreshToken && existing?.encrypted_refresh_token) {
+        callbackStage = 'legacy_refresh_token_migration';
+        refreshToken = await decryptToken(existing.encrypted_refresh_token, key!, user.id, 'refresh');
+      }
+      if (!refreshToken) {
         logYouTubeDiagnostic(c, 'youtube_refresh_token_missing', { newRefreshTokenPresent: false, existingRefreshTokenPresent: Boolean(existing?.encrypted_refresh_token) });
         return redirectTo(c, '/settings?youtube=refresh_token_missing');
       }
 
+      callbackStage = 'refresh_token_encryption';
+      const encryptedRefresh = await encryptToken(refreshToken, key!, user.id, 'refresh');
       callbackStage = 'access_token_encryption';
-      const encryptedAccess = await encryptToken(tokens.access_token!, key!);
+      const encryptedAccess = await encryptToken(tokens.access_token!, key!, user.id, 'access');
       callbackStage = 'connection_persist';
       await c.env.DB.prepare(`
         INSERT INTO provider_connections
@@ -526,7 +544,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
       ).bind(user.id).first<{ encrypted_refresh_token: string | null }>();
       if (row?.encrypted_refresh_token && c.env.YOUTUBE_TOKEN_ENCRYPTION_KEY) {
         try {
-          const token = await decryptToken(row.encrypted_refresh_token, c.env.YOUTUBE_TOKEN_ENCRYPTION_KEY);
+          const token = await decryptToken(row.encrypted_refresh_token, c.env.YOUTUBE_TOKEN_ENCRYPTION_KEY, user.id, 'refresh');
           await fetch(REVOKE_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token }) });
         } catch { /* Local credential removal must succeed even if Google's revoke endpoint is unavailable. */ }
       }
