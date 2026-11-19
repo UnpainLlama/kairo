@@ -90,6 +90,7 @@ Open these in a browser (replace the host with your staging URL):
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | GitHub environment **secrets** | GitHub only | Deploying. Never in the repo or the Worker |
 | `STAGING_DEPLOY_ENABLED` | GitHub variable | GitHub | Auto-deploy staging on merge to main |
 | `STAGING_URL`, `PRODUCTION_URL` | GitHub variables, optional | GitHub | Environment-specific fallback URL if the deploy log URL cannot be read; a production check never falls back to the staging URL |
+| `KAIRO_REMOTE_HEALTH_CHECKS_ENABLED=true` | GitHub environment variable | GitHub | Required for staging and production deploys. Configure exact Access destination overrides for `/api/health` and `/api/ready` first; the deploy is blocked unless both live probes return healthy JSON. |
 | `KAIRO_REMOTE_HEALTH_CHECKS_ENABLED` | GitHub Actions variable, optional | Repository or environment | Set to `true` only when both probe paths have exact public Cloudflare Access overrides; otherwise remote anonymous probes are skipped |
 | `PRODUCTION_DEPLOY_APPROVED` | GitHub variable | GitHub | Must be `true` for any production deploy. **Do not set.** |
 
