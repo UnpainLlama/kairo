@@ -18,6 +18,7 @@ type SessionRow = {
   email: string | null;
   username: string | null;
   accessEmail: string | null;
+  accessSubject: string | null;
   emailVerifiedAt: string | null;
   role: 'user' | 'admin';
 };
