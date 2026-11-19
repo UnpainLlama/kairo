@@ -26,12 +26,18 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true;
     const refresh = () => setAttempt((value) => value + 1);
-    setStatus('loading');
-    setAccountId(null);
-    setDisplayName(null);
-    setEmail(null);
-    setUsername(null);
-    setRole(null);
+    // Keep the last verified identity while revalidating. In particular, a
+    // window-focus event must not briefly turn a signed-in user into a guest
+    // or unmount account-scoped media players.
+    if (!accountId) setStatus('loading');
+
+    const clearIdentity = () => {
+      setAccountId(null);
+      setDisplayName(null);
+      setEmail(null);
+      setUsername(null);
+      setRole(null);
+    };
 
     const load = async () => {
       try {
@@ -45,7 +51,10 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         if (response.status === 401 && errorCode === 'AUTH_REQUIRED') {
           // Local development can run without Cloudflare Access. In that mode,
           // the absence of a Kairo session is a true guest state.
-          if (active) setStatus('guest');
+          if (active) {
+            clearIdentity();
+            setStatus('guest');
+          }
           return;
         }
         if (
@@ -54,7 +63,10 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         ) {
           // An Access denial is not a guest account and must never expose the
           // guest UI as a fallback for an unapproved or suspended identity.
-          if (active) setStatus('denied');
+          if (active) {
+            clearIdentity();
+            setStatus('denied');
+          }
           return;
         }
         if (!response.ok) throw new Error('Account lookup failed.');
