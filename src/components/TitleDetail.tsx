@@ -158,16 +158,33 @@ export function TitleDetail({ externalId, onClose }: { externalId: string; onClo
 
 /** Overlay that opens over any Movies page when the URL contains ?mid=<tmdb id>. */
 export function TitleModal() {
-  const [params, setParams] = useSearchParams();
+  const location = useLocation();
   const navigate = useNavigate();
+  const params = new URLSearchParams(location.search);
   const externalId = params.get('mid');
   const valid = externalId && /^[1-9]\d{0,11}$/.test(externalId) ? externalId : null;
   const wrapRef = useRef<HTMLDivElement>(null);
 
   const close = () => {
-    const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
-    if (idx > 0) { navigate(-1); return; }
-    setParams(current => { const next = new URLSearchParams(current); next.delete('mid'); return next; }, { replace: true });
+    const state = location.state && typeof location.state === 'object'
+      ? location.state as { modalBackground?: { pathname?: unknown; search?: unknown } }
+      : null;
+    const background = state?.modalBackground;
+    if (typeof background?.pathname === 'string' &&
+        background.pathname.startsWith('/') && !background.pathname.startsWith('//')) {
+      const search = typeof background.search === 'string' && background.search.startsWith('?')
+        ? background.search
+        : '';
+      navigate({ pathname: background.pathname, search }, { replace: true, state: null });
+      return;
+    }
+    // Direct links and refreshed deep links have no background state. Close the
+    // modal on the current page instead of navigating to an unrelated history entry.
+    params.delete('mid');
+    navigate(
+      { pathname: location.pathname, search: params.toString() ? `?${params.toString()}` : '' },
+      { replace: true, state: null },
+    );
   };
 
   useEffect(() => {
