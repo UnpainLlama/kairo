@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Check, Eye, Play, Plus, ThumbsUp, X } from 'lucide-react';
 import { ApiError, apiGet } from '../lib/api';
 import { movieRating, movieYear, type MovieDetail, type MoviePage, type MovieSummary } from '../lib/movies';
