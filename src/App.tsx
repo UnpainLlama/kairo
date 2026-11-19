@@ -165,7 +165,13 @@ export default function App() {
     };
   }, [isAdmin, pathname, adminPath, navigate]);
 
-  useEffect(() => { window.scrollTo({ top: 0, left: 0, behavior: 'auto' }); }, [pathname, search]);
+  // Query-string changes often open/close detail modals; they must not reset the page behind them.
+  // Focus the main landmark only for actual route changes so keyboard and screen-reader users
+  // are moved to the new page content without disturbing modal navigation.
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    document.getElementById('main')?.focus();
+  }, [pathname]);
 
   const logout = () => {
     // Kairo sign-in is the Cloudflare Access session. Clearing only the internal
