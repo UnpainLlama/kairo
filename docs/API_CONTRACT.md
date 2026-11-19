@@ -104,9 +104,9 @@ All administrator routes verify the session role server-side. The console path i
 
 ## 3. Authenticated user routes
 
-Kairo uses Cloudflare Access as its only interactive sign-in authority. The Kairo Access application's Allow policy must list exact email addresses individually; do not allow Everyone or a whole email domain. The Worker verifies the signed Cloudflare Access application JWT (signature, issuer, audience and token times), then provisions or resolves the Kairo profile bound to that verified email. An Access identity without an active profile cannot access account APIs; suspended/deleted accounts are not silently reactivated.
+Kairo uses Cloudflare Access as its only interactive sign-in authority. The Kairo Access application's Allow policy must list exact email addresses individually; do not allow Everyone or a whole email domain. The Worker verifies the signed Cloudflare Access application JWT (signature, issuer, audience, token times and subject), then provisions or resolves the Kairo profile bound to that verified email and subject. An Access identity without an active profile cannot access account APIs; suspended/deleted accounts are not silently reactivated.
 
-Invited users do not enter a Kairo username or password. On first approved visit, the Worker automatically provisions a standard profile (subject to the 15-account allocation limit). Existing active profiles are linked by their verified email without changing their user ID or media data. The first `GET /api/v1/me` automatically creates the internal HttpOnly Kairo session needed by account services. A missing Access assertion is an Access denial, not guest mode.
+Invited users do not enter a Kairo username or password. On first approved visit, the Worker automatically provisions a standard profile (subject to the 15-account allocation limit). Existing active profiles are linked by their verified email without changing their user ID or media data. The first `GET /api/v1/me` automatically creates the internal HttpOnly Kairo session needed by account services. Each session is bound to both Access email and JWT subject. A stale or revoked internal session is cleared and returns `ACCESS_REAUTH_REQUIRED`, requiring a fresh Cloudflare Access logout/login rather than silent session renewal. A missing Access assertion is an Access denial, not guest mode.
 
 In local development only, where `ACCESS_ENFORCED` is not `true`, a request with no Kairo session resolves as a guest. Guest media remains browser-local and is never sent to D1. Staging and production are Access-protected.
 
@@ -121,7 +121,7 @@ Authentication routes:
 
 Cloudflare Access is the invitation boundary. If its Allow policy is broader than the intended email list, any email accepted by that policy may receive a standard Kairo profile on first visit. The Kairo menu's sign-out action uses `/cdn-cgi/access/logout`; deleting only the internal Kairo cookie is not a full sign-out.
 
-These routes require a valid Kairo session and server-side ownership checks.
+Anime library routes are account-scoped; `PUT` accepts `{ status, isFavorite }`, with `status` either one of the values below or `null` to save a favorite without changing list status. Writes verify that the Anime identifier exists and derive ownership only from the validated Kairo session. These routes require a valid Kairo session and server-side ownership checks.
 
 | Method | Path | Purpose |
 |---|---|---|
