@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent, type CSSProperties } from 'react';
+import { useKairoAccount } from '../lib/AccountProvider';
+import { clearAccountScopedBrowserData } from '../lib/accountScopedStorage';
 
 type Account = { id: string; username: string; accessEmail: string | null; displayName: string; status: 'active' | 'suspended' | 'deleted'; createdAt: string };
 type Payload = { success?: boolean; data?: { accounts?: Account[]; standardAccountCount?: number; standardAccountLimit?: number; account?: Account }; error?: { message?: string } };
@@ -17,6 +19,7 @@ async function request(path: string, method = 'GET', body?: unknown): Promise<Pa
 }
 
 export default function AdminPage() {
+  const account = useKairoAccount();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [count, setCount] = useState(0);
   const [limit, setLimit] = useState(15);
@@ -79,6 +82,7 @@ export default function AdminPage() {
   }
 
   function signOut() {
+    clearAccountScopedBrowserData(account.accountId);
     window.location.assign('/cdn-cgi/access/logout');
   }
 
