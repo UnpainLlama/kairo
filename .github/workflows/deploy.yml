@@ -18,7 +18,8 @@ permissions:
 
 concurrency:
   group: kairo-${{ github.ref }}
-  cancel-in-progress: true
+  # Do not cancel a deploy while it is applying database migrations.
+  cancel-in-progress: false
 
 jobs:
   verify:
