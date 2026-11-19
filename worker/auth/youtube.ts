@@ -256,7 +256,7 @@ function parseYouTubeFeedCursorState(raw: string): YouTubeFeedCursorState | null
 
 export function registerYouTubeAuthRoutes(app: any): void {
   const adminOnly = async (c: YouTubeContext, next: () => Promise<void>) => {
-    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined);
+    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined, c.get?.('accessSubject') as string | null | undefined);
     if (!user || user.role !== 'admin') {
       c.header('Cache-Control', 'no-store');
       return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Not found.' } }, 404);
