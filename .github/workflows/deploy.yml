@@ -133,7 +133,7 @@ jobs:
       - name: Verify health endpoints or confirm Cloudflare Access protection
         run: |
           set -euo pipefail
-          URL=$(grep -o 'https://[A-Za-z0-9._-]*\\.workers\\.dev' deploy.log | head -1 || true)
+          URL=$(grep -oE 'https://[A-Za-z0-9._-]+[.]workers[.]dev' deploy.log | head -1 || true)
           if [ "$TARGET" = "production" ]; then
             URL="${URL:-$PRODUCTION_URL}"
           else
@@ -148,7 +148,7 @@ jobs:
             probe_result=""
             for i in 1 2 3 4 5 6; do
               code=$(curl -sS --connect-timeout 15 --max-time 30 -D probe-headers.txt -o probe-body.json -w '%{http_code}' "$URL$path" || true)
-              location=$(awk 'BEGIN { IGNORECASE = 1 } /^location:/ { sub(/^[^:]*:[[:space:]]*/, ""); sub(/\\r$/, ""); print; exit }' probe-headers.txt 2>/dev/null || true)
+              location=$(sed -n 's/^[Ll]ocation:[[:space:]]*//p' probe-headers.txt 2>/dev/null | head -1 | tr -d '\r' || true)
 
               if [ "$code" = "200" ] && jq -e '.success == true' probe-body.json >/dev/null 2>&1; then
                 probe_result="HTTP 200 - Worker returned JSON"
@@ -158,7 +158,7 @@ jobs:
 
               # Access protects the whole Worker unless exact path overrides are configured.
               # A 302 to the account Access login is an expected protected response, not a Worker failure.
-              if [ "$code" = "302" ] && printf '%s' "$location" | grep -Eiq '^https://[^/]+\\.cloudflareaccess\\.com/cdn-cgi/access/login([/?]|$)'; then
+              if [ "$code" = "302" ] && printf '%s' "$location" | grep -Eiq '^https://[^/]+[.]cloudflareaccess[.]com/cdn-cgi/access/login([/?]|$)'; then
                 probe_result="HTTP 302 - Cloudflare Access login (protected)"
                 REMOTE_ACCESS_INTERCEPTED=1
                 echo "::notice::$URL$path is intercepted by Cloudflare Access; the unauthenticated Worker response cannot be inspected."
@@ -174,7 +174,7 @@ jobs:
               cat probe-body.json 2>/dev/null || true
               exit 1
             fi
-            RESULTS="$RESULTS| $path | $probe_result |\\n"
+            RESULTS="$RESULTS| $path | $probe_result |"$'\n'
           done
 
           {
