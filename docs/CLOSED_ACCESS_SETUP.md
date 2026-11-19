@@ -23,11 +23,9 @@ This branch implements the agreed staging access model:
 1. In Cloudflare, open **Workers & Pages** and select the staging Worker corresponding to `kairo-anime-platform-staging.unpainllama.workers.dev`.
 2. Open its **Access** tab and choose **Protect this Worker**. Protect the staging Worker (including the URL/preview endpoints that belong to that Worker). Do not select the account-wide option.
 3. In Zero Trust, ensure **One-time PIN** is enabled as a login method.
-4. In the Worker destination's path overrides, make exactly these two paths public so the repository's credential-free deployment health check can run:
-   - `/api/health`
-   - `/api/ready`
+4. You do **not** need to make any Worker path public for deployment to complete. Keep `/api/health` and `/api/ready` protected if the destination override editor or API permissions are unavailable. The deploy workflow recognizes only a verified HTTP 302 redirect to a `*.cloudflareaccess.com/cdn-cgi/access/login` URL as the expected protected response; its summary states that this does not inspect the live endpoint body or D1 readiness. CI tests exercise the Worker health handler and D1 readiness logic using test bindings, and the deploy runs the remote D1 migrations before deploying.
 
-   These handlers return only a generic health status when Access enforcement is enabled. No other path may be public. Do not create an application-wide Bypass/Everyone policy. Cloudflare documents Worker destination path overrides in its [Access application API](https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/applications/methods/create/).
+   If you later choose to expose minimal probes, use exact public path overrides for only `/api/health` and `/api/ready`; do not create an application-wide Bypass/Everyone policy. These handlers deliberately return generic status only when Access enforcement is enabled. Cloudflare documents Worker destination path overrides in its [Access application API](https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/applications/methods/create/).
 5. Create an **Allow** policy for the protected Worker application. Add each invited email as an individual **Emails** selector value. The policy should contain the administrator's email and only the invited standard-user emails, up to 16 addresses total.
 6. Do not use **Emails ending in**, **Email domain**, **Login Methods: One-time PIN** as an Include rule by itself, **Everyone**, or **All valid emails**. The allowlist must identify individual addresses.
 7. Set the Access application session duration to 24 hours as the initial setting.
