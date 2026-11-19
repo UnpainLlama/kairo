@@ -25,6 +25,7 @@ import WatchPage from './pages/WatchPage';
 import AuthPage from './pages/AuthPage';
 import AdminPage from './pages/AdminPage';
 import { useKairoAccount } from './lib/AccountProvider';
+import { clearAccountScopedBrowserData } from './lib/accountScopedStorage';
 import { AboutPage, AccountPage, HistoryPage, NotFoundPage, ProfilePage } from './pages/StaticPages';
 
 type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean; active?: boolean };
@@ -240,6 +241,7 @@ export default function App() {
   }, [adminPath, lastSectionMode, pathname, sharedChromePath]);
 
   const logout = () => {
+    clearAccountScopedBrowserData(account.accountId);
     // Kairo sign-in is the Cloudflare Access session. Clearing only the internal
     // Kairo cookie would silently recreate it on the next /api/v1/me request.
     window.location.assign('/cdn-cgi/access/logout');
