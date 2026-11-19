@@ -572,6 +572,14 @@ app.get('/api/v1/me', async (c) => {
   if (c.env.ACCESS_ENFORCED === 'true') {
     if (!accessEmail) return fail(c, 401, 'ACCESS_REQUIRED', 'Authenticate with your approved email through Cloudflare Access.');
     try {
+      const bootstrap = await c.env.DB.prepare(
+        `SELECT admin_bootstrap_completed_at AS completedAt,
+                EXISTS (SELECT 1 FROM user_profiles WHERE role = 'admin') AS adminExists
+         FROM app_security_state WHERE singleton_id = 1`,
+      ).first<{ completedAt: number | null; adminExists: number }>();
+      if (bootstrap && bootstrap.completedAt === null && Number(bootstrap.adminExists) === 0) {
+        return fail(c, 401, 'AUTH_REQUIRED', 'The initial Kairo administrator must complete one-time setup.');
+      }
       const account = await c.env.DB.prepare(
         "SELECT id, role, account_status AS accountStatus FROM user_profiles WHERE access_email = ? COLLATE NOCASE LIMIT 1",
       ).bind(accessEmail).first<{ id: string; role: 'user' | 'admin'; accountStatus: string }>();
