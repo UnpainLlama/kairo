@@ -112,6 +112,10 @@ describe('Cloudflare Access account resolution', () => {
               const row = rows.find(item => item.email?.toLowerCase() === email);
               return row ? { id: row.id, accountStatus: row.accountStatus, accessEmail: row.accessEmail, accessSubject: row.accessSubject ?? null } : null;
             }
+            if (sql.includes('FROM user_profiles WHERE id = ?')) {
+              const row = rows.find(item => item.id === String(values[0]));
+              return row ? { id: row.id, accountStatus: row.accountStatus, accessSubject: row.accessSubject ?? null } : null;
+            }
             return null;
           },
           run: async () => {
@@ -131,10 +135,6 @@ describe('Cloudflare Access account resolution', () => {
               return { meta: { changes: row ? 1 : 0 } };
             }
             if (sql.includes('UPDATE sessions SET access_subject')) return { meta: { changes: 0 } };
-            if (sql.includes('WHERE id = ? LIMIT 1')) {
-              const row = rows.find(item => item.id === String(values[0]));
-              return row ? { id: row.id, accountStatus: row.accountStatus, accessSubject: row.accessSubject ?? null } : null;
-            }
             if (sql.includes('INSERT OR IGNORE INTO user_profiles')) {
               if (rejectInsert) throw new Error('account allocation limit reached');
               const [id, _identitySubject, _displayName, email, _username, accessEmail, accessSubject] = values as string[];
