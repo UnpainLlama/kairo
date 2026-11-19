@@ -7,6 +7,7 @@ export type SessionUser = {
   email: string | null;
   username: string | null;
   accessEmail: string | null;
+  accessSubject: string | null;
   emailVerifiedAt: string | null;
   role: 'user' | 'admin';
 };
@@ -63,7 +64,7 @@ export function clearSessionCookie(secure = true): string {
 export async function createSession(
   db: D1Database,
   userId: string,
-  metadata: { userAgent?: string; ipPrefix?: string; ttlSeconds?: number; accessEmail?: string | null } = {},
+  metadata: { userAgent?: string; ipPrefix?: string; ttlSeconds?: number; accessEmail?: string | null; accessSubject?: string | null } = {},
   now = Date.now(),
 ): Promise<{ id: string; token: string; expiresAt: number; ttlSeconds: number }> {
   const id = crypto.randomUUID();
@@ -71,12 +72,13 @@ export async function createSession(
   const ttlSeconds = Math.max(60, Math.min(SESSION_TTL_SECONDS, Math.floor(metadata.ttlSeconds ?? SESSION_TTL_SECONDS)));
   const expiresAt = now + ttlSeconds * 1000;
   await db.prepare(
-    `INSERT INTO sessions (id, user_id, token_hash, expires_at, user_agent, ip_prefix, access_email)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO sessions (id, user_id, token_hash, expires_at, user_agent, ip_prefix, access_email, access_subject)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(id, userId, await hashToken(token), expiresAt,
     metadata.userAgent?.slice(0, 512) ?? null,
     metadata.ipPrefix?.slice(0, 64) ?? null,
-    metadata.accessEmail?.toLowerCase() ?? null).run();
+    metadata.accessEmail?.toLowerCase() ?? null,
+    metadata.accessSubject ?? null).run();
   return { id, token, expiresAt, ttlSeconds };
 }
 
@@ -87,14 +89,14 @@ export async function revokeSession(db: D1Database, cookieHeader: string | null)
 }
 
 /** Resolve the current Kairo identity exclusively from the server-side session cookie. */
-export async function findSessionUser(db: D1Database, cookieHeader: string | null, now = Date.now(), accessEmail?: string | null): Promise<SessionUser | null> {
+export async function findSessionUser(db: D1Database, cookieHeader: string | null, now = Date.now(), accessEmail?: string | null, accessSubject?: string | null): Promise<SessionUser | null> {
   const token = readSessionCookie(cookieHeader);
   if (!token) return null;
   const tokenHash = await hashToken(token);
   const row = await db.prepare(
     `SELECT s.user_id AS userId, p.display_name AS displayName,
             p.email, p.username, p.access_email AS accessEmail,
-            p.email_verified_at AS emailVerifiedAt, p.role
+            p.access_subject AS accessSubject, p.email_verified_at AS emailVerifiedAt, p.role
      FROM sessions s
      INNER JOIN user_profiles p ON p.id = s.user_id
      WHERE s.token_hash = ? AND s.expires_at > ?
@@ -103,9 +105,10 @@ export async function findSessionUser(db: D1Database, cookieHeader: string | nul
          ELSE datetime('now', '-14 days')
        END
        AND p.account_status = 'active'
-       AND (? IS NULL OR (lower(s.access_email) = lower(?) AND lower(p.access_email) = lower(?)))
+       AND (? IS NULL OR (lower(s.access_email) = lower(?) AND lower(p.access_email) = lower(?)
+         AND s.access_subject = ? AND p.access_subject = ?))
      LIMIT 1`
-  ).bind(tokenHash, now, accessEmail ?? null, accessEmail ?? null, accessEmail ?? null).first<SessionRow>();
+  ).bind(tokenHash, now, accessEmail ?? null, accessEmail ?? null, accessEmail ?? null, accessSubject ?? null, accessSubject ?? null).first<SessionRow>();
   if (!row) return null;
   // Persist activity at most once every five minutes. This makes idle expiry server-enforced
   // without writing to D1 for every API request.
@@ -118,6 +121,7 @@ export async function findSessionUser(db: D1Database, cookieHeader: string | nul
     email: row.email,
     username: row.username,
     accessEmail: row.accessEmail,
+    accessSubject: row.accessSubject,
     emailVerifiedAt: row.emailVerifiedAt,
     role: row.role,
   };
