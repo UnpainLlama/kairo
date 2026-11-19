@@ -9,7 +9,7 @@ export function resolveAccountResponse(
   if (status === 401) {
     if (errorCode === 'ADMIN_SETUP_REQUIRED') return 'setup-required';
     if (errorCode === 'AUTH_REQUIRED') return 'guest';
-    if (errorCode === 'ACCESS_REQUIRED' || typeof errorCode !== 'string') return 'reauth-required';
+    if (errorCode === 'ACCESS_REQUIRED' || errorCode === 'ACCESS_REAUTH_REQUIRED' || typeof errorCode !== 'string') return 'reauth-required';
   }
   if (status === 403 && errorCode === 'ACCESS_ACCOUNT_LIMIT_REACHED') return 'limit-reached';
   if (status === 403 && typeof errorCode === 'string' && errorCode.startsWith('ACCESS_')) return 'denied';
