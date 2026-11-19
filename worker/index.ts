@@ -2,7 +2,7 @@
 import { Hono, type Context, type Next } from 'hono';
 import { cors } from 'hono/cors';
 import { boundedInt, parseId, parsePagination, parseSearchParams } from './lib/validation';
-import { clearSessionCookie, findSessionUser, revokeSession } from './auth/session';
+import { clearSessionCookie, createSession, findSessionUser, revokeSession, sessionCookie } from './auth/session';
 import { registerAuthRoutes } from './auth/routes';
 import { registerYouTubeMediaRoutes } from './youtube/routes';
 import { registerAdminRoutes, rotateAdminConsolePath } from './admin/routes';
@@ -126,7 +126,7 @@ app.use('/api/*', async (c, next) => {
   if (pathname !== '/api/v1/admin/bootstrap') {
     const activeInvite = await hasActiveAccessAccount(c.env.DB, identity.email);
     if (!activeInvite) {
-      return c.json({ success: false, error: { code: 'ACCESS_INVITE_REQUIRED', message: 'This email is not currently invited to Kairo.' } }, 403);
+      return c.json({ success: false, error: { code: 'ACCESS_ACCOUNT_DISABLED', message: 'This Access identity does not have an active Kairo account. Contact the site administrator.' } }, 403);
     }
   }
   return next();
@@ -560,9 +560,44 @@ app.get('/api/v1/anime/:id/metadata', async (c) => {
 
 
 app.get('/api/v1/me', async (c) => {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your profile.');
-  return ok(c, { user });
+  const accessEmail = c.get('accessEmail') as string | null | undefined;
+  const cookieHeader = c.req.header('Cookie') ?? null;
+  const existing = await findSessionUser(c.env.DB, cookieHeader, Date.now(), accessEmail);
+  if (existing) return ok(c, { user: existing }, { authProvider: c.env.ACCESS_ENFORCED === 'true' ? 'cloudflare_access' : 'local_session' });
+
+  // In the closed-access deployment, Cloudflare Access is the only interactive
+  // sign-in. Issue the internal HttpOnly Kairo session automatically so existing
+  // account-scoped APIs (history, libraries, playback and YouTube OAuth) retain a
+  // stable user id without asking the user for a second username/password.
+  if (c.env.ACCESS_ENFORCED === 'true') {
+    if (!accessEmail) return fail(c, 401, 'ACCESS_REQUIRED', 'Authenticate with your approved email through Cloudflare Access.');
+    try {
+      const account = await c.env.DB.prepare(
+        "SELECT id, role, account_status AS accountStatus FROM user_profiles WHERE access_email = ? COLLATE NOCASE LIMIT 1",
+      ).bind(accessEmail).first<{ id: string; role: 'user' | 'admin'; accountStatus: string }>();
+      if (!account || account.accountStatus !== 'active') {
+        return fail(c, 403, 'ACCESS_ACCOUNT_DISABLED', 'This Access identity does not have an active Kairo account.');
+      }
+      const ttlSeconds = account.role === 'admin' ? 8 * 60 * 60 : 30 * 24 * 60 * 60;
+      const session = await createSession(c.env.DB, account.id, {
+        userAgent: c.req.header('User-Agent') ?? undefined,
+        ipPrefix: c.req.header('CF-Connecting-IP') ?? 'unknown',
+        ttlSeconds,
+        accessEmail,
+      });
+      c.header('Set-Cookie', sessionCookie(session.token, new URL(c.req.url).protocol === 'https:', session.ttlSeconds));
+      const user = await findSessionUser(c.env.DB, `kairo_session=${session.token}`, Date.now(), accessEmail);
+      if (!user) return fail(c, 503, 'ACCOUNT_SESSION_UNAVAILABLE', 'Your Kairo account was found but its session could not be established.');
+      return ok(c, { user }, { authProvider: 'cloudflare_access', sessionCreated: true });
+    } catch (error) {
+      logError(c, 'access_account_session_failed', error);
+      return fail(c, 503, 'ACCOUNT_SESSION_UNAVAILABLE', 'Kairo could not establish your account session. Please refresh and try again.');
+    }
+  }
+
+  // Without Cloudflare Access enforcement (local development), no account session
+  // means guest mode. Guests keep device-local state and never write to D1.
+  return fail(c, 401, 'AUTH_REQUIRED', 'No Kairo account session is active.');
 });
 
 app.get('/api/v1/me/playback', async (c) => {
