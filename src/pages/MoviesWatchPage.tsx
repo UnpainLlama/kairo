@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { ApiError, apiGet } from '../lib/api';
 import MovieEmbedPlayer from '../components/MovieEmbedPlayer';
@@ -12,6 +12,7 @@ import '../styles-netflix.css';
 export default function MoviesWatchPage() {
   const { externalId = '' } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { accountId, resolved: accountResolved, error: accountError } = useAccountScope();
   const [movie, setMovie] = useState<MovieDetail | null>(null);
   const [playbackState, setPlaybackState] = useState<MediaPlaybackSnapshot | null>(null);
@@ -76,8 +77,17 @@ export default function MoviesWatchPage() {
 
   // Back returns to wherever the viewer came from, and falls back to the title page for direct links.
   const back = () => {
-    const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
-    if (idx > 0) navigate(-1); else navigate('/movies/' + encodeURIComponent(externalId), { replace: true });
+    const state = location.state && typeof location.state === 'object'
+      ? location.state as { backTo?: unknown }
+      : null;
+    const backTo = state?.backTo;
+    if (typeof backTo === 'string' && backTo.startsWith('/movies/') && !backTo.startsWith('//')) {
+      navigate(backTo, { replace: true });
+      return;
+    }
+    // Deep links and unknown history entries always return to this movie's detail
+    // page; a generic history index can send users outside the Movies experience.
+    navigate('/movies/' + encodeURIComponent(externalId), { replace: true });
   };
 
   if (loading || (movie && !playbackReady && !accountError)) {
