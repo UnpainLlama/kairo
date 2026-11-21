@@ -237,6 +237,10 @@ export default function App() {
   }, [menuOpen]);
 
   const closeMenu = (_event?: MouseEvent<HTMLAnchorElement>) => setMenuOpen(false);
+  const signOutFromAccessNotice = (event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    void logout();
+  };
 
   if (account.status === 'setup-required' && pathname !== '/login') {
     return <Navigate to="/login?setup=admin" replace />;
@@ -252,7 +256,8 @@ export default function App() {
       <main className="kc-access-denied" style={{ minHeight: '100vh', display: 'grid', placeContent: 'center', padding: 32, textAlign: 'center' }}>
         <h1>Kairo accounts are full</h1>
         <p>All 15 standard-account places are currently allocated. Contact the Kairo administrator if you need access.</p>
-        <a href="/cdn-cgi/access/logout">Sign out of Cloudflare Access</a>
+        {logoutError && <p role="alert">{logoutError}</p>}
+        <a href="/cdn-cgi/access/logout" onClick={signOutFromAccessNotice}>Sign out of Cloudflare Access</a>
       </main>
     );
   }
@@ -262,7 +267,8 @@ export default function App() {
         <h1>Access not authorized</h1>
         <p>This Kairo identity is not active. Only email addresses approved in the Kairo Cloudflare Access application can enter.</p>
         <p>Check that you used the email address you were invited with.</p>
-        <a href="/cdn-cgi/access/logout">Sign out of Cloudflare Access</a>
+        {logoutError && <p role="alert">{logoutError}</p>}
+        <a href="/cdn-cgi/access/logout" onClick={signOutFromAccessNotice}>Sign out of Cloudflare Access</a>
       </main>
     );
   }

@@ -94,4 +94,18 @@ describe('Kairo session logout', () => {
     expect(redirect).not.toHaveBeenCalled();
   });
 
+  it('revokes Access-denied sessions even when there is no resolved account ID', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const redirects: string[] = [];
+
+    await signOutKairoAccount(null, url => redirects.push(url));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(redirects).toEqual(['/cdn-cgi/access/logout']);
+  });
+
 });
