@@ -15,6 +15,8 @@ Each environment has its own database and cache, so staging can never touch prod
 
 The deploy workflow (`.github/workflows/deploy.yml`) runs typecheck, tests and build, then (only when requested) the guards, D1 migrations, build and deploy. Remote requests to `/api/health` and `/api/ready` are disabled by default so Cloudflare Access can protect both paths without blocking deployment. The endpoint handlers remain in the Worker and are exercised by CI tests. To opt into anonymous remote probes after configuring exact public path overrides, set the GitHub Actions variable `KAIRO_REMOTE_HEALTH_CHECKS_ENABLED=true`. When probes are disabled, the deployment summary explicitly states that live HTTP/D1 readiness was not verified.
 
+Cloudflare Access must also have an exact public destination override for `/api/v1/auth/logout` (the application path override is path-scoped). This one path is intentionally allowed through to the Worker so an expired or denied Access identity can sign out. The Worker enforces same-origin on the POST and revokes only the session token supplied in that request's HttpOnly cookie. Do not create a broader `/api/v1/auth/*` or `/api/*` bypass. This exception is separate from the anonymous health/readiness probes and does not make any account-data endpoint public.
+
 IDs for D1 and KV are identifiers, not credentials, so they may be committed to the public repo. Cloudflare API tokens, OAuth client secrets, and encryption keys are credentials: keep them only in the appropriate GitHub or Cloudflare secret stores. Never paste a secret into chat, a file, or the repo.
 
 ## 2. Set up staging (you do this once; about 20 minutes)
