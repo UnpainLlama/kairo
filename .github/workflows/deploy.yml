@@ -109,7 +109,7 @@ jobs:
       - name: Guard - live health checks must be enabled before deployment
         run: |
           if [ "$KAIRO_REMOTE_HEALTH_CHECKS_ENABLED" != "true" ]; then
-            echo "::error::Deployment is blocked until exact public Worker destination overrides are configured for /api/health and /api/ready and KAIRO_REMOTE_HEALTH_CHECKS_ENABLED=true is set in this GitHub environment."
+            echo "::error::Deployment to '$TARGET' is blocked: configure exact public Worker destination overrides for /api/health and /api/ready, verify unauthenticated GETs return HTTP 200 JSON with success=true, then set KAIRO_REMOTE_HEALTH_CHECKS_ENABLED=true in the '$TARGET' GitHub environment. This guard runs before D1 backup, migrations or Worker deployment."
             exit 1
           fi
       - name: Guard - Cloudflare credentials and resource IDs
