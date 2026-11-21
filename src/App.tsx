@@ -69,14 +69,6 @@ const moviesNavItems: NavItem[] = [
   { to: '/movies/library', label: 'My list', icon: Bookmark },
 ];
 
-const mobileNavItems: NavItem[] = [
-  { to: '/', label: 'Home', icon: Home, end: true },
-  { to: '/browse/anime', label: 'Discover', icon: Compass },
-  { to: '/search', label: 'Search', icon: Search },
-  { to: '/history', label: 'History', icon: History },
-  { to: '/profile', label: 'Profile', icon: UserRound },
-];
-
 function AdminOnly({ children }: { children: ReactNode }) {
   const account = useKairoAccount();
   if (account.status === 'loading') return null;
