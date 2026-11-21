@@ -31,7 +31,7 @@
 ## Remaining release gates (cannot be proven by source-only CI)
 
 1. Configure exact Cloudflare Access destination overrides for /api/health and /api/ready in the deployment environment, then set KAIRO_REMOTE_HEALTH_CHECKS_ENABLED=true. Deploy now blocks when this variable is missing or either probe fails.
-2. Verify ACCESS_ENFORCED, bootstrap state and migrations 0015–0020 against each real D1 database; source code does not prove those migrations have been applied remotely.
+2. Verify ACCESS_ENFORCED, bootstrap state and migrations 0015–0022 (including seat reassignment and account-wide history preferences) against each real D1 database; source code does not prove those migrations have been applied remotely.
 3. Supply real production APP_BASE_URL, GOOGLE_CLIENT_ID, Access team domain/AUD, D1 ID, KV ID and Worker secrets using Cloudflare/GitHub environment configuration. Never replace these with guessed values or commit secrets.
 4. Confirm ownership, authorization and provider terms for every enabled Anime, HiAnime and embed/playback domain. Keep unverified domains removed and ZokoAnime disabled until approved.
 5. Review the third-party HiAnime/mirror integration and TMDB/CineSrc terms with the relevant provider/legal owners before production release.
