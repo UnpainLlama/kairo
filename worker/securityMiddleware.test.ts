@@ -47,6 +47,20 @@ describe('API origin protection', () => {
     expect(((await response.json()) as { error: { code: string } }).error.code).toBe('ACCESS_REQUIRED');
   });
 
+
+  it('keeps local unauthenticated /me requests explicitly in guest mode', async () => {
+    const response = await worker.request('https://kairo.test/api/v1/me', { method: 'GET' }, {
+      ACCESS_ENFORCED: 'false',
+    });
+    const payload = await response.json() as { success: boolean; error: { code: string } };
+    expect(response.status).toBe(401);
+    expect(payload).toMatchObject({
+      success: false,
+      error: { code: 'AUTH_REQUIRED' },
+    });
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+  });
+
   it('keeps the public liveness probe minimal while Access is enforced', async () => {
     const response = await worker.request('https://kairo.test/api/health', { method: 'GET' }, {
       ACCESS_ENFORCED: 'true',

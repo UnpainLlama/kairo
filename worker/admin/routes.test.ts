@@ -28,6 +28,36 @@ describe('administrator console path rotation', () => {
     expect(insertedPath).toMatch(/^\/[A-Za-z0-9_-]{43}$/);
   });
 
+  it('does not invalidate an unexpired console route during scheduled maintenance', async () => {
+    let upsertSql = '';
+    let values: unknown[] = [];
+    const db = {
+      prepare(sql: string) {
+        if (sql.includes("SELECT id FROM user_profiles")) {
+          return { first: async () => ({ id: 'admin-user' }) };
+        }
+        return {
+          bind: (...bound: unknown[]) => {
+            values = bound;
+            return {
+              run: async () => {
+                upsertSql = sql;
+                return { success: true, meta: { changes: 0 } };
+              },
+            };
+          },
+        };
+      },
+    } as unknown as D1Database;
+
+    await rotateAdminConsolePath(db);
+
+    expect(upsertSql).toContain('WHERE admin_console_access.expires_at <= ?');
+    expect(values).toHaveLength(4);
+    expect(values[0]).toMatch(/^\/[A-Za-z0-9_-]{43}$/);
+    expect(values[3]).toBe(values[1]);
+  });
+
   it('does not create a console path if no active administrator exists', async () => {
     let writes = 0;
     const db = {

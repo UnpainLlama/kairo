@@ -42,11 +42,13 @@ export async function rotateAdminConsolePath(db: D1Database): Promise<void> {
   if (!admin) return;
   const now = Date.now();
   const path = newConsolePath();
+  // Keep a path valid for its full lease; older scheduled runs invalidated open consoles.
   await db.prepare(`INSERT INTO admin_console_access (singleton_id,path_value,rotated_at,expires_at)
     VALUES (1,?,?,?)
     ON CONFLICT(singleton_id) DO UPDATE SET path_value=excluded.path_value,
-      rotated_at=excluded.rotated_at, expires_at=excluded.expires_at`)
-    .bind(path, now, now + 30 * 60 * 1000).run();
+      rotated_at=excluded.rotated_at, expires_at=excluded.expires_at
+    WHERE admin_console_access.expires_at <= ?`)
+    .bind(path, now, now + 30 * 60 * 1000, now).run();
 }
 
 function originAllowed(c: any) {

@@ -26,6 +26,7 @@ import AuthPage from './pages/AuthPage';
 import AdminPage from './pages/AdminPage';
 import { useKairoAccount } from './lib/AccountProvider';
 import { clearAccountScopedBrowserData } from './lib/accountScopedStorage';
+import { resolvePageTitle } from './lib/pageMetadata';
 import { AboutPage, AccountPage, HistoryPage, NotFoundPage, ProfilePage } from './pages/StaticPages';
 
 type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean; active?: boolean };
@@ -207,39 +208,10 @@ export default function App() {
   }, [isAdmin, pathname, adminPath, navigate]);
 
   useEffect(() => {
-    const isMovieRoute = pathname === '/movies' || pathname.startsWith('/movies/');
-    const isVideoRoute = pathname.startsWith('/youtube');
-    const titles: Record<string, string> = {
-      '/': 'Discover Anime, Movies and Video',
-      '/search': isMovieRoute || (sharedChromePath && lastSectionMode === 'movies') ? 'Search Movies' : 'Search Anime',
-      '/history': 'Watch History',
-      '/profile': 'Profile',
-      '/library': 'My Library',
-      '/favorites': 'Favorites',
-      '/settings': 'Settings',
-      '/about': 'About Kairo',
-      '/login': 'Kairo Access',
-      '/movies': 'Movies',
-      '/movies/search': 'Search Movies',
-      '/movies/library': 'My Movies List',
-      '/youtube': 'YouTube Feed',
-      '/youtube/search': 'Search YouTube',
-      '/youtube/channels': 'YouTube Channels',
-    };
-    let pageTitle = titles[pathname];
-    if (!pageTitle && pathname.startsWith('/movies/browse/')) pageTitle = 'Browse Movies';
-    if (!pageTitle && pathname.startsWith('/movies/') && pathname.endsWith('/watch')) pageTitle = 'Watch Movie';
-    if (!pageTitle && pathname.startsWith('/movies/')) pageTitle = 'Movie Details';
-    if (!pageTitle && pathname.startsWith('/youtube/watch/')) pageTitle = 'Watch YouTube';
-    if (!pageTitle && pathname.startsWith('/browse/')) pageTitle = 'Browse Anime';
-    if (!pageTitle && pathname.startsWith('/anime/')) pageTitle = 'Anime Details';
-    if (!pageTitle && pathname.startsWith('/watch/')) pageTitle = 'Watch Anime';
-    if (!pageTitle && adminPath && pathname === adminPath) pageTitle = 'Administrator Console';
-    document.title = `${pageTitle ?? 'Page Not Found'} | Kairo`;
+    document.title = `${resolvePageTitle(pathname, lastSectionMode, adminPath)} | Kairo`;
     const description = document.querySelector<HTMLMetaElement>('meta[name="description"]');
     description?.setAttribute('content', 'Kairo — discover anime, movies and videos, and keep your personal watch history and library in one place.');
-    void isVideoRoute;
-  }, [adminPath, lastSectionMode, pathname, sharedChromePath]);
+  }, [adminPath, lastSectionMode, pathname]);
 
   const logout = () => {
     clearAccountScopedBrowserData(account.accountId);

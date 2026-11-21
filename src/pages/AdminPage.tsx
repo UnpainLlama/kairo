@@ -43,18 +43,8 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    document.title = 'Kairo Administration';
-    let meta = document.querySelector('meta[name="robots"]') as HTMLMetaElement | null;
-    const createdMeta = !meta;
-    const previousRobots = meta?.content ?? null;
-    if (!meta) { meta = document.createElement('meta'); meta.name = 'robots'; document.head.appendChild(meta); }
-    meta.content = 'noindex, nofollow, noarchive, nosnippet';
+    // App owns route metadata. Do not replace its title with a generic title on unmount.
     void load();
-    return () => {
-      document.title = 'Kairo';
-      if (meta && createdMeta) meta.remove();
-      else if (meta && previousRobots !== null) meta.content = previousRobots;
-    };
   }, [load]);
 
   async function saveAccessEmail(event: FormEvent) {
