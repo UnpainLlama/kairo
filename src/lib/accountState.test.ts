@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isAccessLoginRedirect, resolveAccountResponse } from './accountState';
+import { isAccessLoginRedirect, resolveAccountResponse, shouldRefreshAccountOnVisibility } from './accountState';
 
 describe('account response classification', () => {
   it('keeps first-admin setup distinct from guest mode', () => {
@@ -46,5 +46,17 @@ describe('Access login redirect detection', () => {
       url: 'https://kairo.example/api/v1/me',
       contentType: 'application/json',
     })).toBe(false);
+  });
+});
+
+
+describe('account focus refresh policy', () => {
+  it('refreshes when a background tab becomes visible', () => {
+    expect(shouldRefreshAccountOnVisibility('visible')).toBe(true);
+  });
+
+  it('does not revalidate for iframe or ordinary window focus while the tab is already visible', () => {
+    expect(shouldRefreshAccountOnVisibility('hidden')).toBe(false);
+    expect(shouldRefreshAccountOnVisibility('prerender')).toBe(false);
   });
 });

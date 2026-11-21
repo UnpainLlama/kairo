@@ -32,3 +32,9 @@ export function isAccessLoginRedirect(response: {
     response.contentType?.toLowerCase().includes('text/html') === true
   );
 }
+
+
+/** Only a background-to-visible tab transition warrants account revalidation. */
+export function shouldRefreshAccountOnVisibility(visibilityState: string): boolean {
+  return visibilityState === 'visible';
+}

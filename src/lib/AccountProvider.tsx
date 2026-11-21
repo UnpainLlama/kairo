@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { flushPendingMediaPlayback } from './mediaPlayback';
-import { isAccessLoginRedirect, resolveAccountResponse } from './accountState';
+import { isAccessLoginRedirect, resolveAccountResponse, shouldRefreshAccountOnVisibility } from './accountState';
 
 export type AccountStatus = 'loading' | 'guest' | 'signed-in' | 'denied' | 'limit-reached' | 'setup-required' | 'reauth-required' | 'unavailable';
 export type KairoAccountState = {
@@ -30,9 +30,15 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true;
     const refresh = () => setAttempt((value) => value + 1);
-    // Keep the last verified identity while revalidating. In particular, a
-    // window-focus event must not briefly turn a signed-in user into a guest
-    // or unmount account-scoped media players.
+    // Refresh when the tab becomes visible again, not on every window focus.
+    // Focus events also fire while users move between the document and a
+    // cross-origin player iframe; revalidating then can tear down the player.
+    const refreshWhenVisible = () => {
+      if (shouldRefreshAccountOnVisibility(document.visibilityState)) refresh();
+    };
+    const refreshAfterHistoryRestore = (event: PageTransitionEvent) => {
+      if (event.persisted) refresh();
+    };
     if (!accountId) setStatus('loading');
 
     const clearIdentity = () => {
@@ -94,11 +100,13 @@ export function AccountProvider({ children }: { children: ReactNode }) {
 
     void load();
     window.addEventListener('kairo:auth-change', refresh);
-    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('pageshow', refreshAfterHistoryRestore);
     return () => {
       active = false;
       window.removeEventListener('kairo:auth-change', refresh);
-      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.removeEventListener('pageshow', refreshAfterHistoryRestore);
     };
   }, [attempt]);
 
