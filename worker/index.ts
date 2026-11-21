@@ -1132,7 +1132,7 @@ app.notFound(async (c) => {
       const contentType = asset?.headers.get('content-type')?.toLowerCase() ?? '';
       // With SPA fallback enabled Cloudflare may return index.html (200) for an
       // unknown .js/.css/image URL. Never let that HTML masquerade as an asset.
-      if (asset && asset.status !== 404 && !contentType.startsWith('text/html')) return asset;
+      if (asset && asset.status !== 404 && (!contentType.startsWith('text/html') || c.req.path.toLowerCase() === '/index.html')) return asset;
     } catch {
       // A missing/unavailable asset is still a 404; do not surface Worker internals.
     }

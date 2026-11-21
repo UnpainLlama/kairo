@@ -5,6 +5,7 @@ describe('static asset path classification', () => {
   it.each([
     '/assets/index-abc123.js',
     '/favicon.svg',
+    '/index.html',
     '/site.webmanifest',
     '/artwork/poster.webp',
     '/font/app.woff2',
@@ -18,7 +19,6 @@ describe('static asset path classification', () => {
     '/movies/123',
     '/admin',
     '/api/v1/me',
-    '/index.html',
   ])('does not classify %s as a static asset request', (path) => {
     expect(isStaticAssetPath(path)).toBe(false);
   });

@@ -99,6 +99,22 @@ describe('API origin protection', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
+
+  it('keeps the real index.html shell available when the Worker handles file-like paths', async () => {
+    const shell = '<!doctype html><html><head></head><body><div id="root"></div></body></html>';
+    const fetch = vi.fn(async () => new Response(shell, {
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    }));
+    const response = await worker.request('https://kairo.test/index.html', { method: 'GET' }, {
+      ACCESS_ENFORCED: 'false',
+      ASSETS: { fetch },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe(shell);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('converts an SPA index.html fallback into a real 404 for missing assets', async () => {
     const fetch = vi.fn(async () => new Response('<!doctype html><html></html>', {
       status: 200,
