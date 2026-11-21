@@ -16,7 +16,7 @@ import { providerRefFromMappings } from './live/ids';
 import type { LiveRequest, LiveResult } from './live/types';
 import { createTmdbMovieProvider } from './movies/providers/tmdb';
 import { createMovieCatalogService } from './movies/service';
-import { movieIdentity, persistMovieDetail, persistMovieSummary, searchStoredMovies } from './movies/repository';
+import { movieIdentity, normalizeMovieLibraryFavorite, persistMovieDetail, persistMovieSummary, searchStoredMovies } from './movies/repository';
 import type { MovieDiscoverQuery, MovieListKind } from './movies/types';
 import { ProviderError } from './metadata/types';
 import { consumeRateLimit } from './auth/rateLimit';
@@ -1094,7 +1094,10 @@ app.get('/api/v1/me/movies/library', async (c) => {
       FROM user_movie_library_refs WHERE user_id = ?
       ORDER BY updated_at DESC LIMIT 200
     `).bind(user.id).all();
-    return ok(c, { items: result.results ?? [] }, { count: result.results?.length ?? 0 });
+    const items = (result.results ?? []).map((row: Record<string, unknown>) =>
+      normalizeMovieLibraryFavorite(row as Record<string, unknown> & { isFavorite: unknown }),
+    );
+    return ok(c, { items }, { count: items.length });
   } catch (error) {
     logError(c, 'movie_library_read_failed', error);
     return fail(c, 503, 'MOVIE_LIBRARY_UNAVAILABLE', 'Your Movies library is temporarily unavailable.');

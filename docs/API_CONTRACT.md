@@ -253,8 +253,8 @@ The example is a schema illustration, not a live URL. Return only provider-autho
 |---|---|---|
 | GET | `/api/v1/me/history/sync?slug=:slug&episodeNumber=:number` | Restore one Anime episode's account-owned playback record before player initialization. Without the query pair, returns the latest account history. |
 | POST | `/api/v1/me/history/sync` | Upsert account-owned Anime progress/history; accepts bounded items, per-episode deletion requests, and an explicit clear operation. |
-| GET | `/api/v1/me/movies/library` | List the signed-in user's Movies provider references and saved-list state. |
-| POST | `/api/v1/me/movies/library` | Add/update a Movies Watchlist, Watched, Favorite or rating state. Send status=null, isFavorite=false and rating=null to remove the record. |
+| GET | `/api/v1/me/movies/library` | List the signed-in user's Movies provider references and saved-list state. `isFavorite` is always a JSON boolean. |
+| POST | `/api/v1/me/movies/library` | Add/update a Movies Watchlist, Watched, Favorite or rating state. `isFavorite` is a JSON boolean in both request and response. Send status=null, isFavorite=false and rating=null to remove the record. |
 
 - These routes derive user ownership exclusively from the validated HttpOnly Kairo session cookie. No user ID is accepted from the request body.
 - Movie library rows store provider_id and external_id with the user's status/favorite/rating state. They do not ingest or copy TMDB metadata into the account library.

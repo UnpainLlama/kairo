@@ -209,3 +209,14 @@ export async function searchStoredMovies(
   const total = Number(count?.total ?? 0);
   return { items: items.results ?? [], page, limit, total, hasNextPage: offset + limit < total };
 }
+
+
+/** Normalize the SQLite integer flag to the stable JSON boolean used by the browser API. */
+export function normalizeMovieLibraryFavorite<T extends { isFavorite: unknown }>(
+  entry: T,
+): Omit<T, 'isFavorite'> & { isFavorite: boolean } {
+  return {
+    ...entry,
+    isFavorite: entry.isFavorite === true || entry.isFavorite === 1,
+  };
+}

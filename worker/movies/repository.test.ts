@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { movieIdentity, persistMovieSummary, searchStoredMovies, toStoredMovie, type MovieDatabase, type MovieStatement } from './repository';
+import { movieIdentity, normalizeMovieLibraryFavorite, persistMovieSummary, searchStoredMovies, toStoredMovie, type MovieDatabase, type MovieStatement } from './repository';
 import type { MovieSummary } from './types';
 
 const summary: MovieSummary = {
@@ -77,5 +77,19 @@ describe('Movies repository', () => {
     expect(calls[0]?.sql).toContain('FROM movies');
     expect(calls[0]?.sql).not.toContain('FROM anime');
     expect(calls[0]?.values.slice(0, 2)).toEqual(['%Matrix%', '%Matrix%']);
+  });
+});
+
+
+describe('Movies library response normalization', () => {
+  it('serializes the database integer favorite flag as a boolean', () => {
+    expect(normalizeMovieLibraryFavorite({ providerId: 'tmdb', externalId: '603', isFavorite: 1 }))
+      .toEqual({ providerId: 'tmdb', externalId: '603', isFavorite: true });
+    expect(normalizeMovieLibraryFavorite({ isFavorite: 0 })).toEqual({ isFavorite: false });
+  });
+
+  it('preserves booleans when the backing adapter already supplies them', () => {
+    expect(normalizeMovieLibraryFavorite({ isFavorite: true })).toEqual({ isFavorite: true });
+    expect(normalizeMovieLibraryFavorite({ isFavorite: false })).toEqual({ isFavorite: false });
   });
 });
