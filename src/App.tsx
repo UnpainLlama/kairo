@@ -27,6 +27,7 @@ import AdminPage from './pages/AdminPage';
 import { useKairoAccount } from './lib/AccountProvider';
 import { clearAccountScopedBrowserData } from './lib/accountScopedStorage';
 import { resolvePageTitle } from './lib/pageMetadata';
+import { getWorkspaceSwitches } from './lib/workspaceNavigation';
 import { AboutPage, AccountPage, HistoryPage, NotFoundPage, ProfilePage } from './pages/StaticPages';
 
 type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean; active?: boolean };
@@ -130,14 +131,14 @@ export default function App() {
   const isYouTubeMode = isAdmin && (pathname.startsWith('/youtube') || (sharedChromePath && lastSectionMode === 'youtube'));
   const isMoviesMode = pathname === '/movies' || pathname.startsWith('/movies/') || (sharedChromePath && lastSectionMode === 'movies');
   const isMoviesWatchMode = pathname.startsWith('/movies/') && pathname.endsWith('/watch');
-  const animeNavItems = [...navItems, { to: '/movies', label: 'Movies', icon: Film }, ...(isAdmin ? [{ to: '/youtube', label: 'YouTube', icon: Play }] : [])];
-  const activeNavItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : animeNavItems;
+  const workspaceMode = isYouTubeMode ? 'youtube' : isMoviesMode ? 'movies' : 'anime';
+  const workspaceIcons: Record<'Anime' | 'Movies' | 'YouTube', LucideIcon> = { Anime: Tv, Movies: Film, YouTube: Play };
+  const workspaceNavItems: NavItem[] = getWorkspaceSwitches(workspaceMode, isAdmin)
+    .map(item => ({ ...item, icon: workspaceIcons[item.label], end: true }));
+  const sectionNavItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : navItems;
+  const activeNavItems = [...sectionNavItems, ...workspaceNavItems];
   const activeMenuItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : menuItems;
-  const activeMobileItems = isYouTubeMode
-    ? youtubeNavItems
-    : isMoviesMode
-      ? moviesNavItems
-      : [...mobileNavItems, { to: '/movies', label: 'Movies', icon: Film }, ...(isAdmin ? [{ to: '/youtube', label: 'YouTube', icon: Play }] : [])];
+  const activeMobileItems = activeNavItems;
   const [menuOpen, setMenuOpen] = useState(false);
   const currentUser = account.status === 'signed-in' ? { displayName: account.displayName ?? 'Account', email: account.email, username: account.username } : null;
   const navigate = useNavigate();
@@ -320,6 +321,7 @@ export default function App() {
                         <span>{isYouTubeMode ? 'Anime' : 'YouTube'}</span>
                         <ChevronRight size={13} className="kc-menu-chevron" aria-hidden="true" />
                       </NavLink>}
+                      {isAdmin && isYouTubeMode && <MenuLink to="/movies" label="Movies" icon={Film} onNavigate={closeMenu} />}
                       {isAdmin && <MenuLink to="/admin" label="Admin console" icon={Settings} onNavigate={closeMenu} />}
                     </>
                   )}
