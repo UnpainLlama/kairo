@@ -157,7 +157,7 @@ export async function verifyCloudflareAccessAssertion(
       claims.exp <= nowSeconds - CLOCK_SKEW_SECONDS ||
       (claims.iat !== undefined && (typeof claims.iat !== 'number' || !Number.isFinite(claims.iat) || claims.iat > nowSeconds + CLOCK_SKEW_SECONDS)) ||
       (claims.nbf !== undefined && (typeof claims.nbf !== 'number' || !Number.isFinite(claims.nbf) || claims.nbf > nowSeconds + CLOCK_SKEW_SECONDS)) ||
-      typeof claims.sub !== 'string' || !claims.sub.trim() || claims.sub.length > 255 || /[\\u0000-\\u001f]/.test(claims.sub) ||
+      typeof claims.sub !== 'string' || !claims.sub.trim() || claims.sub.length > 255 || [...claims.sub].some((character) => character.charCodeAt(0) < 32) ||
       typeof claims.email !== 'string' || claims.service_token_status === true ||
       typeof claims.common_name === 'string') return null;
 
