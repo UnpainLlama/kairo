@@ -153,6 +153,7 @@ Progress request example:
 Validate finite non-negative numbers, enforce sensible duration/position bounds, and derive the subject ID from the authenticated context. Never accept `userId` from the request body.
 
 | GET | `/api/v1/me/playback?mediaType=...&mediaKey=...` (mediaType: anime, movie or youtube) | Restore one shared playback snapshot. Omit `mediaKey` to list recent cross-media playback (optional `mediaType`, `limit`). |
+| DELETE | `/api/v1/me/playback?mediaType=...&mediaKey=...` (optional `mediaKey`) | Delete one playback snapshot or clear all snapshots for the selected media type from the signed-in account. YouTube deletion is administrator-only. |
 
 | Method | Path | Purpose |
 |---|---|---|

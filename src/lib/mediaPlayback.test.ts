@@ -103,4 +103,21 @@ describe('shared media playback persistence', () => {
     expect(await deleteMediaPlayback(null, 'movie')).toBe(true);
     expect(listLocalMediaPlayback(null).map(item => item.mediaType)).toEqual(['youtube']);
   });
+
+  it('deletes signed-in movie playback from the account API as well as local storage', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: true, data: { removed: true, changes: 1 },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    writeLocalMediaPlayback('user-a', snapshot());
+
+    expect(await deleteMediaPlayback('user-a', 'movie', '550')).toBe(true);
+    expect(readLocalMediaPlayback('user-a', 'movie', '550')).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/me/playback?mediaType=movie&mediaKey=550');
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      method: 'DELETE',
+      credentials: 'same-origin',
+    });
+  });
 });
