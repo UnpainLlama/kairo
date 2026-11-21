@@ -13,7 +13,7 @@ This is the authoritative deployment guide. It replaces the older steps in `READ
 
 Each environment has its own database and cache, so staging can never touch production data. The environment is chosen at build time with `CLOUDFLARE_ENV` (the Cloudflare Vite plugin's mechanism) and Wrangler's `--env` for migrations. Bindings and variables are not inherited between environments, so `wrangler.jsonc` declares them per environment.
 
-The deploy workflow (`.github/workflows/deploy.yml`) runs typecheck, tests and build, then (only when requested) the guards, D1 migrations, build and deploy. Remote requests to `/api/health` and `/api/ready` are disabled by default so Cloudflare Access can protect both paths without blocking deployment. The endpoint handlers remain in the Worker and are exercised by CI tests. To opt into anonymous remote probes after configuring exact public path overrides, set the GitHub Actions variable `KAIRO_REMOTE_HEALTH_CHECKS_ENABLED=true`. When probes are disabled, the deployment summary explicitly states that live HTTP/D1 readiness was not verified.
+The deploy workflow (`.github/workflows/deploy.yml`) always runs typecheck, tests and build. A requested deployment then checks its release guards before it can back up D1, apply migrations or deploy the Worker. Live `/api/health` and `/api/ready` probes are mandatory for deployment: configure exact Cloudflare Access Worker-destination overrides for those paths, verify both endpoints return healthy JSON without an Access login, and then set `KAIRO_REMOTE_HEALTH_CHECKS_ENABLED=true` in the target GitHub Actions environment. Until that variable is enabled, the deploy guard fails before any remote D1 backup, migration or Worker deployment; CI verification still runs.
 
 Cloudflare Access must also have an exact public destination override for `/api/v1/auth/logout` (the application path override is path-scoped). This one path is intentionally allowed through to the Worker so an expired or denied Access identity can sign out. The Worker enforces same-origin on the POST and revokes only the session token supplied in that request's HttpOnly cookie. Do not create a broader `/api/v1/auth/*` or `/api/*` bypass. This exception is separate from the anonymous health/readiness probes and does not make any account-data endpoint public.
 
@@ -49,14 +49,14 @@ Dashboard labels change occasionally; if one differs slightly, look for the near
 1. Repository > **Settings** > **Environments** > **New environment** > name it `staging`.
 2. In `staging` > **Environment secrets** > add `CLOUDFLARE_API_TOKEN` (the token) and `CLOUDFLARE_ACCOUNT_ID`.
 3. (Recommended now) Create a second environment named `production`, add yourself under **Required reviewers**, and add **no secrets yet**. This pre-builds the approval gate.
-4. (Optional) Settings > **Secrets and variables** > **Actions** > **Variables** > `STAGING_DEPLOY_ENABLED` = `true` makes every merge to `main` deploy to staging automatically. Skip it to deploy only by hand.
+4. (Optional; enable only after staging setup is complete) Settings > **Secrets and variables** > **Actions** > **Variables** > `STAGING_DEPLOY_ENABLED` = `true` makes every push to `main` attempt a staging deployment. Leave it unset during setup to keep pushes verification-only; otherwise the deploy job will run and fail its safety guard until the staging health/readiness overrides have been configured and `KAIRO_REMOTE_HEALTH_CHECKS_ENABLED=true` has been added to the `staging` environment.
 
 ### 2f. Deploy staging
 1. Repository > **Actions** > **Build and deploy KAIRO** > **Run workflow**.
 2. Select the reconciled **`staging`** branch and set **target** to `staging`. Manual staging deployments are rejected from feature branches and `main`; first complete and review the feature-to-staging reconciliation described in [Closed-access setup](CLOSED_ACCESS_SETUP.md).
 3. When it finishes, open the run's **Summary**. It shows the staging URL and the `/api/ready` response.
 
-The separate optional `STAGING_DEPLOY_ENABLED=true` setting still permits the documented automatic staging deployment on pushes to `main`. The branch guard applies to manual `workflow_dispatch` staging runs.
+The optional `STAGING_DEPLOY_ENABLED=true` repository variable controls automatic deployments on pushes to `main`. For a manual staging deployment, dispatch the workflow from the reconciled `staging` branch with target `staging`; do not dispatch from `main` or a feature branch.
 
 If the deploy log says the account needs a **workers.dev subdomain**, register one: dashboard > **Workers & Pages** > the subdomain setting. Then re-run.
 
@@ -92,8 +92,7 @@ Open these in a browser (replace the host with your staging URL):
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | GitHub environment **secrets** | GitHub only | Deploying. Never in the repo or the Worker |
 | `STAGING_DEPLOY_ENABLED` | GitHub variable | GitHub | Auto-deploy staging on merge to main |
 | `STAGING_URL`, `PRODUCTION_URL` | GitHub variables, optional | GitHub | Environment-specific fallback URL if the deploy log URL cannot be read; a production check never falls back to the staging URL |
-| `KAIRO_REMOTE_HEALTH_CHECKS_ENABLED=true` | GitHub environment variable | GitHub | Required for staging and production deploys. Configure exact Access destination overrides for `/api/health` and `/api/ready` first; the deploy is blocked unless both live probes return healthy JSON. |
-| `KAIRO_REMOTE_HEALTH_CHECKS_ENABLED` | GitHub Actions variable, optional | Repository or environment | Set to `true` only when both probe paths have exact public Cloudflare Access overrides; otherwise remote anonymous probes are skipped |
+| `KAIRO_REMOTE_HEALTH_CHECKS_ENABLED` | GitHub environment variable | **Settings > Environments > `staging` (and separately `production`) > Environment variables** | Set to `true` only after the exact `/api/health` and `/api/ready` Worker-destination overrides are saved and verified. The deploy job reads this from its target environment and fails closed before remote D1 work when it is absent or not `true`. Keep staging and production values separate. |
 | `PRODUCTION_DEPLOY_APPROVED` | GitHub variable | GitHub | Must be `true` for any production deploy. **Do not set.** |
 
 CineSrc is embedded directly by the Movies watch page and requires no Kairo Worker secret or additional Cloudflare binding. Movie playback is not routed through a Worker proxy.
@@ -117,6 +116,7 @@ Playback position is written locally at most once per second and synced to the s
 | `/api/ready` returns 503 "Apply migrations" | The migrate step did not run; re-run the workflow |
 | `/api/ready` shows `"cache":"none"` | The KV binding is missing or the ID placeholder was not replaced |
 | `/api/...` shows the website instead of JSON | `run_worker_first` was removed from `assets` in `wrangler.jsonc` |
+| Deploy job fails with `Deployment is blocked until exact public Worker destination overrides...` | Add the exact `/api/health` and `/api/ready` overrides to the target Worker's Cloudflare Access destination, verify both unauthenticated GETs return HTTP 200 JSON with `success: true`, then set `KAIRO_REMOTE_HEALTH_CHECKS_ENABLED=true` in that deployment's GitHub Actions environment. The guard runs before D1 backup, migrations and Worker deployment. |
 
 ## 6. Rollback
 - Worker: dashboard > Workers & Pages > the Worker > **Deployments** > roll back to a previous version. 

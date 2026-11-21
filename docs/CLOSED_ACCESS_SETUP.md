@@ -23,11 +23,25 @@ This branch implements the agreed staging access model:
 1. In Cloudflare, open **Workers & Pages** and select the staging Worker corresponding to `kairo-anime-platform-staging.unpainllama.workers.dev`.
 2. Open its **Access** tab and choose **Protect this Worker**. Protect the staging Worker (including the URL/preview endpoints that belong to that Worker). Do not select the account-wide option.
 3. In Zero Trust, ensure **One-time PIN** is enabled as a login method.
-4. Keep `/api/health` and `/api/ready` protected by default. Before enabling a deployment environment, configure exact Worker destination path overrides for only those two paths, verify that they return the minimal health/readiness JSON without exposing private account data, then set the GitHub environment variable `KAIRO_REMOTE_HEALTH_CHECKS_ENABLED=true`. The deploy workflow now blocks deployments unless this live verification is enabled and both probes succeed. Do not create an application-wide Bypass/Everyone policy.
+4. On this staging Worker's **Worker destination** in the Access application, add exactly these three destination overrides. Use this as the `overrides` array on the existing `type: worker` destination (keep its existing `worker_id` and the application's existing policies and other destinations):
 
-   Do not create an application-wide Bypass/Everyone policy. Cloudflare documents Worker destination path overrides in its [Access application API](https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/applications/methods/create/).
+   ```json
+   {
+     "overrides": [
+       { "behavior": "public", "path_pattern": "/api/health" },
+       { "behavior": "public", "path_pattern": "/api/ready" },
+       { "behavior": "public", "path_pattern": "/api/v1/auth/logout" }
+     ]
+   }
+   ```
 
-   Also configure an exact Worker destination path override/public exception for `/api/v1/auth/logout`. This lets the sign-out POST reach the Worker when a user's Cloudflare Access session is expired or their Kairo account is denied. The Worker still requires a same-origin Origin/Referer for the state-changing request and the handler only revokes the opaque Kairo session cookie supplied by that browser. Do not exempt a wildcard such as `/api/v1/auth/*`, `/api/*`, or any other account API path. The sign-out override is not a login or data-access exemption.
+   These are exact paths. Do not add a wildcard, a broader `/api/*` or `/api/v1/auth/*` exception, an application-wide Bypass/Everyone policy, or an account-wide Worker exception. Cloudflare's [Access application API](https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/applications/methods/create/) documents the Worker `overrides` field; each override uses `behavior: public` and a `path_pattern`. Exact patterns do not implicitly include subpaths.
+
+   The two health paths are anonymous probes only. Before changing any GitHub setting, test both while signed out (for example, in a private browser window or with `curl`): `GET /api/health` and `GET /api/ready` must return HTTP 200 JSON with `success: true`, not an Access login redirect. Confirm that the site root and account routes such as `/api/v1/me` remain protected by Access. If either probe fails, leave the GitHub health-check variable unset and fix the Access destination configuration first.
+
+   The logout exception is separate: it allows the sign-out POST to reach the Worker when a user's Access session is expired or their Kairo account is denied. The Worker still requires a same-origin Origin/Referer for the state-changing request and revokes only the opaque Kairo session cookie supplied by that browser. It is not a login or account-data exemption.
+
+   Only after the two health probes have passed, open GitHub **Settings > Environments > staging > Environment variables** and set `KAIRO_REMOTE_HEALTH_CHECKS_ENABLED=true`. Set this on the `staging` environment, not as a repo-wide variable. The deploy workflow refuses to proceed without it and does so before D1 backup, migrations or Worker deployment.
 5. Create an **Allow** policy for the protected Worker application. Add each invited email as an individual **Emails** selector value. The policy should contain the administrator's email and only the invited standard-user emails, up to 16 addresses total.
 6. Do not use **Emails ending in**, **Email domain**, **Login Methods: One-time PIN** as an Include rule by itself, **Everyone**, or **All valid emails**. The allowlist must identify individual addresses.
 7. Set the Access application session duration to 24 hours as the initial setting.
