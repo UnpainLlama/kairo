@@ -40,6 +40,13 @@ describe('account-scoped browser storage', () => {
     expect(readWatchHistory<{ slug: string }>('user-b')).toEqual([{ slug: 'beta' }]);
   });
 
+  it('normalises account IDs consistently and keeps blank IDs in the guest namespace', () => {
+    expect(watchHistoryStorageKey(' user-a ')).toBe(watchHistoryStorageKey('user-a'));
+    expect(watchProgressStorageKey(' user-a ', 'alpha', 1, 'sub'))
+      .toBe(watchProgressStorageKey('user-a', 'alpha', 1, 'sub'));
+    expect(watchHistoryStorageKey('   ')).toBe(watchHistoryStorageKey(null));
+  });
+
   it('moves legacy unscoped activity into guest storage, never into a signed-in account', () => {
     const legacyProgress = 'kairo-progress:alpha:1:sub';
     localStorage.setItem(legacyProgress, '120');

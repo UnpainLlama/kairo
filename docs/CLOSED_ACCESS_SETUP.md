@@ -7,13 +7,13 @@ This branch implements the agreed staging access model:
 - Configure individual email addresses in Cloudflare Access. Do not allow an entire Gmail domain, all valid emails, or Everyone.
 - The intended allocation is one administrator email plus up to 15 standard-user emails (16 total).
 - Kairo's Worker verifies the signed Cloudflare Access application JWT, including RS256 signature, team issuer, application audience, token times, and human identity email. It never trusts a user-supplied email header.
-- Every Kairo account is bound to one unique Access email. The Kairo session is also bound to that email and is rejected when the current Access identity differs.
+- Every Kairo account is bound to one unique Access email. The Kairo session is bound to both the verified Access email and JWT subject and is rejected when either current identity value differs.
 - On first successful Access visit, Kairo automatically provisions a standard profile from the verified email. Existing profiles are restored/linked; suspended or deleted profiles are not reactivated. The 15-standard-account limit still applies.
 - The first administrator is provisioned once using a temporary Worker bootstrap secret and the verified Access email; no Kairo password is created. The bootstrap completion state is permanent in D1.
 - There is no Kairo username/password sign-in or password-based admin lockout. Cloudflare Access is the only interactive authentication layer. The Worker still enforces the administrator role for YouTube and console routes.
 - Administrator sessions expire after eight hours; standard-account sessions retain the existing 30-day lifetime.
 - The administrator has a separate console, manages standard accounts, and is the only Kairo role allowed to use YouTube features.
-- The admin console URL is generated from 256 bits of cryptographic randomness and rotates every 30 minutes. The URL is not an authentication factor; the server-side administrator session remains the access control.
+- The admin console URL is generated from 256 bits of cryptographic randomness with a 30-minute lease. Scheduled maintenance replaces it only when the stored path is expired; an unexpired path is not invalidated early. The URL is not an authentication factor; the server-side administrator session remains the access control.
 - Playback checkpoints are saved locally every five seconds and synced to D1 every 60 seconds for signed-in users. Important user/lifecycle events flush immediately. Failed cloud writes remain in a local retry queue with exponential backoff.
 
 ## Staging-only Cloudflare Access configuration
@@ -23,9 +23,11 @@ This branch implements the agreed staging access model:
 1. In Cloudflare, open **Workers & Pages** and select the staging Worker corresponding to `kairo-anime-platform-staging.unpainllama.workers.dev`.
 2. Open its **Access** tab and choose **Protect this Worker**. Protect the staging Worker (including the URL/preview endpoints that belong to that Worker). Do not select the account-wide option.
 3. In Zero Trust, ensure **One-time PIN** is enabled as a login method.
-4. Keep `/api/health` and `/api/ready` protected by Cloudflare Access. Remote anonymous health/readiness probes are disabled by default in the deployment workflow, so no public path overrides or application-wide Bypass policy are needed. The endpoint handlers remain in the Worker and are exercised by CI tests; the deployment summary will explicitly say that live HTTP/D1 readiness was not inspected. If you later configure exact public path overrides for both paths, you can opt back into those remote probes by setting the GitHub Actions variable `KAIRO_REMOTE_HEALTH_CHECKS_ENABLED=true`.
+4. Keep `/api/health` and `/api/ready` protected by default. Before enabling a deployment environment, configure exact Worker destination path overrides for only those two paths, verify that they return the minimal health/readiness JSON without exposing private account data, then set the GitHub environment variable `KAIRO_REMOTE_HEALTH_CHECKS_ENABLED=true`. The deploy workflow now blocks deployments unless this live verification is enabled and both probes succeed. Do not create an application-wide Bypass/Everyone policy.
 
    Do not create an application-wide Bypass/Everyone policy. Cloudflare documents Worker destination path overrides in its [Access application API](https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/applications/methods/create/).
+
+   Also configure an exact Worker destination path override/public exception for `/api/v1/auth/logout`. This lets the sign-out POST reach the Worker when a user's Cloudflare Access session is expired or their Kairo account is denied. The Worker still requires a same-origin Origin/Referer for the state-changing request and the handler only revokes the opaque Kairo session cookie supplied by that browser. Do not exempt a wildcard such as `/api/v1/auth/*`, `/api/*`, or any other account API path. The sign-out override is not a login or data-access exemption.
 5. Create an **Allow** policy for the protected Worker application. Add each invited email as an individual **Emails** selector value. The policy should contain the administrator's email and only the invited standard-user emails, up to 16 addresses total.
 6. Do not use **Emails ending in**, **Email domain**, **Login Methods: One-time PIN** as an Include rule by itself, **Everyone**, or **All valid emails**. The allowlist must identify individual addresses.
 7. Set the Access application session duration to 24 hours as the initial setting.
@@ -55,7 +57,7 @@ To disable an invited user immediately:
 2. Remove that exact email from the Cloudflare Access Allow policy so they cannot obtain a new Access application session.
 3. Revoke their Cloudflare Access session from the Zero Trust dashboard where immediate edge-level revocation is required. Cloudflare notes that revocation can take 20–30 seconds.
 
-Kairo's menu Sign out action navigates to `/cdn-cgi/access/logout`. Deleting only the internal Kairo cookie is not a full sign-out because a still-valid Cloudflare Access identity would allow `/api/v1/me` to create another internal session.
+Kairo's Sign out actions first call `POST /api/v1/auth/logout` to revoke the current Kairo session and clear the HttpOnly cookie. After successful revocation, the app clears only that account's namespaced browser cache and navigates to `/cdn-cgi/access/logout`. App shell, profile and admin console share the helper. If revocation fails, browser data is retained and the redirect is not performed. The exact `/api/v1/auth/logout` Worker path override described above is required so this same-origin revocation can run even after the outer Access session expires or the Kairo identity becomes denied.
 
 ## Database migration and first administrator setup
 

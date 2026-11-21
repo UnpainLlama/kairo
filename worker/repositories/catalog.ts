@@ -50,6 +50,43 @@ export function buildListQuery(kind: keyof typeof LIST_ORDER, p: Pagination): Bu
   };
 }
 
+
+export type BrowseFilters = {
+  sort: keyof typeof SORT_ORDER_BY;
+  genre?: string;
+  year?: number;
+  format?: string;
+  status?: string;
+  season?: string;
+  page: number;
+  limit: number;
+};
+
+/** Filter-only browse for the legacy D1 catalogue. Every filter is bound; order is whitelisted. */
+export function buildBrowseQuery(p: BrowseFilters): BuiltQuery {
+  const where: string[] = [];
+  const binds: unknown[] = [];
+  if (p.genre) {
+    where.push(`EXISTS (
+      SELECT 1 FROM json_each(CASE WHEN json_valid(genres_json) THEN genres_json ELSE '[]' END) AS genre
+      WHERE genre.value = ?
+    )`);
+    binds.push(p.genre);
+  }
+  if (p.year !== undefined) { where.push('release_year = ?'); binds.push(p.year); }
+  if (p.format) { where.push('LOWER(format) = ?'); binds.push(p.format); }
+  if (p.status) { where.push('LOWER(status) = ?'); binds.push(p.status); }
+  if (p.season) { where.push('LOWER(season) = ?'); binds.push(p.season); }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const offset = (p.page - 1) * p.limit;
+  return {
+    sql: `SELECT ${cardColumns()} FROM anime ${whereSql} ORDER BY ${SORT_ORDER_BY[p.sort]} LIMIT ? OFFSET ?`,
+    binds: [...binds, p.limit, offset],
+    countSql: `SELECT COUNT(*) AS total FROM anime ${whereSql}`,
+    countBinds: binds,
+  };
+}
+
 // Genres are derived from the JSON arrays already stored on each title. A row with malformed JSON is skipped, not fatal.
 export const GENRES_SQL =
   `SELECT g.value AS name, COUNT(*) AS count ` +

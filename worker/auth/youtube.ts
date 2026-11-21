@@ -111,19 +111,35 @@ function encryptionKey(encoded: string): Promise<CryptoKey> {
   const bytes = decodeBase64Url(encoded);
   return crypto.subtle.importKey('raw', bytes, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
 }
-async function encryptToken(token: string, encodedKey: string): Promise<string> {
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await encryptionKey(encodedKey), enc.encode(token));
-  return `v1.${base64Url(iv)}.${base64Url(new Uint8Array(ciphertext))}`;
+function tokenAad(userId: string, purpose: 'access' | 'refresh'): Uint8Array {
+  return enc.encode(`kairo:youtube-token:v2:${userId}:${purpose}`);
 }
-async function decryptToken(value: string, encodedKey: string): Promise<string> {
-  const [version, iv, ciphertext] = value.split('.');
-  if (version !== 'v1' || !iv || !ciphertext) throw new Error('Unsupported encrypted token format');
-  const plaintext = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: decodeBase64Url(iv) },
+async function encryptToken(token: string, encodedKey: string, userId: string, purpose: 'access' | 'refresh'): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv, additionalData: tokenAad(userId, purpose) },
     await encryptionKey(encodedKey),
-    decodeBase64Url(ciphertext),
+    enc.encode(token),
   );
+  return `v2.${base64Url(iv)}.${base64Url(new Uint8Array(ciphertext))}`;
+}
+async function decryptToken(value: string, encodedKey: string, userId: string, purpose: 'access' | 'refresh'): Promise<string> {
+  const [version, iv, ciphertext] = value.split('.');
+  if ((version !== 'v1' && version !== 'v2') || !iv || !ciphertext) {
+    throw new Error('Unsupported encrypted token format');
+  }
+  const key = await encryptionKey(encodedKey);
+  const encrypted = decodeBase64Url(ciphertext);
+  const nonce = decodeBase64Url(iv);
+  // v1 is read-only compatibility for existing rows; all new writes use v2
+  // with account and token-purpose AAD to prevent cross-row token substitution.
+  const plaintext = version === 'v2'
+    ? await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: nonce, additionalData: tokenAad(userId, purpose) },
+        key,
+        encrypted,
+      )
+    : await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce }, key, encrypted);
   return new TextDecoder().decode(plaintext);
 }
 function callbackUrl(c: YouTubeContext): string | null {
@@ -256,7 +272,7 @@ function parseYouTubeFeedCursorState(raw: string): YouTubeFeedCursorState | null
 
 export function registerYouTubeAuthRoutes(app: any): void {
   const adminOnly = async (c: YouTubeContext, next: () => Promise<void>) => {
-    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined);
+    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined, c.get?.('accessSubject') as string | null | undefined);
     if (!user || user.role !== 'admin') {
       c.header('Cache-Control', 'no-store');
       return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Not found.' } }, 404);
@@ -292,7 +308,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
       return unavailable(c);
     }
     const cookie = c.req.header('Cookie') ?? null;
-    const user = await findSessionUser(c.env.DB, cookie, Date.now(), c.get?.('accessEmail') as string | null | undefined);
+    const user = await findSessionUser(c.env.DB, cookie, Date.now(), c.get?.('accessEmail') as string | null | undefined, c.get?.('accessSubject') as string | null | undefined);
     if (!user) return redirectTo(c, '/login?youtube=sign_in_required&continue=youtube-connect');
     if (!await hasRecentSession(c.env.DB, cookie)) return redirectTo(c, '/login?youtube=reauth_required&continue=youtube-connect');
 
@@ -367,7 +383,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
     }
     const cookie = c.req.header('Cookie') ?? null;
     const sessionToken = readSessionCookie(cookie);
-    const user = await findSessionUser(c.env.DB, cookie, Date.now(), c.get?.('accessEmail') as string | null | undefined);
+    const user = await findSessionUser(c.env.DB, cookie, Date.now(), c.get?.('accessEmail') as string | null | undefined, c.get?.('accessSubject') as string | null | undefined);
     if (!sessionToken || !user) {
       logYouTubeDiagnostic(c, 'youtube_callback_session_missing');
       return redirectTo(c, '/login?youtube=sign_in_required&continue=youtube-connect');
@@ -468,16 +484,20 @@ export function registerYouTubeAuthRoutes(app: any): void {
         return redirectTo(c, '/settings?youtube=invalid_grant');
       }
       callbackStage = 'refresh_token_encryption';
-      const encryptedRefresh = tokens.refresh_token
-        ? await encryptToken(tokens.refresh_token, key!)
-        : existing?.encrypted_refresh_token;
-      if (!encryptedRefresh) {
+      let refreshToken = tokens.refresh_token ?? null;
+      if (!refreshToken && existing?.encrypted_refresh_token) {
+        callbackStage = 'legacy_refresh_token_migration';
+        refreshToken = await decryptToken(existing.encrypted_refresh_token, key!, user.id, 'refresh');
+      }
+      if (!refreshToken) {
         logYouTubeDiagnostic(c, 'youtube_refresh_token_missing', { newRefreshTokenPresent: false, existingRefreshTokenPresent: Boolean(existing?.encrypted_refresh_token) });
         return redirectTo(c, '/settings?youtube=refresh_token_missing');
       }
 
+      callbackStage = 'refresh_token_encryption';
+      const encryptedRefresh = await encryptToken(refreshToken, key!, user.id, 'refresh');
       callbackStage = 'access_token_encryption';
-      const encryptedAccess = await encryptToken(tokens.access_token!, key!);
+      const encryptedAccess = await encryptToken(tokens.access_token!, key!, user.id, 'access');
       callbackStage = 'connection_persist';
       await c.env.DB.prepare(`
         INSERT INTO provider_connections
@@ -499,8 +519,8 @@ export function registerYouTubeAuthRoutes(app: any): void {
   });
 
   app.get('/api/v1/auth/youtube/status', async (c: YouTubeContext) => {
-    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined);
-    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to manage YouTube.' } }, 401);
+    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined, c.get?.('accessSubject') as string | null | undefined);
+    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'A Kairo administrator session is required to manage YouTube.' } }, 401);
     try {
       const row = await c.env.DB.prepare(
         "SELECT connected_at,updated_at,scopes_json FROM provider_connections WHERE user_id=? AND provider='youtube' LIMIT 1"
@@ -518,15 +538,15 @@ export function registerYouTubeAuthRoutes(app: any): void {
     if (!origin || origin !== new URL(c.req.url).origin) {
       return c.json({ success: false, error: { code: 'ORIGIN_FORBIDDEN', message: 'This request origin is not allowed.' } }, 403);
     }
-    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined);
-    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to manage YouTube.' } }, 401);
+    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined, c.get?.('accessSubject') as string | null | undefined);
+    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'A Kairo administrator session is required to manage YouTube.' } }, 401);
     try {
       const row = await c.env.DB.prepare(
         "SELECT encrypted_refresh_token FROM provider_connections WHERE user_id=? AND provider='youtube' LIMIT 1"
       ).bind(user.id).first<{ encrypted_refresh_token: string | null }>();
       if (row?.encrypted_refresh_token && c.env.YOUTUBE_TOKEN_ENCRYPTION_KEY) {
         try {
-          const token = await decryptToken(row.encrypted_refresh_token, c.env.YOUTUBE_TOKEN_ENCRYPTION_KEY);
+          const token = await decryptToken(row.encrypted_refresh_token, c.env.YOUTUBE_TOKEN_ENCRYPTION_KEY, user.id, 'refresh');
           await fetch(REVOKE_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token }) });
         } catch { /* Local credential removal must succeed even if Google's revoke endpoint is unavailable. */ }
       }
@@ -542,8 +562,8 @@ export function registerYouTubeAuthRoutes(app: any): void {
   // Kairo keeps each user's selected channel list and never exposes the key.
   app.get('/api/v1/youtube/channels', async (c: YouTubeContext) => {
     c.header('Cache-Control', 'no-store');
-    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined);
-    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to manage your Kairo channels.' } }, 401);
+    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined, c.get?.('accessSubject') as string | null | undefined);
+    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'A Kairo administrator session is required to manage your Kairo channels.' } }, 401);
     try {
       const result = await c.env.DB.prepare(
         "SELECT channel_id AS channelId, channel_title AS title, description, thumbnail_url AS thumbnailUrl, added_at AS addedAt FROM youtube_feed_channels WHERE user_id=? ORDER BY added_at DESC, channel_title COLLATE NOCASE"
@@ -557,8 +577,8 @@ export function registerYouTubeAuthRoutes(app: any): void {
 
   app.get('/api/v1/youtube/channels/search', async (c: YouTubeContext) => {
     c.header('Cache-Control', 'no-store');
-    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined);
-    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to search YouTube channels.' } }, 401);
+    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined, c.get?.('accessSubject') as string | null | undefined);
+    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'A Kairo administrator session is required to search YouTube channels.' } }, 401);
     const term = new URL(c.req.url).searchParams.get('q')?.trim() ?? '';
     if (term.length < 2 || term.length > 80 || /[\u0000-\u001F\u007F]/.test(term)) {
       return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Enter a channel name or topic between 2 and 80 characters.' } }, 400);
@@ -598,7 +618,7 @@ export function registerYouTubeAuthRoutes(app: any): void {
     c.header('Cache-Control', 'no-store');
     // Searching public videos does not require a Kairo or YouTube account.
     // Guests are still rate-limited by client IP and the shared project quota.
-    const identity = (await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined))?.id ?? 'guest';
+    const identity = (await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined, c.get?.('accessSubject') as string | null | undefined))?.id ?? 'guest';
 
     const params = new URL(c.req.url).searchParams;
     const term = params.get('q')?.trim() ?? '';
@@ -720,8 +740,8 @@ export function registerYouTubeAuthRoutes(app: any): void {
     if (!origin || origin !== new URL(c.req.url).origin) {
       return c.json({ success: false, error: { code: 'ORIGIN_FORBIDDEN', message: 'This request origin is not allowed.' } }, 403);
     }
-    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined);
-    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to add channels.' } }, 401);
+    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined, c.get?.('accessSubject') as string | null | undefined);
+    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'A Kairo administrator session is required to add channels.' } }, 401);
     let body: any;
     try { body = await c.req.json(); } catch { return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Provide valid JSON.' } }, 400); }
     const channelId = typeof body?.channelId === 'string' ? body.channelId.trim() : '';
@@ -764,8 +784,8 @@ export function registerYouTubeAuthRoutes(app: any): void {
     if (!origin || origin !== new URL(c.req.url).origin) {
       return c.json({ success: false, error: { code: 'ORIGIN_FORBIDDEN', message: 'This request origin is not allowed.' } }, 403);
     }
-    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined);
-    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to remove channels.' } }, 401);
+    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined, c.get?.('accessSubject') as string | null | undefined);
+    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'A Kairo administrator session is required to remove channels.' } }, 401);
     const channelId = c.req.param('channelId');
     if (!/^[A-Za-z0-9_-]{6,64}$/.test(channelId)) {
       return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Choose a valid YouTube channel.' } }, 400);
@@ -781,8 +801,8 @@ export function registerYouTubeAuthRoutes(app: any): void {
 
   app.get('/api/v1/youtube/feed', async (c: YouTubeContext) => {
     c.header('Cache-Control', 'no-store');
-    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined);
-    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'Sign in to view your Kairo feed.' } }, 401);
+    const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined, c.get?.('accessSubject') as string | null | undefined);
+    if (!user) return c.json({ success: false, error: { code: 'AUTH_REQUIRED', message: 'A Kairo administrator session is required to view your Kairo feed.' } }, 401);
     if (!await allowYouTubeRequest(c, user.id, 'feed-page', 30)) {
       return c.json({ success: false, error: { code: 'RATE_LIMITED', message: 'Your feed is loading too quickly. Please try again in 15 minutes.' } }, 429);
     }

@@ -9,7 +9,7 @@ const ok = (c: any, data: unknown, status = 200) =>
 
 
 async function currentAdmin(c: any) {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
   return user?.role === 'admin' ? user : null;
 }
 
@@ -42,11 +42,13 @@ export async function rotateAdminConsolePath(db: D1Database): Promise<void> {
   if (!admin) return;
   const now = Date.now();
   const path = newConsolePath();
+  // Keep a path valid for its full lease; older scheduled runs invalidated open consoles.
   await db.prepare(`INSERT INTO admin_console_access (singleton_id,path_value,rotated_at,expires_at)
     VALUES (1,?,?,?)
     ON CONFLICT(singleton_id) DO UPDATE SET path_value=excluded.path_value,
-      rotated_at=excluded.rotated_at, expires_at=excluded.expires_at`)
-    .bind(path, now, now + 30 * 60 * 1000).run();
+      rotated_at=excluded.rotated_at, expires_at=excluded.expires_at
+    WHERE admin_console_access.expires_at <= ?`)
+    .bind(path, now, now + 30 * 60 * 1000, now).run();
 }
 
 function originAllowed(c: any) {
@@ -73,6 +75,91 @@ async function permitBootstrapAttempt(db: D1Database, ip: string): Promise<boole
 }
 function noStore(c: any) {
   c.header('Cache-Control', 'no-store');
+}
+type SeatReassignment = 'not-found' | 'unchanged' | 'email-in-use' | 'reassigned';
+
+/**
+ * Reassign an allocated standard-account seat without transferring the prior
+ * person's account identity or data. The old profile remains as a minimal
+ * deleted tombstone bound to its former Access email/subject, preventing the
+ * still-valid edge Access session from auto-provisioning it again.
+ *
+ * The new person receives a new profile ID and empty account-owned tables.
+ */
+export async function reassignStandardAccountEmail(
+  db: D1Database,
+  accountId: string,
+  accessEmail: string,
+): Promise<SeatReassignment> {
+  const existing = await db.prepare(
+    "SELECT access_email AS accessEmail FROM user_profiles WHERE id=? AND role='user' AND account_status IN ('active','suspended') LIMIT 1",
+  ).bind(accountId).first<{ accessEmail: string | null }>();
+  if (!existing) return 'not-found';
+  if (existing.accessEmail?.toLowerCase() === accessEmail) return 'unchanged';
+
+  const assigned = await db.prepare(
+    'SELECT id FROM user_profiles WHERE id<>? AND (lower(access_email)=lower(?) OR lower(email)=lower(?)) LIMIT 1',
+  ).bind(accountId, accessEmail, accessEmail).first<{ id: string }>();
+  if (assigned) return 'email-in-use';
+
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(accessEmail));
+  const username = 'access_' + [...new Uint8Array(digest).slice(0, 8)]
+    .map(byte => byte.toString(16).padStart(2, '0')).join('');
+  const localPart = (accessEmail.split('@')[0] ?? '').split('+')[0];
+  const displayName = localPart
+    .replace(/[._-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 40) || 'Kairo member';
+  const nextId = crypto.randomUUID();
+
+  const results = await db.batch([
+    db.prepare(
+      `UPDATE user_profiles
+       SET display_name='Former account', avatar_url=NULL, bio='', profile_visibility='private',
+           email=NULL, email_verified_at=NULL, username=NULL, account_status='deleted',
+           updated_at=CURRENT_TIMESTAMP
+       WHERE id=? AND role='user' AND account_status IN ('active','suspended')`,
+    ).bind(accountId),
+    // changes() refers to the immediately preceding UPDATE. If another admin
+    // already re-assigned this row, no replacement profile is created.
+    db.prepare(
+      `INSERT INTO user_profiles
+        (id, identity_subject, display_name, email, email_verified_at, username,
+         access_email, access_subject, account_status, role)
+       SELECT ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, NULL, 'active', 'user'
+       WHERE changes() = 1`,
+    ).bind(nextId, 'cloudflare-access:' + accessEmail, displayName, accessEmail, username, accessEmail),
+    ...[
+      ['sessions', 'user_id'],
+      ['auth_identities', 'user_id'],
+      ['email_verification_tokens', 'user_id'],
+      ['password_reset_tokens', 'user_id'],
+      ['provider_connections', 'user_id'],
+      ['google_oauth_states', 'link_user_id'],
+      ['youtube_oauth_states', 'user_id'],
+      ['user_preferences', 'user_id'],
+      ['user_library', 'user_id'],
+      ['watch_progress', 'user_id'],
+      ['viewing_history', 'user_id'],
+      ['user_watch_history', 'user_id'],
+      ['youtube_feed_channels', 'user_id'],
+      ['youtube_feed_cursors', 'user_id'],
+      ['youtube_watch_history', 'user_id'],
+      ['youtube_watch_later', 'user_id'],
+      ['user_movie_library', 'user_id'],
+      ['user_movie_library_refs', 'user_id'],
+      ['user_watch_history_tombstones', 'user_id'],
+      ['user_watch_history_clear_markers', 'user_id'],
+      ['user_media_playback', 'user_id'],
+    ].map(([table, column]) => db.prepare(`DELETE FROM ${table} WHERE ${column}=?`).bind(accountId)),
+  ]);
+
+  if (Number(results[0]?.meta?.changes ?? 0) !== 1) return 'not-found';
+  if (Number(results[1]?.meta?.changes ?? 0) !== 1) {
+    throw new Error('seat_reassignment_profile_insert_failed');
+  }
+  return 'reassigned';
 }
 function sameSecret(a: string, b: string): boolean {
   const left = enc.encode(a), right = enc.encode(b);
@@ -125,17 +212,16 @@ export function registerAdminRoutes(app: any) {
     try {
       const uid = crypto.randomUUID(), now = Date.now();
       const results = await c.env.DB.batch([
-        c.env.DB.prepare("INSERT INTO user_profiles (id,identity_subject,display_name,email,email_verified_at,access_email,account_status,role) SELECT ?,?,?,?,?,?, 'active','admin' WHERE EXISTS (SELECT 1 FROM app_security_state WHERE singleton_id=1 AND admin_bootstrap_completed_at IS NULL) AND NOT EXISTS (SELECT 1 FROM user_profiles WHERE role='admin')")
-          .bind(uid, 'cloudflare-admin:' + accessEmail, displayName, accessEmail, new Date(now).toISOString(), accessEmail),
+        c.env.DB.prepare("INSERT INTO user_profiles (id,identity_subject,display_name,email,email_verified_at,access_email,access_subject,account_status,role) SELECT ?,?,?,?,?,?,?, 'active','admin' WHERE EXISTS (SELECT 1 FROM app_security_state WHERE singleton_id=1 AND admin_bootstrap_completed_at IS NULL) AND NOT EXISTS (SELECT 1 FROM user_profiles WHERE role='admin')")
+          .bind(uid, 'cloudflare-admin:' + accessEmail, displayName, accessEmail, new Date(now).toISOString(), accessEmail, c.env.ACCESS_ENFORCED === 'true' ? c.get('accessSubject') : null),
         c.env.DB.prepare("UPDATE app_security_state SET admin_bootstrap_completed_at=? WHERE singleton_id=1 AND admin_bootstrap_completed_at IS NULL AND EXISTS (SELECT 1 FROM user_profiles WHERE id=? AND role='admin')")
           .bind(now, uid),
       ]);
       if (Number(results[0]?.meta?.changes ?? 0) !== 1 || Number(results[1]?.meta?.changes ?? 0) !== 1) return fail(c, 409, 'ADMIN_ALREADY_EXISTS', 'Administrator setup is no longer available.');
       const session = await createSession(c.env.DB, uid, {
-        userAgent: c.req.header('User-Agent') ?? undefined,
-        ipPrefix: c.req.header('CF-Connecting-IP') ?? 'unknown',
         ttlSeconds: 8 * 60 * 60,
         accessEmail: c.env.ACCESS_ENFORCED === 'true' ? accessEmail : null,
+        accessSubject: c.env.ACCESS_ENFORCED === 'true' ? (c.get('accessSubject') as string | null | undefined) ?? null : null,
       });
       c.header('Set-Cookie', sessionCookie(session.token, new URL(c.req.url).protocol === 'https:', session.ttlSeconds));
       const path = await ensureConsolePath(c.env.DB);
@@ -152,7 +238,7 @@ export function registerAdminRoutes(app: any) {
     try {
       const [accounts, count] = await Promise.all([
         c.env.DB.prepare("SELECT id,username,access_email AS accessEmail,display_name AS displayName,account_status AS status,created_at AS createdAt FROM user_profiles WHERE role='user' ORDER BY created_at ASC").all(),
-        c.env.DB.prepare("SELECT COUNT(*) AS count FROM user_profiles WHERE role='user'").first() as Promise<{ count: number } | null>,
+        c.env.DB.prepare("SELECT COUNT(*) AS count FROM user_profiles WHERE role='user' AND account_status IN ('active','suspended')").first() as Promise<{ count: number } | null>,
       ]);
       return ok(c, { accounts: accounts.results ?? [], standardAccountCount: Number(count?.count ?? 0), standardAccountLimit: 15 });
     } catch {
@@ -173,15 +259,23 @@ export function registerAdminRoutes(app: any) {
     const body: any = await c.req.json().catch(() => null);
     const accessEmail = normalizeAccessEmail(body?.accessEmail);
     if (!accessEmail) return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid approved email address.');
+    if (body?.confirmDataDeletion !== true) {
+      return fail(c, 400, 'CONFIRMATION_REQUIRED', 'Reassigning a seat permanently deletes the previous account and all of its Kairo data. Explicit confirmation is required.');
+    }
     try {
-      const targetId = c.req.param('id');
-      const result = await c.env.DB.prepare("UPDATE user_profiles SET access_email=? WHERE id=? AND role='user' AND account_status IN ('active','suspended')")
-        .bind(accessEmail, targetId).run();
-      if (Number(result.meta?.changes ?? 0) !== 1) return fail(c, 404, 'ACCOUNT_NOT_FOUND', 'That standard account was not found.');
-      await c.env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(targetId).run();
-      return ok(c, { updated: true, accessEmail, sessionsRevoked: true });
+      const result = await reassignStandardAccountEmail(c.env.DB, c.req.param('id'), accessEmail);
+      if (result === 'not-found') return fail(c, 404, 'ACCOUNT_NOT_FOUND', 'That active or suspended standard account was not found.');
+      if (result === 'email-in-use') return fail(c, 409, 'ACCESS_EMAIL_IN_USE', 'That approved email address is already assigned to another Kairo identity.');
+      if (result === 'unchanged') return ok(c, { updated: false, accessEmail, accountReset: false, sessionsRevoked: false });
+      return ok(c, {
+        updated: true,
+        accessEmail,
+        accountReset: true,
+        previousAccountDataDeleted: true,
+        sessionsRevoked: true,
+      });
     } catch {
-      return fail(c, 409, 'ACCESS_EMAIL_IN_USE', 'That approved email address is already assigned to another Kairo account.');
+      return fail(c, 409, 'ACCESS_EMAIL_IN_USE', 'The new email could not be assigned. No account data was changed.');
     }
   });
 

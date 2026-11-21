@@ -5,7 +5,8 @@ import { ErrorState, LoadingState } from '../components/catalog';
 import KairoMediaPlayer, { type KairoPlaybackSource } from '../components/KairoMediaPlayer';
 import { useApi } from '../lib/useApi';
 import { useAccountScope } from '../hooks/useAccountScope';
-import { accountPreferenceStorageKey, historyPausedStorageKey, readWatchHistory, watchProgressIdentity, watchProgressStorageKey, writeWatchHistory } from '../lib/accountStorage';
+import { useHistoryRecording } from '../hooks/useHistoryRecording';
+import { accountPreferenceStorageKey, readWatchHistory, watchProgressIdentity, watchProgressStorageKey, writeWatchHistory } from '../lib/accountStorage';
 import { shouldSyncPlaybackProgress, type PlaybackSaveReason } from '../lib/playbackSync';
 import { loadMediaPlayback, syncMediaPlayback, writeLocalMediaPlayback, type SavedPlayerState } from '../lib/mediaPlayback';
 import { dateLabel, durationLabel, episodeNumberLabel, safeImageUrl, type AnimeDetails, type Episode, type EpisodeServer, type ItemList } from '../lib/catalog';
@@ -17,6 +18,7 @@ export default function WatchPage() {
   const { slug = '', episodeNumber: rawEpisode = '1' } = useParams();
   const key = encodeURIComponent(slug);
   const { accountId, resolved: accountResolved, error: accountError } = useAccountScope();
+  const historyRecording = useHistoryRecording(accountId, accountResolved);
   const [resumeReady, setResumeReady] = useState(false);
   const [initialPlayerState, setInitialPlayerState] = useState<SavedPlayerState | null>(null);
   const lastLocalSnapshotAt = useRef(0);
@@ -212,7 +214,7 @@ export default function WatchPage() {
   }, [accountId, slug, parsedEpisode, selectedServer?.id]);
 
   const persistPlaybackProgress = useCallback((seconds: number, reason: PlaybackSaveReason, playerState: SavedPlayerState = {}) => {
-    if (reason === 'open' || !accountResolved || !animeForProgress || !episodeForProgress || !Number.isFinite(seconds)) return;
+    if (!historyRecording.ready || historyRecording.paused || reason === 'open' || !accountResolved || !animeForProgress || !episodeForProgress || !Number.isFinite(seconds)) return;
     const duration = Number(episodeForProgress.durationSeconds);
     const position = Math.max(0, Math.min(
       Number.isFinite(duration) && duration > 0 ? duration : 86400,
@@ -297,12 +299,11 @@ export default function WatchPage() {
     }).catch(() => {
       // Keep local progress; the next periodic, pause or page-exit event retries.
     });
-  }, [accountResolved, accountId, animeForProgress, episodeForProgress, parsedEpisode, selectedServer?.id, slug]);
+  }, [historyRecording.ready, historyRecording.paused, accountResolved, accountId, animeForProgress, episodeForProgress, parsedEpisode, selectedServer?.id, slug]);
 
   useEffect(() => {
-    if (!accountResolved || details.status !== 'ok' || episodes.status !== 'ok' || !validEpisode) return;
+    if (!historyRecording.ready || historyRecording.paused || !accountResolved || details.status !== 'ok' || episodes.status !== 'ok' || !validEpisode) return;
     try {
-      if (localStorage.getItem(historyPausedStorageKey(accountId)) === 'true') return;
       const anime = details.data;
       const episode = episodePages.find((item) => item.episodeNumber === parsedEpisode);
       if (!episode) return;
@@ -316,7 +317,7 @@ export default function WatchPage() {
       writeWatchHistory(accountId, next);
       window.dispatchEvent(new Event('kairo:history-change'));
     } catch { /* browser storage may be disabled or full */ }
-  }, [accountResolved, accountId, details.status, episodes.status, episodePages, slug, parsedEpisode, selectedServer?.id, validEpisode]);
+  }, [historyRecording.ready, historyRecording.paused, accountResolved, accountId, details.status, episodes.status, episodePages, slug, parsedEpisode, selectedServer?.id, validEpisode]);
 
   if (!validEpisode) return <div className="kc-watch-error"><h1>Invalid episode</h1><p>Choose an episode from the anime page.</p><Link className="kc-btn kc-btn-dark" to={`/anime/${key}`}>Back to anime</Link></div>;
   if (details.status === 'loading' || (episodes.status === 'loading' && episodePages.length === 0)) return <LoadingState label="Loading episode" />;

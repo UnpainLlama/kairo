@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseSearchParams, parsePagination } from '../lib/validation';
-import { buildSearchQuery, buildListQuery, buildRelatedQuery, GENRES_SQL } from './catalog';
+import { buildSearchQuery, buildListQuery, buildBrowseQuery, buildRelatedQuery, GENRES_SQL } from './catalog';
 
 const search = (q: Record<string, string>) => {
   const parsed = parseSearchParams(q);
@@ -50,5 +50,40 @@ describe('genres and related', () => {
     const built = buildRelatedQuery('a1', ['Adventure', 'Fantasy'], 12);
     expect(built.binds).toEqual(['a1', '["Adventure","Fantasy"]', 12]);
     expect(built.sql).toContain('a.id != ?');
+  });
+});
+
+
+describe('buildBrowseQuery', () => {
+  it('binds filter-only criteria and calculates the correct page offset', () => {
+    const built = buildBrowseQuery({
+      sort: 'latest',
+      genre: 'Sci-Fi',
+      year: 2024,
+      format: 'series',
+      status: 'airing',
+      season: 'fall',
+      page: 3,
+      limit: 10,
+    });
+    expect(built.sql).toContain('json_each(CASE WHEN json_valid(genres_json)');
+    expect(built.sql).toContain('release_year = ?');
+    expect(built.sql).toContain('LOWER(format) = ?');
+    expect(built.sql).toContain('LOWER(status) = ?');
+    expect(built.sql).toContain('LOWER(season) = ?');
+    expect(built.sql).toContain('ORDER BY updated_at DESC');
+    expect(built.binds).toEqual(['Sci-Fi', 2024, 'series', 'airing', 'fall', 10, 20]);
+    expect(built.countBinds).toEqual(['Sci-Fi', 2024, 'series', 'airing', 'fall']);
+  });
+
+  it('does not interpolate a hostile genre into SQL', () => {
+    const built = buildBrowseQuery({
+      sort: 'popularity',
+      genre: "x' OR 1=1 --",
+      page: 1,
+      limit: 24,
+    });
+    expect(built.sql).not.toContain("x' OR 1=1");
+    expect(built.binds[0]).toBe("x' OR 1=1 --");
   });
 });

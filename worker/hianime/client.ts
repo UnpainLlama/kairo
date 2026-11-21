@@ -43,25 +43,48 @@ export function createHiAnimeClient(fetchImpl: FetchLike, configuredBaseUrl?: st
       for (const base of bases) {
         const url = new URL(path, base);
         try {
-          const response = await fetchImpl(url.toString(), {
-            method: 'GET',
-            redirect: 'manual',
-            signal,
-            headers: {
-              Accept: 'application/json, text/javascript, text/html, */*; q=0.01',
-              'Accept-Language': 'en-US,en;q=0.9',
-              'User-Agent': USER_AGENT,
-              'X-Requested-With': 'XMLHttpRequest',
-              Origin: base,
-              Referer: new URL(refererPath, base).toString(),
-            },
-          });
+          let current = url;
+          let response: Response | null = null;
+          // Follow redirects manually so every hop is validated before it is fetched.
+          for (let hop = 0; hop <= 3; hop += 1) {
+            if (current.protocol !== 'https:' || !ALLOWED_HOSTS.has(current.hostname.toLowerCase()) ||
+                current.username || current.password || current.port) {
+              throw new ProviderError('unavailable', 'HiAnime redirect target is outside the HTTPS mirror allowlist.');
+            }
+            response = await fetchImpl(current.toString(), {
+              method: 'GET',
+              redirect: 'manual',
+              signal,
+              headers: {
+                Accept: 'application/json, text/javascript, text/html, */*; q=0.01',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'User-Agent': USER_AGENT,
+                'X-Requested-With': 'XMLHttpRequest',
+                Origin: current.origin,
+                Referer: new URL(refererPath, current.origin).toString(),
+              },
+            });
+            const redirect = [301, 302, 303, 307, 308].includes(response.status);
+            if (!redirect) break;
+            const location = response.headers.get('Location');
+            if (!location) throw new ProviderError('invalid_response', 'HiAnime returned a redirect without a location.');
+            if (hop === 3) throw new ProviderError('unavailable', 'HiAnime exceeded the redirect limit.');
+            let target: URL;
+            try { target = new URL(location, current); }
+            catch { throw new ProviderError('invalid_response', 'HiAnime returned an invalid redirect location.'); }
+            if (target.protocol !== 'https:' || !ALLOWED_HOSTS.has(target.hostname.toLowerCase()) ||
+                target.username || target.password || target.port) {
+              throw new ProviderError('unavailable', 'HiAnime redirected outside the configured mirror allowlist.');
+            }
+            current = target;
+          }
+          if (!response) throw new ProviderError('unavailable', 'HiAnime did not return a response.');
           if (response.url) {
             let finalUrl: URL;
             try { finalUrl = new URL(response.url); }
-            catch { throw new ProviderError('invalid_response', 'HiAnime returned an invalid redirect URL.'); }
+            catch { throw new ProviderError('invalid_response', 'HiAnime returned an invalid response URL.'); }
             if (finalUrl.protocol !== 'https:' || !ALLOWED_HOSTS.has(finalUrl.hostname.toLowerCase())) {
-              throw new ProviderError('unavailable', 'HiAnime redirected outside the configured mirror allowlist.');
+              throw new ProviderError('unavailable', 'HiAnime response URL is outside the configured mirror allowlist.');
             }
           }
           if (response.status === 404) { lastError = new ProviderError('not_found', 'The requested HiAnime page was not found on this mirror.'); continue; }
@@ -73,7 +96,7 @@ export function createHiAnimeClient(fetchImpl: FetchLike, configuredBaseUrl?: st
           const text = await response.text();
           if (text.length > MAX_RESPONSE_CHARS) { lastError = new ProviderError('invalid_response', 'HiAnime response exceeded the parser size limit.'); continue; }
           if (isChallengePage(text)) { lastError = new ProviderError('unavailable', 'HiAnime returned an anti-bot challenge page.'); continue; }
-          return { text, baseUrl: base, url: response.url || url.toString() };
+          return { text, baseUrl: base, url: current.toString() };
         } catch (error) {
           if (error instanceof ProviderError && error.kind === 'rate_limited') throw error;
           lastError = error instanceof ProviderError ? error : new ProviderError('unavailable', 'Could not reach this HiAnime mirror.');

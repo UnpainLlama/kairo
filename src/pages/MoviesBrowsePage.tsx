@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ChevronDown } from 'lucide-react';
 import { ApiError, apiGet } from '../lib/api';
 import type { MovieGenre, MoviePage as MoviePageData, MovieSummary } from '../lib/movies';
 import { GridSkeleton, MovieGrid, useSentinel } from '../components/MovieCard';
 import { TitleModal } from '../components/TitleDetail';
+import { NotFoundPage } from './StaticPages';
 import { MyListProvider } from '../lib/useMyList';
 import '../styles-netflix.css';
 
@@ -48,10 +49,20 @@ function GenreMenu({ genres, activeId }: { genres: MovieGenre[]; activeId: strin
 function BrowseContent({ category }: { category: string }) {
   const genreRaw = category.startsWith('genre-') ? category.slice(6) : null;
   const genreId = genreRaw && /^\d{1,8}$/.test(genreRaw) ? genreRaw : null;
-  const config = CATEGORIES[category] ?? { title: 'Popular Movies', kind: 'popular' };
+  const config = CATEGORIES[category] ?? null;
+  const validRoute = config !== null || genreId !== null;
   const [items, setItems] = useState<MovieSummary[]>([]);
   const [genres, setGenres] = useState<MovieGenre[]>([]);
-  const [page, setPage] = useState(1);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawPage = Number(searchParams.get('page'));
+  const page = Number.isInteger(rawPage) && rawPage > 1 ? Math.min(rawPage, 500) : 1;
+  const restoring = useRef(true);
+  const setPage = (nextPage: number) => setSearchParams(current => {
+    const next = new URLSearchParams(current);
+    const safePage = Math.max(1, Math.min(500, Math.trunc(nextPage)));
+    if (safePage === 1) next.delete('page'); else next.set('page', String(safePage));
+    return next;
+  }, { replace: true });
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [more, setMore] = useState(false);
@@ -59,40 +70,61 @@ function BrowseContent({ category }: { category: string }) {
   const [retry, setRetry] = useState(0);
 
   useEffect(() => {
+    if (!validRoute) return;
     const controller = new AbortController();
     apiGet<{ items: MovieGenre[] }>('/movies/genres?language=en-US', controller.signal)
       .then(result => { if (!controller.signal.aborted) setGenres(result.items); })
       .catch(() => undefined);
     return () => controller.abort();
-  }, []);
+  }, [validRoute]);
 
   useEffect(() => {
+    if (!validRoute) { setLoading(false); return; }
     const controller = new AbortController();
-    if (page === 1) setLoading(true); else setMore(true);
+    const restoreEarlierPages = restoring.current && page > 1;
+    restoring.current = false;
+    const requestedPages = restoreEarlierPages
+      ? Array.from({ length: page }, (_, index) => index + 1)
+      : [page];
+    if (restoreEarlierPages || page === 1) setLoading(true); else setMore(true);
     setError(null);
-    const query = new URLSearchParams({ kind: config.kind, page: String(page) });
-    if (genreId) query.set('genres', genreId);
-    apiGet<MoviePageData>('/movies/discover?' + query.toString(), controller.signal)
-      .then(result => {
+
+    const loadPage = (pageNumber: number) => {
+      const query = new URLSearchParams({ kind: config?.kind ?? 'popular', page: String(pageNumber) });
+      if (genreId) query.set('genres', genreId);
+      return apiGet<MoviePageData>('/movies/discover?' + query.toString(), controller.signal);
+    };
+
+    Promise.all(requestedPages.map(loadPage))
+      .then(results => {
         if (controller.signal.aborted) return;
-        setTotalPages(Math.min(result.totalPages, 500));
+        const latest = results[results.length - 1];
+        setTotalPages(Math.min(latest?.totalPages ?? 1, 500));
         setItems(previous => {
-          if (page === 1) return result.items;
-          const seen = new Set(previous.map(item => item.externalId));
-          return [...previous, ...result.items.filter(item => !seen.has(item.externalId))];
+          const base = restoreEarlierPages || page === 1 ? [] : previous;
+          const seen = new Set(base.map(item => item.externalId));
+          const additions = results.flatMap(result => result.items).filter(item => {
+            if (seen.has(item.externalId)) return false;
+            seen.add(item.externalId);
+            return true;
+          });
+          return [...base, ...additions];
         });
       })
       .catch(caught => {
         if (controller.signal.aborted || (caught instanceof DOMException && caught.name === 'AbortError')) return;
+        if (restoreEarlierPages) restoring.current = true;
         setError(caught instanceof ApiError ? caught : new ApiError(0, 'MOVIES_UNAVAILABLE', 'Could not load these movies.'));
       })
       .finally(() => { if (!controller.signal.aborted) { setLoading(false); setMore(false); } });
     return () => controller.abort();
-  }, [config.kind, genreId, page, retry]);
+  }, [config?.kind, genreId, page, retry, validRoute]);
 
   const genreName = useMemo(() => genres.find(genre => genre.externalId === genreId)?.name, [genres, genreId]);
-  const title = genreId ? (genreName ? genreName + ' Movies' : 'Movies') : config.title;
-  const sentinel = useSentinel(() => setPage(current => current + 1), !loading && !more && !error && page < totalPages && items.length > 0, items.length);
+  const title = genreId ? (genreName ? genreName + ' Movies' : 'Movies') : config?.title ?? 'Movies';
+  const sentinel = useSentinel(() => setPage(page + 1), !loading && !more && !error && page < totalPages && items.length > 0, items.length);
+
+  if (!validRoute) return <NotFoundPage />;
 
   return (
     <div className="nf nf-bleed nf-page">

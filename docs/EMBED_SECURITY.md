@@ -28,22 +28,24 @@ The report-only policy currently reflects the app's known dependencies:
 
 | CSP directive | Candidate services | Why |
 |---|---|---|
-| `script-src` | `self`, `cdn.jsdelivr.net`, `www.youtube.com`, `s.ytimg.com` | Kairo bundle, Video.js CDN files, official YouTube IFrame API/player |
-| `style-src` | `self`, `cdn.jsdelivr.net`, `fonts.googleapis.com` | App CSS, Video.js stylesheet, Google Fonts CSS |
+| `script-src` | `self`, `www.youtube.com`, `s.ytimg.com` | Kairo bundle and official YouTube IFrame API/player |
+| `style-src` | `self`, `fonts.googleapis.com` | App CSS and Google Fonts CSS |
 | `font-src` | `self`, `fonts.gstatic.com`, `data:` | Local fonts, Google Fonts files, embedded font data |
 | `img-src` | `self`, `image.tmdb.org`, `s4.anilist.co`, `cdn.myanimelist.net`, `i.ytimg.com`, `img.youtube.com`, `yt3.ggpht.com`, `yt3.googleusercontent.com`, known HiAnime mirrors | Catalogue artwork, movie artwork, YouTube thumbnails and provider posters |
-| `connect-src` | `self`, AniList, Jikan, TMDB, Google APIs/OAuth, jsDelivr and configured playback hosts | Browser XHR/fetch, player requests and HLS segments. Most catalogue/API calls are Worker-to-provider requests and are not subject to the browser's CSP. |
+| `connect-src` | `self`, AniList, Jikan, TMDB, Google APIs/OAuth and configured playback hosts | Browser XHR/fetch, YouTube API and player requests and HLS segments. HLS.js is bundled with Kairo; it is not loaded from a CDN. Most catalogue/API calls are Worker-to-provider requests and are not subject to the browser's CSP. |
 | `frame-src` | `self`, `cinesrc.st`, YouTube, and configured staging playback hosts | Approved movie and episode players |
 | `media-src` | `self`, `blob:`, `data:`, and configured staging playback hosts | Direct media and HLS playback |
 | `worker-src` | `self`, `blob:` | Local code and player workers such as HLS workers |
 | `form-action` | `self`, `accounts.google.com` | Kairo forms and the known Google authorization flow |
 
-The staging playback-host candidates are taken from
+The staging playback-host allowlist is taken from
 `wrangler.jsonc`'s `HIANIME_PLAYBACK_ALLOWED_HOSTS`:
 `zokoanime.video`, `megaplay.buzz`, `hls.dramahot.top`, `hls1.drama1.cfd`,
-`mysubsplay.com`, `emeralddrift.world`, `hianime.at`, `hls1drama1.cfd`,
-and `emeralddrift.com`. The list is intentionally not broadened to `https:` or
-`*.google.com`. ZokoAnime remains disabled unless separately enabled.
+`mysubsplay.com`, `emeralddrift.world`, and `hianime.at`. The variant domains
+`hls1drama1.cfd`, `mysubplay.com`, and `emeralddrift.com` have been removed
+pending explicit ownership and provider-permission verification. The list is
+intentionally not broadened to `https:` or `*.google.com`. ZokoAnime remains
+disabled unless separately enabled.
 
 The HiAnime parser accepts HTTPS poster URLs from its configured mirror, so a live report may
 reveal image-CDN hosts that are not visible in source code. Add only observed, legitimate hosts

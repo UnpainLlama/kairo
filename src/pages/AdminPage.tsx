@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent, type CSSProperties } from 'react';
+import { useKairoAccount } from '../lib/AccountProvider';
+import { signOutKairoAccount } from '../lib/authClient';
 
 type Account = { id: string; username: string; accessEmail: string | null; displayName: string; status: 'active' | 'suspended' | 'deleted'; createdAt: string };
-type Payload = { success?: boolean; data?: { accounts?: Account[]; standardAccountCount?: number; standardAccountLimit?: number; account?: Account }; error?: { message?: string } };
+type Payload = { success?: boolean; data?: { accounts?: Account[]; standardAccountCount?: number; standardAccountLimit?: number; account?: Account; accountReset?: boolean }; error?: { message?: string } };
 
 async function request(path: string, method = 'GET', body?: unknown): Promise<Payload> {
   const response = await fetch(path, {
@@ -17,6 +19,7 @@ async function request(path: string, method = 'GET', body?: unknown): Promise<Pa
 }
 
 export default function AdminPage() {
+  const account = useKairoAccount();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [count, setCount] = useState(0);
   const [limit, setLimit] = useState(15);
@@ -40,18 +43,8 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    document.title = 'Kairo Administration';
-    let meta = document.querySelector('meta[name="robots"]') as HTMLMetaElement | null;
-    const createdMeta = !meta;
-    const previousRobots = meta?.content ?? null;
-    if (!meta) { meta = document.createElement('meta'); meta.name = 'robots'; document.head.appendChild(meta); }
-    meta.content = 'noindex, nofollow, noarchive, nosnippet';
+    // App owns route metadata. Do not replace its title with a generic title on unmount.
     void load();
-    return () => {
-      document.title = 'Kairo';
-      if (meta && createdMeta) meta.remove();
-      else if (meta && previousRobots !== null) meta.content = previousRobots;
-    };
   }, [load]);
 
   async function saveAccessEmail(event: FormEvent) {
@@ -78,8 +71,16 @@ export default function AdminPage() {
     finally { setBusy(false); }
   }
 
-  function signOut() {
-    window.location.assign('/cdn-cgi/access/logout');
+  async function signOut() {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await signOutKairoAccount(account.accountId, (url) => window.location.assign(url));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not sign out. Please try again.');
+      setBusy(false);
+    }
   }
 
   const panel: CSSProperties = { width: 'min(1080px, calc(100% - 32px))', margin: '40px auto', color: '#f4f4f5', fontFamily: 'system-ui, sans-serif' };
@@ -90,7 +91,7 @@ export default function AdminPage() {
   return <main style={panel}>
     <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 24 }}>
       <div><p style={{ color: '#a1a1aa', margin: 0, letterSpacing: 2, fontSize: 11 }}>PRIVATE CONSOLE</p><h1 style={{ margin: '6px 0' }}>Kairo administration</h1><p style={{ color: '#a1a1aa', margin: 0 }}>Manage the 15 standard accounts. YouTube access is reserved for the administrator.</p></div>
-      <button style={button} onClick={() => void signOut()} disabled={busy}>Sign out</button>
+      <button style={button} onClick={() => void signOut()} disabled={busy}>{busy ? 'Signing out…' : 'Sign out'}</button>
     </header>
 
     {error && <p role="alert" style={{ background: '#451a1a', padding: 12, borderRadius: 8 }}>{error}</p>}

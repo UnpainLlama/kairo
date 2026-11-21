@@ -241,6 +241,11 @@ export async function getEpisodePlayback(deps: Deps, ref: Ref, episodeNumber: nu
       typeof serverId !== 'string' || !/^(?:\d{1,12}|h_[A-Za-z0-9_-]{1,1800}|z_(?:sub|hsub|dub))$/.test(serverId)) {
     throw new ProviderError('not_found', 'Invalid episode or server identifier.');
   }
+  const serverDiscoveryAvailable = deps.episodeProviders.some((item) => typeof item.listServers === 'function');
+  const playbackResolverAvailable = deps.episodeProviders.some((item) => typeof item.listServers === 'function' && typeof item.resolveServer === 'function');
+  if (serverId.startsWith('z_') ? !serverDiscoveryAvailable : !playbackResolverAvailable) {
+    throw new ProviderError('unavailable', 'No approved episode playback provider is configured.');
+  }
   const title = (await getTitle(deps, ref)).value;
   const lookup = {
     cacheKey: `${ref.kind}${ref.id}`,
@@ -318,6 +323,9 @@ export async function getEpisodePlayback(deps: Deps, ref: Ref, episodeNumber: nu
 
 export async function getEpisodeServers(deps: Deps, ref: Ref, episodeNumber: number) {
   if (!Number.isFinite(episodeNumber) || episodeNumber <= 0 || episodeNumber > 100_000) throw new ProviderError('not_found', 'Invalid episode number.');
+  if (!deps.episodeProviders.some((item) => typeof item.listServers === 'function')) {
+    throw new ProviderError('unavailable', 'No episode server-discovery provider is enabled.');
+  }
   const title = (await getTitle(deps, ref)).value;
   const lookup = {
     cacheKey: `${ref.kind}${ref.id}`,

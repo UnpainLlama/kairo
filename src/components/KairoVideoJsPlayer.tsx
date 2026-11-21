@@ -1,4 +1,5 @@
-import { createElement, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import Hls from 'hls.js';
 import type { PlaybackSaveReason } from '../lib/playbackSync';
 import type { SavedPlayerState } from '../lib/mediaPlayback';
 
@@ -17,18 +18,7 @@ type Props = {
   initialPlayerState?: SavedPlayerState | null;
 };
 
-type VideoJsMediaElement = HTMLElement & {
-  currentTime: number;
-  duration: number;
-  volume?: number;
-  muted?: boolean;
-  playbackRate?: number;
-  textTracks?: TextTrackList;
-  paused?: boolean;
-  seeking?: boolean;
-  ended?: boolean;
-  readyState?: number;
-};
+type VideoJsMediaElement = HTMLVideoElement;
 
 export default function KairoVideoJsPlayer({
   src,
@@ -45,6 +35,7 @@ export default function KairoVideoJsPlayer({
   const mediaRef = useRef<VideoJsMediaElement | null>(null);
   const [skip, setSkip] = useState<'intro' | 'outro' | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
+  const [playbackError, setPlaybackError] = useState('');
 
   useEffect(() => {
     const media = mediaRef.current;
@@ -154,6 +145,36 @@ export default function KairoVideoJsPlayer({
     };
   }, [src, progressKey, introEnd, outroStart, nextUrl, onProgress, initialPlayerState]);
 
+  useEffect(() => {
+    const media = mediaRef.current;
+    if (!media) return;
+    setPlaybackError('');
+    if (mediaType === 'hls' && Hls.isSupported()) {
+      const hls = new Hls({ enableWorker: true, backBufferLength: 90 });
+      hls.on(Hls.Events.ERROR, (_event, data: { fatal?: boolean }) => {
+        if (data?.fatal) setPlaybackError('The stream could not be loaded. Try another server or reload.');
+      });
+      hls.loadSource(src);
+      hls.attachMedia(media);
+      return () => {
+        hls.destroy();
+        media.pause();
+        media.removeAttribute('src');
+        media.load();
+      };
+    }
+    if (mediaType === 'file' || media.canPlayType('application/vnd.apple.mpegurl')) {
+      media.src = src;
+    } else {
+      setPlaybackError('This browser cannot play HLS video. Try a browser with native HLS support.');
+    }
+    return () => {
+      media.pause();
+      media.removeAttribute('src');
+      media.load();
+    };
+  }, [src, mediaType]);
+
   const seekTo = (target: 'intro' | 'outro') => {
     const media = mediaRef.current;
     if (!media) return;
@@ -161,27 +182,27 @@ export default function KairoVideoJsPlayer({
     setSkip(null);
   };
 
-  const tracks = subtitles.map((track) => createElement('track', {
-    key: track.url,
-    kind: 'subtitles',
-    src: track.url,
-    srcLang: track.language,
-    label: track.label,
-  }));
-  const mediaProps = {
-    ref: (element: HTMLElement | null) => { mediaRef.current = element as VideoJsMediaElement | null; },
-    className: 'kc-videojs-media',
-    src,
-    playsInline: true,
-    preload: 'metadata',
-  };
-  const media = createElement(mediaType === 'hls' ? 'hlsjs-video' : 'video', mediaProps as any, ...tracks);
-  const skin = createElement('video-skin', { className: 'kc-videojs-skin' }, media);
-  const player = createElement('video-player', { className: 'kc-videojs-element', title }, skin);
-
   return (
     <div className="kc-videojs-player" aria-label={title}>
-      {player}
+      <video
+        ref={mediaRef}
+        className="kc-videojs-media kc-videojs-element"
+        aria-label={title}
+        playsInline
+        controls
+        preload="metadata"
+      >
+        {subtitles.map(track => (
+          <track
+            key={track.url}
+            kind="subtitles"
+            src={track.url}
+            srcLang={track.language}
+            label={track.label}
+          />
+        ))}
+      </video>
+      {playbackError && <p className="kc-player-message" role="alert">{playbackError}</p>}
       {skip && (
         <button className="kc-videojs-skip" type="button" onClick={() => seekTo(skip)}>
           Skip {skip}

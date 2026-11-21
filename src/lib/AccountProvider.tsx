@@ -1,7 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { flushPendingMediaPlayback } from './mediaPlayback';
+import { isAccessLoginRedirect, resolveAccountResponse, shouldRefreshAccountOnVisibility } from './accountState';
 
-export type AccountStatus = 'loading' | 'guest' | 'signed-in' | 'denied' | 'unavailable';
+export type AccountStatus = 'loading' | 'guest' | 'signed-in' | 'denied' | 'limit-reached' | 'setup-required' | 'reauth-required' | 'unavailable';
 export type KairoAccountState = {
   status: AccountStatus;
   accountId: string | null;
@@ -16,51 +17,79 @@ const AccountContext = createContext<KairoAccountState | null>(null);
 
 export function AccountProvider({ children }: { children: ReactNode }) {
   const [attempt, setAttempt] = useState(0);
+  const [initialLookupComplete, setInitialLookupComplete] = useState(false);
   const [status, setStatus] = useState<AccountStatus>('loading');
   const [accountId, setAccountId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
   const [username, setUsername] = useState<string | null>(null);
   const [role, setRole] = useState<'user' | 'admin' | null>(null);
+  const accountIdRef = useRef(accountId);
+  const accountStatusRef = useRef(status);
+
+  useEffect(() => { accountIdRef.current = accountId; }, [accountId]);
+  useEffect(() => { accountStatusRef.current = status; }, [status]);
 
   useEffect(() => {
     let active = true;
-    const refresh = () => setAttempt((value) => value + 1);
-    setStatus('loading');
-    setAccountId(null);
-    setDisplayName(null);
-    setEmail(null);
-    setUsername(null);
-    setRole(null);
+    const refresh = () => {
+      // If the previous identity check failed, keep pages unmounted while retrying.
+      if (accountStatusRef.current === 'unavailable') setInitialLookupComplete(false);
+      setAttempt((value) => value + 1);
+    };
+    // Refresh when the tab becomes visible again, not on every window focus.
+    // Focus events also fire while users move between the document and a
+    // cross-origin player iframe; revalidating then can tear down the player.
+    const refreshWhenVisible = () => {
+      if (shouldRefreshAccountOnVisibility(document.visibilityState)) refresh();
+    };
+    const refreshAfterHistoryRestore = (event: PageTransitionEvent) => {
+      if (event.persisted) refresh();
+    };
+    if (!accountId) setStatus('loading');
+
+    const clearIdentity = () => {
+      setAccountId(null);
+      setDisplayName(null);
+      setEmail(null);
+      setUsername(null);
+      setRole(null);
+    };
 
     const load = async () => {
       try {
         const response = await fetch('/api/v1/me', {
           credentials: 'same-origin',
-          headers: { Accept: 'application/json' },
+          headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
           cache: 'no-store',
         });
+        if (isAccessLoginRedirect({
+          status: response.status,
+          redirected: response.redirected,
+          url: response.url,
+          contentType: response.headers.get('content-type'),
+        })) {
+          if (active) {
+            clearIdentity();
+            setStatus('reauth-required');
+          }
+          return;
+        }
         const payload = await response.json().catch(() => null);
         const errorCode = payload?.error?.code;
-        if (response.status === 401 && errorCode === 'AUTH_REQUIRED') {
-          // Local development can run without Cloudflare Access. In that mode,
-          // the absence of a Kairo session is a true guest state.
-          if (active) setStatus('guest');
-          return;
-        }
-        if (
-          (response.status === 401 && errorCode === 'ACCESS_REQUIRED') ||
-          (response.status === 403 && typeof errorCode === 'string' && errorCode.startsWith('ACCESS_'))
-        ) {
-          // An Access denial is not a guest account and must never expose the
-          // guest UI as a fallback for an unapproved or suspended identity.
-          if (active) setStatus('denied');
-          return;
-        }
-        if (!response.ok) throw new Error('Account lookup failed.');
         const user = payload?.data?.user;
-        if (!payload?.success || typeof user?.id !== 'string' || !user.id.trim()) {
-          throw new Error('Account response was invalid.');
+        const resolution = resolveAccountResponse(
+          response.status,
+          errorCode,
+          payload?.success === true && typeof user?.id === 'string' && Boolean(user.id.trim()),
+        );
+        if (resolution === 'unavailable') throw new Error('Account lookup failed.');
+        if (resolution !== 'signed-in') {
+          if (active) {
+            clearIdentity();
+            setStatus(resolution);
+          }
+          return;
         }
         if (active) {
           setAccountId(user.id);
@@ -71,17 +100,24 @@ export function AccountProvider({ children }: { children: ReactNode }) {
           setStatus('signed-in');
         }
       } catch {
-        if (active) setStatus('unavailable');
+        // A transient network failure must not discard a previously verified identity.
+        if (active) setStatus(accountIdRef.current ? 'signed-in' : 'unavailable');
+      } finally {
+        // Do not mount protected page effects until /me has either bootstrapped
+        // the session or established the correct guest/denied/unavailable state.
+        if (active) setInitialLookupComplete(true);
       }
     };
 
     void load();
     window.addEventListener('kairo:auth-change', refresh);
-    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('pageshow', refreshAfterHistoryRestore);
     return () => {
       active = false;
       window.removeEventListener('kairo:auth-change', refresh);
-      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.removeEventListener('pageshow', refreshAfterHistoryRestore);
     };
   }, [attempt]);
 
@@ -99,9 +135,18 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     };
   }, [accountId, status]);
 
-  const retry = useCallback(() => setAttempt((value) => value + 1), []);
+  const retry = useCallback(() => {
+    setInitialLookupComplete(false);
+    setAttempt((value) => value + 1);
+  }, []);
   const value = useMemo(() => ({ status, accountId, displayName, email, username, role, retry }), [status, accountId, displayName, email, username, role, retry]);
-  return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>;
+  return (
+    <AccountContext.Provider value={value}>
+      {initialLookupComplete
+        ? children
+        : <main className="kc-account-bootstrap" role="status" aria-live="polite">Checking your Kairo session…</main>}
+    </AccountContext.Provider>
+  );
 }
 
 export function useKairoAccount(): KairoAccountState {

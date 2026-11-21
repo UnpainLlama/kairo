@@ -15,6 +15,8 @@ Each environment has its own database and cache, so staging can never touch prod
 
 The deploy workflow (`.github/workflows/deploy.yml`) runs typecheck, tests and build, then (only when requested) the guards, D1 migrations, build and deploy. Remote requests to `/api/health` and `/api/ready` are disabled by default so Cloudflare Access can protect both paths without blocking deployment. The endpoint handlers remain in the Worker and are exercised by CI tests. To opt into anonymous remote probes after configuring exact public path overrides, set the GitHub Actions variable `KAIRO_REMOTE_HEALTH_CHECKS_ENABLED=true`. When probes are disabled, the deployment summary explicitly states that live HTTP/D1 readiness was not verified.
 
+Cloudflare Access must also have an exact public destination override for `/api/v1/auth/logout` (the application path override is path-scoped). This one path is intentionally allowed through to the Worker so an expired or denied Access identity can sign out. The Worker enforces same-origin on the POST and revokes only the session token supplied in that request's HttpOnly cookie. Do not create a broader `/api/v1/auth/*` or `/api/*` bypass. This exception is separate from the anonymous health/readiness probes and does not make any account-data endpoint public.
+
 IDs for D1 and KV are identifiers, not credentials, so they may be committed to the public repo. Cloudflare API tokens, OAuth client secrets, and encryption keys are credentials: keep them only in the appropriate GitHub or Cloudflare secret stores. Never paste a secret into chat, a file, or the repo.
 
 ## 2. Set up staging (you do this once; about 20 minutes)
@@ -90,6 +92,7 @@ Open these in a browser (replace the host with your staging URL):
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | GitHub environment **secrets** | GitHub only | Deploying. Never in the repo or the Worker |
 | `STAGING_DEPLOY_ENABLED` | GitHub variable | GitHub | Auto-deploy staging on merge to main |
 | `STAGING_URL`, `PRODUCTION_URL` | GitHub variables, optional | GitHub | Environment-specific fallback URL if the deploy log URL cannot be read; a production check never falls back to the staging URL |
+| `KAIRO_REMOTE_HEALTH_CHECKS_ENABLED=true` | GitHub environment variable | GitHub | Required for staging and production deploys. Configure exact Access destination overrides for `/api/health` and `/api/ready` first; the deploy is blocked unless both live probes return healthy JSON. |
 | `KAIRO_REMOTE_HEALTH_CHECKS_ENABLED` | GitHub Actions variable, optional | Repository or environment | Set to `true` only when both probe paths have exact public Cloudflare Access overrides; otherwise remote anonymous probes are skipped |
 | `PRODUCTION_DEPLOY_APPROVED` | GitHub variable | GitHub | Must be `true` for any production deploy. **Do not set.** |
 
@@ -137,4 +140,4 @@ Production deploys are blocked by design until you approve. They need all of: a 
 
 ### Approved playback host allowlist
 
-The HiAnime playback resolver is fail-closed. The staging Wrangler configuration currently allows these exact HTTPS hosts, supplied by the project operator: `zokoanime.video`, `megaplay.buzz`, `hls.dramahot.top`, `hls1drama1.cfd`, `mysubplay.com`, `emeralddrift.com`, and `hianime.at`. The list is configured only in the staging environment; local development remains empty and production remains unchanged. Confirm that each host is covered by the relevant provider's playback permissions before deploying. Add only exact approved hostnames (comma-separated); `*.example.com` matches subdomains only. Do not add broad wildcard domains. The Worker still rejects HTTP URLs, credentials, nonstandard ports, expired URLs, and hosts outside this list.
+The HiAnime playback resolver is fail-closed. The staging Wrangler configuration currently allows these exact HTTPS hosts: `zokoanime.video`, `megaplay.buzz`, `hls.dramahot.top`, `hls1.drama1.cfd`, `mysubsplay.com`, `emeralddrift.world`, and `hianime.at`. Local development remains empty and production remains unchanged. The variant domains `hls1drama1.cfd`, `mysubplay.com`, and `emeralddrift.com` were removed pending explicit ownership and provider-permission verification. Confirm that every remaining host is covered by the relevant provider's playback permissions before deploying. Add only exact approved hostnames (comma-separated); `*.example.com` matches subdomains only. Do not add broad wildcard domains. The Worker still rejects HTTP URLs, credentials, nonstandard ports, expired URLs, and hosts outside this list.

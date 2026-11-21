@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Check, Eye, Play, Plus, ThumbsUp, X } from 'lucide-react';
 import { ApiError, apiGet } from '../lib/api';
+import { movieDetailErrorPresentation } from '../lib/movieDetailError';
 import { movieRating, movieYear, type MovieDetail, type MoviePage, type MovieSummary } from '../lib/movies';
 import { useMyList } from '../lib/useMyList';
 import { useOpenTitle, watchHref } from './MovieCard';
@@ -75,12 +76,13 @@ export function TitleDetail({ externalId, onClose }: { externalId: string; onClo
 
   if (loading) return <div className="nf-detail"><div className="nf-detail-hero nf-skel" />{close}<div className="nf-detail-pad"><span className="nf-skel nf-skel-line" /><span className="nf-skel nf-skel-line short" /></div></div>;
   if (error || !movie) {
+    const presentation = movieDetailErrorPresentation(error);
     return (
       <div className="nf-detail">
         {close}
         <div className="nf-detail-pad nf-detail-error" role="alert">
-          <h2>{error?.code === 'MOVIES_DISABLED' ? 'Movies are not available yet' : 'Something went wrong'}</h2>
-          <p>{error?.message ?? 'This title could not be found.'}</p>
+          <h2>{presentation.title}</h2>
+          <p>{presentation.message}</p>
           <Link to="/movies" className="nf-btn play">Go to Home</Link>
         </div>
       </div>
@@ -158,16 +160,33 @@ export function TitleDetail({ externalId, onClose }: { externalId: string; onClo
 
 /** Overlay that opens over any Movies page when the URL contains ?mid=<tmdb id>. */
 export function TitleModal() {
-  const [params, setParams] = useSearchParams();
+  const location = useLocation();
   const navigate = useNavigate();
+  const params = new URLSearchParams(location.search);
   const externalId = params.get('mid');
   const valid = externalId && /^[1-9]\d{0,11}$/.test(externalId) ? externalId : null;
   const wrapRef = useRef<HTMLDivElement>(null);
 
   const close = () => {
-    const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
-    if (idx > 0) { navigate(-1); return; }
-    setParams(current => { const next = new URLSearchParams(current); next.delete('mid'); return next; }, { replace: true });
+    const state = location.state && typeof location.state === 'object'
+      ? location.state as { modalBackground?: { pathname?: unknown; search?: unknown } }
+      : null;
+    const background = state?.modalBackground;
+    if (typeof background?.pathname === 'string' &&
+        background.pathname.startsWith('/') && !background.pathname.startsWith('//')) {
+      const search = typeof background.search === 'string' && background.search.startsWith('?')
+        ? background.search
+        : '';
+      navigate({ pathname: background.pathname, search }, { replace: true, state: null });
+      return;
+    }
+    // Direct links and refreshed deep links have no background state. Close the
+    // modal on the current page instead of navigating to an unrelated history entry.
+    params.delete('mid');
+    navigate(
+      { pathname: location.pathname, search: params.toString() ? `?${params.toString()}` : '' },
+      { replace: true, state: null },
+    );
   };
 
   useEffect(() => {

@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Info, Play, Star } from 'lucide-react';
 import { EmptyState, ErrorState, LoadingState, Pager, Poster, Rail, StatusDot } from '../components/catalog';
 import { useApi } from '../lib/useApi';
+import AnimeLibraryControls from '../components/AnimeLibraryControls';
 import {
   dateLabel, durationLabel, episodeCountLabel, episodeNumberLabel, formatLabel, safeImageUrl, seasonLabel, statusLabel, textList,
   type AnimeDetails, type CatalogCard, type Episode, type ItemList, type UnifiedMetadata,
@@ -56,6 +57,7 @@ export default function AnimePage() {
             <div className="kc-actions">
               <Link className="kc-btn kc-btn-primary" to={`/watch/${key}/1`}><Play size={15} fill="currentColor" aria-hidden="true" /> Watch Now</Link>
               <a className="kc-btn kc-btn-dark" href="#episodes"><Info size={15} aria-hidden="true" /> Episodes</a>
+              <AnimeLibraryControls animeId={a.id} />
             </div>
           </div>
         </div>

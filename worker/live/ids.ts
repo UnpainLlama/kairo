@@ -29,3 +29,21 @@ export function parseRef(raw: string | undefined): Ref | null {
   const kind = m[2] as RefKind;
   return kind === 'h' ? { kind, id, ...(m[1] ? { slug: m[1] } : {}) } : { kind, id };
 }
+
+
+/**
+ * Convert a D1 cross-provider mapping into a live-catalogue ref for independent
+ * episode discovery. Honor the configured catalogue-provider order.
+ */
+export function providerRefFromMappings(
+  mappings: readonly { provider: string; externalId: string }[],
+  preferredProviders: readonly string[] = ['anilist', 'mal'],
+): string | null {
+  for (const provider of preferredProviders) {
+    const prefix = provider === 'anilist' ? 'a' : provider === 'mal' ? 'm' : null;
+    if (!prefix) continue;
+    const raw = mappings.find((item) => item.provider.toLowerCase() === provider)?.externalId;
+    if (raw && /^[1-9][0-9]{0,8}$/.test(raw)) return prefix + raw;
+  }
+  return null;
+}

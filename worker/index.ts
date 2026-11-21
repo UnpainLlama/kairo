@@ -2,24 +2,29 @@
 import { Hono, type Context, type Next } from 'hono';
 import { cors } from 'hono/cors';
 import { boundedInt, parseId, parsePagination, parseSearchParams } from './lib/validation';
-import { clearSessionCookie, createSession, findSessionUser, revokeSession, sessionCookie } from './auth/session';
+import { clearSessionCookie, createSession, findSessionUser, readSessionCookie, revokeSession, sessionCookie } from './auth/session';
 import { registerAuthRoutes } from './auth/routes';
+import { registerHistoryPreferenceRoutes } from './auth/preferences';
 import { registerYouTubeMediaRoutes } from './youtube/routes';
 import { registerAdminRoutes, rotateAdminConsolePath } from './admin/routes';
-import { hasActiveAccessAccount, verifyCloudflareAccessAssertion } from './auth/cloudflareAccess';
-import { GENRES_SQL, buildListQuery, buildRelatedQuery, buildSearchQuery } from './repositories/catalog';
+import { hasActiveAccessAccount, hasBoundActiveAccessAccount, verifyCloudflareAccessAssertion } from './auth/cloudflareAccess';
+import { GENRES_SQL, buildBrowseQuery, buildListQuery, buildRelatedQuery, buildSearchQuery } from './repositories/catalog';
 import { BASE_RECORD_SQL, INSERT_PROVIDER_ID_SQL, PROVIDER_IDS_SQL } from './repositories/providerIds';
 import { buildRegistry, createCache, resolveUnified, sharedBreaker, toBaseRecord, type BaseRow } from './metadata/service';
-import { createLiveHandlers, isLiveMode, type LiveHandlers } from './live/handlers';
+import { createLiveHandlers, isLiveMode, parseBrowse, type LiveHandlers } from './live/handlers';
+import { providerRefFromMappings } from './live/ids';
 import type { LiveRequest, LiveResult } from './live/types';
 import { createTmdbMovieProvider } from './movies/providers/tmdb';
 import { createMovieCatalogService } from './movies/service';
-import { movieIdentity, persistMovieDetail, persistMovieSummary, searchStoredMovies } from './movies/repository';
+import { movieIdentity, normalizeMovieLibraryFavorite, persistMovieDetail, persistMovieSummary, searchStoredMovies } from './movies/repository';
 import type { MovieDiscoverQuery, MovieListKind } from './movies/types';
 import { ProviderError } from './metadata/types';
+import { consumeRateLimit } from './auth/rateLimit';
+import { isStaticAssetPath } from './lib/staticAssets';
 
 interface Bindings {
   DB: D1Database;
+  ASSETS?: Fetcher;
   ADMIN_BOOTSTRAP_TOKEN?: string;
   ACCESS_ENFORCED?: string;
   ACCESS_TEAM_DOMAIN?: string;
@@ -59,7 +64,7 @@ interface Bindings {
   MOVIES_INGESTION_ENABLED?: string;
 }
 
-type Variables = { requestId: string; accessEmail: string | null };
+type Variables = { requestId: string; accessEmail: string | null; accessSubject: string | null };
 type AppContext = Context<{ Bindings: Bindings; Variables: Variables }>;
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -100,6 +105,15 @@ app.use('/api/*', async (c, next) => {
   // has exact public path overrides for these paths. Every other API requires Access.
   if (pathname === '/api/health' || pathname === '/api/ready') {
     c.set('accessEmail', null);
+    c.set('accessSubject', null);
+    return next();
+  }
+  // Sign-out only revokes the opaque session cookie supplied by the caller.
+  // The same-origin guard above still applies, so expired/denied Access identities
+  // can leave Kairo without gaining access to any protected account data.
+  if (pathname === '/api/v1/auth/logout' && c.req.method.toUpperCase() === 'POST') {
+    c.set('accessEmail', null);
+    c.set('accessSubject', null);
     return next();
   }
   if (c.env.ACCESS_ENFORCED !== 'true') {
@@ -116,15 +130,19 @@ app.use('/api/*', async (c, next) => {
     { ACCESS_TEAM_DOMAIN: teamDomain, ACCESS_AUD: audience },
   );
   if (!identity) {
+    c.header('Set-Cookie', clearSessionCookie(new URL(c.req.url).protocol === 'https:'));
     return c.json({ success: false, error: { code: 'ACCESS_REQUIRED', message: 'A valid approved Cloudflare Access identity is required.' } }, 401);
   }
   c.set('accessEmail', identity.email);
+  c.set('accessSubject', identity.subject);
   // The Access email selector is checked at login, not on every active token.
   // Keep a live Kairo-side allow check so suspending/removing an invite blocks API use immediately.
   // Initial admin bootstrap is the only exception and remains protected by the signed Access JWT
   // plus the one-time bootstrap Worker secret.
-  if (pathname !== '/api/v1/admin/bootstrap') {
-    const activeInvite = await hasActiveAccessAccount(c.env.DB, identity.email);
+  // Resolve/provision new Access users only during the account bootstrap endpoint.
+  // All other API calls perform the active-account check without creating profiles.
+  if (pathname !== '/api/v1/admin/bootstrap' && pathname !== '/api/v1/me') {
+    const activeInvite = await hasBoundActiveAccessAccount(c.env.DB, identity.email, identity.subject);
     if (!activeInvite) {
       return c.json({ success: false, error: { code: 'ACCESS_ACCOUNT_DISABLED', message: 'This Access identity does not have an active Kairo account. Contact the site administrator.' } }, 403);
     }
@@ -135,9 +153,46 @@ app.use('/api/*', async (c, next) => {
 app.use('/api/*', async (c, next) => {
   const origin = c.env.ALLOWED_ORIGIN;
   if (origin) {
-    return cors({ origin, allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], allowHeaders: ['Content-Type', 'Authorization', 'X-Kairo-Bootstrap'], credentials: true })(c, next);
+    return cors({ origin, allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], allowHeaders: ['Content-Type', 'Authorization', 'X-Kairo-Bootstrap', 'X-Requested-With'], credentials: true })(c, next);
   }
   await next();
+});
+
+// Bound the most expensive public catalogue and provider endpoints by a hashed client key.
+// The raw Cloudflare client IP is never written to D1 by this limiter.
+app.use('/api/v1/*', async (c, next) => {
+  if (c.req.method !== 'GET') return next();
+  const pathname = new URL(c.req.url).pathname;
+  let bucket: string | null = null;
+  let limit = 0;
+  const windowMs = 15 * 60 * 1000;
+  if (pathname === '/api/v1/catalog/search' || pathname === '/api/v1/movies/search') {
+    bucket = 'catalog-search';
+    limit = 40;
+  } else if (
+    pathname.startsWith('/api/v1/catalog/') ||
+    pathname === '/api/v1/movies/discover' ||
+    pathname === '/api/v1/movies/genres'
+  ) {
+    bucket = 'catalog-read';
+    limit = 120;
+  } else if (/^\/api\/v1\/anime\/[^/]+\/episodes\/[^/]+\/servers(?:\/[^/]+\/playback)?$/.test(pathname)) {
+    bucket = 'episode-source';
+    limit = 24;
+  }
+  if (!bucket) return next();
+  const clientKey = c.req.header('CF-Connecting-IP') ?? c.get('accessSubject') ?? c.get('accessEmail') ?? 'unknown';
+  try {
+    const allowed = await consumeRateLimit(c.env.DB, String(clientKey), bucket, limit, windowMs);
+    if (!allowed) {
+      c.header('Retry-After', '60');
+      return fail(c, 429, 'RATE_LIMITED', 'Too many requests. Please wait a minute and try again.');
+    }
+  } catch (error) {
+    logError(c, 'api_rate_limit_unavailable', error);
+    return fail(c, 503, 'RATE_LIMIT_UNAVAILABLE', 'This service is temporarily unable to verify its request limit.');
+  }
+  return next();
 });
 
 app.use('/api/v1/me', async (c, next) => {
@@ -160,6 +215,7 @@ function fail(c: Context<{ Bindings: Bindings; Variables: Variables }>, status: 
 registerAuthRoutes(app);
 registerYouTubeMediaRoutes(app);
 registerAdminRoutes(app);
+registerHistoryPreferenceRoutes(app);
 
 function moviesProviderEnabled(c: AppContext): boolean {
   return c.env.MOVIES_TMDB_ENABLED === 'true' && c.env.MOVIES_TMDB_TERMS_APPROVED === 'true';
@@ -281,8 +337,8 @@ app.post('/api/v1/movies/ingest', async (c) => {
   if (c.env.MOVIES_INGESTION_ENABLED !== 'true' || !moviesProviderEnabled(c)) {
     return fail(c, 503, 'MOVIES_INGESTION_DISABLED', 'Movie ingestion is disabled until the metadata provider terms and persistence rules are approved.');
   }
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to continue.');
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to continue.');
   if (user.role !== 'admin') return fail(c, 403, 'ADMIN_REQUIRED', 'Administrator access is required.');
   const body: unknown = await c.req.json().catch(() => null);
   if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(c, 400, 'VALIDATION_ERROR', 'A JSON request body is required.');
@@ -320,8 +376,8 @@ app.post('/api/v1/movies/ingest/:externalId', async (c) => {
   if (c.env.MOVIES_INGESTION_ENABLED !== 'true' || !moviesProviderEnabled(c)) {
     return fail(c, 503, 'MOVIES_INGESTION_DISABLED', 'Movie ingestion is disabled until the metadata provider terms and persistence rules are approved.');
   }
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to continue.');
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to continue.');
   if (user.role !== 'admin') return fail(c, 403, 'ADMIN_REQUIRED', 'Administrator access is required.');
   const externalId = c.req.param('externalId');
   try {
@@ -371,12 +427,90 @@ app.get('/api/v1/catalog/featured', serveLive((h) => h.featured));
 app.get('/api/v1/catalog/trending', serveLive((h) => h.trending));
 app.get('/api/v1/catalog/latest', serveLive((h) => h.latest));
 app.get('/api/v1/catalog/search', serveLive((h) => h.search));
-app.get('/api/v1/catalog/browse', serveLive((h) => h.browse));
+app.get('/api/v1/catalog/browse', async (c) => {
+  if (isLiveMode(c.env.CATALOG_SOURCE)) {
+    const result = await live.browse({ query: c.req.query(), param: (name) => c.req.param(name), requestId: c.get('requestId'), env: c.env });
+    return c.json(result.body as Record<string, unknown>, result.status as 200);
+  }
+  const parsed = parseBrowse(c.req.query(), new Date());
+  if (!parsed.ok) return fail(c, 400, 'VALIDATION_ERROR', parsed.message);
+  const built = buildBrowseQuery(parsed.value);
+  try {
+    const [items, count] = await Promise.all([
+      c.env.DB.prepare(built.sql).bind(...built.binds).all(),
+      c.env.DB.prepare(built.countSql).bind(...built.countBinds).first<{ total: number }>(),
+    ]);
+    const total = Number(count?.total ?? 0);
+    return ok(c, { items: (items.results ?? []).map((row: Record<string, unknown>) => toCard(row)) }, {
+      page: parsed.value.page,
+      limit: parsed.value.limit,
+      total,
+      hasNextPage: (parsed.value.page - 1) * parsed.value.limit + parsed.value.limit < total,
+    });
+  } catch (error) {
+    logError(c, 'catalog_browse_failed', error);
+    return fail(c, 503, 'CATALOG_UNAVAILABLE', 'Filtered catalogue browsing is temporarily unavailable.');
+  }
+});
 app.get('/api/v1/catalog/genres', serveLive((h) => h.genres));
 app.get('/api/v1/providers', serveLive((h) => h.providers));
 app.get('/api/v1/anime/:id/episodes', serveLive((h) => h.episodes));
-app.get('/api/v1/anime/:id/episodes/:episodeNumber/servers', serveLive((h) => h.servers));
-app.get('/api/v1/anime/:id/episodes/:episodeNumber/servers/:serverId/playback', serveLive((h) => h.playback));
+async function resolveDbEpisodeProviderRef(c: AppContext, rawId: string): Promise<
+  | { ref: string }
+  | { error: { status: 404 | 503; code: string; message: string } }
+> {
+  if (!rawId || rawId.length > 128) {
+    return { error: { status: 404, code: 'RESOURCE_NOT_FOUND', message: 'The requested title was not found.' } };
+  }
+  const title = await c.env.DB.prepare('SELECT id FROM anime WHERE id=? OR slug=? LIMIT 1')
+    .bind(rawId, rawId).first<{ id: string }>();
+  if (!title) {
+    return { error: { status: 404, code: 'RESOURCE_NOT_FOUND', message: 'The requested title was not found.' } };
+  }
+  const mappings = await c.env.DB.prepare(PROVIDER_IDS_SQL).bind(title.id).all<{ provider: string; externalId: string }>();
+  const preferredProviders = (c.env.LIVE_PROVIDERS ?? 'anilist,mal').split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
+  const ref = providerRefFromMappings(mappings.results ?? [], preferredProviders);
+  if (!ref) {
+    return { error: { status: 503, code: 'EPISODE_SOURCE_UNAVAILABLE', message: 'This stored title has no supported mapping for the configured episode-discovery providers.' } };
+  }
+  return { ref };
+}
+
+app.get('/api/v1/anime/:id/episodes/:episodeNumber/servers', async (c) => {
+  const request: LiveRequest = {
+    query: c.req.query(),
+    param: (name) => c.req.param(name),
+    requestId: c.get('requestId'),
+    env: c.env,
+  };
+  if (isLiveMode(c.env.CATALOG_SOURCE)) {
+    const result = await live.servers(request);
+    return c.json(result.body as Record<string, unknown>, result.status as 200);
+  }
+  const resolved = await resolveDbEpisodeProviderRef(c, c.req.param('id'));
+  if ('error' in resolved) return fail(c, resolved.error.status, resolved.error.code, resolved.error.message);
+  const dbRequest: LiveRequest = { ...request, param: (name) => name === 'id' ? resolved.ref : request.param(name) };
+  const result = await live.servers(dbRequest);
+  return c.json(result.body as Record<string, unknown>, result.status as 200);
+});
+
+app.get('/api/v1/anime/:id/episodes/:episodeNumber/servers/:serverId/playback', async (c) => {
+  const request: LiveRequest = {
+    query: c.req.query(),
+    param: (name) => c.req.param(name),
+    requestId: c.get('requestId'),
+    env: c.env,
+  };
+  if (isLiveMode(c.env.CATALOG_SOURCE)) {
+    const result = await live.playback(request);
+    return c.json(result.body as Record<string, unknown>, result.status as 200);
+  }
+  const resolved = await resolveDbEpisodeProviderRef(c, c.req.param('id'));
+  if ('error' in resolved) return fail(c, resolved.error.status, resolved.error.code, resolved.error.message);
+  const dbRequest: LiveRequest = { ...request, param: (name) => name === 'id' ? resolved.ref : request.param(name) };
+  const result = await live.playback(dbRequest);
+  return c.json(result.body as Record<string, unknown>, result.status as 200);
+});
 app.get('/api/v1/anime/:id/related', serveLive((h) => h.related));
 app.get('/api/v1/anime/:id/metadata', serveLive((h) => h.metadata));
 app.get('/api/v1/anime/:id', serveLive((h) => h.anime));
@@ -562,7 +696,7 @@ app.get('/api/v1/anime/:id/metadata', async (c) => {
 app.get('/api/v1/me', async (c) => {
   const accessEmail = c.get('accessEmail') as string | null | undefined;
   const cookieHeader = c.req.header('Cookie') ?? null;
-  const existing = await findSessionUser(c.env.DB, cookieHeader, Date.now(), accessEmail);
+  const existing = await findSessionUser(c.env.DB, cookieHeader, Date.now(), accessEmail, c.get('accessSubject') as string | null | undefined);
   if (existing) return ok(c, { user: existing }, { authProvider: c.env.ACCESS_ENFORCED === 'true' ? 'cloudflare_access' : 'local_session' });
 
   // In the closed-access deployment, Cloudflare Access is the only interactive
@@ -570,15 +704,40 @@ app.get('/api/v1/me', async (c) => {
   // account-scoped APIs (history, libraries, playback and YouTube OAuth) retain a
   // stable user id without asking the user for a second username/password.
   if (c.env.ACCESS_ENFORCED === 'true') {
-    if (!accessEmail) return fail(c, 401, 'ACCESS_REQUIRED', 'Authenticate with your approved email through Cloudflare Access.');
+    if (!accessEmail) {
+      c.header('Set-Cookie', clearSessionCookie(new URL(c.req.url).protocol === 'https:'));
+      return fail(c, 401, 'ACCESS_REQUIRED', 'Authenticate with your approved email through Cloudflare Access.');
+    }
+    // A present but invalidated Kairo cookie means the session expired or was revoked.
+    // Do not silently mint a replacement for an already-authenticated Access browser:
+    // require a fresh Access login, especially for the shorter administrator idle window.
+    if (readSessionCookie(cookieHeader)) {
+      c.header('Set-Cookie', clearSessionCookie(new URL(c.req.url).protocol === 'https:'));
+      return fail(c, 401, 'ACCESS_REAUTH_REQUIRED', 'Your Kairo session expired. Reauthenticate through Cloudflare Access to continue.');
+    }
     try {
+      // First-time provisioning belongs to /me, not arbitrary API middleware.
+      if (!await hasActiveAccessAccount(c.env.DB, accessEmail, c.get('accessSubject') as string | null | undefined)) {
+        const existingProfile = await c.env.DB.prepare(
+          'SELECT id FROM user_profiles WHERE access_email = ? COLLATE NOCASE OR (access_email IS NULL AND email = ? COLLATE NOCASE) LIMIT 1',
+        ).bind(accessEmail, accessEmail).first<{ id: string }>();
+        if (!existingProfile) {
+          const allocation = await c.env.DB.prepare(
+            "SELECT COUNT(*) AS total FROM user_profiles WHERE role = 'user'",
+          ).first<{ total: number }>();
+          if (Number(allocation?.total ?? 0) >= 15) {
+            return fail(c, 403, 'ACCESS_ACCOUNT_LIMIT_REACHED', 'All 15 Kairo standard-account places are allocated. Contact the Kairo administrator to request access.');
+          }
+        }
+        return fail(c, 403, 'ACCESS_ACCOUNT_DISABLED', 'This Access identity does not have an active Kairo account. Contact the site administrator.');
+      }
       const bootstrap = await c.env.DB.prepare(
         `SELECT admin_bootstrap_completed_at AS completedAt,
                 EXISTS (SELECT 1 FROM user_profiles WHERE role = 'admin') AS adminExists
          FROM app_security_state WHERE singleton_id = 1`,
       ).first<{ completedAt: number | null; adminExists: number }>();
       if (bootstrap && bootstrap.completedAt === null && Number(bootstrap.adminExists) === 0) {
-        return fail(c, 401, 'AUTH_REQUIRED', 'The initial Kairo administrator must complete one-time setup.');
+        return fail(c, 401, 'ADMIN_SETUP_REQUIRED', 'The initial Kairo administrator must complete one-time setup.');
       }
       const account = await c.env.DB.prepare(
         "SELECT id, role, account_status AS accountStatus FROM user_profiles WHERE access_email = ? COLLATE NOCASE LIMIT 1",
@@ -588,13 +747,12 @@ app.get('/api/v1/me', async (c) => {
       }
       const ttlSeconds = account.role === 'admin' ? 8 * 60 * 60 : 30 * 24 * 60 * 60;
       const session = await createSession(c.env.DB, account.id, {
-        userAgent: c.req.header('User-Agent') ?? undefined,
-        ipPrefix: c.req.header('CF-Connecting-IP') ?? 'unknown',
         ttlSeconds,
         accessEmail,
+        accessSubject: c.get('accessSubject') as string | null | undefined,
       });
       c.header('Set-Cookie', sessionCookie(session.token, new URL(c.req.url).protocol === 'https:', session.ttlSeconds));
-      const user = await findSessionUser(c.env.DB, `kairo_session=${session.token}`, Date.now(), accessEmail);
+      const user = await findSessionUser(c.env.DB, `kairo_session=${session.token}`, Date.now(), accessEmail, c.get('accessSubject') as string | null | undefined);
       if (!user) return fail(c, 503, 'ACCOUNT_SESSION_UNAVAILABLE', 'Your Kairo account was found but its session could not be established.');
       return ok(c, { user }, { authProvider: 'cloudflare_access', sessionCreated: true });
     } catch (error) {
@@ -609,8 +767,8 @@ app.get('/api/v1/me', async (c) => {
 });
 
 app.get('/api/v1/me/playback', async (c) => {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to restore playback progress.');
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to restore playback progress.');
   const mediaType = c.req.query('mediaType');
   const mediaKey = c.req.query('mediaKey');
   if (mediaType && !['anime', 'movie', 'youtube'].includes(mediaType)) return fail(c, 400, 'VALIDATION_ERROR', 'The media type is invalid.');
@@ -651,8 +809,8 @@ app.get('/api/v1/me/playback', async (c) => {
 app.delete('/api/v1/me/playback', async (c) => {
   const origin = c.req.header('Origin');
   if (origin && origin !== new URL(c.req.url).origin) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to delete playback progress.');
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to delete playback progress.');
   const mediaType = c.req.query('mediaType');
   const mediaKey = c.req.query('mediaKey');
   if (!mediaType || !['anime', 'movie', 'youtube'].includes(mediaType) ||
@@ -674,8 +832,8 @@ app.delete('/api/v1/me/playback', async (c) => {
 app.post('/api/v1/me/playback', async (c) => {
   const origin = c.req.header('Origin');
   if (origin && origin !== new URL(c.req.url).origin) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync playback progress.');
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to sync playback progress.');
   let body: unknown;
   try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
   if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(c, 400, 'VALIDATION_ERROR', 'Provide a playback progress record.');
@@ -741,8 +899,8 @@ app.post('/api/v1/me/playback', async (c) => {
 });
 
 app.get('/api/v1/me/history/sync', async (c) => {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to restore watch history.');
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to restore watch history.');
   const slug = c.req.query('slug');
   const episodeNumber = c.req.query('episodeNumber');
   try {
@@ -793,8 +951,8 @@ app.post('/api/v1/me/history/sync', async (c) => {
   if (origin && origin !== new URL(c.req.url).origin) {
     return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
   }
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync watch history.');
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to sync watch history.');
   let body: unknown;
   try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
   const request = body as { items?: unknown; deleted?: unknown; clear?: unknown } | null;
@@ -885,9 +1043,58 @@ app.post('/api/v1/me/history/sync', async (c) => {
   }
 });
 
+app.put('/api/v1/me/library/:animeId', async (c) => {
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to update your Anime library.');
+  const animeId = parseId(c.req.param('animeId'));
+  if (!animeId) return fail(c, 400, 'VALIDATION_ERROR', 'The Anime identifier is invalid.');
+  let body: unknown;
+  try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(c, 400, 'VALIDATION_ERROR', 'Provide an Anime library entry.');
+  const value = body as Record<string, unknown>;
+  const statuses = ['watching', 'plan_to_watch', 'completed', 'on_hold', 'dropped'] as const;
+  const status = value.status;
+  const isFavorite = value.isFavorite;
+  if ((status !== null && !(statuses as readonly unknown[]).includes(status)) || typeof isFavorite !== 'boolean') {
+    return fail(c, 400, 'VALIDATION_ERROR', 'The Anime library status or favorite flag is invalid.');
+  }
+  try {
+    const anime = await c.env.DB.prepare('SELECT id FROM anime WHERE id = ? LIMIT 1').bind(animeId).first<{ id: string }>();
+    if (!anime) return fail(c, 404, 'RESOURCE_NOT_FOUND', 'The requested Anime title was not found.');
+    if (status === null && !isFavorite) {
+      await c.env.DB.prepare('DELETE FROM user_library WHERE user_id = ? AND anime_id = ?').bind(user.id, animeId).run();
+      return ok(c, { removed: true, animeId });
+    }
+    await c.env.DB.prepare(`
+      INSERT INTO user_library (user_id, anime_id, status, is_favorite, added_at, updated_at)
+      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT(user_id, anime_id) DO UPDATE SET
+        status=excluded.status, is_favorite=excluded.is_favorite, updated_at=CURRENT_TIMESTAMP
+    `).bind(user.id, animeId, status ?? 'plan_to_watch', isFavorite ? 1 : 0).run();
+    return ok(c, { saved: true, animeId, status: status ?? 'plan_to_watch', isFavorite });
+  } catch (error) {
+    logError(c, 'anime_library_write_failed', error);
+    return fail(c, 503, 'LIBRARY_UNAVAILABLE', 'Could not save this Anime title to your account.');
+  }
+});
+
+app.delete('/api/v1/me/library/:animeId', async (c) => {
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to update your Anime library.');
+  const animeId = parseId(c.req.param('animeId'));
+  if (!animeId) return fail(c, 400, 'VALIDATION_ERROR', 'The Anime identifier is invalid.');
+  try {
+    await c.env.DB.prepare('DELETE FROM user_library WHERE user_id = ? AND anime_id = ?').bind(user.id, animeId).run();
+    return ok(c, { removed: true, animeId });
+  } catch (error) {
+    logError(c, 'anime_library_delete_failed', error);
+    return fail(c, 503, 'LIBRARY_UNAVAILABLE', 'Could not remove this Anime title from your account.');
+  }
+});
+
 app.get('/api/v1/me/movies/library', async (c) => {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your Movies library.');
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to access your Movies library.');
   try {
     const result = await c.env.DB.prepare(`
       SELECT provider_id AS providerId, external_id AS externalId, status,
@@ -895,7 +1102,10 @@ app.get('/api/v1/me/movies/library', async (c) => {
       FROM user_movie_library_refs WHERE user_id = ?
       ORDER BY updated_at DESC LIMIT 200
     `).bind(user.id).all();
-    return ok(c, { items: result.results ?? [] }, { count: result.results?.length ?? 0 });
+    const items = (result.results ?? []).map((row: Record<string, unknown>) =>
+      normalizeMovieLibraryFavorite(row as Record<string, unknown> & { isFavorite: unknown }),
+    );
+    return ok(c, { items }, { count: items.length });
   } catch (error) {
     logError(c, 'movie_library_read_failed', error);
     return fail(c, 503, 'MOVIE_LIBRARY_UNAVAILABLE', 'Your Movies library is temporarily unavailable.');
@@ -907,8 +1117,8 @@ app.post('/api/v1/me/movies/library', async (c) => {
   if (origin && origin !== new URL(c.req.url).origin) {
     return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
   }
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync your Movies library.');
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to sync your Movies library.');
   let body: unknown;
   try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
   if (!body || typeof body !== 'object') return fail(c, 400, 'VALIDATION_ERROR', 'Provide a movie library entry.');
@@ -951,8 +1161,8 @@ app.delete('/api/v1/me/movies/library/:providerId/:externalId', async (c) => {
   if (origin && origin !== new URL(c.req.url).origin) {
     return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
   }
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to manage your Movies library.');
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to manage your Movies library.');
   const providerId = c.req.param('providerId').trim().toLowerCase();
   const externalId = c.req.param('externalId').trim();
   if (providerId !== 'tmdb' || !/^\d{1,12}$/.test(externalId)) {
@@ -970,8 +1180,8 @@ app.delete('/api/v1/me/movies/library/:providerId/:externalId', async (c) => {
 });
 
 app.get('/api/v1/me/library', async (c) => {
-  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined);
-  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your library.');
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get('accessEmail') as string | null | undefined, c.get('accessSubject') as string | null | undefined);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to access your library.');
   try {
     const result = await c.env.DB.prepare(
       `SELECT l.anime_id AS animeId, l.status, l.is_favorite AS isFavorite,
@@ -1005,9 +1215,23 @@ app.post('/api/v1/auth/logout', async (c) => {
     return fail(c, 503, 'AUTH_UNAVAILABLE', 'Could not sign out. Please try again.');
   }
 });
-app.get('/api/v1/anime/:id/episodes/:episodeNumber/servers/:serverId/playback', (c) => fail(c, 503, 'SOURCE_UNAVAILABLE', 'Live playback is not enabled for this catalogue configuration.'));
 
-app.notFound((c) => fail(c, 404, 'RESOURCE_NOT_FOUND', 'The requested API route was not found.'));
+
+app.notFound(async (c) => {
+  if (isStaticAssetPath(c.req.path)) {
+    try {
+      const asset = await c.env.ASSETS?.fetch(c.req.raw);
+      const contentType = asset?.headers.get('content-type')?.toLowerCase() ?? '';
+      // With SPA fallback enabled Cloudflare may return index.html (200) for an
+      // unknown .js/.css/image URL. Never let that HTML masquerade as an asset.
+      if (asset && asset.status !== 404 && (!contentType.startsWith('text/html') || c.req.path.toLowerCase() === '/index.html')) return asset;
+    } catch {
+      // A missing/unavailable asset is still a 404; do not surface Worker internals.
+    }
+    return fail(c, 404, 'STATIC_ASSET_NOT_FOUND', 'The requested asset was not found.');
+  }
+  return fail(c, 404, 'RESOURCE_NOT_FOUND', 'The requested API route was not found.');
+});
 app.onError((error, c) => {
   console.error(JSON.stringify({ event: 'unhandled_worker_error', requestId: c.get('requestId'), message: error.message }));
   return fail(c, 500, 'INTERNAL_ERROR', 'An unexpected error occurred.');
@@ -1036,8 +1260,19 @@ export default {
   // Expose Hono's in-process request helper for Worker integration tests only.
   request: app.request.bind(app),
   scheduled(_controller: ScheduledController, env: Bindings, context: ExecutionContext) {
-    context.waitUntil(rotateAdminConsolePath(env.DB).catch((error) => {
-      console.error(JSON.stringify({ event: 'admin_console_rotation_failed', message: error instanceof Error ? error.message : 'unknown' }));
-    }));
+    context.waitUntil(Promise.all([
+      rotateAdminConsolePath(env.DB).catch((error) => {
+        console.error(JSON.stringify({ event: 'admin_console_rotation_failed', message: error instanceof Error ? error.message : 'unknown' }));
+      }),
+      env.DB.batch([
+        env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(Date.now()),
+        env.DB.prepare("DELETE FROM sessions WHERE COALESCE(last_used_at, created_at) < datetime('now', '-30 days')"),
+        env.DB.prepare('DELETE FROM auth_rate_limits WHERE window_started_at < ?').bind(Date.now() - 48 * 60 * 60 * 1000),
+        env.DB.prepare('DELETE FROM youtube_oauth_states WHERE expires_at <= ? OR consumed_at IS NOT NULL').bind(Date.now()),
+        env.DB.prepare('DELETE FROM google_oauth_states WHERE expires_at <= ? OR consumed_at IS NOT NULL').bind(Date.now()),
+      ]).catch((error) => {
+        console.error(JSON.stringify({ event: 'expired_auth_data_cleanup_failed', message: error instanceof Error ? error.message : 'unknown' }));
+      }),
+    ]));
   },
 };

@@ -11,14 +11,14 @@ The intended experience has two distinct entry points:
 
 Search, channel pages, video rows/cards, and a watch view should use official YouTube services. Kairo may add independent value through saved videos, personal organisation, and cross-provider navigation. Do not claim to reproduce the exact personalised YouTube Home recommendations feed: the documented Data API does not expose it.
 
-This plan describes the full provider roadmap. The current `youtube` branch includes the separate YouTube OAuth foundation, Kairo-curated public-channel feed, channel search/management, and a Kairo watch page using the official IFrame Player API with Kairo-owned History and Watch Later. It does not yet include authorized YouTube subscription import or a guest-facing general discovery feed.
+This plan describes the full provider roadmap. The current implementation includes the separate YouTube OAuth foundation, Kairo-curated public-channel feed, channel search/management, and a Kairo watch page using the official IFrame Player API with Kairo-owned History and Watch Later. It does not yet include authorized YouTube subscription import or a guest-facing general discovery feed.
 
 ## Product, policy and playback boundaries
 
 - Use the official YouTube Data API v3 for public channel/video metadata, uploads playlists, and authorized subscription data.
 - Resolve a channel's uploads playlist through the channel resource, then page `playlistItems.list` for feed building. Interactive keyword search uses the official `search.list` endpoint and must remain behind the app's shared daily search-call budget.
 - Use Google's documented OAuth authorization-code flow with PKCE for optional YouTube access. Request only `https://www.googleapis.com/auth/youtube.readonly` for the initial connection.
-- Kairo Google sign-in is a separate identity flow and must continue to request only `openid email profile`. Connecting YouTube must never silently expand sign-in scopes.
+- Kairo identity is provided exclusively by Cloudflare Access; there is no active Google sign-in flow. Google OAuth is used only for the optional, separately authorized YouTube connection. Connecting YouTube must never change Kairo's sign-in authority.
 - **Production product boundary:** never request or store YouTube passwords, browser cookies, or copied session tokens; never depend on undocumented InnerTube endpoints or scrape YouTube. Use the official YouTube Data API and supported OAuth flows.
 - The manual-cookie/YouTube.js prototype and its staging-only test endpoint have been retired and removed. Do not reintroduce browser cookies, copied session credentials, or undocumented InnerTube calls; use the official YouTube Data API and supported OAuth flows only.
 - Store OAuth access/refresh tokens only on the Worker side, encrypted at rest with a dedicated key. Never return tokens to the browser or write them to logs.

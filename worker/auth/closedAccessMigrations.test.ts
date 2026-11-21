@@ -1,6 +1,8 @@
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { reassignStandardAccountEmail } from '../admin/routes';
+import { hasActiveAccessAccount } from './cloudflareAccess';
 
 const migrationFiles = [
   '0001_initial_schema.sql',
@@ -21,6 +23,9 @@ const migrationFiles = [
   '0016_playback_write_order.sql',
   '0017_admin_email_otp_console_rotation.sql',
   '0018_cloudflare_access_identity_admin_lockout.sql',
+  '0019_session_privacy_retention.sql',
+  '0020_cloudflare_access_subject_binding.sql',
+  '0021_reassignable_account_seats.sql',
 ];
 
 function applyMigrations(db: DatabaseSync, from = 0, to = migrationFiles.length): void {
@@ -31,12 +36,12 @@ function applyMigrations(db: DatabaseSync, from = 0, to = migrationFiles.length)
 
 function addProfile(
   db: DatabaseSync,
-  values: { id: string; username: string; accessEmail: string; role?: 'user' | 'admin' },
+  values: { id: string; username: string; accessEmail: string; accessSubject?: string | null; role?: 'user' | 'admin' },
 ): void {
   db.prepare(`INSERT INTO user_profiles
-    (id, identity_subject, display_name, username, access_email, account_status, role)
-    VALUES (?, ?, ?, ?, ?, 'active', ?)`)
-    .run(values.id, `subject:${values.id}`, values.id, values.username, values.accessEmail, values.role ?? 'user');
+    (id, identity_subject, display_name, username, email, access_email, access_subject, account_status, role)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)`)
+    .run(values.id, `subject:${values.id}`, values.id, values.username, values.accessEmail, values.accessEmail, values.accessSubject ?? null, values.role ?? 'user');
 }
 
 describe('closed-access D1 migrations', () => {

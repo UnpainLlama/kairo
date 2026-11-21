@@ -78,6 +78,8 @@ Search parameters:
 - In legacy `CATALOG_SOURCE=db` mode, `trending` ranks by stored `popularity_score` and `latest` by the catalogue row's `updated_at`. In live mode, AniList supplies trending-score ordering and currently airing titles newest-first; see docs/LIVE_CATALOGUE.md.
 - In DB mode, `genres` returns counts derived from stored title genre lists. In live mode, AniList returns its genre collection without counts.
 - Related-title behavior is provider-specific in live mode (AniList relations and recommendations, with provider fallbacks). The legacy DB route uses shared genres. Accepts `limit` (1–24, default 12).
+- Filter-only `/api/v1/catalog/browse` is supported in both live and legacy D1 catalogue modes. In D1 mode filters are bound against the stored genre/year/format/status/season fields and sort uses the same fixed whitelist as search.
+- D1 catalogue mode resolves episode servers/playback only through a stored AniList or MAL provider-ID mapping plus the configured independent episode provider. A title without a supported mapping returns `EPISODE_SOURCE_UNAVAILABLE`; a mode without a server-capable episode provider returns `PROVIDER_UNAVAILABLE` rather than a missing-route 404.
 
 ## 2b. Provider routes (added; existing routes unchanged)
 
@@ -96,17 +98,17 @@ Ratings are on a 0-10 scale. See docs/PROVIDERS.md.
 | GET | `/api/v1/admin/console-path` | Return the current 30-minute console path to an authenticated administrator only. |
 | GET | `/api/v1/admin/accounts` | List standard accounts, their unique Cloudflare Access email bindings, and the 15-account allocation count. |
 | POST | `/api/v1/admin/accounts` | Retired. Returns `410 ACCESS_ACCOUNT_AUTO_PROVISIONED`; standard accounts are created on first approved Access visit. |
-| PATCH | `/api/v1/admin/accounts/:id/access-email` | Change a standard account's unique Access email and revoke its sessions; update the Cloudflare Access Allow policy to match. |
+| PATCH | `/api/v1/admin/accounts/:id/access-email` | Destructively reassign a standard-account seat to a new email. Requires `confirmDataDeletion: true`; creates a new account ID, deletes all old account-owned data and revokes sessions. Update the Cloudflare Access Allow policy too. |
 | PATCH | `/api/v1/admin/accounts/:id/status` | Suspend or reactivate a standard account. |
 | POST | `/api/v1/admin/accounts/:id/password` | Retired. Returns `410 ACCESS_SIGN_IN_ONLY`; Kairo passwords are no longer used. |
 
-All administrator routes verify the session role server-side. The console path is an obscurity layer, not an authentication mechanism. A staging Cron Trigger rotates it every 30 minutes. The database enforces a single administrator role; suspended standard accounts continue to count toward the 15-account allocation limit.
+All administrator routes verify the session role server-side. The console path is an obscurity layer, not an authentication mechanism. A staging Cron Trigger rotates it every 30 minutes. The database enforces a single administrator role; active and suspended standard accounts count toward the 15-account allocation limit. Reassigned/deleted accounts remain as minimal Access-identity tombstones and do not consume a seat.
 
 ## 3. Authenticated user routes
 
-Kairo uses Cloudflare Access as its only interactive sign-in authority. The Kairo Access application's Allow policy must list exact email addresses individually; do not allow Everyone or a whole email domain. The Worker verifies the signed Cloudflare Access application JWT (signature, issuer, audience and token times), then provisions or resolves the Kairo profile bound to that verified email. An Access identity without an active profile cannot access account APIs; suspended/deleted accounts are not silently reactivated.
+Kairo uses Cloudflare Access as its only interactive sign-in authority. The Kairo Access application's Allow policy must list exact email addresses individually; do not allow Everyone or a whole email domain. The Worker verifies the signed Cloudflare Access application JWT (signature, issuer, audience, token times and subject), then provisions or resolves the Kairo profile bound to that verified email and subject. An Access identity without an active profile cannot access account APIs; suspended/deleted accounts are not silently reactivated.
 
-Invited users do not enter a Kairo username or password. On first approved visit, the Worker automatically provisions a standard profile (subject to the 15-account allocation limit). Existing active profiles are linked by their verified email without changing their user ID or media data. The first `GET /api/v1/me` automatically creates the internal HttpOnly Kairo session needed by account services. A missing Access assertion is an Access denial, not guest mode.
+Invited users do not enter a Kairo username or password. On first approved visit, the Worker automatically provisions a standard profile (subject to the 15-account allocation limit). Existing active profiles are linked by their verified email without changing their user ID or media data. The first `GET /api/v1/me` automatically creates the internal HttpOnly Kairo session needed by account services. Each session is bound to both Access email and JWT subject. A stale or revoked internal session is cleared and returns `ACCESS_REAUTH_REQUIRED`, requiring a fresh Cloudflare Access logout/login rather than silent session renewal. A missing Access assertion is an Access denial, not guest mode.
 
 In local development only, where `ACCESS_ENFORCED` is not `true`, a request with no Kairo session resolves as a guest. Guest media remains browser-local and is never sent to D1. Staging and production are Access-protected.
 
@@ -119,16 +121,17 @@ Authentication routes:
 | POST | `/api/v1/auth/login` | Retired. Returns `410 ACCESS_SIGN_IN_ONLY`; use the approved Cloudflare Access email instead. |
 | POST | `/api/v1/admin/bootstrap` | One-time administrator provisioning; requires `X-Kairo-Bootstrap` and the current verified Access email; permanently disabled after initialization. |
 
-Cloudflare Access is the invitation boundary. If its Allow policy is broader than the intended email list, any email accepted by that policy may receive a standard Kairo profile on first visit. The Kairo menu's sign-out action uses `/cdn-cgi/access/logout`; deleting only the internal Kairo cookie is not a full sign-out.
+Cloudflare Access is the invitation boundary. If its Allow policy is broader than the intended email list, any email accepted by that policy may receive a standard Kairo profile on first visit. The app shell, profile and admin console use `POST /api/v1/auth/logout` to revoke the Kairo session before clearing account-local cache and navigating to `/cdn-cgi/access/logout`. If revocation fails, the client does not clear local data or redirect. The YouTube reauthentication flow also revokes the internal session before the Access logout/login step.
 
-These routes require a valid Kairo session and server-side ownership checks.
+Anime library routes are account-scoped; `PUT` accepts `{ status, isFavorite }`, with `status` either one of the values below or `null` to save a favorite without changing list status. Writes verify that the Anime identifier exists and derive ownership only from the validated Kairo session. These routes require a valid Kairo session and server-side ownership checks.
 
 | Method | Path | Purpose |
 |---|---|---|
+| POST | `/api/v1/auth/logout` | Revoke the current Kairo session and clear the HttpOnly cookie before Cloudflare Access logout |
 | GET | `/api/v1/me` | Current profile |
 | PATCH | `/api/v1/me` | Update editable profile fields |
-| GET | `/api/v1/me/preferences` | Read preferences |
-| PUT | `/api/v1/me/preferences` | Replace validated preferences |
+| GET | `/api/v1/me/preferences` | Read the account-wide history recording preference (`historyPaused`). |
+| PUT | `/api/v1/me/preferences` | Update the account-wide history recording preference (`historyPaused`); applies to Anime and Movies on all devices. |
 | GET | `/api/v1/me/library` | Read library, filter by status |
 | PUT | `/api/v1/me/library/:animeId` | Add or update a library item |
 | DELETE | `/api/v1/me/library/:animeId` | Remove a library item |
@@ -152,6 +155,7 @@ Progress request example:
 Validate finite non-negative numbers, enforce sensible duration/position bounds, and derive the subject ID from the authenticated context. Never accept `userId` from the request body.
 
 | GET | `/api/v1/me/playback?mediaType=...&mediaKey=...` (mediaType: anime, movie or youtube) | Restore one shared playback snapshot. Omit `mediaKey` to list recent cross-media playback (optional `mediaType`, `limit`). |
+| DELETE | `/api/v1/me/playback?mediaType=...&mediaKey=...` (optional `mediaKey`) | Delete one playback snapshot or clear all snapshots for the selected media type from the signed-in account. YouTube deletion is administrator-only. |
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -194,7 +198,8 @@ Validate finite non-negative numbers, enforce sensible duration/position bounds,
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/v1/episodes/:episodeId/playback` | Resolve playback through an authorized configured provider |
+| GET | `/api/v1/anime/:id/episodes/:episodeNumber/servers` | Discover available language/server choices from the configured episode provider. In D1 catalogue mode, the stored title must have a supported AniList or MAL provider-ID mapping. |
+| GET | `/api/v1/anime/:id/episodes/:episodeNumber/servers/:serverId/playback` | Resolve the selected opaque server ID through the configured provider and validate the returned URL against the playback host allowlist. |
 
 A successful playback response may include:
 
@@ -248,8 +253,8 @@ The example is a schema illustration, not a live URL. Return only provider-autho
 |---|---|---|
 | GET | `/api/v1/me/history/sync?slug=:slug&episodeNumber=:number` | Restore one Anime episode's account-owned playback record before player initialization. Without the query pair, returns the latest account history. |
 | POST | `/api/v1/me/history/sync` | Upsert account-owned Anime progress/history; accepts bounded items, per-episode deletion requests, and an explicit clear operation. |
-| GET | `/api/v1/me/movies/library` | List the signed-in user's Movies provider references and saved-list state. |
-| POST | `/api/v1/me/movies/library` | Add/update a Movies Watchlist, Watched, Favorite or rating state. Send status=null, isFavorite=false and rating=null to remove the record. |
+| GET | `/api/v1/me/movies/library` | List the signed-in user's Movies provider references and saved-list state. `isFavorite` is always a JSON boolean. |
+| POST | `/api/v1/me/movies/library` | Add/update a Movies Watchlist, Watched, Favorite or rating state. `isFavorite` is a JSON boolean in both request and response. Send status=null, isFavorite=false and rating=null to remove the record. |
 
 - These routes derive user ownership exclusively from the validated HttpOnly Kairo session cookie. No user ID is accepted from the request body.
 - Movie library rows store provider_id and external_id with the user's status/favorite/rating state. They do not ingest or copy TMDB metadata into the account library.

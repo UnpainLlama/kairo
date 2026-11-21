@@ -3,11 +3,14 @@ import { Link, useLocation } from 'react-router-dom';
 import { Clock, Heart, LogIn, LogOut, Search, Settings, Trash2, UserRound, Pause, Play, ArrowUpDown } from 'lucide-react';
 import { EmptyState, LoadingState } from '../components/catalog';
 import { useKairoAccount } from '../lib/AccountProvider';
-import { historyPausedStorageKey, readWatchHistory, watchProgressStorageKey, writeWatchHistory } from '../lib/accountStorage';
-import { deleteMediaPlayback, listLocalMediaPlayback, syncMediaPlayback, writeLocalMediaPlayback, type MediaPlaybackSnapshot } from '../lib/mediaPlayback';
+import { readWatchHistory, watchProgressStorageKey, writeWatchHistory } from '../lib/accountStorage';
+import { useHistoryRecording } from '../hooks/useHistoryRecording';
+import { signOutKairoAccount } from '../lib/authClient';
+import { deleteMediaPlayback, listLocalMediaPlayback, parseMediaPlayback, syncMediaPlayback, writeLocalMediaPlayback, type MediaPlaybackSnapshot } from '../lib/mediaPlayback';
 
 type AccountUser = { id: string; displayName: string; email: string | null; username?: string | null; role?: 'user' | 'admin'; emailVerifiedAt?: string | null };
 type WatchEntry = { slug: string; title: string; posterUrl: string | null; episodeNumber: number; episodeTitle: string; progressKey: string; durationSeconds: number | null; updatedAt: number };
+type AnimeLibraryRow = { animeId: string; slug: string; title: string; posterUrl: string | null; status: string; isFavorite: boolean | number };
 function readHistory(userId: string | null): WatchEntry[] {
   return readWatchHistory<WatchEntry>(userId).filter((x) => x && typeof x.slug === 'string' && typeof x.title === 'string');
 }
@@ -33,12 +36,6 @@ function useCurrentUser() {
     retry: account.retry,
   };
 }
-function signOut() {
-  // Cloudflare Access owns the real sign-in session. End it at the Access edge;
-  // deleting only the internal Kairo cookie would sign the user straight back in.
-  window.location.assign('/cdn-cgi/access/logout');
-}
-
 async function syncWatchHistory(userId: string, options: { deleted?: Array<{ slug: string; episodeNumber: number }>; clear?: boolean } = {}): Promise<WatchEntry[] | null> {
   const localItems = readHistory(userId).slice(0, options.deleted?.length ? 99 : 100).map((item) => {
     let progressSeconds = 0;
@@ -82,7 +79,22 @@ export function ProfilePage() {
   const {user,loaded,unavailable,retry}=useCurrentUser();
   const [history,setHistory]=useState<WatchEntry[]>(()=>readHistory(null)); const [historyScope,setHistoryScope]=useState<string|null>(null); const [playbackItems,setPlaybackItems]=useState<MediaPlaybackSnapshot[]>([]); const [libraryCount,setLibraryCount]=useState<number|null>(null);
   const [error,setError]=useState(''); const [busy,setBusy]=useState(false);
-  useEffect(()=>{let active=true;fetch('/api/v1/me/library',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(p=>{if(active)setLibraryCount(Array.isArray(p?.data?.items)?p.data.items.length:0)}).catch(()=>{if(active)setLibraryCount(null)});return()=>{active=false}},[user?.id]);
+  useEffect(()=>{
+    let active=true;
+    if(!user){setLibraryCount(0);return()=>{active=false};}
+    const countFor=async(path:string):Promise<number|null>=>{
+      try{
+        const response=await fetch(path,{credentials:'same-origin',headers:{Accept:'application/json'},cache:'no-store'});
+        const payload=response.ok?await response.json():null;
+        return payload?.success&&Array.isArray(payload?.data?.items)?payload.data.items.length:null;
+      }catch{return null;}
+    };
+    Promise.all([countFor('/api/v1/me/library'),countFor('/api/v1/me/movies/library')]).then(([anime,movies])=>{
+      if(!active)return;
+      setLibraryCount(anime===null&&movies===null?null:(anime??0)+(movies??0));
+    });
+    return()=>{active=false};
+  },[user?.id]);
   useEffect(()=>{let active=true;const scope=user?.id??null;setHistoryScope(scope);setHistory(readHistory(scope));if(user?.id)syncWatchHistory(user.id).then(items=>{if(active&&items)setHistory(items)});return()=>{active=false}},[user?.id]);
   useEffect(()=>{const refresh=()=>setHistory(readHistory(user?.id??null));window.addEventListener('storage',refresh);window.addEventListener('kairo:history-change',refresh);return()=>{window.removeEventListener('storage',refresh);window.removeEventListener('kairo:history-change',refresh)}},[user?.id]);
   useEffect(()=>{
@@ -145,7 +157,16 @@ export function ProfilePage() {
     return()=>{active=false};
   },[user?.id,history,historyScope]);
   const watched=history.length; const completed=history.filter(x=>progressOf(x)>=95).length;
-  function logout(){setBusy(true);setError('');signOut()}
+  async function logout(){
+    setBusy(true);
+    setError('');
+    try {
+      await signOutKairoAccount(user?.id, (url) => window.location.assign(url));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not sign out. Please try again.');
+      setBusy(false);
+    }
+  }
   if(!loaded && !unavailable)return <LoadingState label="Loading profile"/>;
   if(unavailable)return <section className="kc-profile-page"><EmptyState title="Account status unavailable">Reconnect to Kairo to load this profile without mixing it with guest data. <button type="button" className="kc-link" onClick={retry}>Retry</button></EmptyState></section>;
   if(!user)return <section className="kc-profile-page"><div className="kc-profile-hero"><div className="kc-profile-avatar"><UserRound size={34}/></div><div><span className="kc-section-kicker">KAIRO ACCOUNT</span><h1>Your profile</h1><p>Use your approved Cloudflare Access email to sign in. Kairo links your account automatically; no second password is needed.</p></div><a className="kc-btn kc-btn-primary" href="/cdn-cgi/access/login"><LogIn size={15}/> Continue with approved email</a></div><EmptyState title="Your profile starts here">Once Cloudflare Access verifies your approved email, Kairo automatically restores your account and syncs activity across devices. Your local watch history remains available in guest mode.</EmptyState></section>;
@@ -154,10 +175,10 @@ export function ProfilePage() {
     <div className="kc-profile-stats">
       <article><span><Clock size={17}/></span><b>{watched}</b><small>Recent episodes</small></article>
       <article><span><Play size={17}/></span><b>{completed}</b><small>Completed episodes</small></article>
-      <article><span><Heart size={17}/></span><b>{libraryCount===null?'—':libraryCount}</b><small>Library titles</small></article>
+      <article><span><Heart size={17}/></span><b>{libraryCount===null?'—':libraryCount}</b><small>Anime &amp; Movies titles</small></article>
     </div>
     <div className="kc-profile-content">
-      <div className="kc-profile-section-head"><div><span className="kc-section-kicker">YOUR ACTIVITY</span><h2>Continue watching</h2></div><Link className="kc-more" to="/history">Anime history <ArrowUpDown size={14}/></Link></div>
+      <div className="kc-profile-section-head"><div><span className="kc-section-kicker">YOUR ACTIVITY</span><h2>Continue watching</h2></div><Link className="kc-more" to="/history">Watch history <ArrowUpDown size={14}/></Link></div>
       {playbackItems.length? <div className="kc-profile-history">{playbackItems.slice(0,8).map(item=>{
         const href=item.mediaType==='anime'?'/watch/'+encodeURIComponent(item.mediaKey.slice(0,item.mediaKey.lastIndexOf(':'))) + '/' + item.mediaKey.slice(item.mediaKey.lastIndexOf(':')+1)
           :item.mediaType==='movie'?'/movies/'+encodeURIComponent(item.mediaKey)+'/watch':'/youtube/watch/'+encodeURIComponent(item.mediaKey);
@@ -175,24 +196,169 @@ export function ProfilePage() {
 export function HistoryPage() {
   const {user,loaded,unavailable,retry}=useCurrentUser();
   const userId=user?.id??null;
-  const [items,setItems]=useState<WatchEntry[]>(()=>readHistory(null)); const [query,setQuery]=useState(''); const [sort,setSort]=useState('recent');
-  const [paused,setPaused]=useState(()=>{try{return localStorage.getItem(historyPausedStorageKey(null))==='true'}catch{return false}});
+  const historyRecording=useHistoryRecording(userId,loaded);
+  const paused=historyRecording.paused;
+  const [items,setItems]=useState<WatchEntry[]>(()=>readHistory(null));
+  const [playbackItems,setPlaybackItems]=useState<MediaPlaybackSnapshot[]>([]);
+  const [query,setQuery]=useState('');
+  const [sort,setSort]=useState('recent');
   const [confirmClear,setConfirmClear]=useState(false);
-  const filtered=useMemo(()=>items.filter(x=>`${x.title} ${x.episodeTitle}`.toLowerCase().includes(query.toLowerCase())).sort((a,b)=>sort==='title'?a.title.localeCompare(b.title):sort==='progress'?progressOf(b)-progressOf(a):b.updatedAt-a.updatedAt),[items,query,sort]);
-  function refresh(){setItems(readHistory(userId))}
-  function togglePaused(){const next=!paused;setPaused(next);try{localStorage.setItem(historyPausedStorageKey(userId),String(next))}catch{}}
-  function clearHistory(){writeWatchHistory(userId,[]);setItems([]);setConfirmClear(false);window.dispatchEvent(new Event('kairo:history-change'));void deleteMediaPlayback(userId,'anime');if(userId)void syncWatchHistory(userId,{clear:true})}
-  function removeItem(item:WatchEntry){const next=items.filter(x=>x.slug!==item.slug||x.episodeNumber!==item.episodeNumber);writeWatchHistory(userId,next);setItems(next);window.dispatchEvent(new Event('kairo:history-change'));void deleteMediaPlayback(userId,'anime',`${item.slug}:${item.episodeNumber}`);if(userId)void syncWatchHistory(userId,{deleted:[{slug:item.slug,episodeNumber:item.episodeNumber}]})}
-  useEffect(()=>{window.addEventListener('storage',refresh);window.addEventListener('kairo:history-change',refresh);return()=>{window.removeEventListener('storage',refresh);window.removeEventListener('kairo:history-change',refresh)}},[userId]);
-  useEffect(()=>{if(!loaded)return;setItems(readHistory(userId));try{setPaused(localStorage.getItem(historyPausedStorageKey(userId))==='true')}catch{setPaused(false)}if(userId){let active=true;syncWatchHistory(userId).then(items=>{if(active&&items)setItems(items)});return()=>{active=false}}},[loaded,userId]);
+  const [busy,setBusy]=useState(false);
+  const [mediaError,setMediaError]=useState('');
+
+  const filtered=useMemo(()=>items
+    .filter(x=>`${x.title} ${x.episodeTitle}`.toLowerCase().includes(query.toLowerCase()))
+    .sort((a,b)=>sort==='title'?a.title.localeCompare(b.title):sort==='progress'?progressOf(b)-progressOf(a):b.updatedAt-a.updatedAt),
+    [items,query,sort]);
+
+  const filteredPlayback=useMemo(()=>playbackItems
+    .filter(item=>item.title.toLowerCase().includes(query.toLowerCase()))
+    .sort((a,b)=>{
+      if(sort==='title')return a.title.localeCompare(b.title);
+      if(sort==='progress'){
+        const aProgress=a.durationSeconds&&a.durationSeconds>0?a.progressSeconds/a.durationSeconds:0;
+        const bProgress=b.durationSeconds&&b.durationSeconds>0?b.progressSeconds/b.durationSeconds:0;
+        return bProgress-aProgress;
+      }
+      return b.updatedAt-a.updatedAt;
+    }),[playbackItems,query,sort]);
+
+  useEffect(()=>{
+    if(!loaded)return;
+    let active=true;
+    const refreshPlayback=async()=>{
+      const byKey=new Map<string,MediaPlaybackSnapshot>();
+      for(const local of listLocalMediaPlayback(userId)){
+        if(local.mediaType==='movie'||(local.mediaType==='youtube'&&user?.role==='admin')){
+          byKey.set(local.mediaType+':'+local.mediaKey,local);
+        }
+      }
+      if(userId){
+        try{
+          const response=await fetch('/api/v1/me/playback?limit=100',{
+            credentials:'same-origin',
+            headers:{Accept:'application/json'},
+            cache:'no-store',
+          });
+          const payload=response.ok?await response.json():null;
+          if(payload?.success&&Array.isArray(payload?.data?.items)){
+            for(const raw of payload.data.items){
+              const remote=parseMediaPlayback(raw);
+              if(!remote||(remote.mediaType!=='movie'&&!(remote.mediaType==='youtube'&&user?.role==='admin')))continue;
+              const key=remote.mediaType+':'+remote.mediaKey;
+              const previous=byKey.get(key);
+              if(!previous||remote.updatedAt>=previous.updatedAt)byKey.set(key,remote);
+            }
+          }
+        }catch{/* Keep local playback available while the account API is offline. */}
+      }
+      if(active)setPlaybackItems([...byKey.values()].sort((a,b)=>b.updatedAt-a.updatedAt));
+    };
+    const refresh=()=>{
+      setItems(readHistory(userId));
+      void refreshPlayback();
+    };
+    setItems(readHistory(userId));
+    void refreshPlayback();
+    window.addEventListener('storage',refresh);
+    window.addEventListener('kairo:history-change',refresh);
+    return()=>{
+      active=false;
+      window.removeEventListener('storage',refresh);
+      window.removeEventListener('kairo:history-change',refresh);
+    };
+  },[loaded,userId,user?.role]);
+
+  function togglePaused(){void historyRecording.updatePaused(!paused)}
+
+  async function clearHistory(){
+    setBusy(true);
+    setMediaError('');
+    writeWatchHistory(userId,[]);
+    setItems([]);
+    setPlaybackItems([]);
+    setConfirmClear(false);
+    window.dispatchEvent(new Event('kairo:history-change'));
+    const mediaTypes:Array<'anime'|'movie'|'youtube'>=user?.role==='admin'
+      ? ['anime','movie','youtube']
+      : ['anime','movie'];
+    const results=await Promise.all(mediaTypes.map(mediaType=>deleteMediaPlayback(userId,mediaType)));
+    if(userId)await syncWatchHistory(userId,{clear:true});
+    if(results.some(result=>!result)){
+      setMediaError('Some playback records could not be deleted from your account. Retry clearing history after reconnecting.');
+      const refreshed=listLocalMediaPlayback(userId).filter(item=>item.mediaType==='movie'||(item.mediaType==='youtube'&&user?.role==='admin'));
+      setPlaybackItems(refreshed);
+    }
+    setBusy(false);
+  }
+
+  function removeItem(item:WatchEntry){
+    const next=items.filter(x=>x.slug!==item.slug||x.episodeNumber!==item.episodeNumber);
+    writeWatchHistory(userId,next);
+    setItems(next);
+    window.dispatchEvent(new Event('kairo:history-change'));
+    void deleteMediaPlayback(userId,'anime',`${item.slug}:${item.episodeNumber}`);
+    if(userId)void syncWatchHistory(userId,{deleted:[{slug:item.slug,episodeNumber:item.episodeNumber}]});
+  }
+
+  async function removePlaybackItem(item:MediaPlaybackSnapshot){
+    setMediaError('');
+    setPlaybackItems(current=>current.filter(entry=>entry.mediaType!==item.mediaType||entry.mediaKey!==item.mediaKey));
+    const removed=await deleteMediaPlayback(userId,item.mediaType,item.mediaKey);
+    if(!removed){
+      setMediaError('Could not delete that playback record from your account. Please retry.');
+      setPlaybackItems(current=>[item,...current].sort((a,b)=>b.updatedAt-a.updatedAt));
+    }
+  }
+
   if(!loaded && !unavailable)return <LoadingState label="Loading history"/>;
   if(unavailable)return <section className="kc-history-page"><EmptyState title="Account status unavailable">Your history is locked until Kairo can verify the session, so account data cannot be mixed with guest data. <button type="button" className="kc-link" onClick={retry}>Retry</button></EmptyState></section>;
+
+  const hasHistory=items.length>0||playbackItems.length>0;
   return <section className="kc-history-page">
-    <header className="kc-page-head"><span className="kc-section-kicker">YOUR ACTIVITY</span><h1>Watch history</h1><p>Guest history stays on this device; verified Kairo accounts sync history across devices automatically.</p></header>
-    <div className="kc-history-toolbar"><label className="kc-history-search"><Search size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search your history…" aria-label="Search watch history"/></label><label className="kc-history-sort"><ArrowUpDown size={15}/><select value={sort} onChange={e=>setSort(e.target.value)} aria-label="Sort history"><option value="recent">Last watched</option><option value="title">A–Z</option><option value="progress">Progress</option></select></label><button className={`kc-btn ${paused?'kc-btn-primary':''}`} onClick={togglePaused} type="button">{paused?<Play size={14}/>:<Pause size={14}/>} {paused?'Resume history':'Pause history'}</button><button className="kc-btn kc-btn-danger" type="button" onClick={()=>setConfirmClear(true)} disabled={!items.length}><Trash2 size={14}/> Clear</button></div>
-    {paused&&<p className="kc-history-paused" role="status">History recording is paused. New episodes won’t be added until you resume.</p>}
-    {confirmClear&&<div className="kc-history-confirm" role="alert"><span>Clear all watch history for this account on this browser and synced account?</span><button className="kc-btn kc-btn-danger" onClick={clearHistory}>Clear history</button><button className="kc-btn" onClick={()=>setConfirmClear(false)}>Cancel</button></div>}
-    {filtered.length?<div className="kc-history-list">{filtered.map(item=>{const progress=progressOf(item);return <article className="kc-history-item" key={item.progressKey}><Link to={`/watch/${encodeURIComponent(item.slug)}/${item.episodeNumber}`} className="kc-history-poster">{item.posterUrl?<img src={item.posterUrl} alt="" loading="lazy"/>:<span>{item.title.slice(0,2).toUpperCase()}</span>}<i><span style={{width:`${progress}%`}}/></i></Link><div className="kc-history-copy"><span className="kc-section-kicker">{new Date(item.updatedAt).toLocaleDateString()}</span><Link to={`/watch/${encodeURIComponent(item.slug)}/${item.episodeNumber}`}><h2>{item.title}</h2></Link><p>Episode {item.episodeNumber}{item.episodeTitle?` · ${item.episodeTitle}`:''}</p><small>{progress>=95?'Watched':progress>0?`${Math.round(progress)}% watched`:'Not started'}</small></div><button type="button" className="kc-icon-btn" aria-label={`Remove ${item.title} episode ${item.episodeNumber} from history`} onClick={()=>removeItem(item)}><Trash2 size={16}/></button></article>})}</div>:<EmptyState title={query?'No matching history':'No watch history yet'}>{query?'Try a different anime title.':<>Start watching an episode and it will be saved here automatically. Browse <Link className="kc-link" to="/browse/trending">trending anime</Link> to find something to watch.</>}</EmptyState>}
+    <header className="kc-page-head"><span className="kc-section-kicker">YOUR ACTIVITY</span><h1>Watch history</h1><p>{userId ? 'Your Anime and Movies history syncs across your devices.' : 'Guest history stays on this device.'}</p></header>
+    <div className="kc-history-toolbar">
+      <label className="kc-history-search"><Search size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search your history…" aria-label="Search watch history"/></label>
+      <label className="kc-history-sort"><ArrowUpDown size={15}/><select value={sort} onChange={e=>setSort(e.target.value)} aria-label="Sort history"><option value="recent">Last watched</option><option value="title">A–Z</option><option value="progress">Progress</option></select></label>
+      <button className={`kc-btn ${paused?'kc-btn-primary':''}`} onClick={togglePaused} type="button" disabled={!historyRecording.ready||historyRecording.saving}>{paused?<Play size={14}/>:<Pause size={14}/>} {paused?'Resume history':'Pause history'}</button>
+      <button className="kc-btn kc-btn-danger" type="button" onClick={()=>setConfirmClear(true)} disabled={!hasHistory||busy}><Trash2 size={14}/> Clear</button>
+    </div>
+    {historyRecording.error&&<p className="kc-auth-error" role="alert">{historyRecording.error}</p>}
+    {mediaError&&<p className="kc-auth-error" role="alert">{mediaError}</p>}
+    {paused&&<p className="kc-history-paused" role="status">History recording is paused for Anime and Movies across your devices. New progress won’t be recorded until you resume.</p>}
+    {confirmClear&&<div className="kc-history-confirm" role="alert"><span>Clear all Anime history and Movies playback progress{user?.role==='admin'?' and YouTube playback':''} for this account?</span><button className="kc-btn kc-btn-danger" onClick={()=>void clearHistory()} disabled={busy}>Clear history</button><button className="kc-btn" onClick={()=>setConfirmClear(false)} disabled={busy}>Cancel</button></div>}
+
+    {filtered.length>0&&<>
+      <h2 className="kc-history-section-title">Anime episodes</h2>
+      <div className="kc-history-list">{filtered.map(item=>{
+        const progress=progressOf(item);
+        const href=`/watch/${encodeURIComponent(item.slug)}/${item.episodeNumber}`;
+        return <article className="kc-history-item" key={item.progressKey}>
+          <Link to={href} className="kc-history-poster">{item.posterUrl?<img src={item.posterUrl} alt="" loading="lazy"/>:<span>{item.title.slice(0,2).toUpperCase()}</span>}<i><span style={{width:`${progress}%`}}/></i></Link>
+          <div className="kc-history-copy"><span className="kc-section-kicker">{new Date(item.updatedAt).toLocaleDateString()}</span><Link to={href}><h2>{item.title}</h2></Link><p>Episode {item.episodeNumber}{item.episodeTitle?` · ${item.episodeTitle}`:''}</p><small>{progress>=95?'Watched':progress>0?`${Math.round(progress)}% watched`:'Not started'}</small></div>
+          <button type="button" className="kc-icon-btn" aria-label={`Remove ${item.title} episode ${item.episodeNumber} from history`} onClick={()=>removeItem(item)}><Trash2 size={16}/></button>
+        </article>;
+      })}</div>
+    </>}
+
+    {filteredPlayback.length>0&&<>
+      <h2 className="kc-history-section-title">Movies{user?.role==='admin'?' and YouTube':''}</h2>
+      <div className="kc-history-list">{filteredPlayback.map(item=>{
+        const percent=item.durationSeconds&&item.durationSeconds>0?Math.max(0,Math.min(100,item.progressSeconds/item.durationSeconds*100)):0;
+        const href=item.mediaType==='movie'?'/movies/'+encodeURIComponent(item.mediaKey)+'/watch':'/youtube/watch/'+encodeURIComponent(item.mediaKey);
+        const label=item.mediaType==='movie'?'Movie':'YouTube';
+        const seconds=Math.floor(item.progressSeconds);
+        const stamp=`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;
+        const status=item.completed?'Completed':item.progressSeconds>0?'Resume at '+stamp:'Not started';
+        return <article className="kc-history-item" key={item.mediaType+':'+item.mediaKey}>
+          <Link to={href} className="kc-history-poster">{item.artworkUrl?<img src={item.artworkUrl} alt="" loading="lazy"/>:<span>{item.title.slice(0,2).toUpperCase()}</span>}<i><span style={{width:`${percent}%`}}/></i></Link>
+          <div className="kc-history-copy"><span className="kc-section-kicker">{label} · {item.updatedAt?new Date(item.updatedAt).toLocaleDateString():'Saved'}</span><Link to={href}><h2>{item.title}</h2></Link><p>{status}</p><small>{percent>0?Math.round(percent)+'% watched':status}</small></div>
+          <button type="button" className="kc-icon-btn" aria-label={`Remove ${item.title} from history`} onClick={()=>void removePlaybackItem(item)}><Trash2 size={16}/></button>
+        </article>;
+      })}</div>
+    </>}
+
+    {filtered.length===0&&filteredPlayback.length===0&&<EmptyState title={query?'No matching history':'No watch history yet'}>{query?'Try a different title.':<>Start watching in Anime or Movies and your progress will appear here. Browse <Link className="kc-link" to="/movies">Movies</Link> or <Link className="kc-link" to="/browse/trending">trending Anime</Link>.</>}</EmptyState>}
   </section>;
 }
 export function AccountPage({ title }: { title: string }) {
@@ -202,6 +368,10 @@ export function AccountPage({ title }: { title: string }) {
   const [youtubeLoaded,setYoutubeLoaded]=useState(false);
   const [youtubeBusy,setYoutubeBusy]=useState(false);
   const [youtubeError,setYoutubeError]=useState('');
+  const [animeLibrary,setAnimeLibrary]=useState<AnimeLibraryRow[]>([]);
+  const [animeLibraryLoaded,setAnimeLibraryLoaded]=useState(false);
+  const [animeLibraryError,setAnimeLibraryError]=useState('');
+  const [animeLibraryRetry,setAnimeLibraryRetry]=useState(0);
   const pendingConnect=new URLSearchParams(location.search).get('connect');
   const pendingConnectStarted=useRef<string|null>(null);
   useEffect(()=>{
@@ -220,6 +390,27 @@ export function AccountPage({ title }: { title: string }) {
       .finally(()=>{if(active)setYoutubeLoaded(true)});
     return()=>{active=false};
   },[title,user?.id,location.key]);
+  useEffect(()=>{
+    let active=true;
+    if(title!=='My Library'&&title!=='Favorites'){setAnimeLibraryLoaded(true);return()=>{active=false};}
+    if(!user){setAnimeLibrary([]);setAnimeLibraryLoaded(true);return()=>{active=false};}
+    setAnimeLibraryLoaded(false);
+    setAnimeLibraryError('');
+    fetch('/api/v1/me/library',{credentials:'same-origin',headers:{Accept:'application/json'},cache:'no-store'})
+      .then(async response=>{
+        const payload=await response.json().catch(()=>null);
+        if(!response.ok||!payload?.success||!Array.isArray(payload?.data?.items))throw new Error(payload?.error?.message??'Could not load your Anime library.');
+        if(active)setAnimeLibrary(payload.data.items as AnimeLibraryRow[]);
+      })
+      .catch(error=>{if(active)setAnimeLibraryError(error instanceof Error?error.message:'Could not load your Anime library.')})
+      .finally(()=>{if(active)setAnimeLibraryLoaded(true)});
+    return()=>{active=false};
+  },[title,user?.id,animeLibraryRetry]);
+
+  const filteredAnimeLibrary=title==='Favorites'
+    ? animeLibrary.filter(item=>item.isFavorite===true||Number(item.isFavorite)===1)
+    : animeLibrary;
+
   const youtubeStatus=new URLSearchParams(location.search).get('youtube');
   const youtubeMessages:Record<string,string>={
     connected:'YouTube is connected. Kairo can now request access to your subscriptions.',
@@ -246,8 +437,16 @@ export function AccountPage({ title }: { title: string }) {
     }catch(error){setYoutubeError(error instanceof Error?error.message:'Could not disconnect YouTube.')}
     finally{setYoutubeBusy(false)}
   }
+  const isAnimeLibraryPage=title==='My Library'||title==='Favorites';
   return <><header className="kc-page-head"><h1>{title}</h1></header>
-    {title==='Settings'&&unavailable?<EmptyState title="Account status unavailable">Kairo could not verify your account. Your private settings remain locked. <button type="button" className="kc-link" onClick={retry}>Retry</button></EmptyState>
+    {isAnimeLibraryPage&&unavailable?<EmptyState title="Account status unavailable">Kairo could not verify your account, so your personal library remains locked. <button type="button" className="kc-link" onClick={retry}>Retry</button></EmptyState>
+    :isAnimeLibraryPage&&loaded&&!user?<EmptyState title="Sign in to view your library"><Link className="kc-link" to="/login">Continue with approved email</Link> to view your saved Anime titles.</EmptyState>
+    :isAnimeLibraryPage&&!loaded&&!unavailable?<LoadingState label="Checking your account"/>
+    :isAnimeLibraryPage&&user&&!animeLibraryLoaded?<LoadingState label="Loading your Anime library"/>
+    :isAnimeLibraryPage&&animeLibraryError?<EmptyState title="Library unavailable">{animeLibraryError} <button type="button" className="kc-link" onClick={()=>setAnimeLibraryRetry(value=>value+1)}>Retry</button></EmptyState>
+    :isAnimeLibraryPage&&user&&filteredAnimeLibrary.length===0?<EmptyState title={title==='Favorites'?'No favorites yet':'Your Anime library is empty'}>Open an Anime title and use its library controls to save it here. <Link className="kc-link" to="/browse/anime">Browse Anime</Link></EmptyState>
+    :isAnimeLibraryPage&&user?<section className="kc-account-panel"><ul className="kc-anime-library-list">{filteredAnimeLibrary.map(item=><li key={item.animeId}><Link to={'/anime/'+encodeURIComponent(item.slug)}><strong>{item.title}</strong></Link><span>{item.status.replaceAll('_',' ')}{item.isFavorite===true||Number(item.isFavorite)===1?' · Favorite':''}</span></li>)}</ul></section>
+    :title==='Settings'&&unavailable?<EmptyState title="Account status unavailable">Kairo could not verify your account. Your private settings remain locked. <button type="button" className="kc-link" onClick={retry}>Retry</button></EmptyState>
     :title==='Settings'&&loaded&&user?<section className="kc-account-panel">
       <h2>Account</h2><p>Signed in as <strong>{user.email ?? user.displayName}</strong> through Cloudflare Access.</p>
       {user.role==='admin'&&<><h3>YouTube</h3>

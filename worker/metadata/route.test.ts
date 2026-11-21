@@ -19,6 +19,7 @@ describe('metadata route end to end (real SQLite, fake provider fetch)', () => {
   db.exec(readFileSync('migrations/0001_initial_schema.sql', 'utf8'));
   db.exec(readFileSync('migrations/0002_provider_architecture.sql', 'utf8'));
   db.exec(readFileSync('migrations/0002_provider_architecture.sql', 'utf8')); // idempotent re-run
+  db.exec(readFileSync('migrations/0004_auth_rate_limits.sql', 'utf8'));
   db.prepare(`INSERT INTO anime (id, slug, title, format, release_year, status, episode_count, provider_id, provider_title_id) VALUES ('a1','death-note','Death Note','series',2006,'airing',36,'manami','mal:1535')`).run();
   db.prepare(`INSERT INTO anime_provider_ids (anime_id, provider, external_id, source) VALUES ('a1','mal','1535','dataset')`).run();
   const env = { DB: d1(db), APP_ENV: 'test', METADATA_PROVIDERS: 'anilist', CATALOG_SOURCE: 'db' };
@@ -68,6 +69,30 @@ describe('metadata route end to end (real SQLite, fake provider fetch)', () => {
     expect((await app.request('/api/v1/anime/bad%20id/metadata', {}, env as never)).status).toBe(400);
     expect((await app.request('/api/v1/anime/nope/metadata', {}, env as never)).status).toBe(404);
   });
+
+  it('serves filter-only browse from D1 in db catalogue mode', async () => {
+    const res = await app.request('/api/v1/catalog/browse?format=series&year=2006&page=1&limit=10', {}, env as never);
+    const body = await res.json() as { success: boolean; data: { items: { slug: string }[] }; meta: { total: number; hasNextPage: boolean } };
+    expect(res.status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(body.data.items.map((item) => item.slug)).toEqual(['death-note']);
+    expect(body.meta).toMatchObject({ total: 1, hasNextPage: false });
+  });
+
+  it('registers server discovery and playback routes for D1 titles with provider mappings', async () => {
+    const servers = await app.request('/api/v1/anime/death-note/episodes/1/servers', {}, env as never);
+    expect(servers.status).toBe(503);
+    expect(((await servers.json()) as { error: { code: string } }).error.code).toBe('PROVIDER_UNAVAILABLE');
+
+    const playback = await app.request('/api/v1/anime/death-note/episodes/1/servers/1/playback', {}, env as never);
+    expect(playback.status).toBe(503);
+    expect(((await playback.json()) as { error: { code: string } }).error.code).toBe('SOURCE_UNAVAILABLE');
+
+    const missing = await app.request('/api/v1/anime/not-a-title/episodes/1/servers', {}, env as never);
+    expect(missing.status).toBe(404);
+    expect(((await missing.json()) as { error: { code: string } }).error.code).toBe('RESOURCE_NOT_FOUND');
+  });
+
   it('existing endpoints are unchanged', async () => {
     const res = await app.request('/api/v1/anime/death-note', {}, env as never);
     expect(((await res.json()) as { data: { slug: string } }).data.slug).toBe('death-note');

@@ -15,7 +15,8 @@ const LEGACY_AUTO_NEXT_KEY = 'kairo-auto-next';
 const MIGRATION_FLAG = 'kairo-account-storage-v2-migrated';
 
 export function accountStorageScope(userId: AccountScope): string {
-  return userId && userId.trim() ? userId : 'guest';
+  const id = typeof userId === 'string' ? userId.trim() : '';
+  return id || 'guest';
 }
 
 export function watchHistoryStorageKey(userId: AccountScope): string {
