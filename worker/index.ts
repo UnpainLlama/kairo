@@ -18,9 +18,11 @@ import { movieIdentity, persistMovieDetail, persistMovieSummary, searchStoredMov
 import type { MovieDiscoverQuery, MovieListKind } from './movies/types';
 import { ProviderError } from './metadata/types';
 import { consumeRateLimit } from './auth/rateLimit';
+import { isStaticAssetPath } from './lib/staticAssets';
 
 interface Bindings {
   DB: D1Database;
+  ASSETS?: Fetcher;
   ADMIN_BOOTSTRAP_TOKEN?: string;
   ACCESS_ENFORCED?: string;
   ACCESS_TEAM_DOMAIN?: string;
@@ -1123,7 +1125,21 @@ app.post('/api/v1/auth/logout', async (c) => {
 });
 app.get('/api/v1/anime/:id/episodes/:episodeNumber/servers/:serverId/playback', (c) => fail(c, 503, 'SOURCE_UNAVAILABLE', 'Live playback is not enabled for this catalogue configuration.'));
 
-app.notFound((c) => fail(c, 404, 'RESOURCE_NOT_FOUND', 'The requested API route was not found.'));
+app.notFound(async (c) => {
+  if (isStaticAssetPath(c.req.path)) {
+    try {
+      const asset = await c.env.ASSETS?.fetch(c.req.raw);
+      const contentType = asset?.headers.get('content-type')?.toLowerCase() ?? '';
+      // With SPA fallback enabled Cloudflare may return index.html (200) for an
+      // unknown .js/.css/image URL. Never let that HTML masquerade as an asset.
+      if (asset && asset.status !== 404 && !contentType.startsWith('text/html')) return asset;
+    } catch {
+      // A missing/unavailable asset is still a 404; do not surface Worker internals.
+    }
+    return fail(c, 404, 'STATIC_ASSET_NOT_FOUND', 'The requested asset was not found.');
+  }
+  return fail(c, 404, 'RESOURCE_NOT_FOUND', 'The requested API route was not found.');
+});
 app.onError((error, c) => {
   console.error(JSON.stringify({ event: 'unhandled_worker_error', requestId: c.get('requestId'), message: error.message }));
   return fail(c, 500, 'INTERNAL_ERROR', 'An unexpected error occurred.');

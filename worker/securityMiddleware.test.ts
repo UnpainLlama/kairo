@@ -82,6 +82,53 @@ describe('API origin protection', () => {
     expect(writes[0].values[0]).toMatch(/^[a-f0-9]{64}$/);
   });
 
+
+  it('returns a real static asset from the ASSETS binding on a file-like route miss', async () => {
+    const assetResponse = new Response('body { color: red; }', {
+      status: 200,
+      headers: { 'Content-Type': 'text/css; charset=utf-8' },
+    });
+    const fetch = vi.fn(async () => assetResponse);
+    const response = await worker.request('https://kairo.test/assets/site.css', { method: 'GET' }, {
+      ACCESS_ENFORCED: 'false',
+      ASSETS: { fetch },
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toContain('text/css');
+    expect(await response.text()).toBe('body { color: red; }');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('converts an SPA index.html fallback into a real 404 for missing assets', async () => {
+    const fetch = vi.fn(async () => new Response('<!doctype html><html></html>', {
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    }));
+    const response = await worker.request('https://kairo.test/assets/missing.js', { method: 'GET' }, {
+      ACCESS_ENFORCED: 'false',
+      ASSETS: { fetch },
+    });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({
+      success: false,
+      error: { code: 'STATIC_ASSET_NOT_FOUND' },
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not fetch assets for ordinary missing application routes', async () => {
+    const fetch = vi.fn(async () => new Response('<!doctype html><html></html>', {
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    }));
+    const response = await worker.request('https://kairo.test/anime/not-in-router', { method: 'GET' }, {
+      ACCESS_ENFORCED: 'false',
+      ASSETS: { fetch },
+    });
+    expect(response.status).toBe(404);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('keeps local unauthenticated /me requests explicitly in guest mode', async () => {
     const response = await worker.request('https://kairo.test/api/v1/me', { method: 'GET' }, {
       ACCESS_ENFORCED: 'false',
