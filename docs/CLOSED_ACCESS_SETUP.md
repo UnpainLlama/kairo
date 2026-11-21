@@ -23,10 +23,17 @@ This branch implements the agreed staging access model:
 1. In Cloudflare, open **Workers & Pages** and select the staging Worker corresponding to `kairo-anime-platform-staging.unpainllama.workers.dev`.
 2. Open its **Access** tab and choose **Protect this Worker**. Protect the staging Worker (including the URL/preview endpoints that belong to that Worker). Do not select the account-wide option.
 3. In Zero Trust, ensure **One-time PIN** is enabled as a login method.
-4. On this staging Worker's **Worker destination** in the Access application, add exactly these three destination overrides with `behavior: public`:
-   - `path_pattern: /api/health`
-   - `path_pattern: /api/ready`
-   - `path_pattern: /api/v1/auth/logout`
+4. On this staging Worker's **Worker destination** in the Access application, add exactly these three destination overrides. Use this as the `overrides` array on the existing `type: worker` destination (keep its existing `worker_id` and the application's existing policies and other destinations):
+
+   ```json
+   {
+     "overrides": [
+       { "behavior": "public", "path_pattern": "/api/health" },
+       { "behavior": "public", "path_pattern": "/api/ready" },
+       { "behavior": "public", "path_pattern": "/api/v1/auth/logout" }
+     ]
+   }
+   ```
 
    These are exact paths. Do not add a wildcard, a broader `/api/*` or `/api/v1/auth/*` exception, an application-wide Bypass/Everyone policy, or an account-wide Worker exception. Cloudflare's [Access application API](https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/applications/methods/create/) documents the Worker `overrides` field; each override uses `behavior: public` and a `path_pattern`. Exact patterns do not implicitly include subpaths.
 
