@@ -49,7 +49,7 @@ This branch implements the agreed staging access model:
 9. Replace the two staging placeholders in `wrangler.jsonc` with the exact values from this Kairo staging Access application:
    - `ACCESS_TEAM_DOMAIN` — the team domain, for example `your-team.cloudflareaccess.com` (use your actual team domain; the Worker accepts the domain with or without `https://`).
    - `ACCESS_AUD` — the AUD tag for this specific Kairo staging Access application.
-10. Commit those two values to the staging feature branch before deploying. Wrangler treats its configuration as the source of truth and can overwrite dashboard-only variables on the next deploy. The staging deploy workflow now refuses to deploy while either placeholder remains. Production has separate Access placeholders and must use its own Access application, team domain and AUD tag; do not copy the staging app's AUD tag into production. Production deployment remains blocked until that separate setup is completed and explicitly approved.
+10. Commit those two values to `main` before deploying to staging. Wrangler treats its configuration as the source of truth and can overwrite dashboard-only variables on the next deploy. The staging deploy workflow now refuses to deploy while either placeholder remains. Production has separate Access placeholders and must use its own Access application, team domain and AUD tag; do not copy the staging app's AUD tag into production. Production deployment remains blocked until that separate setup is completed and explicitly approved.
 11. The staging Wrangler configuration sets `ACCESS_ENFORCED=true`. The Worker fails closed for API requests if the team domain or AUD tag is missing or if the Access assertion is absent/invalid.
 
 Cloudflare Access protects the static application and the `workers.dev` URL at the perimeter. The Worker independently validates the signed `Cf-Access-Jwt-Assertion` for API requests. The application JWT must be for this exact Access app. Do not rely on a plain email header or on a browser-provided value.
@@ -77,7 +77,7 @@ Kairo's Sign out actions first call `POST /api/v1/auth/logout` to revoke the cur
 
 **Do not run any command below against production.** These steps have not been performed by this code change.
 
-1. Review the branch, reconcile it against the intended staging release, and run typecheck, tests, and build.
+1. Review the code and configuration on `main` intended for the staging release, and run typecheck, tests, and build.
 2. Before applying migrations, run this read-only preflight against the staging D1 database:
 
    ```sql

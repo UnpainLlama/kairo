@@ -90,11 +90,11 @@ jobs:
       PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
       KAIRO_REMOTE_HEALTH_CHECKS_ENABLED: ${{ vars.KAIRO_REMOTE_HEALTH_CHECKS_ENABLED }}
     steps:
-      - name: Guard - manual staging deploys must use the reconciled staging branch
+      - name: Guard - manual staging deploys must use main
         if: github.event_name == 'workflow_dispatch' && env.TARGET == 'staging'
         run: |
-          if [ "$GITHUB_REF" != "refs/heads/staging" ]; then
-            echo "::error::Manual staging deploys must be dispatched from the reconciled 'staging' branch. Do not deploy feature branches directly."
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Manual staging deploys must be dispatched from 'main'. Merge and review changes before deploying; do not deploy feature branches directly."
             exit 1
           fi
       - name: Guard - production needs explicit approval

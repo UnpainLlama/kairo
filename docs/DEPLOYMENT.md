@@ -53,10 +53,10 @@ Dashboard labels change occasionally; if one differs slightly, look for the near
 
 ### 2f. Deploy staging
 1. Repository > **Actions** > **Build and deploy KAIRO** > **Run workflow**.
-2. Select the reconciled **`staging`** branch and set **target** to `staging`. Manual staging deployments are rejected from feature branches and `main`; first complete and review the feature-to-staging reconciliation described in [Closed-access setup](CLOSED_ACCESS_SETUP.md).
+2. Select **`main`** and set **target** to `staging`. Manual staging deployments must be dispatched from `main`; merge and review changes there first. Feature branches cannot deploy directly.
 3. When it finishes, open the run's **Summary**. It shows the staging URL and the `/api/ready` response.
 
-The optional `STAGING_DEPLOY_ENABLED=true` repository variable controls automatic deployments on pushes to `main`. For a manual staging deployment, dispatch the workflow from the reconciled `staging` branch with target `staging`; do not dispatch from `main` or a feature branch.
+The optional `STAGING_DEPLOY_ENABLED=true` repository variable controls automatic staging deployments on pushes to `main`. For a manual staging deployment, dispatch the workflow from `main` with target `staging`; do not dispatch from a feature branch.
 
 If the deploy log says the account needs a **workers.dev subdomain**, register one: dashboard > **Workers & Pages** > the subdomain setting. Then re-run.
 
