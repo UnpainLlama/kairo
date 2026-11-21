@@ -185,6 +185,31 @@ export async function verifyCloudflareAccessAssertion(
 
 
 /**
+ * Read-only gate for API routes other than /api/v1/me.
+ *
+ * Unlike hasActiveAccessAccount(), this helper must not provision profiles,
+ * link legacy email-only profiles, or attach an Access subject. New and legacy
+ * identities are resolved only by the explicit /me bootstrap flow.
+ */
+export async function hasBoundActiveAccessAccount(
+  db: D1Database,
+  emailValue: string,
+  subjectValue?: string | null,
+): Promise<boolean> {
+  const email = normalizeAccessEmail(emailValue);
+  const subject = typeof subjectValue === 'string' ? subjectValue.trim() : '';
+  if (!email || !subject || subject.length > 255 || [...subject].some((character) => character.charCodeAt(0) < 32)) return false;
+  try {
+    const account = await db.prepare(
+      'SELECT id, account_status AS accountStatus, access_subject AS accessSubject FROM user_profiles WHERE access_email = ? COLLATE NOCASE LIMIT 1',
+    ).bind(email).first<{ id: string; accountStatus: string; accessSubject: string | null }>();
+    return Boolean(account?.id && account.accountStatus === 'active' && account.accessSubject === subject);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Resolve a verified Cloudflare Access email to its Kairo account.
  *
  * Cloudflare Access is the invitation boundary: its per-application Allow policy

@@ -7,7 +7,7 @@ import { registerAuthRoutes } from './auth/routes';
 import { registerHistoryPreferenceRoutes } from './auth/preferences';
 import { registerYouTubeMediaRoutes } from './youtube/routes';
 import { registerAdminRoutes, rotateAdminConsolePath } from './admin/routes';
-import { hasActiveAccessAccount, verifyCloudflareAccessAssertion } from './auth/cloudflareAccess';
+import { hasActiveAccessAccount, hasBoundActiveAccessAccount, verifyCloudflareAccessAssertion } from './auth/cloudflareAccess';
 import { GENRES_SQL, buildBrowseQuery, buildListQuery, buildRelatedQuery, buildSearchQuery } from './repositories/catalog';
 import { BASE_RECORD_SQL, INSERT_PROVIDER_ID_SQL, PROVIDER_IDS_SQL } from './repositories/providerIds';
 import { buildRegistry, createCache, resolveUnified, sharedBreaker, toBaseRecord, type BaseRow } from './metadata/service';
@@ -134,7 +134,7 @@ app.use('/api/*', async (c, next) => {
   // Resolve/provision new Access users only during the account bootstrap endpoint.
   // All other API calls perform the active-account check without creating profiles.
   if (pathname !== '/api/v1/admin/bootstrap' && pathname !== '/api/v1/me') {
-    const activeInvite = await hasActiveAccessAccount(c.env.DB, identity.email, identity.subject);
+    const activeInvite = await hasBoundActiveAccessAccount(c.env.DB, identity.email, identity.subject);
     if (!activeInvite) {
       return c.json({ success: false, error: { code: 'ACCESS_ACCOUNT_DISABLED', message: 'This Access identity does not have an active Kairo account. Contact the site administrator.' } }, 403);
     }

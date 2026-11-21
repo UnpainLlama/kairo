@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { hasActiveAccessAccount, resetAccessJwksCacheForTests, verifyCloudflareAccessAssertion } from './cloudflareAccess';
+import { hasActiveAccessAccount, hasBoundActiveAccessAccount, resetAccessJwksCacheForTests, verifyCloudflareAccessAssertion } from './cloudflareAccess';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -168,6 +168,39 @@ describe('Cloudflare Access account resolution', () => {
     };
     return db as unknown as D1Database & { rows: typeof rows; statements: string[] };
   }
+
+  it('keeps first-time and legacy identity binding out of read-only API checks', async () => {
+    const newIdentity = memoryDb();
+    await expect(hasBoundActiveAccessAccount(newIdentity, 'new.member@gmail.com', 'subject-1')).resolves.toBe(false);
+    expect(newIdentity.rows).toHaveLength(0);
+    expect(newIdentity.statements).toHaveLength(1);
+    expect(newIdentity.statements[0].trimStart().startsWith('SELECT')).toBe(true);
+
+    const legacy = memoryDb([{
+      id: 'legacy-account', email: 'legacy@gmail.com', accessEmail: null, accessSubject: null,
+      accountStatus: 'active', role: 'user',
+    }]);
+    await expect(hasBoundActiveAccessAccount(legacy, 'legacy@gmail.com', 'subject-1')).resolves.toBe(false);
+    expect(legacy.rows[0].accessEmail).toBeNull();
+    expect(legacy.rows[0].accessSubject).toBeNull();
+    expect(legacy.statements).toHaveLength(1);
+    expect(legacy.statements[0].trimStart().startsWith('SELECT')).toBe(true);
+  });
+
+  it('allows only active accounts already bound to the exact Access subject', async () => {
+    const active = memoryDb([{
+      id: 'account-1', email: 'member@gmail.com', accessEmail: 'member@gmail.com', accessSubject: 'subject-1',
+      accountStatus: 'active', role: 'user',
+    }]);
+    await expect(hasBoundActiveAccessAccount(active, 'MEMBER@gmail.com', 'subject-1')).resolves.toBe(true);
+
+    await expect(hasBoundActiveAccessAccount(active, 'member@gmail.com', 'another-subject')).resolves.toBe(false);
+    const suspended = memoryDb([{
+      id: 'suspended-account', email: 'member@gmail.com', accessEmail: 'member@gmail.com', accessSubject: 'subject-1',
+      accountStatus: 'suspended', role: 'user',
+    }]);
+    await expect(hasBoundActiveAccessAccount(suspended, 'member@gmail.com', 'subject-1')).resolves.toBe(false);
+  });
 
   it('keeps an existing active account and preserves its role', async () => {
     const db = memoryDb([{
