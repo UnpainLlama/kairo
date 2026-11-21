@@ -17,6 +17,7 @@
 - Cloudflare Static Assets has an `ASSETS` binding for selective Worker-first asset requests. Real assets pass through; missing file-like paths that receive the SPA HTML fallback become 404s, while `/index.html` and ordinary SPA routes remain distinct.
 - Account-specific Anime library, Movies library and Favorites views are implemented; the older UI-audit placeholder note is superseded.
 - Administrator seat reassignment tombstones the former Access identity, creates a new profile ID, clears prior account-owned media/session/OAuth data, and frees the deleted seat without allowing an old Access token to auto-provision the former account again.
+- The Pause history control is an account-wide D1 preference shared across Anime and Movies, with local-only behavior for guests and fail-closed behavior when the account preference cannot be verified.
 - Expired sessions, rate-limit buckets and consumed/expired OAuth transactions are cleaned by the scheduled Worker. Historical session IP and user-agent fields are cleared by migration 0019; new Kairo sessions no longer populate those fields.
 - YouTube token encryption uses AES-GCM with account/purpose-bound AAD for new ciphertext and a read-only v1 compatibility path for previously stored rows.
 - Catalogue, Movies search/discovery and episode-source reads use a hashed D1 rate limiter.

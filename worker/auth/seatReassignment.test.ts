@@ -15,6 +15,7 @@ const migrations = [
   '0016_playback_write_order.sql', '0017_admin_email_otp_console_rotation.sql',
   '0018_cloudflare_access_identity_admin_lockout.sql', '0019_session_privacy_retention.sql',
   '0020_cloudflare_access_subject_binding.sql', '0021_reassignable_account_seats.sql',
+  '0022_account_history_pause_preference.sql',
 ];
 
 function applyAll(db: DatabaseSync): void {

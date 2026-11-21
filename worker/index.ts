@@ -4,6 +4,7 @@ import { cors } from 'hono/cors';
 import { boundedInt, parseId, parsePagination, parseSearchParams } from './lib/validation';
 import { clearSessionCookie, createSession, findSessionUser, readSessionCookie, revokeSession, sessionCookie } from './auth/session';
 import { registerAuthRoutes } from './auth/routes';
+import { registerHistoryPreferenceRoutes } from './auth/preferences';
 import { registerYouTubeMediaRoutes } from './youtube/routes';
 import { registerAdminRoutes, rotateAdminConsolePath } from './admin/routes';
 import { hasActiveAccessAccount, verifyCloudflareAccessAssertion } from './auth/cloudflareAccess';
@@ -205,6 +206,7 @@ function fail(c: Context<{ Bindings: Bindings; Variables: Variables }>, status: 
 registerAuthRoutes(app);
 registerYouTubeMediaRoutes(app);
 registerAdminRoutes(app);
+registerHistoryPreferenceRoutes(app);
 
 function moviesProviderEnabled(c: AppContext): boolean {
   return c.env.MOVIES_TMDB_ENABLED === 'true' && c.env.MOVIES_TMDB_TERMS_APPROVED === 'true';

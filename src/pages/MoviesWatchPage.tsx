@@ -4,6 +4,7 @@ import { ArrowLeft } from 'lucide-react';
 import { ApiError, apiGet } from '../lib/api';
 import MovieEmbedPlayer from '../components/MovieEmbedPlayer';
 import { useAccountScope } from '../hooks/useAccountScope';
+import { useHistoryRecording } from '../hooks/useHistoryRecording';
 import { loadMediaPlayback, syncMediaPlayback, writeLocalMediaPlayback, type MediaPlaybackSnapshot } from '../lib/mediaPlayback';
 import { PLAYBACK_SERVER_SYNC_INTERVAL_MS, type PlaybackSaveReason } from '../lib/playbackSync';
 import type { MovieDetail } from '../lib/movies';
@@ -14,6 +15,7 @@ export default function MoviesWatchPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { accountId, resolved: accountResolved, error: accountError } = useAccountScope();
+  const historyRecording = useHistoryRecording(accountId, accountResolved);
   const [movie, setMovie] = useState<MovieDetail | null>(null);
   const [playbackState, setPlaybackState] = useState<MediaPlaybackSnapshot | null>(null);
   const [playbackReady, setPlaybackReady] = useState(false);
@@ -53,7 +55,7 @@ export default function MoviesWatchPage() {
   }, [accountId, accountResolved, accountError, movie?.externalId, movie?.providerId]);
 
   const persistPlayback = useCallback((incoming: MediaPlaybackSnapshot, reason: PlaybackSaveReason) => {
-    if (reason === 'open' || !movie) return;
+    if (!historyRecording.ready || historyRecording.paused || reason === 'open' || !movie) return;
     const now = Date.now();
     const snapshot: MediaPlaybackSnapshot = {
       ...incoming,
@@ -73,7 +75,7 @@ export default function MoviesWatchPage() {
       lastRemoteSaveAt.current = now;
       void syncMediaPlayback(accountId, snapshot, reason === 'pagehide' || reason === 'ended' || reason === 'close');
     }
-  }, [accountId, movie]);
+  }, [historyRecording.ready, historyRecording.paused, accountId, movie]);
 
   // Back returns to wherever the viewer came from, and falls back to the title page for direct links.
   const back = () => {

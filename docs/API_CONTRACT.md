@@ -128,8 +128,8 @@ Anime library routes are account-scoped; `PUT` accepts `{ status, isFavorite }`,
 | POST | `/api/v1/auth/logout` | Revoke the current Kairo session and clear the HttpOnly cookie before Cloudflare Access logout |
 | GET | `/api/v1/me` | Current profile |
 | PATCH | `/api/v1/me` | Update editable profile fields |
-| GET | `/api/v1/me/preferences` | Read preferences |
-| PUT | `/api/v1/me/preferences` | Replace validated preferences |
+| GET | `/api/v1/me/preferences` | Read the account-wide history recording preference (`historyPaused`). |
+| PUT | `/api/v1/me/preferences` | Update the account-wide history recording preference (`historyPaused`); applies to Anime and Movies on all devices. |
 | GET | `/api/v1/me/library` | Read library, filter by status |
 | PUT | `/api/v1/me/library/:animeId` | Add or update a library item |
 | DELETE | `/api/v1/me/library/:animeId` | Remove a library item |
