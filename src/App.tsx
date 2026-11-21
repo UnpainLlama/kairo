@@ -265,10 +265,13 @@ export default function App() {
     return (
       <main className="kc-access-denied" style={{ minHeight: '100vh', display: 'grid', placeContent: 'center', padding: 32, textAlign: 'center' }}>
         <h1>Access not authorized</h1>
-        <p>This Kairo identity is not active. Only email addresses approved in the Kairo Cloudflare Access application can enter.</p>
-        <p>Check that you used the email address you were invited with.</p>
+        <p>This identity is not currently authorized to use Kairo. The account may be suspended, or its email may no longer be on the approved Cloudflare Access list.</p>
+        <p>If you were invited or believe your Access session is stale, sign out and sign in again using the exact email address approved by the Kairo administrator. If access is still denied, contact the administrator to check your account status.</p>
         {logoutError && <p role="alert">{logoutError}</p>}
-        <a href="/cdn-cgi/access/logout" onClick={signOutFromAccessNotice}>Sign out of Cloudflare Access</a>
+        <div className="kc-access-denied-actions">
+          <a href="/cdn-cgi/access/logout" onClick={signOutFromAccessNotice}>Sign out of Cloudflare Access</a>
+          <a href="/cdn-cgi/access/login">Sign in again with approved email</a>
+        </div>
       </main>
     );
   }
