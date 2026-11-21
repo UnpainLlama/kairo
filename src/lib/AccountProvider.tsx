@@ -17,6 +17,7 @@ const AccountContext = createContext<KairoAccountState | null>(null);
 
 export function AccountProvider({ children }: { children: ReactNode }) {
   const [attempt, setAttempt] = useState(0);
+  const [initialLookupComplete, setInitialLookupComplete] = useState(false);
   const [status, setStatus] = useState<AccountStatus>('loading');
   const [accountId, setAccountId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
@@ -95,6 +96,10 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       } catch {
         // A transient network failure must not discard a previously verified identity.
         if (active) setStatus(accountIdRef.current ? 'signed-in' : 'unavailable');
+      } finally {
+        // Do not mount protected page effects until /me has either bootstrapped
+        // the session or established the correct guest/denied/unavailable state.
+        if (active) setInitialLookupComplete(true);
       }
     };
 
@@ -126,7 +131,13 @@ export function AccountProvider({ children }: { children: ReactNode }) {
 
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
   const value = useMemo(() => ({ status, accountId, displayName, email, username, role, retry }), [status, accountId, displayName, email, username, role, retry]);
-  return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>;
+  return (
+    <AccountContext.Provider value={value}>
+      {initialLookupComplete
+        ? children
+        : <main className="kc-account-bootstrap" role="status" aria-live="polite">Checking your Kairo session…</main>}
+    </AccountContext.Provider>
+  );
 }
 
 export function useKairoAccount(): KairoAccountState {
