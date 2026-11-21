@@ -13,7 +13,7 @@ function base64url(value: Uint8Array | string): string {
   return btoa(binary).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
 }
 
-async function signedAccessToken(options: { email?: string; audience?: string; expiresIn?: number; tamper?: boolean } = {}) {
+async function signedAccessToken(options: { email?: string; audience?: string; expiresIn?: number; tamper?: boolean; subject?: string | null } = {}) {
   const pair = await crypto.subtle.generateKey(
     { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
     true,
@@ -22,6 +22,7 @@ async function signedAccessToken(options: { email?: string; audience?: string; e
   const jwk = { ...(await crypto.subtle.exportKey('jwk', pair.publicKey)), kid: 'test-access-key', use: 'sig', alg: 'RS256' };
   const now = Math.floor(Date.now() / 1000);
   const header = base64url(JSON.stringify({ alg: 'RS256', kid: 'test-access-key', typ: 'JWT' }));
+  const subject = options.subject === undefined ? 'cloudflare-identity-subject' : options.subject;
   const payload = base64url(JSON.stringify({
     aud: [options.audience ?? 'kairo-test-aud'],
     email: options.email ?? 'Invited.User@Gmail.com',
@@ -30,7 +31,7 @@ async function signedAccessToken(options: { email?: string; audience?: string; e
     nbf: now,
     iss: 'https://kairo-team.cloudflareaccess.com',
     type: 'app',
-    sub: 'cloudflare-identity-subject',
+    ...(subject === null ? {} : { sub: subject }),
   }));
   const input = header + '.' + payload;
   const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', pair.privateKey, new TextEncoder().encode(input));
@@ -77,6 +78,19 @@ describe('Cloudflare Access application JWT verification', () => {
       ACCESS_TEAM_DOMAIN: 'attacker.example',
       ACCESS_AUD: 'kairo-test-aud',
     })).resolves.toBeNull();
+  });
+
+  it('rejects signed tokens with a missing or invalid Access subject', async () => {
+    const missingSubject = await signedAccessToken({ subject: null });
+    await expect(verifyCloudflareAccessAssertion(missingSubject, bindings)).resolves.toBeNull();
+
+    resetAccessJwksCacheForTests();
+    const blankSubject = await signedAccessToken({ subject: '   ' });
+    await expect(verifyCloudflareAccessAssertion(blankSubject, bindings)).resolves.toBeNull();
+
+    resetAccessJwksCacheForTests();
+    const oversizedSubject = await signedAccessToken({ subject: 's'.repeat(256) });
+    await expect(verifyCloudflareAccessAssertion(oversizedSubject, bindings)).resolves.toBeNull();
   });
 
   it('rejects missing tokens and incomplete configuration without network access', async () => {
