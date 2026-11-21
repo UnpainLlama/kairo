@@ -164,6 +164,52 @@ describe('API origin protection', () => {
   });
 
 
+  it('allows sign-out when Access is expired or the account is denied, but still enforces same-origin', async () => {
+    const writes: Array<{ sql: string; values: unknown[] }> = [];
+    const DB = {
+      prepare(sql: string) {
+        return {
+          bind: (...values: unknown[]) => ({
+            run: async () => {
+              writes.push({ sql, values });
+              return { success: true, meta: { changes: 1 } };
+            },
+          }),
+        };
+      },
+    } as unknown as D1Database;
+    const cookie = `kairo_session=${'b'.repeat(43)}`;
+    const response = await worker.request('https://kairo.test/api/v1/auth/logout', {
+      method: 'POST',
+      headers: { Origin: 'https://kairo.test', Cookie: cookie },
+    }, {
+      ACCESS_ENFORCED: 'true',
+      ACCESS_TEAM_DOMAIN: 'kairo-team.cloudflareaccess.com',
+      ACCESS_AUD: 'kairo-test-aud',
+      DB,
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ success: true, data: { signedOut: true } });
+    expect(response.headers.get('Set-Cookie')).toContain('Max-Age=0');
+    expect(writes).toHaveLength(1);
+    expect(writes[0].sql).toBe('DELETE FROM sessions WHERE token_hash = ?');
+
+    writes.length = 0;
+    const crossOrigin = await worker.request('https://kairo.test/api/v1/auth/logout', {
+      method: 'POST',
+      headers: { Origin: 'https://attacker.test', Cookie: cookie },
+    }, {
+      ACCESS_ENFORCED: 'true',
+      ACCESS_TEAM_DOMAIN: 'kairo-team.cloudflareaccess.com',
+      ACCESS_AUD: 'kairo-test-aud',
+      DB,
+    });
+    expect(crossOrigin.status).toBe(403);
+    expect(await crossOrigin.json()).toMatchObject({ error: { code: 'ORIGIN_FORBIDDEN' } });
+    expect(writes).toHaveLength(0);
+  });
+
   it('returns a real static asset from the ASSETS binding on a file-like route miss', async () => {
     const assetResponse = new Response('body { color: red; }', {
       status: 200,

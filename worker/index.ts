@@ -108,6 +108,14 @@ app.use('/api/*', async (c, next) => {
     c.set('accessSubject', null);
     return next();
   }
+  // Sign-out only revokes the opaque session cookie supplied by the caller.
+  // The same-origin guard above still applies, so expired/denied Access identities
+  // can leave Kairo without gaining access to any protected account data.
+  if (pathname === '/api/v1/auth/logout' && c.req.method.toUpperCase() === 'POST') {
+    c.set('accessEmail', null);
+    c.set('accessSubject', null);
+    return next();
+  }
   if (c.env.ACCESS_ENFORCED !== 'true') {
     c.set('accessEmail', null);
     return next();
