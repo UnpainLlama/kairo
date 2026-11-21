@@ -316,7 +316,7 @@ export function HistoryPage() {
 
   const hasHistory=items.length>0||playbackItems.length>0;
   return <section className="kc-history-page">
-    <header className="kc-page-head"><span className="kc-section-kicker">YOUR ACTIVITY</span><h1>Watch history</h1><p>Guest history stays on this device; verified Kairo accounts sync history across devices automatically.</p></header>
+    <header className="kc-page-head"><span className="kc-section-kicker">YOUR ACTIVITY</span><h1>Watch history</h1><p>{userId ? 'Your Anime and Movies history syncs across your devices.' : 'Guest history stays on this device.'}</p></header>
     <div className="kc-history-toolbar">
       <label className="kc-history-search"><Search size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search your history…" aria-label="Search watch history"/></label>
       <label className="kc-history-sort"><ArrowUpDown size={15}/><select value={sort} onChange={e=>setSort(e.target.value)} aria-label="Sort history"><option value="recent">Last watched</option><option value="title">A–Z</option><option value="progress">Progress</option></select></label>

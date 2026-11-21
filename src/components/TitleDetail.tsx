@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Check, Eye, Play, Plus, ThumbsUp, X } from 'lucide-react';
 import { ApiError, apiGet } from '../lib/api';
+import { movieDetailErrorPresentation } from '../lib/movieDetailError';
 import { movieRating, movieYear, type MovieDetail, type MoviePage, type MovieSummary } from '../lib/movies';
 import { useMyList } from '../lib/useMyList';
 import { useOpenTitle, watchHref } from './MovieCard';
@@ -75,12 +76,13 @@ export function TitleDetail({ externalId, onClose }: { externalId: string; onClo
 
   if (loading) return <div className="nf-detail"><div className="nf-detail-hero nf-skel" />{close}<div className="nf-detail-pad"><span className="nf-skel nf-skel-line" /><span className="nf-skel nf-skel-line short" /></div></div>;
   if (error || !movie) {
+    const presentation = movieDetailErrorPresentation(error);
     return (
       <div className="nf-detail">
         {close}
         <div className="nf-detail-pad nf-detail-error" role="alert">
-          <h2>{error?.code === 'MOVIES_DISABLED' ? 'Movies are not available yet' : 'Something went wrong'}</h2>
-          <p>{error?.message ?? 'This title could not be found.'}</p>
+          <h2>{presentation.title}</h2>
+          <p>{presentation.message}</p>
           <Link to="/movies" className="nf-btn play">Go to Home</Link>
         </div>
       </div>
