@@ -78,6 +78,8 @@ Search parameters:
 - In legacy `CATALOG_SOURCE=db` mode, `trending` ranks by stored `popularity_score` and `latest` by the catalogue row's `updated_at`. In live mode, AniList supplies trending-score ordering and currently airing titles newest-first; see docs/LIVE_CATALOGUE.md.
 - In DB mode, `genres` returns counts derived from stored title genre lists. In live mode, AniList returns its genre collection without counts.
 - Related-title behavior is provider-specific in live mode (AniList relations and recommendations, with provider fallbacks). The legacy DB route uses shared genres. Accepts `limit` (1–24, default 12).
+- Filter-only `/api/v1/catalog/browse` is supported in both live and legacy D1 catalogue modes. In D1 mode filters are bound against the stored genre/year/format/status/season fields and sort uses the same fixed whitelist as search.
+- D1 catalogue mode resolves episode servers/playback only through a stored AniList or MAL provider-ID mapping plus the configured independent episode provider. A title without a supported mapping returns `EPISODE_SOURCE_UNAVAILABLE`; a mode without a server-capable episode provider returns `PROVIDER_UNAVAILABLE` rather than a missing-route 404.
 
 ## 2b. Provider routes (added; existing routes unchanged)
 
@@ -196,7 +198,8 @@ Validate finite non-negative numbers, enforce sensible duration/position bounds,
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/v1/episodes/:episodeId/playback` | Resolve playback through an authorized configured provider |
+| GET | `/api/v1/anime/:id/episodes/:episodeNumber/servers` | Discover available language/server choices from the configured episode provider. In D1 catalogue mode, the stored title must have a supported AniList or MAL provider-ID mapping. |
+| GET | `/api/v1/anime/:id/episodes/:episodeNumber/servers/:serverId/playback` | Resolve the selected opaque server ID through the configured provider and validate the returned URL against the playback host allowlist. |
 
 A successful playback response may include:
 

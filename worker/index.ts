@@ -8,10 +8,11 @@ import { registerHistoryPreferenceRoutes } from './auth/preferences';
 import { registerYouTubeMediaRoutes } from './youtube/routes';
 import { registerAdminRoutes, rotateAdminConsolePath } from './admin/routes';
 import { hasActiveAccessAccount, verifyCloudflareAccessAssertion } from './auth/cloudflareAccess';
-import { GENRES_SQL, buildListQuery, buildRelatedQuery, buildSearchQuery } from './repositories/catalog';
+import { GENRES_SQL, buildBrowseQuery, buildListQuery, buildRelatedQuery, buildSearchQuery } from './repositories/catalog';
 import { BASE_RECORD_SQL, INSERT_PROVIDER_ID_SQL, PROVIDER_IDS_SQL } from './repositories/providerIds';
 import { buildRegistry, createCache, resolveUnified, sharedBreaker, toBaseRecord, type BaseRow } from './metadata/service';
-import { createLiveHandlers, isLiveMode, type LiveHandlers } from './live/handlers';
+import { createLiveHandlers, isLiveMode, parseBrowse, type LiveHandlers } from './live/handlers';
+import { providerRefFromMappings } from './live/ids';
 import type { LiveRequest, LiveResult } from './live/types';
 import { createTmdbMovieProvider } from './movies/providers/tmdb';
 import { createMovieCatalogService } from './movies/service';
@@ -418,12 +419,90 @@ app.get('/api/v1/catalog/featured', serveLive((h) => h.featured));
 app.get('/api/v1/catalog/trending', serveLive((h) => h.trending));
 app.get('/api/v1/catalog/latest', serveLive((h) => h.latest));
 app.get('/api/v1/catalog/search', serveLive((h) => h.search));
-app.get('/api/v1/catalog/browse', serveLive((h) => h.browse));
+app.get('/api/v1/catalog/browse', async (c) => {
+  if (isLiveMode(c.env.CATALOG_SOURCE)) {
+    const result = await live.browse({ query: c.req.query(), param: (name) => c.req.param(name), requestId: c.get('requestId'), env: c.env });
+    return c.json(result.body as Record<string, unknown>, result.status as 200);
+  }
+  const parsed = parseBrowse(c.req.query(), new Date());
+  if (!parsed.ok) return fail(c, 400, 'VALIDATION_ERROR', parsed.message);
+  const built = buildBrowseQuery(parsed.value);
+  try {
+    const [items, count] = await Promise.all([
+      c.env.DB.prepare(built.sql).bind(...built.binds).all(),
+      c.env.DB.prepare(built.countSql).bind(...built.countBinds).first<{ total: number }>(),
+    ]);
+    const total = Number(count?.total ?? 0);
+    return ok(c, { items: (items.results ?? []).map((row: Record<string, unknown>) => toCard(row)) }, {
+      page: parsed.value.page,
+      limit: parsed.value.limit,
+      total,
+      hasNextPage: (parsed.value.page - 1) * parsed.value.limit + parsed.value.limit < total,
+    });
+  } catch (error) {
+    logError(c, 'catalog_browse_failed', error);
+    return fail(c, 503, 'CATALOG_UNAVAILABLE', 'Filtered catalogue browsing is temporarily unavailable.');
+  }
+});
 app.get('/api/v1/catalog/genres', serveLive((h) => h.genres));
 app.get('/api/v1/providers', serveLive((h) => h.providers));
 app.get('/api/v1/anime/:id/episodes', serveLive((h) => h.episodes));
-app.get('/api/v1/anime/:id/episodes/:episodeNumber/servers', serveLive((h) => h.servers));
-app.get('/api/v1/anime/:id/episodes/:episodeNumber/servers/:serverId/playback', serveLive((h) => h.playback));
+async function resolveDbEpisodeProviderRef(c: AppContext, rawId: string): Promise<
+  | { ref: string }
+  | { error: { status: 404 | 503; code: string; message: string } }
+> {
+  if (!rawId || rawId.length > 128) {
+    return { error: { status: 404, code: 'RESOURCE_NOT_FOUND', message: 'The requested title was not found.' } };
+  }
+  const title = await c.env.DB.prepare('SELECT id FROM anime WHERE id=? OR slug=? LIMIT 1')
+    .bind(rawId, rawId).first<{ id: string }>();
+  if (!title) {
+    return { error: { status: 404, code: 'RESOURCE_NOT_FOUND', message: 'The requested title was not found.' } };
+  }
+  const mappings = await c.env.DB.prepare(PROVIDER_IDS_SQL).bind(title.id).all<{ provider: string; externalId: string }>();
+  const preferredProviders = (c.env.LIVE_PROVIDERS ?? 'anilist,mal').split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
+  const ref = providerRefFromMappings(mappings.results ?? [], preferredProviders);
+  if (!ref) {
+    return { error: { status: 503, code: 'EPISODE_SOURCE_UNAVAILABLE', message: 'This stored title has no supported mapping for the configured episode-discovery providers.' } };
+  }
+  return { ref };
+}
+
+app.get('/api/v1/anime/:id/episodes/:episodeNumber/servers', async (c) => {
+  const request: LiveRequest = {
+    query: c.req.query(),
+    param: (name) => c.req.param(name),
+    requestId: c.get('requestId'),
+    env: c.env,
+  };
+  if (isLiveMode(c.env.CATALOG_SOURCE)) {
+    const result = await live.servers(request);
+    return c.json(result.body as Record<string, unknown>, result.status as 200);
+  }
+  const resolved = await resolveDbEpisodeProviderRef(c, c.req.param('id'));
+  if ('error' in resolved) return fail(c, resolved.error.status, resolved.error.code, resolved.error.message);
+  const dbRequest: LiveRequest = { ...request, param: (name) => name === 'id' ? resolved.ref : request.param(name) };
+  const result = await live.servers(dbRequest);
+  return c.json(result.body as Record<string, unknown>, result.status as 200);
+});
+
+app.get('/api/v1/anime/:id/episodes/:episodeNumber/servers/:serverId/playback', async (c) => {
+  const request: LiveRequest = {
+    query: c.req.query(),
+    param: (name) => c.req.param(name),
+    requestId: c.get('requestId'),
+    env: c.env,
+  };
+  if (isLiveMode(c.env.CATALOG_SOURCE)) {
+    const result = await live.playback(request);
+    return c.json(result.body as Record<string, unknown>, result.status as 200);
+  }
+  const resolved = await resolveDbEpisodeProviderRef(c, c.req.param('id'));
+  if ('error' in resolved) return fail(c, resolved.error.status, resolved.error.code, resolved.error.message);
+  const dbRequest: LiveRequest = { ...request, param: (name) => name === 'id' ? resolved.ref : request.param(name) };
+  const result = await live.playback(dbRequest);
+  return c.json(result.body as Record<string, unknown>, result.status as 200);
+});
 app.get('/api/v1/anime/:id/related', serveLive((h) => h.related));
 app.get('/api/v1/anime/:id/metadata', serveLive((h) => h.metadata));
 app.get('/api/v1/anime/:id', serveLive((h) => h.anime));
@@ -1125,7 +1204,7 @@ app.post('/api/v1/auth/logout', async (c) => {
     return fail(c, 503, 'AUTH_UNAVAILABLE', 'Could not sign out. Please try again.');
   }
 });
-app.get('/api/v1/anime/:id/episodes/:episodeNumber/servers/:serverId/playback', (c) => fail(c, 503, 'SOURCE_UNAVAILABLE', 'Live playback is not enabled for this catalogue configuration.'));
+
 
 app.notFound(async (c) => {
   if (isStaticAssetPath(c.req.path)) {
