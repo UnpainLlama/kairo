@@ -48,9 +48,9 @@ Signing in on an Access-protected deployment immediately resolves the profile an
 
 Kairo's signed-in state depends on both the Cloudflare Access identity and the internal Kairo session. Deleting only the Kairo session cookie does not sign a visitor out of Cloudflare Access; a subsequent authenticated `/api/v1/me` request would establish another internal session.
 
-The Kairo sign-out action therefore navigates to Cloudflare Access logout at `/cdn-cgi/access/logout`. Cloudflare owns the Access cookies and logout lifecycle. API access remains fail-closed when the Access assertion is absent, regardless of any stale Kairo cookie.
+The Kairo sign-out action first calls `POST /api/v1/auth/logout` to revoke the current Kairo session and clear its HttpOnly cookie. Only after that succeeds does the client clear the signed-in account's namespaced local media cache and navigate to `/cdn-cgi/access/logout`, which ends the Cloudflare Access session. The app shell, profile and admin console share this sequence. If server-side revocation fails, the client keeps local data and does not redirect.
 
-Browser-local media data is separate from both cookie layers. Signing out clears only the signed-in account's namespaced local media cache (not guest data or server records), then ends the Cloudflare Access session. Clearing localStorage does not revoke a server-side account.
+Browser-local media data is separate from both cookie layers. Sign-out does not remove guest data or server-side account records. Clearing localStorage alone does not revoke a server-side account.
 
 ## Account and media data boundaries
 

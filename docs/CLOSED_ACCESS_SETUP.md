@@ -13,7 +13,7 @@ This branch implements the agreed staging access model:
 - There is no Kairo username/password sign-in or password-based admin lockout. Cloudflare Access is the only interactive authentication layer. The Worker still enforces the administrator role for YouTube and console routes.
 - Administrator sessions expire after eight hours; standard-account sessions retain the existing 30-day lifetime.
 - The administrator has a separate console, manages standard accounts, and is the only Kairo role allowed to use YouTube features.
-- The admin console URL is generated from 256 bits of cryptographic randomness and rotates every 30 minutes. The URL is not an authentication factor; the server-side administrator session remains the access control.
+- The admin console URL is generated from 256 bits of cryptographic randomness with a 30-minute lease. Scheduled maintenance replaces it only when the stored path is expired; an unexpired path is not invalidated early. The URL is not an authentication factor; the server-side administrator session remains the access control.
 - Playback checkpoints are saved locally every five seconds and synced to D1 every 60 seconds for signed-in users. Important user/lifecycle events flush immediately. Failed cloud writes remain in a local retry queue with exponential backoff.
 
 ## Staging-only Cloudflare Access configuration
@@ -55,7 +55,7 @@ To disable an invited user immediately:
 2. Remove that exact email from the Cloudflare Access Allow policy so they cannot obtain a new Access application session.
 3. Revoke their Cloudflare Access session from the Zero Trust dashboard where immediate edge-level revocation is required. Cloudflare notes that revocation can take 20–30 seconds.
 
-Kairo's menu Sign out action navigates to `/cdn-cgi/access/logout`. Deleting only the internal Kairo cookie is not a full sign-out because a still-valid Cloudflare Access identity would allow `/api/v1/me` to create another internal session.
+Kairo's Sign out actions first call `POST /api/v1/auth/logout` to revoke the current Kairo session and clear the HttpOnly cookie. After successful revocation, the app clears only that account's namespaced browser cache and navigates to `/cdn-cgi/access/logout`. App shell, profile and admin console share the helper. If revocation fails, browser data is retained and the redirect is not performed.
 
 ## Database migration and first administrator setup
 

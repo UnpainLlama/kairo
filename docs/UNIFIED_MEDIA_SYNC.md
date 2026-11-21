@@ -37,7 +37,7 @@ The three media areas are separate data domains; they share account identity, no
 - src/lib/browserPersistence.ts provides guarded JSON/text reads and writes and shared storage change notifications.
 - Feature-specific modules retain their own schemas, keys and validation so one media domain cannot accidentally deserialize another domain's state.
 
-The internal Kairo session is an HttpOnly cookie, bound to the currently verified Access email. No session token, password, Google token or YouTube OAuth token is written to browser storage. Signing out goes through Cloudflare Access logout; removing only the internal cookie would otherwise cause /api/v1/me to recreate it while the Access session remains valid.
+The internal Kairo session is an HttpOnly cookie, bound to the currently verified Access email and JWT subject. No session token, password, Google token or YouTube OAuth token is written to browser storage. Sign-out first calls `POST /api/v1/auth/logout` to revoke the internal session, then clears only that account's browser cache, then navigates to Cloudflare Access logout. The app shell, profile and admin console use the same helper; failed revocation preserves local data and prevents redirect. The separate YouTube step-up path revokes the internal session before requiring a fresh Access login.
 
 ## Sync and conflict behavior
 

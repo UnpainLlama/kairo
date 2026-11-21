@@ -1,6 +1,6 @@
-# Current implementation snapshot — 2026-11-19
+# Current implementation snapshot — 2026-11-21
 
-> This status snapshot supersedes the older phase logs and gap lists below. The older sections are retained as historical notes and should not be read as the current repository state.
+> This status snapshot supersedes the older phase logs and gap lists below. The older sections are retained as historical notes and should not be read as the current repository state. It records verified implementation work but is not a claim that every one of the consolidated 51 audit findings has been closed; source-only CI cannot close the operational and provider-owner gates listed below.
 
 ## Current verified baseline
 
@@ -9,7 +9,13 @@
 - Kairo interactive identity is Cloudflare Access only. Internal sessions are bound to the verified Access email and JWT subject. Expired/revoked Kairo sessions require an explicit Access logout/login rather than silent renewal.
 - First-admin provisioning is separated from guest mode. The unmounted legacy Google sign-in implementation is removed; Google OAuth remains solely for the separate optional YouTube authorization.
 - Account-scoped Anime library CRUD is implemented; Movies and Anime libraries are both reflected in the profile count.
-- Account-specific browser cache is cleared on sign-out; guest cache and server-side account records are not removed.
+- All account sign-out entry points (app shell, profile and admin console) use one tested sequence: revoke the server-side Kairo session, clear only that account's namespaced browser cache, then leave Cloudflare Access. Failed revocation neither clears local data nor redirects; guest data and server records are preserved.
+- YouTube's recent-session step-up flow revokes the existing Kairo session before Cloudflare Access reauthentication, so the next `/api/v1/me` must establish a fresh internal session.
+- Access JWT validation requires a non-empty, bounded `sub` claim; it no longer falls back to email as a substitute stable subject.
+- Route metadata is centralised and covered for admin, YouTube history/watch-later, media detail/watch and unknown routes. The admin console path is not rotated before its 30-minute lease expires.
+- The YouTube workspace exposes tested switches back to Anime and Movies on rail/mobile navigation. HLS.js is bundled with the app rather than loaded through global Video.js CDN scripts.
+- Cloudflare Static Assets has an `ASSETS` binding for selective Worker-first asset requests. Real assets pass through; missing file-like paths that receive the SPA HTML fallback become 404s, while `/index.html` and ordinary SPA routes remain distinct.
+- Account-specific Anime library, Movies library and Favorites views are implemented; the older UI-audit placeholder note is superseded.
 - Expired sessions, rate-limit buckets and consumed/expired OAuth transactions are cleaned by the scheduled Worker. Historical session IP and user-agent fields are cleared by migration 0019; new Kairo sessions no longer populate those fields.
 - YouTube token encryption uses AES-GCM with account/purpose-bound AAD for new ciphertext and a read-only v1 compatibility path for previously stored rows.
 - Catalogue, Movies search/discovery and episode-source reads use a hashed D1 rate limiter.

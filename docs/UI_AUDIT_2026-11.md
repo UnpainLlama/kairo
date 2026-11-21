@@ -17,7 +17,7 @@ This review is not a substitute for a manual browser/device pass. The current CI
 
 ## Known limitations and release gates
 
-- /library and /favorites still intentionally display a not-yet-available state; they are not implemented product surfaces yet.
+- `/library` and `/favorites` are now implemented from the account-scoped Anime library API; Favorites filters the saved `isFavorite` flag. Guest and signed-in states have separate loading, empty and unavailable handling. The initial static-audit note above is historical and superseded by the current implementation.
 - This pass did not audit the legal/privacy policy text, third-party provider permissions/licensing, YouTube API compliance, authentication hardening, playback-source reliability, or production infrastructure and secrets.
 - No production deployment was performed.
 - Before a public release, run manual visual checks at narrow mobile, tablet, desktop and ultrawide widths; keyboard-only and screen-reader checks; verify real account flows; review privacy/terms/YouTube disclosures; and complete the operational/security checklist in docs/DEPLOYMENT.md and docs/SECURITY_AND_CONTENT.md.

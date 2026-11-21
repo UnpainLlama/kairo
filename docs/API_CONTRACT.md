@@ -119,12 +119,13 @@ Authentication routes:
 | POST | `/api/v1/auth/login` | Retired. Returns `410 ACCESS_SIGN_IN_ONLY`; use the approved Cloudflare Access email instead. |
 | POST | `/api/v1/admin/bootstrap` | One-time administrator provisioning; requires `X-Kairo-Bootstrap` and the current verified Access email; permanently disabled after initialization. |
 
-Cloudflare Access is the invitation boundary. If its Allow policy is broader than the intended email list, any email accepted by that policy may receive a standard Kairo profile on first visit. The Kairo menu's sign-out action uses `/cdn-cgi/access/logout`; deleting only the internal Kairo cookie is not a full sign-out.
+Cloudflare Access is the invitation boundary. If its Allow policy is broader than the intended email list, any email accepted by that policy may receive a standard Kairo profile on first visit. The app shell, profile and admin console use `POST /api/v1/auth/logout` to revoke the Kairo session before clearing account-local cache and navigating to `/cdn-cgi/access/logout`. If revocation fails, the client does not clear local data or redirect. The YouTube reauthentication flow also revokes the internal session before the Access logout/login step.
 
 Anime library routes are account-scoped; `PUT` accepts `{ status, isFavorite }`, with `status` either one of the values below or `null` to save a favorite without changing list status. Writes verify that the Anime identifier exists and derive ownership only from the validated Kairo session. These routes require a valid Kairo session and server-side ownership checks.
 
 | Method | Path | Purpose |
 |---|---|---|
+| POST | `/api/v1/auth/logout` | Revoke the current Kairo session and clear the HttpOnly cookie before Cloudflare Access logout |
 | GET | `/api/v1/me` | Current profile |
 | PATCH | `/api/v1/me` | Update editable profile fields |
 | GET | `/api/v1/me/preferences` | Read preferences |
