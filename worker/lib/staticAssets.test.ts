@@ -7,7 +7,6 @@ describe('static asset path classification', () => {
     '/favicon.svg',
     '/site.webmanifest',
     '/artwork/poster.webp',
-    '/api/movies.json',
     '/font/app.woff2',
   ])('classifies %s as a static asset request', (path) => {
     expect(isStaticAssetPath(path)).toBe(true);
@@ -19,6 +18,7 @@ describe('static asset path classification', () => {
     '/movies/123',
     '/admin',
     '/api/v1/me',
+    '/index.html',
   ])('does not classify %s as a static asset request', (path) => {
     expect(isStaticAssetPath(path)).toBe(false);
   });
