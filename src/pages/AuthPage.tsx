@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useKairoAccount } from '../lib/AccountProvider';
+import { logoutKairoSession } from '../lib/authClient';
 
 type Envelope = {
   success?: boolean;
@@ -89,6 +90,21 @@ export default function AuthPage() {
     if (!continuation) navigate('/', { replace: true });
   }, [account.status, continuation, navigate, needsReauthentication, reauthStage, setupMode, waitingForAccessLogin, youtubeState]);
 
+  async function beginReauthentication() {
+    setBusy(true);
+    setError('');
+    try {
+      // Remove the still-valid Kairo session as well as the Access cookie.
+      // The subsequent /me request after Access login creates a genuinely new
+      // session, satisfying YouTube's recent-session step-up gate.
+      await logoutKairoSession();
+      window.location.assign(accessLogoutUrl);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not sign out. Please try again.');
+      setBusy(false);
+    }
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -146,8 +162,10 @@ export default function AuthPage() {
           </button>
         </form> : needsReauthentication ? (
           <div className="kc-auth-copy">
-            <a className="kc-auth-submit" href={accessLogoutUrl}>Sign out and re-authenticate</a>
-            <p>This signs out of Cloudflare Access for this browser session. Your saved Kairo account data remains on the server.</p>
+            <button className="kc-auth-submit" type="button" disabled={busy} onClick={beginReauthentication}>
+              {busy ? 'Signing out…' : 'Sign out and re-authenticate'}
+            </button>
+            <p>This signs out of Cloudflare Access and revokes the current Kairo session. Your saved Kairo account data remains on the server.</p>
           </div>
         ) : (
           <div className="kc-auth-copy">

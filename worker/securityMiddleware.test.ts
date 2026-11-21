@@ -48,6 +48,40 @@ describe('API origin protection', () => {
   });
 
 
+
+  it('revokes the server-side Kairo session and clears its cookie before Access sign-out', async () => {
+    const writes: Array<{ sql: string; values: unknown[] }> = [];
+    const db = {
+      prepare(sql: string) {
+        return {
+          bind: (...values: unknown[]) => ({
+            run: async () => {
+              writes.push({ sql, values });
+              return { success: true, meta: { changes: 1 } };
+            },
+          }),
+        };
+      },
+    } as unknown as D1Database;
+    const response = await worker.request('https://kairo.test/api/v1/auth/logout', {
+      method: 'POST',
+      headers: {
+        Origin: 'https://kairo.test',
+        Cookie: `kairo_session=${'a'.repeat(43)}`,
+      },
+    }, {
+      ACCESS_ENFORCED: 'false',
+      DB: db,
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ success: true, data: { signedOut: true } });
+    expect(response.headers.get('Set-Cookie')).toContain('kairo_session=;');
+    expect(response.headers.get('Set-Cookie')).toContain('Max-Age=0');
+    expect(writes).toHaveLength(1);
+    expect(writes[0].sql).toBe('DELETE FROM sessions WHERE token_hash = ?');
+    expect(writes[0].values[0]).toMatch(/^[a-f0-9]{64}$/);
+  });
+
   it('keeps local unauthenticated /me requests explicitly in guest mode', async () => {
     const response = await worker.request('https://kairo.test/api/v1/me', { method: 'GET' }, {
       ACCESS_ENFORCED: 'false',

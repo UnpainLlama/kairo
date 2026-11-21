@@ -28,6 +28,7 @@ import { useKairoAccount } from './lib/AccountProvider';
 import { clearAccountScopedBrowserData } from './lib/accountScopedStorage';
 import { resolvePageTitle } from './lib/pageMetadata';
 import { getWorkspaceSwitches } from './lib/workspaceNavigation';
+import { logoutKairoSession } from './lib/authClient';
 import { AboutPage, AccountPage, HistoryPage, NotFoundPage, ProfilePage } from './pages/StaticPages';
 
 type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean; active?: boolean };
@@ -132,6 +133,8 @@ export default function App() {
   const activeMenuItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : menuItems;
   const activeMobileItems = activeNavItems;
   const [menuOpen, setMenuOpen] = useState(false);
+  const [logoutPending, setLogoutPending] = useState(false);
+  const [logoutError, setLogoutError] = useState('');
   const currentUser = account.status === 'signed-in' ? { displayName: account.displayName ?? 'Account', email: account.email, username: account.username } : null;
   const navigate = useNavigate();
   const menuRef = useRef<HTMLDivElement>(null);
@@ -206,11 +209,20 @@ export default function App() {
     description?.setAttribute('content', 'Kairo — discover anime, movies and videos, and keep your personal watch history and library in one place.');
   }, [adminPath, lastSectionMode, pathname]);
 
-  const logout = () => {
-    clearAccountScopedBrowserData(account.accountId);
-    // Kairo sign-in is the Cloudflare Access session. Clearing only the internal
-    // Kairo cookie would silently recreate it on the next /api/v1/me request.
-    window.location.assign('/cdn-cgi/access/logout');
+  const logout = async () => {
+    if (logoutPending) return;
+    setLogoutPending(true);
+    setLogoutError('');
+    try {
+      // Revoke the internal session first so it cannot be reused after Access
+      // login, while clearing account-scoped browser data only after success.
+      await logoutKairoSession();
+      clearAccountScopedBrowserData(account.accountId);
+      window.location.assign('/cdn-cgi/access/logout');
+    } catch (error) {
+      setLogoutError(error instanceof Error ? error.message : 'Could not sign out. Please try again.');
+      setLogoutPending(false);
+    }
   };
 
   useEffect(() => {
@@ -335,7 +347,8 @@ export default function App() {
                 </>}
                 <div className="kc-menu-footer">
                   <Link to="/settings" onClick={closeMenu}><Settings size={15} aria-hidden="true" />Settings</Link>
-                  {currentUser ? <button type="button" onClick={logout}><LogIn size={15} aria-hidden="true" />Sign out of Access</button> : <Link to="/login" onClick={closeMenu}><LogIn size={15} aria-hidden="true" />Access help</Link>}
+                  {logoutError && <p className="kc-auth-error" role="alert">{logoutError}</p>}
+                  {currentUser ? <button type="button" onClick={logout} disabled={logoutPending}><LogIn size={15} aria-hidden="true" />{logoutPending ? 'Signing out…' : 'Sign out of Access'}</button> : <Link to="/login" onClick={closeMenu}><LogIn size={15} aria-hidden="true" />Access help</Link>}
                 </div>
               </section>
             )}
