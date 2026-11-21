@@ -25,10 +25,9 @@ import WatchPage from './pages/WatchPage';
 import AuthPage from './pages/AuthPage';
 import AdminPage from './pages/AdminPage';
 import { useKairoAccount } from './lib/AccountProvider';
-import { clearAccountScopedBrowserData } from './lib/accountScopedStorage';
+import { signOutKairoAccount } from './lib/authClient';
 import { resolvePageTitle } from './lib/pageMetadata';
 import { getWorkspaceSwitches } from './lib/workspaceNavigation';
-import { logoutKairoSession } from './lib/authClient';
 import { AboutPage, AccountPage, HistoryPage, NotFoundPage, ProfilePage } from './pages/StaticPages';
 
 type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean; active?: boolean };
@@ -214,11 +213,7 @@ export default function App() {
     setLogoutPending(true);
     setLogoutError('');
     try {
-      // Revoke the internal session first so it cannot be reused after Access
-      // login, while clearing account-scoped browser data only after success.
-      await logoutKairoSession();
-      clearAccountScopedBrowserData(account.accountId);
-      window.location.assign('/cdn-cgi/access/logout');
+      await signOutKairoAccount(account.accountId, (url) => window.location.assign(url));
     } catch (error) {
       setLogoutError(error instanceof Error ? error.message : 'Could not sign out. Please try again.');
       setLogoutPending(false);
