@@ -7,11 +7,13 @@
 - GitHub Actions CI runs TypeScript typecheck, Vitest, production dependency audit and build.
 - The fix/audit-findings branch is being used to remediate the consolidated 51-finding audit. The current PR is kept separate from main.
 - Kairo interactive identity is Cloudflare Access only. Internal sessions are bound to the verified Access email and JWT subject. Expired/revoked Kairo sessions require an explicit Access logout/login rather than silent renewal.
+- Account provisioning and legacy identity linking occur only during the explicit `/api/v1/me` bootstrap flow. Other protected API routes perform a read-only check for an active profile already bound to the exact verified Access email and subject; first-time page components wait for the initial `/me` result before issuing catalogue and Movies requests.
 - First-admin provisioning is separated from guest mode. The unmounted legacy Google sign-in implementation is removed; Google OAuth remains solely for the separate optional YouTube authorization.
 - Account-scoped Anime library CRUD is implemented; Movies and Anime libraries are both reflected in the profile count.
-- All account sign-out entry points (app shell, profile and admin console) use one tested sequence: revoke the server-side Kairo session, clear only that account's namespaced browser cache, then leave Cloudflare Access. Failed revocation neither clears local data nor redirects; guest data and server records are preserved.
+- Account sign-out revokes the server-side Kairo session before clearing that account's namespaced browser cache and leaving Cloudflare Access. When Access is expired or the identity is denied, only `POST /api/v1/auth/logout` bypasses the Worker Access/account gate; the same-origin guard still runs first and the handler only revokes the session token in the caller's cookie. Failed revocation neither clears local data nor redirects.
 - YouTube's recent-session step-up flow revokes the existing Kairo session before Cloudflare Access reauthentication, so the next `/api/v1/me` must establish a fresh internal session.
 - Access JWT validation requires a non-empty, bounded `sub` claim; it no longer falls back to email as a substitute stable subject.
+- The AccountProvider withholds page mounting until the first account lookup completes and shows a global, fail-closed `Account status unavailable` screen with Retry when identity cannot be verified.
 - Route metadata is centralised and covered for admin, YouTube history/watch-later, media detail/watch and unknown routes. The admin console path is not rotated before its 30-minute lease expires.
 - The YouTube workspace exposes tested switches back to Anime and Movies on rail/mobile navigation. HLS.js is bundled with the app rather than loaded through global Video.js CDN scripts.
 - Cloudflare Static Assets has an `ASSETS` binding for selective Worker-first asset requests. Real assets pass through; missing file-like paths that receive the SPA HTML fallback become 404s, while `/index.html` and ordinary SPA routes remain distinct.
@@ -31,13 +33,14 @@
 ## Remaining release gates (cannot be proven by source-only CI)
 
 1. Configure exact Cloudflare Access destination overrides for /api/health and /api/ready in the deployment environment, then set KAIRO_REMOTE_HEALTH_CHECKS_ENABLED=true. Deploy now blocks when this variable is missing or either probe fails.
-2. Verify ACCESS_ENFORCED, bootstrap state and migrations 0015–0022 (including seat reassignment and account-wide history preferences) against each real D1 database; source code does not prove those migrations have been applied remotely.
-3. Supply real production APP_BASE_URL, GOOGLE_CLIENT_ID, Access team domain/AUD, D1 ID, KV ID and Worker secrets using Cloudflare/GitHub environment configuration. Never replace these with guessed values or commit secrets.
-4. Confirm ownership, authorization and provider terms for every enabled Anime, HiAnime and embed/playback domain. Keep unverified domains removed and ZokoAnime disabled until approved.
-5. Review the third-party HiAnime/mirror integration and TMDB/CineSrc terms with the relevant provider/legal owners before production release.
-6. Inspect real browser CSP reports and test playback, modal navigation, scroll restoration, focus and screen-reader flows on desktop and mobile before enforcing CSP.
-7. Confirm the real account cap against production records (including suspended/deleted/legacy profiles), and verify Access JWT expiry/revocation behaviour in the live Access application.
-8. Run authenticated staging end-to-end checks against real Cloudflare Access, D1, KV, Google OAuth and provider APIs. Unit tests use fixtures and are not a substitute for live provider/integration tests.
+2. Configure an exact public Access destination override for `/api/v1/auth/logout` in each environment so an expired or denied identity can reach the Worker to sign out. Do not exempt `/api/v1/auth/*` or `/api/*`; verify same-origin logout and cross-origin rejection in the live Access application.
+3. Verify ACCESS_ENFORCED, bootstrap state and migrations 0015–0022 (including seat reassignment and account-wide history preferences) against each real D1 database; source code does not prove those migrations have been applied remotely.
+4. Supply real production APP_BASE_URL, GOOGLE_CLIENT_ID, Access team domain/AUD, D1 ID, KV ID and Worker secrets using Cloudflare/GitHub environment configuration. Never replace these with guessed values or commit secrets.
+5. Confirm ownership, authorization and provider terms for every enabled Anime, HiAnime and embed/playback domain. Keep unverified domains removed and ZokoAnime disabled until approved.
+6. Review the third-party HiAnime/mirror integration and TMDB/CineSrc terms with the relevant provider/legal owners before production release.
+7. Inspect real browser CSP reports and test playback, modal navigation, scroll restoration, focus and screen-reader flows on desktop and mobile before enforcing CSP.
+8. Confirm the real account cap against production records (including suspended/deleted/legacy profiles), and verify Access JWT expiry/revocation behaviour in the live Access application.
+9. Run authenticated staging end-to-end checks against real Cloudflare Access, D1, KV, Google OAuth and provider APIs. Unit tests use fixtures and are not a substitute for live provider/integration tests.
 
 No production deployment, remote database migration or live-provider/legal approval is implied by the code changes above.
 
