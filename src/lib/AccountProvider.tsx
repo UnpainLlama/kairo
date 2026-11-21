@@ -25,12 +25,18 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const [username, setUsername] = useState<string | null>(null);
   const [role, setRole] = useState<'user' | 'admin' | null>(null);
   const accountIdRef = useRef(accountId);
+  const accountStatusRef = useRef(status);
 
   useEffect(() => { accountIdRef.current = accountId; }, [accountId]);
+  useEffect(() => { accountStatusRef.current = status; }, [status]);
 
   useEffect(() => {
     let active = true;
-    const refresh = () => setAttempt((value) => value + 1);
+    const refresh = () => {
+      // If the previous identity check failed, keep pages unmounted while retrying.
+      if (accountStatusRef.current === 'unavailable') setInitialLookupComplete(false);
+      setAttempt((value) => value + 1);
+    };
     // Refresh when the tab becomes visible again, not on every window focus.
     // Focus events also fire while users move between the document and a
     // cross-origin player iframe; revalidating then can tear down the player.
@@ -129,7 +135,10 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     };
   }, [accountId, status]);
 
-  const retry = useCallback(() => setAttempt((value) => value + 1), []);
+  const retry = useCallback(() => {
+    setInitialLookupComplete(false);
+    setAttempt((value) => value + 1);
+  }, []);
   const value = useMemo(() => ({ status, accountId, displayName, email, username, role, retry }), [status, accountId, displayName, email, username, role, retry]);
   return (
     <AccountContext.Provider value={value}>

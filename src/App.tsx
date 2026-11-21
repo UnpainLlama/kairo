@@ -6,6 +6,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import SearchBar from './components/SearchBar';
+import AccountUnavailablePage from './components/AccountUnavailablePage';
 import HomePage from './pages/HomePage';
 import YouTubeFeedPage from './pages/YouTubeFeedPage';
 import MoviesHomePage from './pages/MoviesHomePage';
@@ -241,6 +242,8 @@ export default function App() {
     event.preventDefault();
     void logout();
   };
+
+  if (account.status === 'unavailable') return <AccountUnavailablePage onRetry={account.retry} />;
 
   if (account.status === 'setup-required' && pathname !== '/login') {
     return <Navigate to="/login?setup=admin" replace />;
