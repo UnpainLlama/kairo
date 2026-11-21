@@ -1,5 +1,47 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { resetAccessJwksCacheForTests } from './auth/cloudflareAccess';
 import app from './index';
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  resetAccessJwksCacheForTests();
+});
+
+function base64url(value: Uint8Array | string): string {
+  const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : value;
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+async function signedAccessAssertion(): Promise<string> {
+  const pair = await crypto.subtle.generateKey(
+    { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+    true,
+    ['sign', 'verify'],
+  ) as CryptoKeyPair;
+  const kid = 'middleware-test-key';
+  const jwk = { ...(await crypto.subtle.exportKey('jwk', pair.publicKey)), kid, use: 'sig', alg: 'RS256' };
+  const now = Math.floor(Date.now() / 1000);
+  const header = base64url(JSON.stringify({ alg: 'RS256', kid, typ: 'JWT' }));
+  const claims = base64url(JSON.stringify({
+    aud: ['kairo-test-aud'],
+    email: 'new.member@example.test',
+    exp: now + 300,
+    iat: now,
+    nbf: now,
+    iss: 'https://kairo-team.cloudflareaccess.com',
+    type: 'app',
+    sub: 'middleware-test-subject',
+  }));
+  const input = header + '.' + claims;
+  const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', pair.privateKey, new TextEncoder().encode(input));
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ keys: [jwk] }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })));
+  return input + '.' + base64url(new Uint8Array(signature));
+}
 
 const worker = app as unknown as {
   request(input: string, init?: RequestInit, env?: unknown): Promise<Response>;
@@ -48,6 +90,45 @@ describe('API origin protection', () => {
   });
 
 
+
+  it('does not provision a new account on the first catalogue request', async () => {
+    const assertion = await signedAccessAssertion();
+    const statements: string[] = [];
+    let writes = 0;
+    const DB = {
+      prepare(sql: string) {
+        statements.push(sql);
+        const statement = {
+          bind: (..._values: unknown[]) => statement,
+          first: async () => null,
+          run: async () => {
+            writes += 1;
+            return { success: true, meta: { changes: 1 } };
+          },
+        };
+        return statement;
+      },
+    } as unknown as D1Database;
+
+    const response = await worker.request('https://kairo.test/api/v1/catalog/genres', {
+      method: 'GET',
+      headers: { 'Cf-Access-Jwt-Assertion': assertion },
+    }, {
+      ACCESS_ENFORCED: 'true',
+      ACCESS_TEAM_DOMAIN: 'kairo-team.cloudflareaccess.com',
+      ACCESS_AUD: 'kairo-test-aud',
+      DB,
+    });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      success: false,
+      error: { code: 'ACCESS_ACCOUNT_DISABLED' },
+    });
+    expect(writes).toBe(0);
+    expect(statements).toHaveLength(1);
+    expect(statements[0]).toContain('WHERE access_email = ?');
+  });
 
   it('revokes the server-side Kairo session and clears its cookie before Access sign-out', async () => {
     const writes: Array<{ sql: string; values: unknown[] }> = [];
