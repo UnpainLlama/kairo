@@ -3,7 +3,7 @@ import { useKairoAccount } from '../lib/AccountProvider';
 import { signOutKairoAccount } from '../lib/authClient';
 
 type Account = { id: string; username: string; accessEmail: string | null; displayName: string; status: 'active' | 'suspended' | 'deleted'; createdAt: string };
-type Payload = { success?: boolean; data?: { accounts?: Account[]; standardAccountCount?: number; standardAccountLimit?: number; account?: Account }; error?: { message?: string } };
+type Payload = { success?: boolean; data?: { accounts?: Account[]; standardAccountCount?: number; standardAccountLimit?: number; account?: Account; accountReset?: boolean }; error?: { message?: string } };
 
 async function request(path: string, method = 'GET', body?: unknown): Promise<Payload> {
   const response = await fetch(path, {

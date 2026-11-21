@@ -84,9 +84,13 @@ Do not create or share a Kairo password.
 3. Revoke their Cloudflare Access session using the Access dashboard or logout process.
 4. Do not reactivate a profile merely because the same email can authenticate again; the operator must intentionally reactivate it.
 
-### Change an invited email
+### Reassign a seat to a different person
 
-Update the unique Kairo Access email binding and the Cloudflare Access Allow policy together. The two are separate controls. Existing Kairo sessions are revoked when the binding changes; the new verified email establishes the next session.
+Do not transfer an existing account by changing its Access email. Use **Reassign seat** in the administrator console only when the seat is changing owners. This permanently removes the previous account's sessions, OAuth state, provider connections, preferences, Anime and Movies libraries, ratings, watch history, YouTube feed/history/Watch Later records, playback progress, deletion markers and other account-owned rows. A new profile with a new user ID and an empty data set is created for the new email; none of the previous person's data is transferred.
+
+The previous profile remains only as a minimal `deleted` identity tombstone holding its former Cloudflare Access email and JWT subject. That prevents an already-issued Access session from automatically provisioning the old identity again. Deleted tombstones do not consume one of the 15 active/suspended standard-account seats, but their old email remains reserved. The reset cannot be undone.
+
+Update the Cloudflare Access Allow policy as part of the handoff: remove the previous person's email and add the new person's exact email. The application-level tombstone blocks the former identity even if an old Access token remains valid. The new person establishes a fresh Kairo session on their first approved visit.
 
 ### First administrator setup
 
