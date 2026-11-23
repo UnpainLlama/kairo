@@ -20,11 +20,11 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "hono": "^4.13.18",
-    "lucide-react": "^1.73.0",
+    "hono": "^4.13.19",
+    "lucide-react": "^1.76.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "react-router-dom": "^7.9.5",
+    "react-router-dom": "^7.18.6",
     "hls.js": "^1.7.4"
   },
   "devDependencies": {
