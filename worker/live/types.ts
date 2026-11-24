@@ -3,7 +3,7 @@ import type { Attribution } from '../metadata/types';
 import type { Ref } from './ids';
 import type { SortKey } from '../lib/validation';
 
-export type SourceId = string;
+export type SourceId = 'mal';
 export type ListKind = 'featured' | 'trending' | 'latest';
 
 export type Card = {
@@ -54,6 +54,8 @@ export interface CatalogSource {
 }
 
 export type LiveEnv = {
+  /** Official MAL API v2 Client ID. Keep it server-side as a Worker secret. */
+  MAL_CLIENT_ID?: string;
   /** D1 is required for account, library and watch-history routes even when the public catalogue is live. */
   DB?: {
     prepare(sql: string): {
@@ -62,7 +64,7 @@ export type LiveEnv = {
     };
   };
   APP_ENV?: string;
-  /** "live" (default) serves the configured live catalogue; "db" keeps the original D1 routes. */
+  /** "live" (default) serves the MAL-backed catalogue when MAL_CLIENT_ID is configured; "db" keeps the original D1 routes. */
   CATALOG_SOURCE?: string;
   /** Independent episode-provider priority. Default "jikan". */
   EPISODE_PROVIDERS?: string;

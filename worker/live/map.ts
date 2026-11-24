@@ -17,8 +17,8 @@ export function toLiveTitle(meta: NormalizedMetadata, provider: SourceId): LiveT
     .slice(0, 12);
   return {
     card: {
-      id: makeId('a', own),
-      slug: makeSlug(title, 'a', own),
+      id: makeId('m', own),
+      slug: makeSlug(title, 'm', own),
       title,
       synopsis: meta.synopsis ?? '',
       posterUrl: meta.posterUrl,
@@ -32,9 +32,9 @@ export function toLiveTitle(meta: NormalizedMetadata, provider: SourceId): LiveT
       genres: meta.genres,
     },
     altTitles,
-    // AniList's idMal is retained only as an identifier bridge for Jikan episode discovery.
-    malId: num(meta.ids.mal),
-    anilistId: own,
+    // The MAL catalogue ID is also the cross-reference used by Jikan episode discovery.
+    malId: num(meta.ids.mal) ?? own,
+    anilistId: null,
     url: meta.url,
     provider,
   };

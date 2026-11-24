@@ -12,11 +12,6 @@ export type TmdbArtwork = {
   mediaType: 'tv' | 'movie';
   posterUrl: string | null;
   bannerUrl: string | null;
-  overview?: string | null;
-  rating?: number | null;
-  genres?: string[];
-  releaseYear?: number | null;
-  episodeCount?: number | null;
 };
 
 export type ArtworkProvider = {
@@ -252,9 +247,8 @@ export function createTmdbArtworkProvider(fetchImpl: FetchLike, accessToken: str
       const id = Number(best.id);
       if (!Number.isSafeInteger(id) || id <= 0) return null;
 
-      // Search records are used for confident matching. Fetch the canonical details
-      // record before falling back to the images endpoint so metadata and artwork
-      // are both sourced from the same matched TMDB title.
+      // Search records are used for confident artwork matching. The detail/images
+      // endpoints only supply posters and backdrops; MAL remains metadata authority.
       let details: SearchRecord = best;
       try {
         const detailsUrl = new URL(`${API}/${type}/${id}`);
@@ -317,15 +311,7 @@ export function createTmdbArtworkProvider(fetchImpl: FetchLike, accessToken: str
           // Keep matched images already returned by search/details.
         }
       }
-      const rawGenres = Array.isArray(details.genres) ? details.genres : [];
-      const genres = rawGenres.flatMap((genre) => {
-        if (typeof genre === 'object' && genre !== null && 'name' in genre && typeof (genre as { name?: unknown }).name === 'string') return [(genre as { name: string }).name];
-        return [];
-      }).slice(0, 8);
-      const overview = typeof details.overview === 'string' && details.overview.trim() ? details.overview.trim().slice(0, 3000) : null;
-      const rating = typeof details.vote_average === 'number' && Number.isFinite(details.vote_average) && details.vote_average > 0 ? Math.min(10, details.vote_average) : null;
-      const episodeCount = type === 'tv' && typeof details.number_of_episodes === 'number' && Number.isInteger(details.number_of_episodes) && details.number_of_episodes > 0 ? details.number_of_episodes : null;
-      return { tmdbId: id, mediaType: type, posterUrl, bannerUrl, overview, rating, genres, releaseYear: recordYear(details), episodeCount };
+      return { tmdbId: id, mediaType: type, posterUrl, bannerUrl };
     },
 
     async episodeStills(artwork, input, signal) {

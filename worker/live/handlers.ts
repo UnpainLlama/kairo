@@ -93,8 +93,8 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
     try {
       const deps = depsFor(req);
       const out = await svc.getList(deps, kind, paging.value.page, paging.value.limit);
-      const items = cards(out.value.items);
-      return okBody(req, { items }, { ...pagedMeta(out.value, paging.value.page), ...sourceMeta(out), ...artworkMeta(deps) });
+      const enriched = await svc.withArtwork(deps, out.value.items);
+      return okBody(req, { items: cards(enriched) }, { ...pagedMeta(out.value, paging.value.page), ...sourceMeta(out), ...artworkMeta(deps) });
     } catch (e) { return providerFailure(req, `live_${kind}_failed`, e); }
   };
 
@@ -122,8 +122,8 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
       try {
         const deps = depsFor(req);
         const out = await svc.browse(deps, { q, sort, genre, year, format, status, season, page, limit });
-        const items = cards(out.value.items);
-        return okBody(req, { items }, { ...pagedMeta(out.value, page), ...sourceMeta(out), ...artworkMeta(deps) });
+        const enriched = await svc.withArtwork(deps, out.value.items);
+        return okBody(req, { items: cards(enriched) }, { ...pagedMeta(out.value, page), ...sourceMeta(out), ...artworkMeta(deps) });
       } catch (e) { return providerFailure(req, 'live_search_failed', e); }
     },
 
@@ -234,7 +234,8 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
       try {
         const deps = depsFor(req);
         const out = await svc.getRelated(deps, t.ref, limit);
-        return okBody(req, { items: cards(out.value) }, { basis: out.via === 'anilist' ? 'relations_and_recommendations' : 'recommendations', limit, ...sourceMeta(out), ...artworkMeta(deps) });
+        const enriched = await svc.withArtwork(deps, out.value);
+        return okBody(req, { items: cards(enriched) }, { basis: 'recommendations', limit, ...sourceMeta(out), ...artworkMeta(deps) });
       } catch (e) { return providerFailure(req, 'live_related_failed', e); }
     },
 
@@ -253,7 +254,7 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
         return okBody(req, {
           title: title.card.title, synopsis: title.card.synopsis || null, rating: title.card.rating, episodeCount: title.card.episodeCount,
           genres: title.card.genres, posterUrl: title.card.posterUrl, bannerUrl: title.card.bannerUrl,
-          ids: { ...(title.anilistId ? { anilist: String(title.anilistId) } : {}) },
+          ids: { ...(title.malId ? { mal: String(title.malId) } : {}) },
           sources: [...(src ? [{ providerId: src.id, displayName: src.attribution.displayName, text: src.attribution.text, url: title.url ?? src.attribution.url, license: src.attribution.license }] : []), ...(tmdbArtworkUsed ? [{ providerId: 'tmdb', displayName: 'TMDB', text: 'Metadata and artwork from The Movie Database. This product uses the TMDB API but is not endorsed or certified by TMDB.', url: 'https://www.themoviedb.org', license: null }] : [])],
           providers: [...providers, ...(tmdbArtworkUsed ? [{ provider: 'tmdb', state: 'ok' }] : [])],
         }, { degraded: out.degraded, basis: 'live', ...sourceMeta(out), ...artworkMeta(deps) });

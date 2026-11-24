@@ -122,7 +122,7 @@ const candidatesFor = <T>(deps: Deps, ref: Ref, run: (s: CatalogSource, signal: 
   deps.sources.filter((s) => s.supports(ref)).map((source) => ({ source, run: (signal) => run(source, signal) }));
 
 // New namespace invalidates all list/detail records cached under the old mixed-provider catalogue.
-const liveCacheScope = (): string => 'live:v6:no-catalogue-provider';
+const liveCacheScope = (): string => 'live:v7:mal-only';
 
 export function getList(deps: Deps, kind: ListKind, page: number, limit: number): Promise<Outcome<Paged>> {
   const day = kind === 'featured' ? new Date(deps.now()).toISOString().slice(0, 10) : 'stable';
@@ -151,7 +151,7 @@ export function getGenres(deps: Deps): Promise<Outcome<{ name: string; count: nu
 }
 
 export function getTitle(deps: Deps, ref: Ref): Promise<Outcome<LiveTitle>> {
-  // Native AniList IDs and legacy MAL-ID aliases both resolve through AniList GraphQL.
+  // MAL-native IDs resolve directly through the official MyAnimeList API.
   return resolve(deps, {
     key: `${liveCacheScope()}:title:${ref.kind}${ref.id}`,
     ttl: TTL.detail,
@@ -332,7 +332,7 @@ export function buildDeps(env: LiveEnv, fetchImpl: FetchLike, onError?: Deps['on
   const playbackHosts = (env.HIANIME_PLAYBACK_ALLOWED_HOSTS ?? '').split(',').map((host) => host.trim().toLowerCase()).filter((host) => /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i.test(host));
   const episodeRegistry = buildEpisodeProviders(env.EPISODE_PROVIDERS, env.HIANIME_BASE_URL, fetchImpl, playbackHosts);
   return {
-    sources: [],
+    sources: env.MAL_CLIENT_ID?.trim() ? [createMalSource(fetchImpl, env.MAL_CLIENT_ID)] : [],
     episodeProviders: episodeRegistry.providers,
     unknownEpisodeProviders: episodeRegistry.unknown,
     cache: createCache(env),

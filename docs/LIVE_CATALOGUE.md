@@ -1,44 +1,35 @@
-# Live anime catalogue (AniList-only)
+# Live Anime Catalogue
 
-Kairo's live Anime catalogue uses **only the public AniList GraphQL API** at `https://graphql.anilist.co`. Every catalogue list, featured card, search, seasonal query, trending query, genre browse, direct title lookup and related-title query is and excludes adult entries.
+KAIRO uses the official MyAnimeList API v2 for Anime catalogue metadata and The Movie Database (TMDB) exclusively for visual artwork.
 
-There is no MAL, Jikan or HiAnime catalogue fallback. If AniList is unavailable, Kairo reports the catalogue as unavailable or serves a still-valid cached AniList response; it does not substitute another catalogue. The live catalogue cache namespace was advanced so results previously cached from mixed-provider responses cannot be reused.
+## Providers
 
-## AniList catalogue and discovery
+- **Metadata:** MyAnimeList API v2 (`https://api.myanimelist.net/v2`), requested by the Worker using the server-side `MAL_CLIENT_ID` secret.
+- **Artwork:** TMDB search and image endpoints, requested by the Worker using `TMDB_ACCESS_TOKEN`. Posters use TMDB poster images; hero backgrounds use TMDB backdrops; episode cards may use TMDB episode stills.
+- **Episodes:** Jikan and HiAnime remain independent episode-discovery providers. The catalogue provider does not supply streams or playback URLs.
 
-- API: `https://graphql.anilist.co`; public reads require no API key.
-- Kairo uses GraphQL POST requests from the Worker. The browser calls Kairo's `/catalog/*` and `/anime/:id` endpoints; it does not call AniList directly.
-- Queries request only the fields used by cards and detail pages, including titles, descriptions, genres, cover posters and landscape banners.
-- Adult entries are excluded with `isAdult: false` and checked again when mapping results.
-- Seasonal browsing uses AniList's native `season` and `seasonYear` arguments. Trending uses `TRENDING_DESC`. Discover loads genre choices from `GenreCollection` and filters by genre using AniList.
-- Sort mappings: relevance (`SEARCH_MATCH` when a query is present), popularity (`POPULARITY_DESC`), trending (`TRENDING_DESC`), latest (`START_DATE_DESC`) and rating (`SCORE_DESC`).
-- AniList does not publish per-genre counts from `GenreCollection`; Kairo leaves them unknown rather than inventing counts.
+When `MAL_CLIENT_ID` is absent, the live catalogue reports no active providers and catalogue requests fail closed with 503. There is no AniList or other catalogue fallback.
 
-Kairo uses bounded page sizes, request timeouts, a provider circuit breaker and expiring cache entries. Provider responses are not written to D1. AniList guidance has described a normal rate limit of 90 requests/minute and temporary degraded periods at 30 requests/minute; 429 responses are surfaced as provider failures.
+## MAL API behaviour
 
-## Episode discovery is separate
+- Featured titles use MAL's airing ranking.
+- Trending is represented by MAL popularity ranking; MAL API v2 does not expose a separate trending feed.
+- Seasonal browsing uses `/anime/season/{year}/{season}`.
+- Search uses `/anime?q=...`; search results are narrowed through a bounded result window for genre, format, year and status filters.
+- MAL does not expose a standalone genre directory. KAIRO derives genre choices from a bounded scan of ranking results, not a complete genre index.
+- The API does not publish a fixed numeric request limit. KAIRO spaces requests using a shared per-isolate pacer, handles rate-limit errors, and caches responses in Workers KV.
+- The adult filter fails closed: entries without the expected safe `nsfw` grade, or with an RX rating, are excluded.
 
-The catalogue provider does not provide episode lists or playback streams. Staging keeps the independent `EPISODE_PROVIDERS=hianime,jikan` configuration:
+## Artwork
 
-- HiAnime supplies episode records and server discovery/playback resolution.
-- Jikan supplies episode-list compatibility where configured.
-- AniList's `idMal` value is retained internally only as an external identifier bridge for Jikan and the optional ZokoAnime embed URL. Kairo does not call the MyAnimeList API, and no MAL catalogue adapter or `MAL_CLIENT_ID` secret is required.
-- Older `m1234` title references can still be resolved by AniList through its `idMal` query argument. New catalogue results use AniList IDs (`a1234`).
+MAL image fields are ignored. KAIRO matches catalogue titles to TMDB TV/movie records using title variants, release year and format. TMDB provides posters, backdrops and available episode stills only. It does not overwrite MAL's synopsis, score, genres, release year, format, status or episode count.
 
-Jikan/HiAnime episode services do not affect the Home page, Trending, Seasonal, Discover or search catalogue. Their episode data is not used as anime catalogue cards.
+## IDs and persistence
 
-## Artwork enrichment
-
-TMDB artwork enrichment is independent of catalogue identity. When `TMDB_ACCESS_TOKEN` is configured, it may fill missing poster/backdrop artwork, synopsis, rating, genres, year and episode count after a confident title match. It does not replace AniList, add titles or supply episode lists or playback. Existing AniList metadata takes precedence.
+New live catalogue IDs use MAL references such as `m1535` and `death-note-m1535`. Live catalogue metadata is held in the short-lived provider cache, not written to D1. User accounts, libraries, and shared Anime/Movies/YouTube playback progress retain their existing D1 schema and identifiers.
 
 ## Configuration
 
-- `CATALOG_SOURCE=live` selects the live catalogue routes.
-- The live catalogue is hard-wired to AniList; the old `LIVE_PROVIDERS` override has been removed.
-- `EPISODE_PROVIDERS` independently controls episode discovery. Staging remains `hianime,jikan`.
-- AniList needs no secret. The MAL catalogue API credential has been removed.
-- TMDB artwork enrichment is optional and runs only when `TMDB_ACCESS_TOKEN` is configured.
+Register a KAIRO application at [MyAnimeList API settings](https://myanimelist.net/apiconfig) and add its Client ID as a Cloudflare Worker secret named `MAL_CLIENT_ID`. Configure `TMDB_ACCESS_TOKEN` as a separate Worker secret for artwork. Never put either secret in browser code, Wrangler vars, or committed source.
 
-## Verification
-
-CI tests cover the AniList query builder, adult-content filtering, seasonal sorting, GenreCollection discovery, direct title filtering, single-provider reporting and the independent Jikan episode route. These use controlled fixtures, not live AniList responses. After deployment, verify `/api/v1/providers`, `/api/v1/catalog/genres`, a seasonal browse request and a discovery browse request. The provider list should contain exactly one catalogue item: `anilist`.
+Review the MAL API license and developer agreement and TMDB's non-commercial API terms/attribution requirements before production use.

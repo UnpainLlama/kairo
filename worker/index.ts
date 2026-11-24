@@ -35,7 +35,7 @@ interface Bindings {
   /** Server-only Google API key for administrator-only YouTube Data API reads. */
   YOUTUBE_DATA_API_KEY?: string;
   ALLOWED_ORIGIN?: string;
-  /** Comma-separated metadata provider ids to enable, e.g. "kitsu". Empty = none. */
+  /** Legacy D1 metadata enrichment providers. The live catalogue uses MAL_CLIENT_ID instead. */
   METADATA_PROVIDERS?: string;
   /** Optional Workers KV namespace used as the provider-response cache (recommended on workers.dev). */
   METADATA_CACHE?: KVNamespace;
@@ -47,6 +47,8 @@ interface Bindings {
   HIANIME_BASE_URL?: string;
   /** Opt-in to ZokoAnime's documented iframe route; disabled unless explicitly set to true. */
   ZOKOANIME_EMBED_ENABLED?: string;
+  /** Official MyAnimeList API v2 Client ID, stored as a Cloudflare Worker secret. */
+  MAL_CLIENT_ID?: string;
   /** TMDB API Read Access Token stored as a Cloudflare Worker secret. */
   TMDB_ACCESS_TOKEN?: string;
   /** Enable TMDB-powered Movies discovery/search only after credentials and provider terms are approved. */
@@ -443,8 +445,8 @@ async function resolveDbEpisodeProviderRef(c: AppContext, rawId: string): Promis
     return { error: { status: 404, code: 'RESOURCE_NOT_FOUND', message: 'The requested title was not found.' } };
   }
   const mappings = await c.env.DB.prepare(PROVIDER_IDS_SQL).bind(title.id).all<{ provider: string; externalId: string }>();
-  // Prefer native AniList IDs; a legacy MAL numeric mapping is retained only as an AniList idMal alias.
-  const ref = providerRefFromMappings(mappings.results ?? [], ['anilist', 'mal']);
+  // Resolve legacy D1 titles through their direct MAL mapping.
+  const ref = providerRefFromMappings(mappings.results ?? [], ['mal']);
   if (!ref) {
     return { error: { status: 503, code: 'EPISODE_SOURCE_UNAVAILABLE', message: 'This stored title has no supported mapping for the configured episode-discovery providers.' } };
   }
