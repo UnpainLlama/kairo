@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { PlaybackSaveReason } from '../lib/playbackSync';
 import type { SavedPlayerState } from '../lib/mediaPlayback';
 
@@ -20,8 +20,10 @@ function readSavedSeconds(progressKey: string): number {
 
 /** Anime-only external iframe. Movies use MovieEmbedPlayer and never mount this component. */
 export default function AnimeEmbedPlayer({ src, title, provider, progressKey, onProgress, playerState }: Props) {
+  const playerStateRef = useRef(playerState);
+  useEffect(() => { playerStateRef.current = playerState; }, [playerState]);
   useEffect(() => {
-    const flush = (reason: 'pagehide' | 'open') => onProgress?.(readSavedSeconds(progressKey), reason, playerState ?? {});
+    const flush = (reason: 'pagehide' | 'open') => onProgress?.(readSavedSeconds(progressKey), reason, playerStateRef.current ?? {});
     flush('open');
     const onPageHide = () => flush('pagehide');
     const onVisibilityChange = () => { if (document.visibilityState === 'hidden') flush('pagehide'); };
@@ -32,7 +34,7 @@ export default function AnimeEmbedPlayer({ src, title, provider, progressKey, on
       window.removeEventListener('pagehide', onPageHide);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [progressKey, onProgress, playerState]);
+  }, [progressKey, onProgress]);
 
   return (
     <div className="kc-external-player kc-anime-embed-player" data-provider={provider} data-media-domain="anime">

@@ -1,6 +1,7 @@
 import { clearSessionCookie } from './session';
 import { getRequestUser } from './requestUser';
 import { verifyPassword } from './password';
+import { deleteStandardAccount } from '../admin/routes';
 
 function ok(c: any, data: unknown, status = 200) {
   return c.json({ success: true, data, meta: { requestId: c.get('requestId') } }, status);
@@ -108,11 +109,11 @@ export function registerProfileRoutes(app: any) {
       if (!credential || !await verifyPassword(currentPassword, credential.passwordHash)) {
         return fail(c, 403, 'CURRENT_PASSWORD_INCORRECT', 'The current password is incorrect.');
       }
-      const deleted = await c.env.DB.prepare('DELETE FROM user_profiles WHERE id = ? AND role = \'user\'').bind(user.id).run();
-      if (Number(deleted.meta.changes ?? 0) !== 1) return fail(c, 409, 'ACCOUNT_DELETE_CONFLICT', 'The account could not be deleted. Refresh and try again.');
+      const deleted = await deleteStandardAccount(c.env.DB, user.id);
+      if (deleted !== 'deleted') return fail(c, 409, 'ACCOUNT_DELETE_CONFLICT', 'The account could not be deleted. Refresh and try again.');
       c.header('Set-Cookie', clearSessionCookie(new URL(c.req.url).protocol === 'https:'));
       c.header('Cache-Control', 'no-store');
-      return ok(c, { deleted: true, accountDataDeleted: true, sessionsRevoked: true });
+      return ok(c, { deleted: true, accountDataDeleted: true, sessionsRevoked: true, tombstoneRetained: true });
     } catch {
       return fail(c, 503, 'ACCOUNT_DELETE_UNAVAILABLE', 'The account could not be deleted right now.');
     }

@@ -16,6 +16,9 @@ type Props = {
   mediaType?: 'hls' | 'file';
   onProgress?: (seconds: number, reason: PlaybackSaveReason, playerState?: SavedPlayerState) => void;
   initialPlayerState?: SavedPlayerState | null;
+  defaultPlaybackSpeed?: number;
+  defaultSubtitleLanguage?: string;
+  subtitleSize?: 'small' | 'medium' | 'large';
 };
 
 type VideoJsMediaElement = HTMLVideoElement;
@@ -31,8 +34,13 @@ export default function KairoVideoJsPlayer({
   mediaType = 'hls',
   onProgress,
   initialPlayerState,
+  defaultPlaybackSpeed = 1,
+  defaultSubtitleLanguage = 'en',
+  subtitleSize = 'medium',
 }: Props) {
   const mediaRef = useRef<VideoJsMediaElement | null>(null);
+  const initialPlayerStateRef = useRef(initialPlayerState);
+  useEffect(() => { initialPlayerStateRef.current = initialPlayerState; }, [initialPlayerState]);
   const [skip, setSkip] = useState<'intro' | 'outro' | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
   const [playbackError, setPlaybackError] = useState('');
@@ -68,13 +76,17 @@ export default function KairoVideoJsPlayer({
       let saved = 0;
       try { saved = Number(localStorage.getItem(storageKey) || 0); } catch { /* storage may be unavailable */ }
       if (saved > 0 && Number.isFinite(media.duration) && saved < media.duration - 15) media.currentTime = saved;
-      if (initialPlayerState) {
-        if (typeof initialPlayerState.volume === 'number') media.volume = initialPlayerState.volume;
-        if (typeof initialPlayerState.muted === 'boolean') media.muted = initialPlayerState.muted;
-        if (typeof initialPlayerState.playbackRate === 'number') media.playbackRate = initialPlayerState.playbackRate;
-        if (initialPlayerState.subtitleLanguage && media.textTracks) {
-          Array.from(media.textTracks).forEach(track => { track.mode = track.language === initialPlayerState.subtitleLanguage ? 'showing' : 'disabled'; });
-        }
+      const savedState = initialPlayerStateRef.current;
+      media.playbackRate = savedState?.playbackRate ?? defaultPlaybackSpeed;
+      if (savedState) {
+        if (typeof savedState.volume === 'number') media.volume = savedState.volume;
+        if (typeof savedState.muted === 'boolean') media.muted = savedState.muted;
+      }
+      const preferredSubtitle = savedState?.subtitleLanguage ?? defaultSubtitleLanguage;
+      if (media.textTracks && preferredSubtitle) {
+        Array.from(media.textTracks).forEach(track => {
+          track.mode = preferredSubtitle !== 'off' && track.language === preferredSubtitle ? 'showing' : 'disabled';
+        });
       }
       saveProgress('open');
     };
@@ -143,7 +155,7 @@ export default function KairoVideoJsPlayer({
       window.removeEventListener('pagehide', onPageHide);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [src, progressKey, introEnd, outroStart, nextUrl, onProgress, initialPlayerState]);
+  }, [src, progressKey, introEnd, outroStart, nextUrl, onProgress, defaultPlaybackSpeed, defaultSubtitleLanguage]);
 
   useEffect(() => {
     const media = mediaRef.current;
@@ -183,7 +195,7 @@ export default function KairoVideoJsPlayer({
   };
 
   return (
-    <div className="kc-videojs-player" aria-label={title}>
+    <div className={"kc-videojs-player subtitle-" + subtitleSize} aria-label={title}>
       <video
         ref={mediaRef}
         className="kc-videojs-media kc-videojs-element"
