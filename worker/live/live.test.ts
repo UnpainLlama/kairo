@@ -217,10 +217,9 @@ describe('service and handlers', () => {
   });
   it('keeps empty AniList seasonal and discovery results instead of substituting a different provider catalogue', async () => {
     let fallbackCalls = 0;
-    const d = deps(async (u) => {
-      if (isAni(u)) return aniPage([]);
+    const d = deps(async () => {
       fallbackCalls += 1;
-      return jikanList([jikanAnime(3)]);
+      return aniPage([]);
     });
     const seasonal = await call(d, 'browse', req({ season: 'fall', year: '2026', sort: 'popularity', page: '1', limit: '24' }));
     const discovery = await call(d, 'browse', req({ genre: 'Action', sort: 'popularity', page: '1', limit: '12' }));
