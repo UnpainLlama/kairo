@@ -30,8 +30,8 @@ describe('offline admin password enrolment script', () => {
   });
 
   it('validates password length and rejects password equal to username', () => {
-    expect(isValidPassword('a sufficiently long password', 'admin')).toBe(true);
-    expect(isValidPassword('short', 'admin')).toBe(false);
+    expect(isValidPassword('correct horse battery staple admin', 'admin')).toBe(true);
+    expect(isValidPassword('one two three four', 'admin')).toBe(false);
     expect(isValidPassword('Site.Admin', 'site.admin')).toBe(false);
   });
 });
