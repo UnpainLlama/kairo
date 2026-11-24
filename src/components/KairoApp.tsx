@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNod
 import {
   Activity, ArrowLeft, Bookmark, Check, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Compass, Film,
   Heart, History, Home, Info, Library, LogOut, Menu, Play, Search, Settings, Shield, Sparkles, Star,
-  UserRound, X, Youtube,
+  UserRound, X,
 } from 'lucide-react';
 import { Link, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAccount } from '../lib/AccountProvider';
@@ -223,7 +223,7 @@ function AppShell() {
       <NavLink to="/seasonal"><Sparkles size={18} /><span>Seasonal</span></NavLink>
       <NavLink to="/library"><Library size={18} /><span>My Library</span></NavLink>
       <NavLink to="/history"><History size={18} /><span>History</span></NavLink>
-      {account.user?.role === 'admin' && <NavLink to="/youtube"><Youtube size={18} /><span>YouTube</span></NavLink>}
+      {account.user?.role === 'admin' && <NavLink to="/youtube"><Play size={18} /><span>YouTube</span></NavLink>}
     </>
   );
   const youtubeNav = (
