@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { isPasswordAllowed } from './passwordRules';
 
 describe('client password rules', () => {
-  it('requires at least 15 Unicode code points', () => {
-    expect(isPasswordAllowed('a'.repeat(14), 'admin')).toBe(false);
-    expect(isPasswordAllowed('a'.repeat(15), 'admin')).toBe(true);
-    expect(isPasswordAllowed('😀'.repeat(15), 'admin')).toBe(true);
+  it('requires at least five whitespace-separated words', () => {
+    expect(isPasswordAllowed('one two three four', 'admin')).toBe(false);
+    expect(isPasswordAllowed('one two three four five', 'admin')).toBe(true);
+    expect(isPasswordAllowed(' one  two three\\nfour five ', 'admin')).toBe(true);
   });
 
   it('enforces the UTF-8 byte ceiling', () => {
