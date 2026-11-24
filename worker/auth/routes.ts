@@ -49,7 +49,10 @@ export function registerAuthRoutes(app:Hono<any>){
         ]);
         return loginFailure(c);
       }
-      await clearRateLimit(c.env.DB,pairKey,'login-ip-username');
+      await Promise.all([
+        clearRateLimit(c.env.DB,pairKey,'login-ip-username'),
+        clearRateLimit(c.env.DB,ip,'login-ip'),
+      ]);
       if(account.accountStatus!=='active')return fail(c,403,'ACCOUNT_SUSPENDED','This account is suspended. Contact the administrator.');
       if(needsRehash(account.passwordHash)){
         const upgraded=await hashPassword(password);
