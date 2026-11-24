@@ -31,7 +31,6 @@ export function assertAcceptableLicense(license: unknown): string {
 
 const HOSTS: { host: RegExp; key: string; id: RegExp }[] = [
   { host: /(^|\.)myanimelist\.net$/, key: 'mal', id: /^\/anime\/(\d+)/ },
-  { host: /(^|\.)anilist\.co$/, key: 'anilist', id: /^\/anime\/(\d+)/ },
   { host: /(^|\.)kitsu\.(io|app)$/, key: 'kitsu', id: /^\/anime\/(\d+)/ },
   { host: /(^|\.)anidb\.net$/, key: 'anidb', id: /^\/anime\/(\d+)/ },
   { host: /(^|\.)anisearch\.com$/, key: 'anisearch', id: /^\/anime\/(\d+)/ },
@@ -40,7 +39,6 @@ const HOSTS: { host: RegExp; key: string; id: RegExp }[] = [
   { host: /(^|\.)anime-planet\.com$/, key: 'animeplanet', id: /^\/anime\/([A-Za-z0-9-]+)/ },
 ];
 
-/** "https://anilist.co/anime/1535" -> { provider: 'anilist', id: '1535' }. Unknown hosts return null. */
 export function parseSourceUrl(raw: unknown): { provider: string; id: string } | null {
   if (typeof raw !== 'string') return null;
   let u: URL;
