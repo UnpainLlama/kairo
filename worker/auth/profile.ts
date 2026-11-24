@@ -124,7 +124,7 @@ export function registerProfileRoutes(app: any) {
     }
     try {
       const credential = await c.env.DB.prepare('SELECT password_hash AS passwordHash FROM user_credentials WHERE user_id = ? LIMIT 1')
-        .bind(user.id).first<{ passwordHash: string }>();
+        .bind(user.id).first() as { passwordHash: string } | null;
       if (!credential || !await verifyPassword(currentPassword, credential.passwordHash)) {
         return fail(c, 403, 'CURRENT_PASSWORD_INCORRECT', 'The current password is incorrect.');
       }

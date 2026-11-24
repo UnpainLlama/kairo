@@ -193,7 +193,7 @@ export default function KairoVideoJsPlayer({
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         const levels = hls.levels.map((level, index) => ({
           value: String(index),
-          label: level.height ? (level.height + 'p') : (Number.isFinite(level.bitrate) ? Math.round(level.bitrate / 1000) + ' kbps' : 'Source ' + (index + 1)),
+          label: level.height ? (level.height + 'p') : (typeof level.bitrate === 'number' && Number.isFinite(level.bitrate) ? Math.round(level.bitrate / 1000) + ' kbps' : 'Source ' + (index + 1)),
         }));
         setQualityOptions(levels.length ? [{ value: 'auto', label: 'Auto' }, ...levels] : []);
         const savedQuality = initialPlayerStateRef.current?.quality;

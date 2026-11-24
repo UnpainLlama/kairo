@@ -35,17 +35,16 @@ export function registerAuthRoutes(app:Hono<any>){
       const value=body as Record<string,unknown>;
       const username=normalizeUsername(value.username);
       const password=typeof value.password==='string'?value.password:'';
-      const pairKey=username?ip+':'+username:null;
 
       if(!username||typeof value.password!=='string'||password.length===0||new TextEncoder().encode(password).length>1024){
         // Keep malformed/unknown username responses generic and perform comparable
         // work without accepting empty or oversized passwords.
         await verifyPassword('invalid-login-attempt',DUMMY_PASSWORD_HASH);
-        if(pairKey) await recordRateLimitFailure(c.env.DB,pairKey,'login-ip-username',LOGIN_WINDOW_MS);
         await recordRateLimitFailure(c.env.DB,ip,'login-ip',LOGIN_WINDOW_MS);
         return loginFailure(c);
       }
 
+      const pairKey=ip+':'+username;
       if(await isRateLimited(c.env.DB,pairKey,'login-ip-username',LOGIN_PAIR_LIMIT,LOGIN_WINDOW_MS)){
         c.header('Retry-After','60');
         return fail(c,429,'RATE_LIMITED','Too many unsuccessful sign-in attempts. Try again later.');
@@ -54,10 +53,10 @@ export function registerAuthRoutes(app:Hono<any>){
       const account=await c.env.DB.prepare(`SELECT p.id,p.role,p.account_status AS accountStatus,p.username,
           uc.password_hash AS passwordHash,uc.must_change_password AS mustChangePassword
         FROM user_profiles p LEFT JOIN user_credentials uc ON uc.user_id=p.id
-        WHERE p.username=? COLLATE NOCASE LIMIT 1`).bind(username).first<{
+        WHERE p.username=? COLLATE NOCASE LIMIT 1`).bind(username).first() as {
           id:string;role:'user'|'admin';accountStatus:string;username:string;
           passwordHash:string|null;mustChangePassword:number|null;
-        }>();
+        }|null;
       const valid=await verifyPassword(password,account?.passwordHash??DUMMY_PASSWORD_HASH);
       if(!account||!account.passwordHash||!valid){
         await Promise.all([
@@ -100,7 +99,7 @@ export function registerAuthRoutes(app:Hono<any>){
     if(newPassword===currentPassword)return fail(c,400,'PASSWORD_UNCHANGED','Choose a password different from the current password.');
     try{
       const credential=await c.env.DB.prepare('SELECT password_hash AS passwordHash FROM user_credentials WHERE user_id=? LIMIT 1')
-        .bind(user.id).first<{passwordHash:string}>();
+        .bind(user.id).first() as {passwordHash:string}|null;
       if(!credential||!await verifyPassword(currentPassword,credential.passwordHash))
         return fail(c,403,'CURRENT_PASSWORD_INCORRECT','The current password is incorrect.');
       const passwordHash=await hashPassword(newPassword);

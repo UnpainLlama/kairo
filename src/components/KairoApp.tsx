@@ -43,6 +43,7 @@ type Profile = {
   bio: string;
   visibility: 'private' | 'public';
   createdAt: string;
+  updatedAt: string;
 };
 type AnimeLibraryEntry = {
   animeId: string;
@@ -767,7 +768,7 @@ function LibraryPage() {
         updatedAt: reference.updatedAt,
       } : null;
     })
-    .filter((item): item is AnimeLibraryEntry => Boolean(item));
+    .filter(item => item !== null);
   const allAnimeItems = anime.status === 'ok' ? [...anime.data.items, ...resolvedVisibleReferences] : [];
   const filtered = allAnimeItems.filter(item => filter === 'all' || item.status === filter || (filter === 'favorites' && Boolean(item.isFavorite)));
   async function updateStatus(item: AnimeLibraryEntry, status: string) {

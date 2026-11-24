@@ -125,7 +125,7 @@ export function registerAdminRoutes(app:any){
         c.env.DB.prepare(`DELETE FROM sessions WHERE user_id=? AND EXISTS(SELECT 1 FROM user_credentials WHERE user_id=? AND password_hash=?)`).bind(id,id,hash),
       ]);
       if(Number(results[0]?.meta?.changes??0)!==1||Number(results[1]?.meta?.changes??0)!==1){
-        const existing=await c.env.DB.prepare("SELECT p.id,uc.user_id AS credentialUserId FROM user_profiles p LEFT JOIN user_credentials uc ON uc.user_id=p.id WHERE p.id=? AND p.role='user' AND p.account_status IN ('active','suspended')").bind(id).first<{id:string;credentialUserId:string|null}>();
+        const existing=await c.env.DB.prepare("SELECT p.id,uc.user_id AS credentialUserId FROM user_profiles p LEFT JOIN user_credentials uc ON uc.user_id=p.id WHERE p.id=? AND p.role='user' AND p.account_status IN ('active','suspended')").bind(id).first() as {id:string;credentialUserId:string|null}|null;
         if(!existing)return fail(c,404,'ACCOUNT_NOT_FOUND','That standard account was not found.');
         if(existing.credentialUserId)return fail(c,409,'CREDENTIALS_ALREADY_CONFIGURED','That account already has password credentials; use the reset action.');
         return fail(c,409,'ACCOUNT_ENROLLMENT_FAILED','The account could not be enrolled.');
@@ -137,7 +137,7 @@ export function registerAdminRoutes(app:any){
     noStore(c);if(!await currentAdmin(c))return fail(c,404,'NOT_FOUND','Not found.');
     const id=c.req.param('id'),target=await c.env.DB.prepare(`SELECT p.id,p.username,uc.user_id AS credentialUserId FROM user_profiles p
       LEFT JOIN user_credentials uc ON uc.user_id=p.id WHERE p.id=? AND p.role='user' AND p.account_status IN ('active','suspended')`)
-      .bind(id).first<{id:string;username:string|null;credentialUserId:string|null}>();
+      .bind(id).first() as {id:string;username:string|null;credentialUserId:string|null}|null;
     if(!target)return fail(c,404,'ACCOUNT_NOT_FOUND','That standard account was not found.');
     if(!target.credentialUserId||!target.username)return fail(c,409,'CREDENTIALS_NOT_CONFIGURED','Enroll this existing account before resetting its password.');
     let temp=createTemporaryPassword();while(!isPasswordDifferentFromUsername(temp,target.username))temp=createTemporaryPassword();
