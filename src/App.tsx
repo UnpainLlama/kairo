@@ -1,7 +1,7 @@
 import { BrowserRouter, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import LoginPage from './components/LoginPage';
 import PasswordChangePage from './components/PasswordChangePage';
-import KairoApp from './components/KairoApp';
+import PreMiruroApp from './components/PreMiruroApp';
 import { AccountProvider, useAccount, type AccountUser } from './lib/AccountProvider';
 import { AuthApiError, authRequest } from './lib/authClient';
 
@@ -62,7 +62,7 @@ function AppContent() {
     return <PasswordChangePage username={account.user.username} onChangePassword={changePassword} onLogout={account.logout} />;
   }
   if (location.pathname === '/login' || location.pathname === '/setup/admin') return <Navigate to='/' replace />;
-  return <KairoApp />;
+  return <PreMiruroApp onSignOut={account.logout} />;
 }
 
 export default function App() {
