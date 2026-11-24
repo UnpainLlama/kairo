@@ -16,7 +16,7 @@ export default function HomePage() {
   const latest = useApi<ItemList<CatalogCard>>('/catalog/latest?limit=12');
   const airing = useApi<ItemList<CatalogCard>>('/catalog/browse?status=airing&sort=popularity&limit=6');
   const account = useKairoAccount();
-  const accountId = account.user?.id ?? null;
+  const accountId = account.accountId;
   const [continueItems, setContinueItems] = useState<MediaPlaybackSnapshot[]>([]);
 
   useEffect(() => {
