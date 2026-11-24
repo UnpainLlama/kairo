@@ -17,6 +17,7 @@ describe('offline admin password enrolment script', () => {
     expect(sql).toContain('must_change_password');
     expect(sql).toContain('DELETE FROM sessions WHERE user_id=');
     expect(sql).toContain('remaining_sessions');
+    expect(sql).toContain('admin_bootstrap_completed_at');
     expect(sql).toContain(hash);
     expect(sql).not.toContain(password);
   });
