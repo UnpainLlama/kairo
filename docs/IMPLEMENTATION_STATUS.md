@@ -1,50 +1,54 @@
-# Current implementation snapshot — 2026-11-21
+# Current implementation snapshot — 2026-11-24
 
-> This status snapshot supersedes the older phase logs and gap lists below. The older sections are retained as historical notes and should not be read as the current repository state. It records verified implementation work but is not a claim that every one of the consolidated 51 audit findings has been closed; source-only CI cannot close the operational and provider-owner gates listed below.
+> Branch-specific status for `rebuild/username-password-auth`. This snapshot supersedes the historical Access-only summaries below. It reports repository evidence and explicitly distinguishes code present from work that has not been run or operationally verified.
 
-## Current verified baseline
+## Current branch and safety boundary
 
-- GitHub Actions CI runs TypeScript typecheck, Vitest, production dependency audit and build.
-- The fix/audit-findings branch is being used to remediate the consolidated 51-finding audit. The current PR is kept separate from main.
-- Kairo interactive identity is Cloudflare Access only. Internal sessions are bound to the verified Access email and JWT subject. Expired/revoked Kairo sessions require an explicit Access logout/login rather than silent renewal.
-- Account provisioning and legacy identity linking occur only during the explicit `/api/v1/me` bootstrap flow. Other protected API routes perform a read-only check for an active profile already bound to the exact verified Access email and subject; first-time page components wait for the initial `/me` result before issuing catalogue and Movies requests.
-- First-admin provisioning is separated from guest mode. The unmounted legacy Google sign-in implementation is removed; Google OAuth remains solely for the separate optional YouTube authorization.
-- Account-scoped Anime library CRUD is implemented; Movies and Anime libraries are both reflected in the profile count.
-- Account sign-out revokes the server-side Kairo session before clearing that account's namespaced browser cache and leaving Cloudflare Access. When Access is expired or the identity is denied, only `POST /api/v1/auth/logout` bypasses the Worker Access/account gate; the same-origin guard still runs first and the handler only revokes the session token in the caller's cookie. Failed revocation neither clears local data nor redirects.
-- YouTube's recent-session step-up flow revokes the existing Kairo session before Cloudflare Access reauthentication, so the next `/api/v1/me` must establish a fresh internal session.
-- Access JWT validation requires a non-empty, bounded `sub` claim; it no longer falls back to email as a substitute stable subject.
-- The AccountProvider withholds page mounting until the first account lookup completes and shows a global, fail-closed `Account status unavailable` screen with Retry when identity cannot be verified.
-- Route metadata is centralised and covered for admin, YouTube history/watch-later, media detail/watch and unknown routes. The admin console path is not rotated before its 30-minute lease expires.
-- The YouTube workspace exposes tested switches back to Anime and Movies on rail/mobile navigation. HLS.js is bundled with the app rather than loaded through global Video.js CDN scripts.
-- Cloudflare Static Assets has an `ASSETS` binding for selective Worker-first asset requests. Real assets pass through; missing file-like paths that receive the SPA HTML fallback become 404s, while `/index.html` and ordinary SPA routes remain distinct.
-- Account-specific Anime library, Movies library and Favorites views are implemented; the older UI-audit placeholder note is superseded.
-- Administrator seat reassignment tombstones the former Access identity, creates a new profile ID, clears prior account-owned media/session/OAuth data, and frees the deleted seat without allowing an old Access token to auto-provision the former account again.
-- The Pause history control is an account-wide D1 preference shared across Anime and Movies, with local-only behavior for guests and fail-closed behavior when the account preference cannot be verified.
-- The Watch history page combines legacy Anime episode history with account-backed Movies playback snapshots. It supports per-title Movies deletion and a cross-media Clear action, while keeping YouTube history admin-only.
-- Legacy `CATALOG_SOURCE=db` now has a D1-backed filter-only browse route and explicit D1 title-to-provider mapping for episode server discovery/playback; missing mappings/providers return typed errors rather than route-not-found responses.
-- Movies library GET responses normalize SQLite's integer `is_favorite` column to the same JSON boolean returned by POST, so the GET/POST API contract is consistent.
-- Expired sessions, rate-limit buckets and consumed/expired OAuth transactions are cleaned by the scheduled Worker. Historical session IP and user-agent fields are cleared by migration 0019; new Kairo sessions no longer populate those fields.
-- YouTube token encryption uses AES-GCM with account/purpose-bound AAD for new ciphertext and a read-only v1 compatibility path for previously stored rows.
-- Catalogue, Movies search/discovery and episode-source reads use a hashed D1 rate limiter.
-- HiAnime redirects are followed manually with HTTPS/host validation on every hop.
-- Deployment workflow is non-cancellable during migration, installs with npm ci, pins Actions by SHA, builds before migrations, saves a pre-migration D1 export, and now requires successful remote /api/health and /api/ready probes before deploy proceeds.
-- Production Wrangler values remain fail-closed placeholders until the owner configures the actual production D1, KV, Cloudflare Access and OAuth values.
+- Feature branch: `rebuild/username-password-auth`.
+- Current head: [`429b4071342661b6ed84f40007155e8ff6df59a4`](https://github.com/UnpainLlama/kairo/commit/429b4071342661b6ed84f40007155e8ff6df59a4).
+- The branch is 25 commits ahead of reset base `4f77801029da116c79909b69f84433ecd3b67d18`.
+- Compared with current `main`, GitHub reports the feature branch 26 commits ahead and 7 commits behind. Do not merge or retarget directly; plan a dedicated reconciliation first.
+- `main` has not been changed by this work. No PR has been opened.
+- No Cloudflare edge configuration, Worker secret, remote D1 database, deployment or real administrator credential was changed or created.
 
-## Remaining release gates (cannot be proven by source-only CI)
+## Implemented on this branch
 
-1. Configure exact Cloudflare Access destination overrides for /api/health and /api/ready in the deployment environment, then set KAIRO_REMOTE_HEALTH_CHECKS_ENABLED=true. Deploy now blocks when this variable is missing or either probe fails.
-2. Configure an exact public Access destination override for `/api/v1/auth/logout` in each environment so an expired or denied identity can reach the Worker to sign out. Do not exempt `/api/v1/auth/*` or `/api/*`; verify same-origin logout and cross-origin rejection in the live Access application.
-3. Verify ACCESS_ENFORCED, bootstrap state and migrations 0015–0022 (including seat reassignment and account-wide history preferences) against each real D1 database; source code does not prove those migrations have been applied remotely.
-4. Supply real production APP_BASE_URL, GOOGLE_CLIENT_ID, Access team domain/AUD, D1 ID, KV ID and Worker secrets using Cloudflare/GitHub environment configuration. Never replace these with guessed values or commit secrets.
-5. Confirm ownership, authorization and provider terms for every enabled Anime, HiAnime and embed/playback domain. Keep unverified domains removed and ZokoAnime disabled until approved.
-6. Review the third-party HiAnime/mirror integration and TMDB/CineSrc terms with the relevant provider/legal owners before production release.
-7. Inspect real browser CSP reports and test playback, modal navigation, scroll restoration, focus and screen-reader flows on desktop and mobile before enforcing CSP.
-8. Confirm the real account cap against production records (including suspended/deleted/legacy profiles), and verify Access JWT expiry/revocation behaviour in the live Access application.
-9. Run authenticated staging end-to-end checks against real Cloudflare Access, D1, KV, Google OAuth and provider APIs. Unit tests use fixtures and are not a substitute for live provider/integration tests.
+- Additive migration `0023_username_password_auth.sql` adds `user_credentials` without deleting the legacy Access identity tables or existing profile IDs.
+- Username normalization/reserved-name checks and version-allowlisted PBKDF2 password verification are implemented. Legacy v1 hashes remain verifiable and are upgraded after successful authentication.
+- Username/password login issues opaque server-side sessions. Login failures are generic and rate-limited by IP+username and IP.
+- Password change clears forced-change state and revokes other sessions while retaining the current session. Logout revokes the current session.
+- The admin API supports one-time bootstrap, account listing/creation/enrollment, temporary-password reset, suspension/reactivation and confirmed account deletion.
+- A hidden-terminal offline admin password utility prints SQL containing only a salted hash; it does not connect to or execute against D1.
+- The frontend now connects the AccountProvider to the application, renders the username/password login, supplies the token-protected `/setup/admin` form, enforces the forced first-login password change and exposes a signed-in/sign-out shell.
+- Client password validation has focused Unicode and UTF-8 byte-limit unit tests.
 
-No production deployment, remote database migration or live-provider/legal approval is implied by the code changes above.
+## Frontend scope still incomplete
+
+The reset removed the previous Anime, Movies, profile, library, history, settings and administrator screens. This commit only restores the authentication entry flows and a temporary signed-in shell. The full client rebuild and administrator account-management UI remain outstanding; do not describe the application as feature-complete.
+
+## Validation status for current head
+
+- No GitHub Actions runs or commit status checks are reported for the current head.
+- The workflow runs checks on pull requests targeting `main` or `staging`, pushes to `main`, or manual dispatch. A feature-branch push alone does not run CI.
+- Typecheck, Vitest, production dependency audit and build have **not** been executed for `429b407`. The new UI integration is therefore not yet verified by CI.
+- There is no lint script in `package.json`.
+- Remote D1 read/query capability and the active Cloudflare Workers plan are not available through the current connection.
+
+## Release and operational blockers
+
+1. Review and run typecheck, tests, production dependency audit and build on the exact feature head before integration.
+2. Reconcile the 26-ahead / 7-behind divergence with `main` in a separate reviewed operation; do not merge directly.
+3. Review migration 0023 against the actual remote D1 schema, then obtain explicit approval before any remote migration.
+4. Provision `ADMIN_BOOTSTRAP_TOKEN` only through Cloudflare Worker Secret configuration after deployment approval. No real administrator credential has been created.
+5. PBKDF2 v2 is currently configured for 100,000 iterations. OWASP recommends 600,000 iterations for PBKDF2-HMAC-SHA256; benchmark the actual Workers plan and CPU budget before selecting a production work factor. Treat the current setting as a release blocker, not a completed security decision.
+6. Keep Cloudflare Access as a separate outer edge perimeter for now: the deployment validator still requires its environment configuration, while Kairo account identity is local username/password. Any edge policy/validator change needs separate approval.
+7. Do not deploy, alter edge policies, run remote D1 operations, wipe sessions or create real admin credentials as part of this coding phase.
 
 ---
+
+# Historical implementation status
+
+The older session logs below are retained as history. Their Access-only identity descriptions and old route claims are superseded by the current branch status above.
 # Implementation status
 
 Working log for the master build prompt. Update after each session.

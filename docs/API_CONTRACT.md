@@ -92,88 +92,57 @@ Ratings are on a 0-10 scale. See docs/PROVIDERS.md.
 
 ## 3a. Administrator routes
 
+All administrator routes require a valid Kairo session whose server-side profile has `role='admin'`. The one-time bootstrap endpoint is the only exception: it is public at the Kairo API layer but requires the temporary `ADMIN_BOOTSTRAP_TOKEN` Worker secret, a same-origin request, an incomplete bootstrap marker and no existing administrator.
+
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/v1/admin/bootstrap` | One-time administrator provisioning; requires `ADMIN_BOOTSTRAP_TOKEN` and is disabled after an admin exists. |
-| GET | `/api/v1/admin/console-path` | Return the current 30-minute console path to an authenticated administrator only. |
-| GET | `/api/v1/admin/accounts` | List standard accounts, their unique Cloudflare Access email bindings, and the 15-account allocation count. |
-| POST | `/api/v1/admin/accounts` | Retired. Returns `410 ACCESS_ACCOUNT_AUTO_PROVISIONED`; standard accounts are created on first approved Access visit. |
-| PATCH | `/api/v1/admin/accounts/:id/access-email` | Destructively reassign a standard-account seat to a new email. Requires `confirmDataDeletion: true`; creates a new account ID, deletes all old account-owned data and revokes sessions. Update the Cloudflare Access Allow policy too. |
-| PATCH | `/api/v1/admin/accounts/:id/status` | Suspend or reactivate a standard account. |
-| POST | `/api/v1/admin/accounts/:id/password` | Retired. Returns `410 ACCESS_SIGN_IN_ONLY`; Kairo passwords are no longer used. |
+| POST | `/api/v1/admin/bootstrap` | Create the first administrator with a chosen username and password. Requires `X-Kairo-Bootstrap`; succeeds only once and creates an authenticated eight-hour admin session. |
+| GET | `/api/v1/admin/console-path` | Return the current 30-minute administrator console path. |
+| GET | `/api/v1/admin/accounts` | List standard accounts, credential state and the 15-account allocation count. |
+| POST | `/api/v1/admin/accounts` | Create a standard account. Returns a generated temporary password once; the new account must change it at first sign-in. |
+| POST | `/api/v1/admin/accounts/:id/enroll` | Add username/password credentials to an existing standard profile without changing its account ID or owned data. Returns a temporary password once. |
+| POST | `/api/v1/admin/accounts/:id/password` | Reset a standard account password. Returns a temporary password once and requires password change at next sign-in. |
+| PATCH | `/api/v1/admin/accounts/:id/status` | Suspend or reactivate a standard account. Suspension revokes its sessions. |
+| DELETE | `/api/v1/admin/accounts/:id` | Permanently delete account-owned data after explicit `confirmDataDeletion: true`; retains a minimal profile tombstone. |
 
-All administrator routes verify the session role server-side. The console path is an obscurity layer, not an authentication mechanism. A staging Cron Trigger rotates it every 30 minutes. The database enforces a single administrator role; active and suspended standard accounts count toward the 15-account allocation limit. Reassigned/deleted accounts remain as minimal Access-identity tombstones and do not consume a seat.
+The single-admin rule and 15-standard-account limit are enforced by the Worker/database. Temporary passwords are returned only in the authenticated administrator response and must be delivered securely; do not place them in logs, browser storage or issue comments. The console path is an obscurity layer, not an authentication mechanism.
 
 ## 3. Authenticated user routes
 
-Kairo uses Cloudflare Access as its only interactive sign-in authority. The Kairo Access application's Allow policy must list exact email addresses individually; do not allow Everyone or a whole email domain. The Worker verifies the signed Cloudflare Access application JWT (signature, issuer, audience, token times and subject), then provisions or resolves the Kairo profile bound to that verified email and subject. An Access identity without an active profile cannot access account APIs; suspended/deleted accounts are not silently reactivated.
+Kairo account authentication is local username/password. The browser submits the username and password to the Worker; the Worker verifies the salted password hash and issues an opaque HttpOnly session cookie. User identity and ownership are derived from that session, never from a client-supplied user ID.
 
-Invited users do not enter a Kairo username or password. On first approved visit, the Worker automatically provisions a standard profile (subject to the 15-account allocation limit). Existing active profiles are linked by their verified email without changing their user ID or media data. The first `GET /api/v1/me` automatically creates the internal HttpOnly Kairo session needed by account services. Each session is bound to both Access email and JWT subject. A stale or revoked internal session is cleared and returns `ACCESS_REAUTH_REQUIRED`, requiring a fresh Cloudflare Access logout/login rather than silent session renewal. A missing Access assertion is an Access denial, not guest mode.
+Cloudflare Access remains a separate outer edge perimeter under the current Wrangler/deployment configuration. The Worker no longer validates an Access JWT, provisions an account from an Access email, or binds Kairo accounts to an Access subject. Passing the outer Access gate does not create a Kairo account or replace the Kairo username/password.
 
-In local development only, where `ACCESS_ENFORCED` is not `true`, a request with no Kairo session resolves as a guest. Guest media remains browser-local and is never sent to D1. Staging and production are Access-protected.
+Public at the Kairo application layer:
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/logout` (only revokes the caller's Kairo session)
+- `POST /api/v1/admin/bootstrap` (one-time token and origin protected)
 
-The single administrator is provisioned once through `POST /api/v1/admin/bootstrap`, protected by the temporary `ADMIN_BOOTSTRAP_TOKEN` Worker secret and current verified Access identity. The endpoint binds the admin profile to that email and records permanent bootstrap completion in D1. It does not create a Kairo password. Remove the bootstrap secret immediately after successful administrator setup.
-
-Authentication routes:
-
-| Method | Path | Purpose |
-|---|---|---|
-| POST | `/api/v1/auth/login` | Retired. Returns `410 ACCESS_SIGN_IN_ONLY`; use the approved Cloudflare Access email instead. |
-| POST | `/api/v1/admin/bootstrap` | One-time administrator provisioning; requires `X-Kairo-Bootstrap` and the current verified Access email; permanently disabled after initialization. |
-
-Cloudflare Access is the invitation boundary. If its Allow policy is broader than the intended email list, any email accepted by that policy may receive a standard Kairo profile on first visit. The app shell, profile and admin console use `POST /api/v1/auth/logout` to revoke the Kairo session before clearing account-local cache and navigating to `/cdn-cgi/access/logout`. If revocation fails, the client does not clear local data or redirect. The YouTube reauthentication flow also revokes the internal session before the Access logout/login step.
-
-Anime library routes are account-scoped; `PUT` accepts `{ status, isFavorite }`, with `status` either one of the values below or `null` to save a favorite without changing list status. Writes verify that the Anime identifier exists and derive ownership only from the validated Kairo session. These routes require a valid Kairo session and server-side ownership checks.
+Every other `/api/v1/*` route requires an active Kairo session. While `mustChangePassword` is true, the Worker permits only `GET /api/v1/me`, `POST /api/v1/me/password` and `POST /api/v1/auth/logout`. Public registration is disabled; standard accounts are created or enrolled by an administrator.
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/v1/auth/logout` | Revoke the current Kairo session and clear the HttpOnly cookie before Cloudflare Access logout |
-| GET | `/api/v1/me` | Current profile |
-| PATCH | `/api/v1/me` | Update editable profile fields |
+| POST | `/api/v1/auth/login` | Authenticate a username/password pair and set the Kairo session cookie. Unknown usernames and incorrect passwords share the same generic response. Failed attempts are rate-limited. |
+| POST | `/api/v1/auth/logout` | Revoke the current Kairo session and clear its HttpOnly cookie. It does not terminate the separate Cloudflare Access browser session. |
+| GET | `/api/v1/me` | Return the authenticated profile, role, username and forced-password-change state. |
+| POST | `/api/v1/me/password` | Verify the current password, set a new password, clear forced-change state and revoke every other session for the account. |
 | GET | `/api/v1/me/preferences` | Read the account-wide history recording preference (`historyPaused`). |
 | PUT | `/api/v1/me/preferences` | Update the account-wide history recording preference (`historyPaused`); applies to Anime and Movies on all devices. |
-| GET | `/api/v1/me/library` | Read library, filter by status |
-| PUT | `/api/v1/me/library/:animeId` | Add or update a library item |
-| DELETE | `/api/v1/me/library/:animeId` | Remove a library item |
-| GET | `/api/v1/me/history` | Read recent viewing history |
-| DELETE | `/api/v1/me/history` | Clear history after explicit confirmation |
-| GET | `/api/v1/me/progress` | Read episode progress |
-| PUT | `/api/v1/me/progress/:episodeId` | Upsert playback progress |
+| GET | `/api/v1/me/library` | Read the signed-in user's Anime library. |
+| PUT | `/api/v1/me/library/:animeId` | Add or update an Anime library item. |
+| DELETE | `/api/v1/me/library/:animeId` | Remove an Anime library item. |
+| GET | `/api/v1/me/movies/library` | Read the signed-in user's Movies library references. |
+| POST | `/api/v1/me/movies/library` | Add or update a Movies library reference. |
+| DELETE | `/api/v1/me/movies/library/:providerId/:externalId` | Remove a Movies library reference. |
+| GET | `/api/v1/me/history/sync` | Restore account-backed watch-history state. |
+| POST | `/api/v1/me/history/sync` | Sync account-backed watch-history state, tombstones and clear markers. |
+| GET | `/api/v1/me/playback` | Restore one playback snapshot or list recent cross-media snapshots. |
+| POST | `/api/v1/me/playback` | Save an account-owned Anime, Movies or administrator-only YouTube playback snapshot. |
+| DELETE | `/api/v1/me/playback` | Delete one playback snapshot or clear snapshots for a selected media type. |
 
 Library status values: `watching`, `plan_to_watch`, `completed`, `on_hold`, `dropped`.
 
-Progress request example:
-
-```json
-{
-  "positionSeconds": 523,
-  "durationSeconds": 1420,
-  "completed": false
-}
-```
-
-Validate finite non-negative numbers, enforce sensible duration/position bounds, and derive the subject ID from the authenticated context. Never accept `userId` from the request body.
-
-| GET | `/api/v1/me/playback?mediaType=...&mediaKey=...` (mediaType: anime, movie or youtube) | Restore one shared playback snapshot. Omit `mediaKey` to list recent cross-media playback (optional `mediaType`, `limit`). |
-| DELETE | `/api/v1/me/playback?mediaType=...&mediaKey=...` (optional `mediaKey`) | Delete one playback snapshot or clear all snapshots for the selected media type from the signed-in account. YouTube deletion is administrator-only. |
-
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/api/v1/youtube/channels/search?q=...` | Administrator-only YouTube channel search. |
-| GET | `/api/v1/youtube/videos/search?q=...` | Administrator-only YouTube video search. |
-| GET | `/api/v1/youtube/channels` | List the user's channels saved in Kairo. |
-| POST | `/api/v1/youtube/channels` | Add a public channel to the user's Kairo feed. |
-| DELETE | `/api/v1/youtube/channels/:channelId` | Remove a channel from the user's Kairo feed. |
-| GET | `/api/v1/youtube/feed` | Fetch recent public uploads from the user's saved Kairo channels. |
-
-- Every YouTube page and API route, including metadata, keyword search, channel search, feed, OAuth connection, playback history and Watch Later, requires a valid administrator session. Anonymous visitors and standard accounts receive a not-found response. The restriction is enforced in the Worker, not only in the frontend.
-- Kairo's channel list is stored separately in `youtube_feed_channels`; adding a channel does not subscribe the user to it on YouTube and does not change their YouTube subscriptions.
-- Uses the official YouTube Data API with a Worker secret (`YOUTUBE_DATA_API_KEY`). The key is added only to server-to-server requests and is never returned to the browser or included in application logs. OAuth is an administrator-only optional connection for future account-specific features such as importing actual YouTube subscriptions.
-- Kairo does not impose a maximum number of saved channels. Feed requests process up to 20 channels at a time, with up to four uploads per channel, to keep each Worker request within a predictable API-call budget. Each saved channel's uploads-playlist ID is persisted in D1 at add time; legacy saved channels are hydrated on their next feed request. Subsequent requests load older uploads from the next channel batch or the next page of each uploads playlist. Cursor state is stored in D1, scoped to the authenticated user, and expires after one hour.
-- Channel searches are limited to five per user per 15 minutes; video searches are limited to eight per user per 15 minutes. Both share an 80-call rolling 24-hour project search budget, reserving headroom under YouTube's default 100-call daily `search.list` allowance. Video search supports relevance, upload-date, view-count and rating sort orders, duration filters, and page-token pagination. Each result page makes one batched `videos.list` request to enrich durations when the shared data-API budget permits; search results remain available if that optional enrichment fails. Feed page requests are limited to 30 per user per 15 minutes. Each playlist page consumes one shared data-API unit per channel; a one-time uploads-playlist lookup is also charged when an older saved channel has not yet been hydrated. Video metadata lookups share the same 8,000-unit project budget with channel additions, duration enrichment and feed requests. Feed responses use `Cache-Control: no-store`; video cards open the Kairo watch route with the official YouTube player and an external fallback.
-- YouTube's public Data API does not expose a reliable Shorts classification flag or public source-video aspect ratio. Kairo therefore filters videos whose title or description explicitly contains a Shorts hashtag (`#short`, `#shorts`, `#youtubeshorts`); unlabelled Shorts cannot be guaranteed to be detected without relying on unsupported page scraping.
-- Errors include `AUTH_REQUIRED`, `YOUTUBE_API_KEY_MISSING`, `YOUTUBE_API_KEY_INVALID`, `YOUTUBE_QUOTA_EXCEEDED`, `YOUTUBE_FEED_CURSOR_EXPIRED`, `RATE_LIMITED`, and `YOUTUBE_PROVIDER_UNAVAILABLE`.
-- Kairo uses the official YouTube IFrame Player API for in-app playback and retains the official YouTube watch URL as a fallback. It does not proxy video streams.
+All state-changing requests require a matching same-origin Origin or Referer. Validate finite non-negative playback values, enforce sensible duration/position bounds, and derive the owner only from the authenticated Kairo session. Never accept `userId` from a request body.
 
 ## 3c. YouTube playback and personal video library
 
