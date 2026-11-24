@@ -19,7 +19,7 @@ export default function PasswordChangePage({ username, onChangePassword, onLogou
     setError('');
 
     if (!isPasswordAllowed(newPassword, username)) {
-      setError('Use at least 15 characters, no more than 1024 UTF-8 bytes, and a password different from your username.');
+      setError('Use at least five words, no more than 1024 UTF-8 bytes, and a password different from your username.');
       return;
     }
     if (newPassword !== confirmation) {
@@ -92,7 +92,7 @@ export default function PasswordChangePage({ username, onChangePassword, onLogou
             value={confirmation}
             onChange={(event) => setConfirmation(event.target.value)}
           />
-          <p className="form-hint">At least 15 characters. Do not reuse your username.</p>
+          <p className="form-hint">At least five words. Do not reuse your username.</p>
           {error && <p className="form-error" role="alert">{error}</p>}
           <button className="primary-button" type="submit" disabled={busy}>
             {busy ? 'Updating password…' : 'Update password'}
