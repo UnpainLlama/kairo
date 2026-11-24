@@ -1,100 +1,60 @@
-import { describe, expect, it } from 'vitest';
-import { clearSessionCookie, createOpaqueToken, createSession, findSessionUser, hashToken, readSessionCookie, sessionCookie } from './session';
+import { afterEach, describe, expect, it } from 'vitest';
+import { clearSessionCookie, createOpaqueToken, findSessionUser, hashToken, readSessionCookie, sessionCookie } from './session';
+import { createTestDatabase, createTestSession, insertTestCredential, insertTestProfile, sqliteD1 } from './testUtils';
 
-describe('session primitives', () => {
-  it('creates 256-bit URL-safe opaque tokens', () => {
+let db: any;
+afterEach(() => { db?.close(); db = undefined; });
+
+describe('Kairo session primitives', () => {
+  it('creates 256-bit opaque tokens and stores only a SHA-256 digest', async () => {
     const token = createOpaqueToken();
     expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(createOpaqueToken()).not.toBe(token);
-  });
-
-  it('hashes tokens deterministically', async () => {
-    const hash = await hashToken('example-session-token');
+    const hash = await hashToken(token);
     expect(hash).toMatch(/^[a-f0-9]{64}$/);
-    expect(hash).not.toContain('example-session-token');
-    expect(await hashToken('example-session-token')).toBe(hash);
+    expect(hash).not.toContain(token);
+    expect(await hashToken(token)).toBe(hash);
   });
 
   it('reads only a well-formed Kairo session cookie', () => {
     const token = createOpaqueToken();
-    expect(readSessionCookie(`theme=dark; kairo_session=${token}; other=value`)).toBe(token);
+    expect(readSessionCookie('theme=dark; kairo_session=' + token + '; other=value')).toBe(token);
     expect(readSessionCookie('theme=dark')).toBeNull();
     expect(readSessionCookie('kairo_session=short')).toBeNull();
     expect(readSessionCookie('kairo_session=bad.value')).toBeNull();
   });
 
-  it('supports shorter administrator sessions without changing standard session defaults', async () => {
-    const now = 1_800_000_000_000;
-    const db = {
-      prepare: () => ({
-        bind: () => ({ run: async () => ({ success: true, meta: { changes: 1 } }) }),
-      }),
-    } as unknown as D1Database;
-    const adminSession = await createSession(db, 'admin-user', { ttlSeconds: 8 * 60 * 60 }, now);
-    expect(adminSession.expiresAt).toBe(now + 8 * 60 * 60 * 1000);
-    expect(adminSession.ttlSeconds).toBe(8 * 60 * 60);
-    expect(sessionCookie(adminSession.token, true, adminSession.ttlSeconds)).toContain('Max-Age=28800');
-  });
-
-  it('sets secure HTTP-only same-site cookies and clears them', () => {
-    const token = createOpaqueToken();
-    const cookie = sessionCookie(token);
+  it('sets HttpOnly, Secure, SameSite=Lax and Path cookie flags', () => {
+    const cookie = sessionCookie(createOpaqueToken());
     expect(cookie).toContain('HttpOnly');
     expect(cookie).toContain('Secure');
     expect(cookie).toContain('SameSite=Lax');
     expect(cookie).toContain('Path=/');
     expect(clearSessionCookie()).toContain('Max-Age=0');
     expect(clearSessionCookie(false)).not.toContain('Secure');
-  });
-  it('binds sessions to the current verified Cloudflare Access email and ignores retired password lockouts', async () => {
-    const token = createOpaqueToken();
-    const queryLog: Array<{ sql: string; values: unknown[] }> = [];
-    const writes: string[] = [];
-    let role: 'user' | 'admin' = 'user';
-    const db = {
-      prepare(sql: string) {
-        return {
-          bind: (...values: unknown[]) => ({
-            first: async () => {
-              queryLog.push({ sql, values });
-              const requestedEmail = values[2] as string | null;
-              const requestedSubject = values[5] as string | null;
-              if (requestedEmail && requestedEmail.toLowerCase() !== 'invited@gmail.com') return null;
-              if (requestedSubject && requestedSubject !== 'access-subject-1') return null;
-              return {
-                userId: 'standard-user',
-                displayName: 'Invited User',
-                email: null,
-                username: 'InvitedUser',
-                accessEmail: 'invited@gmail.com',
-                accessSubject: 'access-subject-1',
-                emailVerifiedAt: null,
-                role,
-              };
-            },
-            run: async () => {
-              writes.push(sql);
-              return { success: true, meta: { changes: 1 } };
-            },
-          }),
-        };
-      },
-    } as unknown as D1Database;
-
-    await expect(findSessionUser(db, `kairo_session=${token}`, 1234, 'another@gmail.com', 'access-subject-1')).resolves.toBeNull();
-    const user = await findSessionUser(db, `kairo_session=${token}`, 1234, 'INVITED@gmail.com', 'access-subject-1');
-    expect(user).toMatchObject({ id: 'standard-user', accessEmail: 'invited@gmail.com', accessSubject: 'access-subject-1', role: 'user' });
-    expect(queryLog.every(entry => entry.sql.includes('lower(s.access_email)') && entry.sql.includes('lower(p.access_email)'))).toBe(true);
-    expect(queryLog[1].values.slice(2)).toEqual(['INVITED@gmail.com', 'INVITED@gmail.com', 'INVITED@gmail.com', 'access-subject-1', 'access-subject-1']);
-    expect(queryLog[1].sql).not.toContain('admin_login_security');
-    expect(queryLog[1].sql).toContain("datetime('now', '-60 minutes')");
-    expect(queryLog[1].sql).toContain("datetime('now', '-14 days')");
-    expect(writes).toHaveLength(1);
-    expect(writes[0]).toContain("datetime('now', '-5 minutes')");
-
-    role = 'admin';
-    const admin = await findSessionUser(db, `kairo_session=${token}`, 1234, 'invited@gmail.com', 'access-subject-1');
-    expect(admin).toMatchObject({ id: 'standard-user', role: 'admin' });
+    expect(sessionCookie(createOpaqueToken(), true, 8 * 60 * 60)).toContain('Max-Age=28800');
   });
 
+  it('resolves stable profile IDs and forced-password flags from active credential-backed sessions', async () => {
+    db = createTestDatabase();
+    insertTestProfile(db, { id: 'user-one', username: 'user.one', displayName: 'User One' });
+    await insertTestCredential(db, 'user-one', 'correct horse battery staple', true);
+    const session = await createTestSession(db, 'user-one');
+    const user = await findSessionUser(sqliteD1(db), session.cookie);
+    expect(user).toMatchObject({ id: 'user-one', username: 'user.one', role: 'user', mustChangePassword: true });
+    expect(user).not.toHaveProperty('accessEmail');
+    expect(user).not.toHaveProperty('accessSubject');
+
+    db.prepare("UPDATE user_profiles SET account_status='suspended' WHERE id='user-one'").run();
+    await expect(findSessionUser(sqliteD1(db), session.cookie)).resolves.toBeNull();
+  });
+
+  it('does not resolve a session after its credential row is removed', async () => {
+    db = createTestDatabase();
+    insertTestProfile(db, { id: 'user-one', username: 'user.one' });
+    await insertTestCredential(db, 'user-one', 'correct horse battery staple');
+    const session = await createTestSession(db, 'user-one');
+    db.prepare("DELETE FROM user_credentials WHERE user_id='user-one'").run();
+    await expect(findSessionUser(sqliteD1(db), session.cookie)).resolves.toBeNull();
+  });
 });
