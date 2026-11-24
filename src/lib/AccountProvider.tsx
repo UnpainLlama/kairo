@@ -110,3 +110,38 @@ export function useAccount(): AccountContextValue {
   if (!context) throw new Error('useAccount must be used inside AccountProvider.');
   return context;
 }
+
+
+/**
+ * Compatibility view for the original Kairo page modules. Authentication itself
+ * remains the current username/password AccountProvider; this adapter only
+ * exposes its verified profile in the shape those UI pages expect.
+ */
+export type KairoAccountState = {
+  status: 'loading' | 'guest' | 'signed-in' | 'denied' | 'limit-reached' | 'setup-required' | 'reauth-required' | 'unavailable';
+  accountId: string | null;
+  displayName: string | null;
+  email: string | null;
+  username: string | null;
+  role: 'user' | 'admin' | null;
+  retry: () => void;
+};
+
+export function useKairoAccount(): KairoAccountState {
+  const account = useAccount();
+  const retry = () => { void account.refresh().catch(() => undefined); };
+  const status: KairoAccountState['status'] =
+    account.status === 'loading' ? 'loading' :
+    account.status === 'signed-in' ? 'signed-in' :
+    account.status === 'signed-out' ? 'guest' : 'unavailable';
+
+  return {
+    status,
+    accountId: account.user?.id ?? null,
+    displayName: account.user?.displayName ?? null,
+    email: account.user?.email ?? null,
+    username: account.user?.username ?? null,
+    role: account.user?.role ?? null,
+    retry,
+  };
+}
