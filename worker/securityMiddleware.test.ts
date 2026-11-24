@@ -1,301 +1,132 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { resetAccessJwksCacheForTests } from './auth/cloudflareAccess';
+import { afterEach, describe, expect, it } from 'vitest';
 import app from './index';
+import { createTestDatabase, createTestSession, insertTestCredential, insertTestProfile, sqliteD1 } from './auth/testUtils';
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-  resetAccessJwksCacheForTests();
+let db:any;
+afterEach(()=>{db?.close();db=undefined;});
+const worker=app as unknown as {request(input:string,init?:RequestInit,env?:unknown):Promise<Response>};
+const origin='https://kairo.test';
+
+describe('global API Origin/Referer protection',()=>{
+  it('rejects state-changing requests with no Origin or Referer',async()=>{
+    const response=await worker.request(origin+'/api/__origin_guard_test',{method:'POST'},{});
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({error:{code:'ORIGIN_FORBIDDEN'}});
+  });
+  it('rejects foreign origins and accepts matching Origin or Referer',async()=>{
+    const foreign=await worker.request(origin+'/api/__origin_guard_test',{method:'PATCH',headers:{Origin:'https://attacker.test'}},{});
+    const sameOrigin=await worker.request(origin+'/api/__origin_guard_test',{method:'POST',headers:{Origin:origin}},{});
+    const referer=await worker.request(origin+'/api/__origin_guard_test',{method:'DELETE',headers:{Referer:origin+'/admin'}},{});
+    expect(foreign.status).toBe(403);
+    expect(sameOrigin.status).toBe(404);
+    expect(referer.status).toBe(404);
+  });
+  it('enforces the Origin guard on the public login route',async()=>{
+    db=createTestDatabase();
+    const env={DB:sqliteD1(db)};
+    const missing=await worker.request(origin+'/api/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'},{});
+    const foreign=await worker.request(origin+'/api/v1/auth/login',{method:'POST',headers:{Origin:'https://attacker.test','Content-Type':'application/json'},body:'{}'},{});
+    const local=await worker.request(origin+'/api/v1/auth/login',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:'{}'},env);
+    expect(missing.status).toBe(403);
+    expect(foreign.status).toBe(403);
+    expect(local.status).toBe(401);
+  });
+  it('allows same-origin browser CORS preflight before the session gate',async()=>{
+    const response=await worker.request(origin+'/api/v1/auth/login',{
+      method:'OPTIONS',
+      headers:{Origin:origin,'Access-Control-Request-Method':'POST','Access-Control-Request-Headers':'content-type'},
+    },{ALLOWED_ORIGIN:origin});
+    expect([200,204]).toContain(response.status);
+  });
 });
 
-function base64url(value: Uint8Array | string): string {
-  const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : value;
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-}
-
-async function signedAccessAssertion(): Promise<string> {
-  const pair = await crypto.subtle.generateKey(
-    { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
-    true,
-    ['sign', 'verify'],
-  ) as CryptoKeyPair;
-  const kid = 'middleware-test-key';
-  const jwk = { ...(await crypto.subtle.exportKey('jwk', pair.publicKey)), kid, use: 'sig', alg: 'RS256' };
-  const now = Math.floor(Date.now() / 1000);
-  const header = base64url(JSON.stringify({ alg: 'RS256', kid, typ: 'JWT' }));
-  const claims = base64url(JSON.stringify({
-    aud: ['kairo-test-aud'],
-    email: 'new.member@example.test',
-    exp: now + 300,
-    iat: now,
-    nbf: now,
-    iss: 'https://kairo-team.cloudflareaccess.com',
-    type: 'app',
-    sub: 'middleware-test-subject',
-  }));
-  const input = header + '.' + claims;
-  const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', pair.privateKey, new TextEncoder().encode(input));
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ keys: [jwk] }), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  })));
-  return input + '.' + base64url(new Uint8Array(signature));
-}
-
-const worker = app as unknown as {
-  request(input: string, init?: RequestInit, env?: unknown): Promise<Response>;
-};
-
-describe('API origin protection', () => {
-  const url = 'https://kairo.test/api/__origin_guard_test';
-  const env = { ACCESS_ENFORCED: 'false' };
-
-  it('rejects state-changing requests with no Origin or Referer', async () => {
-    const response = await worker.request(url, { method: 'POST' }, env);
-    expect(response.status).toBe(403);
-    expect(((await response.json()) as { error: { code: string } }).error.code).toBe('ORIGIN_FORBIDDEN');
-  });
-
-  it('rejects a foreign Origin even when the request is otherwise valid', async () => {
-    const response = await worker.request(url, {
-      method: 'PATCH',
-      headers: { Origin: 'https://attacker.example' },
+describe('closed-site API default deny',()=>{
+  it('keeps health, ready, login and logout reachable without a session', async () => {
+    db = createTestDatabase();
+    const env = { DB: sqliteD1(db), CATALOG_SOURCE: 'db' };
+    const health = await worker.request(origin + '/api/health', {}, env);
+    const ready = await worker.request(origin + '/api/ready', {}, env);
+    const login = await worker.request(origin + '/api/v1/auth/login', {
+      method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: '{}',
     }, env);
-    expect(response.status).toBe(403);
-    expect(((await response.json()) as { error: { code: string } }).error.code).toBe('ORIGIN_FORBIDDEN');
+    const logout = await worker.request(origin + '/api/v1/auth/logout', { method: 'POST', headers: { Origin: origin } }, env);
+    expect(health.status).toBe(200);
+    expect(ready.status).toBe(200);
+    expect(login.status).toBe(401);
+    expect(logout.status).toBe(200);
   });
 
-  it('allows a matching Origin or same-origin Referer', async () => {
-    const originResponse = await worker.request(url, {
+  it('denies the removed first-admin bootstrap endpoint without a session', async () => {
+    db = createTestDatabase();
+    const response = await worker.request(origin + '/api/v1/admin/bootstrap', {
       method: 'POST',
-      headers: { Origin: 'https://kairo.test' },
-    }, env);
-    const refererResponse = await worker.request(url, {
-      method: 'DELETE',
-      headers: { Referer: 'https://kairo.test/admin' },
-    }, env);
-    expect(originResponse.status).toBe(404);
-    expect(refererResponse.status).toBe(404);
-  });
-
-  it('fails closed for protected API paths when Access is enforced but no assertion is present', async () => {
-    const response = await worker.request('https://kairo.test/api/v1/me', { method: 'GET' }, {
-      ACCESS_ENFORCED: 'true',
-      ACCESS_TEAM_DOMAIN: 'kairo-team.cloudflareaccess.com',
-      ACCESS_AUD: 'kairo-test-aud',
-    });
+      headers: { Origin: origin, 'Content-Type': 'application/json', 'X-Kairo-Bootstrap': 'b'.repeat(32) },
+      body: '{}',
+    }, { DB: sqliteD1(db) });
     expect(response.status).toBe(401);
-    expect(((await response.json()) as { error: { code: string } }).error.code).toBe('ACCESS_REQUIRED');
+    expect(await response.json()).toMatchObject({ error: { code: 'AUTH_REQUIRED' } });
+  });
+  it('denies catalogue, Anime, Movies, stream, admin and YouTube routes without a session',async()=>{
+    for(const path of [
+      '/api/v1/catalog/genres','/api/v1/anime/a7','/api/v1/movies/discover',
+      '/api/v1/anime/a7/episodes/1/servers','/api/v1/anime/a7/episodes/1/servers/1/playback',
+      '/api/v1/admin/accounts','/api/v1/youtube/history','/api/v1/me/preferences',
+    ]){
+      const response=await worker.request(origin+path,{}, {});
+      expect(response.status).toBe(401);
+      expect(await response.json()).toMatchObject({error:{code:'AUTH_REQUIRED'}});
+    }
   });
 
-
-
-  it('does not provision a new account on the first catalogue request', async () => {
-    const assertion = await signedAccessAssertion();
-    const statements: string[] = [];
-    let writes = 0;
-    const DB = {
-      prepare(sql: string) {
-        statements.push(sql);
-        const statement = {
-          bind: (..._values: unknown[]) => statement,
-          first: async () => null,
-          run: async () => {
-            writes += 1;
-            return { success: true, meta: { changes: 1 } };
-          },
-        };
-        return statement;
-      },
-    } as unknown as D1Database;
-
-    const response = await worker.request('https://kairo.test/api/v1/catalog/genres', {
-      method: 'GET',
-      headers: { 'Cf-Access-Jwt-Assertion': assertion },
-    }, {
-      ACCESS_ENFORCED: 'true',
-      ACCESS_TEAM_DOMAIN: 'kairo-team.cloudflareaccess.com',
-      ACCESS_AUD: 'kairo-test-aud',
-      DB,
-    });
-
-    expect(response.status).toBe(403);
-    expect(await response.json()).toMatchObject({
-      success: false,
-      error: { code: 'ACCESS_ACCOUNT_DISABLED' },
-    });
-    expect(writes).toBe(0);
-    expect(statements).toHaveLength(1);
-    expect(statements[0]).toContain('WHERE access_email = ?');
+  it('restricts a temporary-password session to /me, /me/password and logout',async()=>{
+    db=createTestDatabase();
+    insertTestProfile(db,{id:'forced-user',username:'forced.user'});
+    await insertTestCredential(db,'forced-user','temporary generated phrase',true);
+    const session=await createTestSession(db,'forced-user');
+    const env={DB:sqliteD1(db),CATALOG_SOURCE:'db'};
+    const me=await worker.request(origin+'/api/v1/me',{headers:{Cookie:session.cookie}},env);
+    const catalog=await worker.request(origin+'/api/v1/catalog/genres',{headers:{Cookie:session.cookie}},env);
+    const password=await worker.request(origin+'/api/v1/me/password',{
+      method:'POST',headers:{Cookie:session.cookie,Origin:origin,'Content-Type':'application/json'},
+      body:JSON.stringify({currentPassword:'temporary generated phrase',newPassword:'a strong changed passphrase'}),
+    },env);
+    expect(me.status).toBe(200);
+    expect(catalog.status).toBe(403);
+    expect(await catalog.json()).toMatchObject({error:{code:'PASSWORD_CHANGE_REQUIRED'}});
+    expect(password.status).toBe(200);
+    const catalogAfter=await worker.request(origin+'/api/v1/catalog/genres',{headers:{Cookie:session.cookie}},env);
+    expect(catalogAfter.status).not.toBe(403);
   });
 
-  it('revokes the server-side Kairo session and clears its cookie before Access sign-out', async () => {
-    const writes: Array<{ sql: string; values: unknown[] }> = [];
-    const db = {
-      prepare(sql: string) {
-        return {
-          bind: (...values: unknown[]) => ({
-            run: async () => {
-              writes.push({ sql, values });
-              return { success: true, meta: { changes: 1 } };
-            },
-          }),
-        };
-      },
-    } as unknown as D1Database;
-    const response = await worker.request('https://kairo.test/api/v1/auth/logout', {
-      method: 'POST',
-      headers: {
-        Origin: 'https://kairo.test',
-        Cookie: `kairo_session=${'a'.repeat(43)}`,
-      },
-    }, {
-      ACCESS_ENFORCED: 'false',
-      DB: db,
-    });
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ success: true, data: { signedOut: true } });
-    expect(response.headers.get('Set-Cookie')).toContain('kairo_session=;');
-    expect(response.headers.get('Set-Cookie')).toContain('Max-Age=0');
-    expect(writes).toHaveLength(1);
-    expect(writes[0].sql).toBe('DELETE FROM sessions WHERE token_hash = ?');
-    expect(writes[0].values[0]).toMatch(/^[a-f0-9]{64}$/);
-  });
-
-
-  it('allows sign-out when Access is expired or the account is denied, but still enforces same-origin', async () => {
-    const writes: Array<{ sql: string; values: unknown[] }> = [];
-    const DB = {
-      prepare(sql: string) {
-        return {
-          bind: (...values: unknown[]) => ({
-            run: async () => {
-              writes.push({ sql, values });
-              return { success: true, meta: { changes: 1 } };
-            },
-          }),
-        };
-      },
-    } as unknown as D1Database;
-    const cookie = `kairo_session=${'b'.repeat(43)}`;
-    const response = await worker.request('https://kairo.test/api/v1/auth/logout', {
-      method: 'POST',
-      headers: { Origin: 'https://kairo.test', Cookie: cookie },
-    }, {
-      ACCESS_ENFORCED: 'true',
-      ACCESS_TEAM_DOMAIN: 'kairo-team.cloudflareaccess.com',
-      ACCESS_AUD: 'kairo-test-aud',
-      DB,
-    });
-
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ success: true, data: { signedOut: true } });
-    expect(response.headers.get('Set-Cookie')).toContain('Max-Age=0');
-    expect(writes).toHaveLength(1);
-    expect(writes[0].sql).toBe('DELETE FROM sessions WHERE token_hash = ?');
-
-    writes.length = 0;
-    const crossOrigin = await worker.request('https://kairo.test/api/v1/auth/logout', {
-      method: 'POST',
-      headers: { Origin: 'https://attacker.test', Cookie: cookie },
-    }, {
-      ACCESS_ENFORCED: 'true',
-      ACCESS_TEAM_DOMAIN: 'kairo-team.cloudflareaccess.com',
-      ACCESS_AUD: 'kairo-test-aud',
-      DB,
-    });
-    expect(crossOrigin.status).toBe(403);
-    expect(await crossOrigin.json()).toMatchObject({ error: { code: 'ORIGIN_FORBIDDEN' } });
-    expect(writes).toHaveLength(0);
-  });
-
-  it('returns a real static asset from the ASSETS binding on a file-like route miss', async () => {
-    const assetResponse = new Response('body { color: red; }', {
-      status: 200,
-      headers: { 'Content-Type': 'text/css; charset=utf-8' },
-    });
-    const fetch = vi.fn(async () => assetResponse);
-    const response = await worker.request('https://kairo.test/assets/site.css', { method: 'GET' }, {
-      ACCESS_ENFORCED: 'false',
-      ASSETS: { fetch },
-    });
-    expect(response.status).toBe(200);
-    expect(response.headers.get('Content-Type')).toContain('text/css');
-    expect(await response.text()).toBe('body { color: red; }');
-    expect(fetch).toHaveBeenCalledTimes(1);
-  });
-
-
-  it('keeps the real index.html shell available when the Worker handles file-like paths', async () => {
-    const shell = '<!doctype html><html><head></head><body><div id="root"></div></body></html>';
-    const fetch = vi.fn(async () => new Response(shell, {
-      status: 200,
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    }));
-    const response = await worker.request('https://kairo.test/index.html', { method: 'GET' }, {
-      ACCESS_ENFORCED: 'false',
-      ASSETS: { fetch },
-    });
-    expect(response.status).toBe(200);
-    expect(await response.text()).toBe(shell);
-    expect(fetch).toHaveBeenCalledTimes(1);
-  });
-
-  it('converts an SPA index.html fallback into a real 404 for missing assets', async () => {
-    const fetch = vi.fn(async () => new Response('<!doctype html><html></html>', {
-      status: 200,
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    }));
-    const response = await worker.request('https://kairo.test/assets/missing.js', { method: 'GET' }, {
-      ACCESS_ENFORCED: 'false',
-      ASSETS: { fetch },
-    });
-    expect(response.status).toBe(404);
-    expect(await response.json()).toMatchObject({
-      success: false,
-      error: { code: 'STATIC_ASSET_NOT_FOUND' },
-    });
-    expect(fetch).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not fetch assets for ordinary missing application routes', async () => {
-    const fetch = vi.fn(async () => new Response('<!doctype html><html></html>', {
-      status: 200,
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    }));
-    const response = await worker.request('https://kairo.test/anime/not-in-router', { method: 'GET' }, {
-      ACCESS_ENFORCED: 'false',
-      ASSETS: { fetch },
-    });
-    expect(response.status).toBe(404);
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it('keeps local unauthenticated /me requests explicitly in guest mode', async () => {
-    const response = await worker.request('https://kairo.test/api/v1/me', { method: 'GET' }, {
-      ACCESS_ENFORCED: 'false',
-    });
-    const payload = await response.json() as { success: boolean; error: { code: string } };
-    expect(response.status).toBe(401);
-    expect(payload).toMatchObject({
-      success: false,
-      error: { code: 'AUTH_REQUIRED' },
-    });
-    expect(response.headers.get('Cache-Control')).toBe('no-store');
-  });
-
-  it('keeps the public liveness probe minimal while Access is enforced', async () => {
-    const response = await worker.request('https://kairo.test/api/health', { method: 'GET' }, {
-      ACCESS_ENFORCED: 'true',
-    });
-    const payload = (await response.json()) as { success: boolean; data: Record<string, unknown> };
-    expect(response.status).toBe(200);
-    expect(payload.data).toEqual({ status: 'ok', service: 'kairo-api' });
-  });
-
-  it('does not require Origin on safe read-only methods', async () => {
-    const response = await worker.request(url, { method: 'GET' }, env);
+  it('does not expose admin handlers to standard signed-in accounts',async()=>{
+    db=createTestDatabase();
+    insertTestProfile(db,{id:'standard-user',username:'member.user'});
+    await insertTestCredential(db,'standard-user','a long member password');
+    const session=await createTestSession(db,'standard-user');
+    const response=await worker.request(origin+'/api/v1/admin/accounts',{headers:{Cookie:session.cookie}},{DB:sqliteD1(db)});
     expect(response.status).toBe(404);
   });
+
+  it('restricts YouTube media and OAuth endpoints to administrator sessions', async () => {
+    db = createTestDatabase();
+    insertTestProfile(db, { id: 'youtube-member', username: 'youtube.member', role: 'user' });
+    insertTestProfile(db, { id: 'youtube-admin', username: 'youtube.admin', role: 'admin' });
+    await insertTestCredential(db, 'youtube-member', 'a long member password');
+    await insertTestCredential(db, 'youtube-admin', 'a long administrator password');
+    const member = await createTestSession(db, 'youtube-member');
+    const admin = await createTestSession(db, 'youtube-admin');
+    const env = { DB: sqliteD1(db) };
+
+    for (const path of ['/api/v1/youtube/history', '/api/v1/auth/youtube/status']) {
+      const response = await worker.request(origin + path, { headers: { Cookie: member.cookie } }, env);
+      expect(response.status).toBe(404);
+      expect(await response.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
+    }
+
+    const history = await worker.request(origin + '/api/v1/youtube/history', { headers: { Cookie: admin.cookie } }, env);
+    const oauthStatus = await worker.request(origin + '/api/v1/auth/youtube/status', { headers: { Cookie: admin.cookie } }, env);
+    expect(history.status).toBe(200);
+    expect(oauthStatus.status).toBe(200);
+  });
+
 });

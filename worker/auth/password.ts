@@ -1,54 +1,111 @@
 const ALGORITHM = 'PBKDF2';
 const HASH_NAME = 'SHA-256';
 const FORMAT = 'pbkdf2-sha256';
-const VERSION = 1;
-// KAIRO conservatively caps this at 100,000 based on previously observed Workerd behavior.
-// The current deployed runtime has not been re-tested: confirm the ceiling in staging before
-// changing it. This is a compatibility cap, not an adequate long-term password-hashing target.
 export const PASSWORD_HASH_ITERATIONS = 100_000;
-const SALT_BYTES = 16;
-const HASH_BYTES = 32;
+export const PASSWORD_HASH_VERSION = 2;
 const MAX_PASSWORD_BYTES = 1024;
+
+type HashProfile = Readonly<{
+  iterations: number;
+  saltBytes: number;
+  hashBytes: number;
+}>;
+
+// Version 1 is the format used by the retired password helper. Keep it readable so
+// any existing compatible credential can be upgraded after a successful login.
+// Version 2 is the current format. Its cost is deliberately unchanged pending a
+// real Workerd/staging measurement of the available CPU budget.
+const HASH_PROFILE_ALLOWLIST: Readonly<Record<number, HashProfile>> = {
+  1: { iterations: 100_000, saltBytes: 16, hashBytes: 32 },
+  2: { iterations: PASSWORD_HASH_ITERATIONS, saltBytes: 16, hashBytes: 32 },
+};
+
+type ParsedHash = {
+  version: number;
+  iterations: number;
+  salt: Uint8Array;
+  derived: Uint8Array;
+};
 
 export function isNewPasswordValid(value: unknown): value is string {
   return typeof value === 'string' && Array.from(value).length >= 15 &&
     new TextEncoder().encode(value).length <= MAX_PASSWORD_BYTES;
 }
 
-export async function hashPassword(password: string): Promise<string> {
-  const passwordBytes = validatePassword(password);
-  const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
-  const derived = await derive(passwordBytes, salt, PASSWORD_HASH_ITERATIONS);
-  return [FORMAT, `v=${VERSION}`, `i=${PASSWORD_HASH_ITERATIONS}`, encodeBase64Url(salt), encodeBase64Url(derived)].join('$');
+export function isPasswordDifferentFromUsername(password: string, username: string): boolean {
+  return password.toLocaleLowerCase('en-US') !== username.toLocaleLowerCase('en-US');
 }
 
-/** Returns false for malformed or unsupported hashes; never trusts arbitrary cost values from D1. */
+export async function hashPassword(password: string): Promise<string> {
+  const passwordBytes = validatePassword(password);
+  const profile = HASH_PROFILE_ALLOWLIST[PASSWORD_HASH_VERSION];
+  const salt = crypto.getRandomValues(new Uint8Array(profile.saltBytes));
+  const derived = await derive(passwordBytes, salt, profile.iterations, profile.hashBytes);
+  return [
+    FORMAT,
+    `v=${PASSWORD_HASH_VERSION}`,
+    `i=${profile.iterations}`,
+    encodeBase64Url(salt),
+    encodeBase64Url(derived),
+  ].join('$');
+}
+
+/** Returns false for malformed hashes and never accepts attacker-selected PBKDF2 costs. */
 export async function verifyPassword(password: string, encodedHash: string): Promise<boolean> {
   let passwordBytes: Uint8Array;
   try { passwordBytes = validatePassword(password); } catch { return false; }
 
+  const parsed = parsePasswordHash(encodedHash);
+  if (!parsed) return false;
+  const profile = HASH_PROFILE_ALLOWLIST[parsed.version];
+  const actual = await derive(passwordBytes, parsed.salt, parsed.iterations, profile.hashBytes);
+  return constantTimeEqual(actual, parsed.derived);
+}
+
+/** Call only after verifyPassword succeeds; true means this accepted hash should be upgraded. */
+export function needsRehash(encodedHash: string): boolean {
+  const parsed = parsePasswordHash(encodedHash);
+  if (!parsed) return false;
+  return parsed.version !== PASSWORD_HASH_VERSION ||
+    parsed.iterations !== PASSWORD_HASH_ITERATIONS;
+}
+
+function parsePasswordHash(encodedHash: string): ParsedHash | null {
+  if (typeof encodedHash !== 'string' || encodedHash.length > 256) return null;
   const parts = encodedHash.split('$');
-  if (parts.length !== 5 || parts[0] !== FORMAT || parts[1] !== `v=${VERSION}`) return false;
-  if (parts[2] !== `i=${PASSWORD_HASH_ITERATIONS}`) return false;
+  if (parts.length !== 5 || parts[0] !== FORMAT) return null;
+
+  const versionMatch = /^v=(\d{1,3})$/.exec(parts[1]);
+  const iterationsMatch = /^i=(\d{1,9})$/.exec(parts[2]);
+  if (!versionMatch || !iterationsMatch) return null;
+  const version = Number(versionMatch[1]);
+  const iterations = Number(iterationsMatch[1]);
+  const profile = HASH_PROFILE_ALLOWLIST[version];
+  if (!profile || iterations !== profile.iterations) return null;
 
   const salt = decodeBase64Url(parts[3]);
-  const expected = decodeBase64Url(parts[4]);
-  if (!salt || salt.length !== SALT_BYTES || !expected || expected.length !== HASH_BYTES) return false;
-
-  const actual = await derive(passwordBytes, salt, PASSWORD_HASH_ITERATIONS);
-  return constantTimeEqual(actual, expected);
+  const derived = decodeBase64Url(parts[4]);
+  if (!salt || salt.length !== profile.saltBytes ||
+      !derived || derived.length !== profile.hashBytes) return null;
+  return { version, iterations, salt, derived };
 }
 
 function validatePassword(password: string): Uint8Array {
   if (typeof password !== 'string') throw new TypeError('Password must be a string.');
   const bytes = new TextEncoder().encode(password);
-  if (bytes.length === 0 || bytes.length > MAX_PASSWORD_BYTES) throw new RangeError(`Password must be between 1 and ${MAX_PASSWORD_BYTES} UTF-8 bytes.`);
+  if (bytes.length === 0 || bytes.length > MAX_PASSWORD_BYTES) {
+    throw new RangeError(`Password must be between 1 and ${MAX_PASSWORD_BYTES} UTF-8 bytes.`);
+  }
   return bytes;
 }
 
-async function derive(password: Uint8Array, salt: Uint8Array, iterations: number): Promise<Uint8Array> {
+async function derive(password: Uint8Array, salt: Uint8Array, iterations: number, hashBytes: number): Promise<Uint8Array> {
   const key = await crypto.subtle.importKey('raw', password, ALGORITHM, false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits({ name: ALGORITHM, hash: HASH_NAME, salt, iterations }, key, HASH_BYTES * 8);
+  const bits = await crypto.subtle.deriveBits(
+    { name: ALGORITHM, hash: HASH_NAME, salt, iterations },
+    key,
+    hashBytes * 8,
+  );
   return new Uint8Array(bits);
 }
 

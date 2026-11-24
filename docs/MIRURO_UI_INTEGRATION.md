@@ -1,18 +1,21 @@
 # Miruro-inspired Anime workspace
 
-The `miruro-ui` branch introduces an Anime-only presentation layer inspired by the supplied Miruro UI reference. The intent is to give Anime its own browsing experience without splitting the Kairo platform into separate products.
+The authenticated username/password application now carries the Anime-only Miruro-inspired presentation into `KairoApp`. The styling and navigation are scoped to Anime routes; Movies, account-management pages and the existing shared account context retain their own presentation and routes.
 
 ## Boundaries
 
-- The Anime workspace remains inside the existing Kairo application and route tree.
-- The Anime catalogue continues to use Kairo's `/catalog/*` and `/anime/:id` API contracts. The Worker keeps AniList as its first-choice live catalogue provider; MAL/HiAnime compatibility behavior is unchanged.
-- Search, trending, popularity, rating, seasonal discovery, episode metadata and title details are still Kairo data flows. No Miruro Apollo client, Miruro AniList GraphQL client, or Miruro catalogue cache is introduced.
-- Authentication remains the single shared Kairo account context. Anime, Movies and administrator-only YouTube do not get separate identities, account databases, profiles, or session scopes.
-- Watch history, library, favorites, settings and account-level media progress continue to use the existing Kairo storage and sync services. A visual workspace boundary is not a data boundary.
-- The playback/player implementation and provider resolution are intentionally unchanged in this UI phase. Provider research and player changes are a later workstream.
+- The Anime workspace uses the existing Kairo `/catalog/*` and `/anime/:id` APIs. AniList remains the primary live catalogue provider; the frontend does not call Miruro or AniList GraphQL directly.
+- Featured titles, trending, popularity, rating, latest, airing and upcoming collections are sourced from existing catalogue endpoints.
+- The featured banner has manual controls, keyboard navigation, swipe support, reduced-motion handling and pauses automatic rotation while the tab is hidden.
+- Ranking tabs are a local view state over separate Kairo catalogue queries; they do not store a second catalogue or account.
+- The home page's Continue watching rail reads the shared `/me/playback` endpoint, so Anime and Movies progress continue to use the same account data.
+- The Anime-only header and monochrome layout are enabled only on Anime routes. Movie watch/browse and account settings/profile pages keep the existing shell styles.
+- Anime, Movies and administrator-only YouTube remain within the Kairo account boundary. This visual workspace does not create separate identities, profiles, libraries, favorites or session scopes.
 
-## UI scope
+## Player boundary
 
-The Anime-only `kc-anime-mode` class scopes its top navigation, black cinema canvas, wide featured hero, ranking tabs and dense poster layout. Movies and administrator-only YouTube retain their existing styling and routes.
+The homepage Watch now action continues into the existing Kairo Anime watch route. Player/provider changes remain separate from this UI port; playback resolution, host allowlists and account progress services are unchanged.
 
-No additional runtime dependencies or database migrations are required for this presentation change.
+## Styling and dependencies
+
+The Anime workspace uses scoped styles in `src/styles.css` and existing React Router, Lucide and catalogue components. No runtime dependency, API provider, catalogue cache or database migration is added for this visual integration.

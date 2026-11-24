@@ -1,106 +1,71 @@
-# Kairo account architecture — Cloudflare Access identity
+# Kairo account architecture — local username/password
 
-**Status:** Access-native closed identity model, November 2026.
+**Status:** username/password authentication is implemented on `rebuild/username-password-auth`. Cloudflare Access remains a separate edge perimeter; it is not the Kairo identity provider.
 
-## Identity and invitation boundary
+## Identity and profile ownership
 
-Cloudflare Access is Kairo's only interactive sign-in authority.
+Kairo has one application account shared by Anime, Movies and administrator-only YouTube.
 
-- Each invited person is given an individual email address to use with the Kairo Cloudflare Access application.
-- The Access application's **Allow** policy must list those exact email addresses individually. Never use Everyone, a whole-domain rule, or another broad rule for the Kairo application.
-- Cloudflare Access verifies the visitor and issues a signed application JWT. The Worker independently verifies its RS256 signature, issuer, audience, validity window and verified human email.
-- A request without a valid Access assertion is rejected before account-scoped API routes run. It is not treated as a guest session.
-- A valid Access identity is the invitation proof. On first access, Kairo automatically provisions a standard profile bound to that verified email. No separate Kairo username/password account must be created or supplied.
-- Existing profiles are resolved by their unique `access_email`. A legacy profile with a matching verified `email` and no Access binding is linked in place, preserving its existing ID and media data.
-- Existing suspended or deleted profiles are never reactivated by signing in. A new standard profile is also refused when the 15-standard-account allocation limit is reached.
-- The administrator is a separately provisioned `role='admin'` profile. The one-time bootstrap uses the verified Access email and a temporary `ADMIN_BOOTSTRAP_TOKEN`; it does not create a Kairo password. The permanent D1 bootstrap marker closes the operation after the first admin is created.
+- `user_profiles.id` remains the stable owner ID for account data. Existing profile IDs and account-owned media rows are retained during credential enrollment.
+- `user_credentials` is a separate one-to-one table keyed by `user_id`. It stores the password hash and forced-password-change state, not plaintext passwords.
+- Usernames are normalized to lowercase. Valid names contain 3–32 ASCII letters, numbers, dots, hyphens or underscores. Reserved names and the `access_*` / `user_*` prefixes are rejected.
+- New standard accounts are created only by an administrator. Public registration is disabled and the server enforces a maximum of 15 active/suspended standard accounts.
+- Existing standard profiles can be enrolled in place without changing their `user_profiles.id`. Existing Access identity tables and old identity-link records are retained for compatibility/history but are not read by the new login/session path.
+- Only one active administrator profile is supported. Kairo does not expose a first-administrator setup page or public bootstrap API.
 
-**Important security boundary:** first-visit provisioning deliberately trusts only an email from a valid JWT for this exact Cloudflare Access application. The Access Allow policy is therefore the invitation list. A broad or public Access policy would make every identity allowed by that policy eligible for automatic Kairo account creation.
+Account ownership is always derived from the validated server-side Kairo session. Never accept a user ID, role, or account scope from the browser.
 
-## One sign-in, internal application session
+## Profile, preferences and lifecycle
 
-Cloudflare Access authentication is converted into the internal application session needed by existing account and media services:
+- Profile editing is limited to display name, a 280-character bio and explicit private/public visibility. A signed-in viewer can read another user's profile only when it is opted into public visibility; that endpoint returns a small allowlist and never library/history/account identifiers.
+- Account preferences are stored per stable profile ID. Current fields include theme, interface language, subtitle language/size, autoplay-next, default playback speed and history pause.
+- A user can export account profile, preferences, Anime/Movies library references, watch history and non-YouTube playback state as JSON.
+- Standard-account self-deletion requires the current password and a username confirmation. It removes owned rows and credentials, revokes sessions, and retains a minimal `Former account` tombstone. The administrator account cannot self-delete.
+- These route/schema changes are source changes only; apply the additive subtitle-size migration through the separately approved deployment process.
 
-1. The browser passes through Cloudflare Access using the invited email.
-2. The Worker verifies the Access assertion and resolves/provisions the profile.
-3. The first `GET /api/v1/me` creates a Kairo HttpOnly, Secure, SameSite=Lax session cookie automatically.
-4. Every authenticated API call checks that the session and profile match both the current verified Access email and the immutable Access JWT `sub`, and that the profile remains active.
-5. If the internal session expires or is revoked while the Access browser session remains valid, `/api/v1/me` clears the stale Kairo cookie and returns `ACCESS_REAUTH_REQUIRED`; the user must sign out of and back into Cloudflare Access before a new Kairo session is created.
+## Password policy and storage
 
-The internal `kairo_session` cookie is an implementation session, not a second user sign-in. It is never exposed to JavaScript or stored in localStorage. The stable `user_profiles.id` resolved by `/api/v1/me` owns Anime, Movies and YouTube account data.
+- New passwords require at least 15 Unicode code points and no more than 1024 UTF-8 bytes. A password cannot be identical to its username, ignoring case.
+- Password hashes are versioned PBKDF2-HMAC-SHA256 values with a random 16-byte salt and a 32-byte derived key. The Worker verifies only explicit allowlisted hash profiles; the legacy v1 format remains readable so a successful login can rehash it to the current format.
+- **Current release gate:** hash profile v2 uses 100,000 iterations. This is below OWASP's current 600,000-iteration PBKDF2-HMAC-SHA256 recommendation. Do not treat this as production-approved; benchmark the target Workers plan/CPU budget and raise the cost (or select a suitable alternative) before production. Do not guess the Workers plan or change the cost without measuring the actual runtime.
+- Login failures use a generic response for unknown usernames and incorrect passwords. Attempts are rate-limited by IP+username and by IP.
+- Temporary passwords generated for standard-account creation/enrollment/reset set `must_change_password=1`. The user must choose a private password before any other account functionality is allowed.
 
-Standard-account provisioning and sign-in are not exposed as a public username/password workflow. The legacy `POST /api/v1/auth/login` endpoint returns `410 ACCESS_SIGN_IN_ONLY`. The former Kairo password fields and password-reset workflow are no longer part of normal account management.
+## Sessions
 
-The administrator's eight-hour absolute session and 60-minute idle timeout remain. Standard sessions have a 30-day absolute lifetime and 14-day idle timeout. The server checks account status, current Access email and Access JWT subject on every authenticated API request. The former password-failure lockout does not block an Access-authenticated administrator.
+- The browser receives an opaque cryptographically random `kairo_session` cookie with `HttpOnly`, `SameSite=Lax`, and `Secure` on HTTPS.
+- D1 stores only a SHA-256 digest of the session token. The cookie value is never exposed to JavaScript or written to localStorage.
+- Administrator sessions have an eight-hour absolute lifetime and 60-minute idle expiry. Standard-account sessions have a 30-day absolute lifetime and 14-day idle expiry.
+- A successful password change retains the current session and revokes every other session for that account.
+- `POST /api/v1/auth/logout` revokes the current session and clears its cookie. It does not sign the browser out of the separate Cloudflare Access edge session.
+- A password-change-required session may only read `/api/v1/me`, change its password or sign out.
 
-## Guest mode
+## Administrator credential provisioning
 
-Guest mode is reserved for local development or an explicitly non-Access environment where `ACCESS_ENFORCED` is not `true`.
+- There is no public administrator setup page, bootstrap secret or bootstrap API.
+- For an existing active administrator profile, use `scripts/set-admin-password.mjs --user-id <profile-id> --username <new-username>`. The script reads the password through a hidden terminal prompt and prints SQL containing a salted hash; it does not connect to or execute against D1.
+- Review and apply that SQL only against the intended database through the separately approved operator process. It changes the existing profile's username, writes its password credential and revokes that administrator's existing sessions.
+- A new/empty database without an administrator profile requires a separately reviewed database-provisioning operation; the application intentionally does not offer a first-admin web setup flow. The legacy `app_security_state` row remains part of migration/readiness compatibility, but the recovery utility no longer writes its former bootstrap-completion marker.
+- No real administrator credential or remote D1 operation is performed as part of this source change.
 
-- A local-development request with no Kairo session resolves as `guest`.
-- Guest Anime history/progress and guest Movies lists remain in isolated browser storage.
-- Guest state is never sent to D1 or attached to an account automatically.
-- In staging and production, missing or invalid Access identity is an Access denial, not guest mode. An unapproved visitor must not reach the application through the Cloudflare Access application.
+## Standard-account administration
 
-Signing in on an Access-protected deployment immediately resolves the profile and uses account-scoped storage. Existing guest data is not silently imported into the account; a separate user-confirmed import would be required to combine them.
+Authenticated administrator routes can list accounts, create a standard account, enroll a legacy profile, reset a password, suspend/reactivate an account and delete a standard account.
 
-## Sign-out and browser cookies
+Creation, enrollment and password reset return a generated temporary password once and require password change at next login. Deliver it to the intended person through a secure channel. Suspending an account revokes its sessions. Deletion requires explicit confirmation and permanently removes account-owned rows while retaining a minimal profile tombstone.
 
-Kairo's signed-in state depends on both the Cloudflare Access identity and the internal Kairo session. Deleting only the Kairo session cookie does not sign a visitor out of Cloudflare Access; a subsequent authenticated `/api/v1/me` request would establish another internal session.
+The offline `scripts/set-admin-password.mjs` utility is for recovering/enrolling an existing administrator profile. It reads the password through a hidden interactive terminal prompt and prints SQL containing only a salted hash; it does not connect to or execute against D1.
 
-The Kairo sign-out action first calls `POST /api/v1/auth/logout` to revoke the current Kairo session and clear its HttpOnly cookie. Only after that succeeds does the client clear the signed-in account's namespaced local media cache and navigate to `/cdn-cgi/access/logout`, which ends the Cloudflare Access session. The app shell, profile and admin console share this sequence. If server-side revocation fails, the client keeps local data and does not redirect.
+## Cloudflare Access edge perimeter
 
-Browser-local media data is separate from both cookie layers. Sign-out does not remove guest data or server-side account records. Clearing localStorage alone does not revoke a server-side account.
+The current deployment workflow still requires Cloudflare Access perimeter configuration in staging and production. That is independent of Kairo authentication:
 
-## Account and media data boundaries
+- Cloudflare Access may restrict who can reach the Worker/site at the network edge.
+- The Worker does not validate `Cf-Access-Jwt-Assertion`, use Access email as the Kairo username, bind sessions to Access `sub`, or auto-provision profiles from Access allowlist membership.
+- A person who passes the outer edge gate must still sign in with a Kairo username and password.
+- Do not remove or change the Access application, destination overrides, allowlist or deploy validator as part of a source-only authentication change. Any edge change requires a separate, explicitly reviewed operator action.
 
-Kairo uses one identity across Anime, Movies and YouTube; the media domains remain separate:
+## Guest mode and data boundaries
 
-| Media | Account-owned server data | Guest/browser data |
-|---|---|---|
-| Anime | Library, watch history and progress | Isolated browser history and progress |
-| Movies | Watchlist, Watched and Favorites references; playback snapshots | Isolated browser My List and playback snapshots |
-| YouTube | Administrator feed settings, history and Watch Later | Guest playback/history state where guest mode is enabled |
+There is no anonymous account or guest API mode in the username/password branch. All `/api/v1/*` routes are denied by default except username/password login and logout. Account library, history and playback data remain owned by the signed-in Kairo profile ID.
 
-Account ownership is always derived from the server-validated session and current Access identity. Never accept a user ID from the browser or request body.
-
-YouTube remains an administrator-only Kairo feature. Its optional Google OAuth connection is a separate authorization to Google's YouTube service; it does not sign the person into Kairo and does not replace Cloudflare Access.
-
-## Operator procedures
-
-### Invite a person
-
-1. Add their exact email to the Kairo Cloudflare Access application's Allow policy.
-2. Give the person that email address and have them complete Cloudflare Access One-time PIN sign-in.
-3. Kairo automatically creates their standard profile on first successful access, unless an existing active profile is already bound to the email.
-4. Verify their profile and role in the administrator console.
-
-Do not create or share a Kairo password.
-
-### Suspend or remove a person
-
-1. Suspend their Kairo profile in the administrator console to block account API access immediately.
-2. Remove their email from the Cloudflare Access Allow policy.
-3. Revoke their Cloudflare Access session using the Access dashboard or logout process.
-4. Do not reactivate a profile merely because the same email can authenticate again; the operator must intentionally reactivate it.
-
-### Reassign a seat to a different person
-
-Do not transfer an existing account by changing its Access email. Use **Reassign seat** in the administrator console only when the seat is changing owners. This permanently removes the previous account's sessions, OAuth state, provider connections, preferences, Anime and Movies libraries, ratings, watch history, YouTube feed/history/Watch Later records, playback progress, deletion markers and other account-owned rows. A new profile with a new user ID and an empty data set is created for the new email; none of the previous person's data is transferred.
-
-The previous profile remains only as a minimal `deleted` identity tombstone holding its former Cloudflare Access email and JWT subject. That prevents an already-issued Access session from automatically provisioning the old identity again. Deleted tombstones do not consume one of the 15 active/suspended standard-account seats, but their old email remains reserved. The reset cannot be undone.
-
-Update the Cloudflare Access Allow policy as part of the handoff: remove the previous person's email and add the new person's exact email. The application-level tombstone blocks the former identity even if an old Access token remains valid. The new person establishes a fresh Kairo session on their first approved visit.
-
-### First administrator setup
-
-The first administrator must complete the one-time bootstrap while already authenticated with the exact intended Cloudflare Access email. The Worker validates the temporary `ADMIN_BOOTSTRAP_TOKEN`, binds the profile to the asserted email, and permanently closes bootstrap. Remove the bootstrap secret immediately after setup. No password is created.
-
-## Related implementation
-
-- Access JWT validation and account resolution: `worker/auth/cloudflareAccess.ts`
-- Access middleware and automatic internal session creation: `worker/index.ts`
-- Internal HttpOnly sessions: `worker/auth/session.ts`
-- Account and role provisioning: `worker/admin/routes.ts`
-- Shared browser account state: `src/lib/AccountProvider.tsx`
-- Cross-media persistence boundaries: `docs/UNIFIED_MEDIA_SYNC.md`

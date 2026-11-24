@@ -3,8 +3,9 @@ name: Build and deploy KAIRO
 on:
   pull_request:
     branches: [main, staging]
+  # The auth rebuild gets the same verify job on branch pushes; deploy remains gated below to main/manual dispatch only.
   push:
-    branches: [main]
+    branches: [main, rebuild/username-password-auth]
   workflow_dispatch:
     inputs:
       target:

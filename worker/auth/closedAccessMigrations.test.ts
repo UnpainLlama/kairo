@@ -1,122 +1,43 @@
-import { DatabaseSync } from 'node:sqlite';
-import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { reassignStandardAccountEmail } from '../admin/routes';
-import { hasActiveAccessAccount } from './cloudflareAccess';
+import { afterEach, describe, expect, it } from 'vitest';
+import { createTestDatabase, insertTestProfile } from './testUtils';
 
-const migrationFiles = [
-  '0001_initial_schema.sql',
-  '0002_provider_architecture.sql',
-  '0003_accounts.sql',
-  '0004_auth_rate_limits.sql',
-  '0005_google_oauth.sql',
-  '0006_watch_history.sql',
-  '0007_youtube_oauth.sql',
-  '0008_youtube_feed_channels.sql',
-  '0009_youtube_feed_cursors.sql',
-  '0010_youtube_upload_playlists.sql',
-  '0011_youtube_media_library.sql',
-  '0012_movies_catalogue.sql',
-  '0013_unified_media_sync.sql',
-  '0014_user_media_playback.sql',
-  '0015_closed_access_usernames.sql',
-  '0016_playback_write_order.sql',
-  '0017_admin_email_otp_console_rotation.sql',
-  '0018_cloudflare_access_identity_admin_lockout.sql',
-  '0019_session_privacy_retention.sql',
-  '0020_cloudflare_access_subject_binding.sql',
-  '0021_reassignable_account_seats.sql',
-];
+let db:any;
+afterEach(()=>{db?.close();db=undefined;});
 
-function applyMigrations(db: DatabaseSync, from = 0, to = migrationFiles.length): void {
-  for (const file of migrationFiles.slice(from, to)) {
-    db.exec(readFileSync(`migrations/${file}`, 'utf8'));
-  }
-}
-
-function addProfile(
-  db: DatabaseSync,
-  values: { id: string; username: string; accessEmail: string; accessSubject?: string | null; role?: 'user' | 'admin' },
-): void {
-  db.prepare(`INSERT INTO user_profiles
-    (id, identity_subject, display_name, username, email, access_email, access_subject, account_status, role)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)`)
-    .run(values.id, `subject:${values.id}`, values.id, values.username, values.accessEmail, values.accessEmail, values.accessSubject ?? null, values.role ?? 'user');
-}
-
-describe('closed-access D1 migrations', () => {
-  it('applies all migrations and enforces unique Access email, one admin and 15 standard accounts', () => {
-    const db = new DatabaseSync(':memory:');
-    try {
-      applyMigrations(db);
-      const securityState = db.prepare(
-        'SELECT admin_bootstrap_completed_at AS completedAt FROM app_security_state WHERE singleton_id=1',
-      ).get() as { completedAt: number | null };
-      const loginState = db.prepare(
-        'SELECT failed_attempts AS failedAttempts, locked_at AS lockedAt FROM admin_login_security WHERE singleton_id=1',
-      ).get() as { failedAttempts: number; lockedAt: number | null };
-      expect(securityState.completedAt).toBeNull();
-      expect(loginState).toEqual({ failedAttempts: 0, lockedAt: null });
-
-      for (let i = 1; i <= 15; i += 1) {
-        addProfile(db, {
-          id: `standard-${i}`,
-          username: `standard${i}`,
-          accessEmail: `standard${i}@example.test`,
-        });
-      }
-      expect(() => addProfile(db, {
-        id: 'standard-16',
-        username: 'standard16',
-        accessEmail: 'standard16@example.test',
-      })).toThrow();
-
-      expect(() => addProfile(db, {
-        id: 'duplicate-access-email',
-        username: 'different-user',
-        accessEmail: 'STANDARD1@example.test',
-      })).toThrow();
-
-      addProfile(db, {
-        id: 'kairo-admin',
-        username: 'kairoadmin',
-        accessEmail: 'admin@example.test',
-        role: 'admin',
-      });
-      expect(() => addProfile(db, {
-        id: 'second-admin',
-        username: 'secondadmin',
-        accessEmail: 'second-admin@example.test',
-        role: 'admin',
-      })).toThrow();
-
-      const count = db.prepare("SELECT COUNT(*) AS total FROM user_profiles WHERE role='user'").get() as { total: number };
-      expect(count.total).toBe(15);
-    } finally {
-      db.close();
-    }
+describe('final username/password database constraints',()=>{
+  it('permits one admin and at most 15 active or suspended standard accounts',()=>{
+    db=createTestDatabase();
+    insertTestProfile(db,{id:'admin-one',username:'site.admin',role:'admin'});
+    for(let i=0;i<15;i++)insertTestProfile(db,{id:'member-'+i,username:'member'+String(i).padStart(2,'0'),status:i===0?'suspended':'active'});
+    expect(()=>insertTestProfile(db,{id:'member-overflow',username:'overflow.member'})).toThrow(/standard_account_limit_reached/);
+    expect(()=>insertTestProfile(db,{id:'admin-two',username:'second.admin',role:'admin'})).toThrow(/UNIQUE constraint failed/);
   });
 
-  it('permanently closes administrator bootstrap when an administrator already exists at migration time', () => {
-    const db = new DatabaseSync(':memory:');
-    try {
-      applyMigrations(db, 0, 14);
-      db.prepare(`INSERT INTO user_profiles (id, identity_subject, display_name, role)
-        VALUES ('legacy-admin', 'legacy-admin-subject', 'Legacy Administrator', 'admin')`).run();
-      applyMigrations(db, 14, migrationFiles.length);
+  it('allows replacement seats after a standard account is tombstoned, but keeps deleted identities',()=>{
+    db=createTestDatabase();
+    for(let i=0;i<15;i++)insertTestProfile(db,{id:'member-'+i,username:'member'+String(i).padStart(2,'0')});
+    db.prepare("UPDATE user_profiles SET account_status='deleted' WHERE id='member-0'").run();
+    insertTestProfile(db,{id:'replacement-member',username:'replacement.member'});
+    expect(db.prepare("SELECT COUNT(*) AS count FROM user_profiles WHERE role='user' AND account_status IN ('active','suspended')").get())
+      .toEqual({count:15});
+    expect(db.prepare("SELECT account_status FROM user_profiles WHERE id='member-0'").get()).toEqual({account_status:'deleted'});
+  });
 
-      const state = db.prepare(
-        'SELECT admin_bootstrap_completed_at AS completedAt FROM app_security_state WHERE singleton_id=1',
-      ).get() as { completedAt: number | null };
-      const legacy = db.prepare(
-        'SELECT username FROM user_profiles WHERE id=\'legacy-admin\'',
-      ).get() as { username: string };
+  it('enforces the 15-seat cap when a deleted tombstone is reactivated',()=>{
+    db=createTestDatabase();
+    for(let i=0;i<15;i++)insertTestProfile(db,{id:'member-'+i,username:'member'+String(i).padStart(2,'0')});
+    insertTestProfile(db,{id:'deleted-member',username:'deleted.member',status:'deleted'});
+    expect(()=>db.prepare("UPDATE user_profiles SET account_status='active' WHERE id='deleted-member'").run())
+      .toThrow(/standard_account_limit_reached/);
+  });
 
-      expect(state.completedAt).toBeTypeOf('number');
-      expect(state.completedAt).toBeGreaterThan(0);
-      expect(legacy.username).toBe('user_legacyadmin');
-    } finally {
-      db.close();
-    }
+  it('creates credentials only for an existing profile and cascades on real profile deletion',()=>{
+    db=createTestDatabase();
+    insertTestProfile(db,{id:'member-one',username:'member.one'});
+    db.prepare("INSERT INTO user_credentials(user_id,password_hash,must_change_password) VALUES('member-one','test-hash',1)").run();
+    expect(db.prepare("SELECT must_change_password FROM user_credentials WHERE user_id='member-one'").get())
+      .toEqual({must_change_password:1});
+    db.prepare("DELETE FROM user_profiles WHERE id='member-one'").run();
+    expect(db.prepare("SELECT COUNT(*) AS count FROM user_credentials WHERE user_id='member-one'").get()).toEqual({count:0});
   });
 });

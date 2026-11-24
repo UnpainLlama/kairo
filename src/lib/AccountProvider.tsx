@@ -1,156 +1,103 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { AuthApiError, authRequest } from './authClient';
 import { flushPendingMediaPlayback } from './mediaPlayback';
-import { isAccessLoginRedirect, resolveAccountResponse, shouldRefreshAccountOnVisibility } from './accountState';
 
-export type AccountStatus = 'loading' | 'guest' | 'signed-in' | 'denied' | 'limit-reached' | 'setup-required' | 'reauth-required' | 'unavailable';
-export type KairoAccountState = {
-  status: AccountStatus;
-  accountId: string | null;
-  displayName: string | null;
+export type AccountUser = {
+  id: string;
+  displayName: string;
   email: string | null;
-  username: string | null;
-  role: 'user' | 'admin' | null;
-  retry: () => void;
+  username: string;
+  emailVerifiedAt: string | null;
+  role: 'user' | 'admin';
+  mustChangePassword: boolean;
 };
 
-const AccountContext = createContext<KairoAccountState | null>(null);
+export type AccountState = {
+  status: 'loading' | 'signed-in' | 'signed-out' | 'error';
+  user: AccountUser | null;
+  error: string | null;
+};
+
+type AccountContextValue = AccountState & {
+  login(username: string, password: string): Promise<void>;
+  logout(): Promise<void>;
+  refresh(signal?: AbortSignal): Promise<AccountUser | null>;
+};
+
+const AccountContext = createContext<AccountContextValue | null>(null);
 
 export function AccountProvider({ children }: { children: ReactNode }) {
-  const [attempt, setAttempt] = useState(0);
-  const [initialLookupComplete, setInitialLookupComplete] = useState(false);
-  const [status, setStatus] = useState<AccountStatus>('loading');
-  const [accountId, setAccountId] = useState<string | null>(null);
-  const [displayName, setDisplayName] = useState<string | null>(null);
-  const [email, setEmail] = useState<string | null>(null);
-  const [username, setUsername] = useState<string | null>(null);
-  const [role, setRole] = useState<'user' | 'admin' | null>(null);
-  const accountIdRef = useRef(accountId);
-  const accountStatusRef = useRef(status);
+  const [state, setState] = useState<AccountState>({
+    status: 'loading',
+    user: null,
+    error: null,
+  });
 
-  useEffect(() => { accountIdRef.current = accountId; }, [accountId]);
-  useEffect(() => { accountStatusRef.current = status; }, [status]);
-
-  useEffect(() => {
-    let active = true;
-    const refresh = () => {
-      // If the previous identity check failed, keep pages unmounted while retrying.
-      if (accountStatusRef.current === 'unavailable') setInitialLookupComplete(false);
-      setAttempt((value) => value + 1);
-    };
-    // Refresh when the tab becomes visible again, not on every window focus.
-    // Focus events also fire while users move between the document and a
-    // cross-origin player iframe; revalidating then can tear down the player.
-    const refreshWhenVisible = () => {
-      if (shouldRefreshAccountOnVisibility(document.visibilityState)) refresh();
-    };
-    const refreshAfterHistoryRestore = (event: PageTransitionEvent) => {
-      if (event.persisted) refresh();
-    };
-    if (!accountId) setStatus('loading');
-
-    const clearIdentity = () => {
-      setAccountId(null);
-      setDisplayName(null);
-      setEmail(null);
-      setUsername(null);
-      setRole(null);
-    };
-
-    const load = async () => {
-      try {
-        const response = await fetch('/api/v1/me', {
-          credentials: 'same-origin',
-          headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-          cache: 'no-store',
-        });
-        if (isAccessLoginRedirect({
-          status: response.status,
-          redirected: response.redirected,
-          url: response.url,
-          contentType: response.headers.get('content-type'),
-        })) {
-          if (active) {
-            clearIdentity();
-            setStatus('reauth-required');
-          }
-          return;
-        }
-        const payload = await response.json().catch(() => null);
-        const errorCode = payload?.error?.code;
-        const user = payload?.data?.user;
-        const resolution = resolveAccountResponse(
-          response.status,
-          errorCode,
-          payload?.success === true && typeof user?.id === 'string' && Boolean(user.id.trim()),
-        );
-        if (resolution === 'unavailable') throw new Error('Account lookup failed.');
-        if (resolution !== 'signed-in') {
-          if (active) {
-            clearIdentity();
-            setStatus(resolution);
-          }
-          return;
-        }
-        if (active) {
-          setAccountId(user.id);
-          setDisplayName(typeof user.displayName === 'string' ? user.displayName : null);
-          setEmail(typeof user.accessEmail === 'string' ? user.accessEmail : typeof user.email === 'string' ? user.email : null);
-          setUsername(typeof user.username === 'string' ? user.username : null);
-          setRole(user.role === 'admin' ? 'admin' : 'user');
-          setStatus('signed-in');
-        }
-      } catch {
-        // A transient network failure must not discard a previously verified identity.
-        if (active) setStatus(accountIdRef.current ? 'signed-in' : 'unavailable');
-      } finally {
-        // Do not mount protected page effects until /me has either bootstrapped
-        // the session or established the correct guest/denied/unavailable state.
-        if (active) setInitialLookupComplete(true);
+  const refresh = useCallback(async (signal?: AbortSignal): Promise<AccountUser | null> => {
+    try {
+      const result = await authRequest<{ user: AccountUser }>('/me', { method: 'GET', signal });
+      if (!result.data.user || typeof result.data.user.id !== 'string') {
+        throw new AuthApiError(502, 'INVALID_PROFILE', 'The server returned an invalid account profile.');
       }
-    };
-
-    void load();
-    window.addEventListener('kairo:auth-change', refresh);
-    document.addEventListener('visibilitychange', refreshWhenVisible);
-    window.addEventListener('pageshow', refreshAfterHistoryRestore);
-    return () => {
-      active = false;
-      window.removeEventListener('kairo:auth-change', refresh);
-      document.removeEventListener('visibilitychange', refreshWhenVisible);
-      window.removeEventListener('pageshow', refreshAfterHistoryRestore);
-    };
-  }, [attempt]);
+      setState({ status: 'signed-in', user: result.data.user, error: null });
+      return result.data.user;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') throw error;
+      if (error instanceof AuthApiError && error.status === 401 && error.code === 'AUTH_REQUIRED') {
+        setState({ status: 'signed-out', user: null, error: null });
+        return null;
+      }
+      const message = error instanceof Error ? error.message : 'The account could not be loaded.';
+      setState({ status: 'error', user: null, error: message });
+      throw error;
+    }
+  }, []);
 
   useEffect(() => {
-    if (status !== 'signed-in' || !accountId) return;
+    const controller = new AbortController();
+    void refresh(controller.signal).catch(() => undefined);
+    return () => controller.abort();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (state.status !== 'signed-in' || !state.user || state.user.mustChangePassword) return;
+    const accountId = state.user.id;
     const flush = () => { void flushPendingMediaPlayback(accountId); };
     flush();
     window.addEventListener('online', flush);
     window.addEventListener('focus', flush);
-    const interval = window.setInterval(flush, 60_000);
     return () => {
       window.removeEventListener('online', flush);
       window.removeEventListener('focus', flush);
-      window.clearInterval(interval);
     };
-  }, [accountId, status]);
+  }, [state.status, state.user?.id, state.user?.mustChangePassword]);
 
-  const retry = useCallback(() => {
-    setInitialLookupComplete(false);
-    setAttempt((value) => value + 1);
+  const login = useCallback(async (username: string, password: string) => {
+    await authRequest<{ signedIn: boolean; mustChangePassword: boolean }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    });
+    const user = await refresh();
+    if (!user) throw new AuthApiError(401, 'AUTH_REQUIRED', 'Sign-in succeeded but the account session could not be loaded.');
+  }, [refresh]);
+
+  const logout = useCallback(async () => {
+    try {
+      await authRequest<{ signedOut: boolean }>('/auth/logout', { method: 'POST' });
+      setState({ status: 'signed-out', user: null, error: null });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Sign-out failed.';
+      setState({ status: 'error', user: null, error: message });
+      throw error;
+    }
   }, []);
-  const value = useMemo(() => ({ status, accountId, displayName, email, username, role, retry }), [status, accountId, displayName, email, username, role, retry]);
-  return (
-    <AccountContext.Provider value={value}>
-      {initialLookupComplete
-        ? children
-        : <main className="kc-account-bootstrap" role="status" aria-live="polite">Checking your Kairo session…</main>}
-    </AccountContext.Provider>
-  );
+
+  const value = useMemo<AccountContextValue>(() => ({ ...state, login, logout, refresh }), [state, login, logout, refresh]);
+  return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>;
 }
 
-export function useKairoAccount(): KairoAccountState {
-  const value = useContext(AccountContext);
-  if (!value) throw new Error('useKairoAccount must be used inside AccountProvider.');
-  return value;
+export function useAccount(): AccountContextValue {
+  const context = useContext(AccountContext);
+  if (!context) throw new Error('useAccount must be used inside AccountProvider.');
+  return context;
 }
