@@ -53,8 +53,6 @@ export default function KairoVideoJsPlayer({
   const [qualityOptions, setQualityOptions] = useState<{ value: string; label: string }[]>([]);
   const [selectedQuality, setSelectedQuality] = useState('auto');
   const [selectedSubtitle, setSelectedSubtitle] = useState(defaultSubtitleLanguage);
-  useEffect(() => { initialPlayerStateRef.current = initialPlayerState; }, [initialPlayerState]);
-  useEffect(() => { initialProgressSecondsRef.current = initialProgressSeconds; }, [initialProgressSeconds]);
   useEffect(() => { setSelectedSubtitle(defaultSubtitleLanguage); }, [defaultSubtitleLanguage]);
 
   useEffect(() => {
