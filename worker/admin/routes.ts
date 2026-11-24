@@ -3,6 +3,8 @@ import {getRequestUser} from '../auth/requestUser';
 import {hashPassword,isNewPasswordValid,isPasswordDifferentFromUsername} from '../auth/password';
 import {createTemporaryPassword} from '../auth/temporaryPassword';
 import {validateUsername} from '../auth/username';
+import {deleteStandardAccount} from '../auth/accountDeletion';
+export {deleteStandardAccount};
 const enc=new TextEncoder();
 const fail=(c:any,status:number,code:string,message:string)=>c.json({success:false,error:{code,message},meta:{requestId:c.get('requestId')}},status);
 const ok=(c:any,data:unknown,status=200)=>c.json({success:true,data,meta:{requestId:c.get('requestId')}},status);

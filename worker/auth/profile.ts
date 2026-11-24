@@ -1,7 +1,7 @@
 import { clearSessionCookie } from './session';
 import { getRequestUser } from './requestUser';
 import { verifyPassword } from './password';
-import { deleteStandardAccount } from '../admin/routes';
+import { deleteStandardAccount } from './accountDeletion';
 
 function ok(c: any, data: unknown, status = 200) {
   return c.json({ success: true, data, meta: { requestId: c.get('requestId') } }, status);
@@ -17,6 +17,22 @@ function originAllowed(c: any): boolean {
 }
 
 export function registerProfileRoutes(app: any) {
+  app.get('/api/v1/profiles/:username', async (c: any) => {
+    const viewer = await getRequestUser(c);
+    if (!viewer) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to view profiles.');
+    const username = c.req.param('username').trim();
+    if (!/^[A-Za-z0-9_.-]{3,32}$/.test(username)) return fail(c, 404, 'PROFILE_NOT_FOUND', 'This public profile is unavailable.');
+    try {
+      const profile = await c.env.DB.prepare(
+        "SELECT username, display_name AS displayName, avatar_url AS avatarUrl, bio, created_at AS createdAt FROM user_profiles WHERE username = ? COLLATE NOCASE AND role = 'user' AND account_status = 'active' AND profile_visibility = 'public' LIMIT 1",
+      ).bind(username).first();
+      if (!profile) return fail(c, 404, 'PROFILE_NOT_FOUND', 'This public profile is unavailable.');
+      return ok(c, { profile });
+    } catch {
+      return fail(c, 503, 'PROFILE_UNAVAILABLE', 'This profile is temporarily unavailable.');
+    }
+  });
+
   app.get('/api/v1/me/profile', async (c: any) => {
     const user = await getRequestUser(c);
     if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to read the profile.');

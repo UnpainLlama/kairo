@@ -14,7 +14,7 @@ type Props = {
   outroStart?: number | null;
   nextUrl?: string | null;
   mediaType?: 'hls' | 'file';
-  onProgress?: (seconds: number, reason: PlaybackSaveReason, playerState?: SavedPlayerState) => void;
+  onProgress?: (seconds: number, reason: PlaybackSaveReason, playerState?: SavedPlayerState, durationSeconds?: number | null) => void;
   initialPlayerState?: SavedPlayerState | null;
   defaultPlaybackSpeed?: number;
   defaultSubtitleLanguage?: string;
@@ -39,11 +39,21 @@ export default function KairoVideoJsPlayer({
   subtitleSize = 'medium',
 }: Props) {
   const mediaRef = useRef<VideoJsMediaElement | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
+  const initialPlayerStateRef = useRef(initialPlayerState);
+  const initialProgressSecondsRef = useRef(initialProgressSeconds);
   const initialPlayerStateRef = useRef(initialPlayerState);
   useEffect(() => { initialPlayerStateRef.current = initialPlayerState; }, [initialPlayerState]);
   const [skip, setSkip] = useState<'intro' | 'outro' | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
   const [playbackError, setPlaybackError] = useState('');
+  const [reloadAttempt, setReloadAttempt] = useState(0);
+  const [qualityOptions, setQualityOptions] = useState<{ value: string; label: string }[]>([]);
+  const [selectedQuality, setSelectedQuality] = useState('auto');
+  const [selectedSubtitle, setSelectedSubtitle] = useState(defaultSubtitleLanguage);
+  useEffect(() => { initialPlayerStateRef.current = initialPlayerState; }, [initialPlayerState]);
+  useEffect(() => { initialProgressSecondsRef.current = initialProgressSeconds; }, [initialProgressSeconds]);
+  useEffect(() => { setSelectedSubtitle(defaultSubtitleLanguage); }, [defaultSubtitleLanguage]);
 
   useEffect(() => {
     const media = mediaRef.current;
@@ -57,6 +67,8 @@ export default function KairoVideoJsPlayer({
       if (typeof media.volume === 'number' && Number.isFinite(media.volume)) state.volume = Math.max(0, Math.min(1, media.volume));
       if (typeof media.muted === 'boolean') state.muted = media.muted;
       if (typeof media.playbackRate === 'number' && Number.isFinite(media.playbackRate)) state.playbackRate = Math.max(0.25, Math.min(2, media.playbackRate));
+      const currentLevel = hlsRef.current?.currentLevel ?? -1;
+      state.quality = currentLevel < 0 ? 'auto' : String(currentLevel);
       const tracks = media.textTracks;
       if (tracks) {
         const active = Array.from(tracks).find(track => track.mode === 'showing');
@@ -70,19 +82,29 @@ export default function KairoVideoJsPlayer({
       if (!Number.isFinite(time) || time < 0) return;
       const position = reason === 'ended' && Number.isFinite(duration) && duration > 0 ? duration : time;
       try { localStorage.setItem(storageKey, String(position)); } catch { /* storage may be unavailable */ }
-      onProgress?.(position, reason, readPlayerState());
+      onProgress?.(position, reason, readPlayerState(), Number.isFinite(duration) && duration > 0 ? duration : null);
     };
     const restore = () => {
-      let saved = 0;
-      try { saved = Number(localStorage.getItem(storageKey) || 0); } catch { /* storage may be unavailable */ }
-      if (saved > 0 && Number.isFinite(media.duration) && saved < media.duration - 15) media.currentTime = saved;
+      let localSaved = 0;
+      try {
+        const candidate = Number(localStorage.getItem(storageKey) || 0);
+        localSaved = Number.isFinite(candidate) && candidate >= 0 ? candidate : 0;
+      } catch { /* storage may be unavailable */ }
+      const remoteCandidate = Number(initialProgressSecondsRef.current);
+      const remoteSaved = Number.isFinite(remoteCandidate) ? Math.max(0, remoteCandidate) : 0;
+      const resumeAt = Math.max(localSaved, remoteSaved);
+      if (resumeAt > 0 && Number.isFinite(media.duration) && resumeAt < media.duration - 15) media.currentTime = resumeAt;
       const savedState = initialPlayerStateRef.current;
       media.playbackRate = savedState?.playbackRate ?? defaultPlaybackSpeed;
       if (savedState) {
         if (typeof savedState.volume === 'number') media.volume = savedState.volume;
         if (typeof savedState.muted === 'boolean') media.muted = savedState.muted;
       }
-      const preferredSubtitle = savedState?.subtitleLanguage ?? defaultSubtitleLanguage;
+      const requestedSubtitle = savedState?.subtitleLanguage ?? defaultSubtitleLanguage;
+      const preferredSubtitle = requestedSubtitle === 'off' || subtitles.some(track => track.language === requestedSubtitle)
+        ? requestedSubtitle
+        : 'off';
+      setSelectedSubtitle(preferredSubtitle);
       if (media.textTracks && preferredSubtitle) {
         Array.from(media.textTracks).forEach(track => {
           track.mode = preferredSubtitle !== 'off' && track.language === preferredSubtitle ? 'showing' : 'disabled';
@@ -161,15 +183,37 @@ export default function KairoVideoJsPlayer({
     const media = mediaRef.current;
     if (!media) return;
     setPlaybackError('');
+    setQualityOptions([]);
+    setSelectedQuality('auto');
+    const onNativeError = () => setPlaybackError('The media source could not be loaded or may have expired. Try reloading or select another server.');
+    media.addEventListener('error', onNativeError);
     if (mediaType === 'hls' && Hls.isSupported()) {
       const hls = new Hls({ enableWorker: true, backBufferLength: 90 });
+      hlsRef.current = hls;
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        const levels = hls.levels.map((level, index) => ({
+          value: String(index),
+          label: level.height ? (level.height + 'p') : (Number.isFinite(level.bitrate) ? Math.round(level.bitrate / 1000) + ' kbps' : 'Source ' + (index + 1)),
+        }));
+        setQualityOptions(levels.length ? [{ value: 'auto', label: 'Auto' }, ...levels] : []);
+        const savedQuality = initialPlayerStateRef.current?.quality;
+        if (savedQuality && savedQuality !== 'auto' && /^\d{1,3}$/.test(savedQuality) && Number(savedQuality) < levels.length) {
+          hls.currentLevel = Number(savedQuality);
+          setSelectedQuality(savedQuality);
+        }
+      });
+      hls.on(Hls.Events.LEVEL_SWITCHED, () => {
+        setSelectedQuality(hls.currentLevel < 0 ? 'auto' : String(hls.currentLevel));
+      });
       hls.on(Hls.Events.ERROR, (_event, data: { fatal?: boolean }) => {
-        if (data?.fatal) setPlaybackError('The stream could not be loaded. Try another server or reload.');
+        if (data?.fatal) setPlaybackError('The stream could not be loaded or the source may have expired. Try reloading or select another server.');
       });
       hls.loadSource(src);
       hls.attachMedia(media);
       return () => {
         hls.destroy();
+        if (hlsRef.current === hls) hlsRef.current = null;
+        media.removeEventListener('error', onNativeError);
         media.pause();
         media.removeAttribute('src');
         media.load();
@@ -181,11 +225,12 @@ export default function KairoVideoJsPlayer({
       setPlaybackError('This browser cannot play HLS video. Try a browser with native HLS support.');
     }
     return () => {
+      media.removeEventListener('error', onNativeError);
       media.pause();
       media.removeAttribute('src');
       media.load();
     };
-  }, [src, mediaType]);
+  }, [src, mediaType, reloadAttempt]);
 
   const seekTo = (target: 'intro' | 'outro') => {
     const media = mediaRef.current;
@@ -214,7 +259,7 @@ export default function KairoVideoJsPlayer({
           />
         ))}
       </video>
-      {playbackError && <p className="kc-player-message" role="alert">{playbackError}</p>}
+      {playbackError && <div className="kc-player-message" role="alert"><p>{playbackError}</p><button type="button" className="button button-secondary small" onClick={() => setReloadAttempt(value => value + 1)}>Retry stream</button></div>}
       {skip && (
         <button className="kc-videojs-skip" type="button" onClick={() => seekTo(skip)}>
           Skip {skip}

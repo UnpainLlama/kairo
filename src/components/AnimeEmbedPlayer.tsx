@@ -7,7 +7,7 @@ type Props = {
   title: string;
   provider: string;
   progressKey: string;
-  onProgress?: (seconds: number, reason: PlaybackSaveReason, playerState?: SavedPlayerState) => void;
+  onProgress?: (seconds: number, reason: PlaybackSaveReason, playerState?: SavedPlayerState, durationSeconds?: number | null) => void;
   playerState?: SavedPlayerState | null;
 };
 

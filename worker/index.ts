@@ -777,16 +777,18 @@ app.post('/api/v1/me/playback', async (c) => {
   if (typeof rawState.quality === 'string' && /^[A-Za-z0-9_-]{1,24}$/.test(rawState.quality)) playerState.quality = rawState.quality;
   if (typeof rawState.subtitleLanguage === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(rawState.subtitleLanguage)) playerState.subtitleLanguage = rawState.subtitleLanguage;
   if (typeof rawState.sourceId === 'string' && /^[A-Za-z0-9_-]{1,100}$/.test(rawState.sourceId)) playerState.sourceId = rawState.sourceId;
-  const historyPreference = await c.env.DB.prepare(
-    'SELECT history_paused AS historyPaused FROM user_preferences WHERE user_id = ? LIMIT 1',
-  ).bind(user.id).first<{ historyPaused: number }>();
   const now = Date.now();
   const updatedAt = now;
   const progressSeconds = duration === null ? Math.min(86400, progress) : Math.min(duration, progress);
-  if (Number(historyPreference?.historyPaused ?? 0) === 1) {
-    return ok(c, { saved: false, paused: true, stale: false, updatedAt });
-  }
   try {
+    if (mediaType !== 'youtube') {
+      const historyPreference = await c.env.DB.prepare(
+        'SELECT history_paused AS historyPaused FROM user_preferences WHERE user_id = ? LIMIT 1',
+      ).bind(user.id).first<{ historyPaused: number }>();
+      if (Number(historyPreference?.historyPaused ?? 0) === 1) {
+        return ok(c, { saved: false, paused: true, stale: false, updatedAt });
+      }
+    }
     const result = await c.env.DB.prepare(`
       INSERT INTO user_media_playback
         (user_id, media_type, media_key, title, artwork_url, duration_seconds,
@@ -874,10 +876,16 @@ app.post('/api/v1/me/history/sync', async (c) => {
   if (!Array.isArray(input) || input.length > 100 || deleted.length > 100 || input.length + deleted.length > 100) {
     return fail(c, 400, 'VALIDATION_ERROR', 'Watch history updates must contain at most 100 entries.');
   }
-  const historyPreference = await c.env.DB.prepare(
-    'SELECT history_paused AS historyPaused FROM user_preferences WHERE user_id = ? LIMIT 1',
-  ).bind(user.id).first<{ historyPaused: number }>();
-  const itemsToSave = Number(historyPreference?.historyPaused ?? 0) === 1 ? [] : input;
+  let itemsToSave = input;
+  try {
+    const historyPreference = await c.env.DB.prepare(
+      'SELECT history_paused AS historyPaused FROM user_preferences WHERE user_id = ? LIMIT 1',
+    ).bind(user.id).first<{ historyPaused: number }>();
+    if (Number(historyPreference?.historyPaused ?? 0) === 1) itemsToSave = [];
+  } catch (error) {
+    logError(c, 'watch_history_preference_read_failed', error);
+    return fail(c, 503, 'HISTORY_UNAVAILABLE', 'Watch history preferences are temporarily unavailable.');
+  }
   const now = Date.now();
   const statements: D1PreparedStatement[] = [];
   if (clear) {

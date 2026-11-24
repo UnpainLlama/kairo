@@ -33,6 +33,24 @@ describe('account profile privacy routes', () => {
     expect(await update.json()).toMatchObject({ data: { updated: true, displayName: 'Profile User', bio: 'A short bio.', visibility: 'public' } });
   });
 
+  it('only exposes profiles that opted into public visibility and omits private account fields', async () => {
+    const { app, session, env } = await setup();
+    const privateRead = await app.request('https://kairo.test/api/v1/profiles/profile.user', {
+      headers: { Cookie: session.cookie, Accept: 'application/json' },
+    }, env);
+    expect(privateRead.status).toBe(404);
+
+    db.prepare("UPDATE user_profiles SET profile_visibility = 'public', bio = 'Public bio' WHERE id = 'account-1'").run();
+    const publicRead = await app.request('https://kairo.test/api/v1/profiles/profile.user', {
+      headers: { Cookie: session.cookie, Accept: 'application/json' },
+    }, env);
+    const body = await publicRead.json();
+    expect(publicRead.status).toBe(200);
+    expect(body).toMatchObject({ data: { profile: { username: 'profile.user', bio: 'Public bio' } } });
+    expect(JSON.stringify(body)).not.toContain('email');
+    expect(JSON.stringify(body)).not.toContain('account-1');
+  });
+
   it('rejects invalid profile data and cross-origin writes', async () => {
     const { app, session, env } = await setup();
     const headers = { Cookie: session.cookie, 'Content-Type': 'application/json' };
@@ -77,6 +95,10 @@ describe('account profile privacy routes', () => {
       body: JSON.stringify({ currentPassword: 'a sufficiently long profile password', confirmUsername: 'profile.user' }),
     }, env);
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ data: { deleted: true, accountDataDeleted: true } });
+    expect(await response.json()).toMatchObject({ data: { deleted: true, accountDataDeleted: true, tombstoneRetained: true } });
+    expect(db.prepare("SELECT account_status AS status, username, display_name AS displayName FROM user_profiles WHERE id = 'account-1'").get()).toMatchObject({
+      status: 'deleted', username: null, displayName: 'Former account',
+    });
+    expect(db.prepare("SELECT COUNT(*) AS count FROM user_credentials WHERE user_id = 'account-1'").get().count).toBe(0);
   });
 });

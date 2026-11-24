@@ -307,7 +307,7 @@ function AnimeBrowsePage({ seasonal = false }: { seasonal?: boolean }) {
     ...(genre ? { genre } : {}), ...(season ? { season } : {}),
   }).toString();
   const results = useApi<PageData<CatalogCard>>(path);
-  const genres = useApi<PageData<{ name: string; count?: number }>>('/catalog/genres');
+  const genres = useApi<PageData<string | { name: string; count?: number }>>('/catalog/genres');
   const setFilter = (key: string, value: string) => {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value); else next.delete(key);
@@ -407,7 +407,7 @@ function AnimeDetailPage() {
             {episodes.status === 'ok' && episodes.data.items[0] && <Link className="button button-primary" to={'/watch/' + encodeURIComponent(item.id) + '/' + episodes.data.items[0].episodeNumber}>Start watching</Link>}
             <select aria-label="Library status" value={libraryStatus} onChange={event => setLibraryStatus(event.target.value)}><option value="watching">Watching</option><option value="plan_to_watch">Plan to watch</option><option value="completed">Completed</option><option value="on_hold">On hold</option><option value="dropped">Dropped</option></select>
             <button className="button button-secondary" type="button" disabled={libraryBusy} onClick={() => { void saveLibrary(); }}>{saved ? <Check size={16} /> : <Bookmark size={16} />}{saved ? 'Saved' : 'Add to library'}</button>
-            <button className="button button-quiet" type="button" disabled={libraryBusy} onClick={() => { void saveLibrary(true); }} aria-label="Add to favourites"><Heart size={17} /></button>
+            <button className="button button-quiet" type="button" disabled={libraryBusy} onClick={() => { void saveLibrary(!favorite); }} aria-label={favorite ? "Remove from favourites" : "Add to favourites"} aria-pressed={favorite}><Heart size={17} fill={favorite ? "currentColor" : "none"} /></button>
           </div>
           {libraryMessage && <p className="inline-note" role="status">{libraryMessage}</p>}
           <p className="detail-account-note">Signed in as @{account.user?.username}. Your library changes sync to this account.</p>

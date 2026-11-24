@@ -434,3 +434,89 @@ select { min-height: 38px; padding: 8px 32px 8px 11px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+
+/* Native player capability controls: shown only when the source exposes the option. */
+.kc-player-settings {
+  position: absolute;
+  z-index: 5;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 11px;
+  background: rgba(0,0,0,.72);
+  backdrop-filter: blur(10px);
+}
+.kc-player-settings label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+}
+.kc-player-settings select {
+  min-height: 30px;
+  padding: 4px 22px 4px 8px;
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 7px;
+  color: #fff;
+  background: #171923;
+  font-size: 10px;
+}
+.kc-player-message {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  top: 50%;
+  width: min(90%, 460px);
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 12px;
+  color: var(--text);
+  background: rgba(7,8,13,.94);
+  text-align: center;
+}
+.movie-search-inline {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.movie-search-inline label {
+  display: grid;
+  gap: 6px;
+  min-width: min(280px, 100%);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+.movie-search-inline input {
+  min-height: 38px;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--text);
+  background: var(--surface-2);
+  font-size: 12px;
+}
+@media (max-width: 720px) {
+  .kc-player-settings {
+    top: 7px;
+    left: 7px;
+    gap: 5px;
+    padding: 5px;
+  }
+  .kc-player-settings label { font-size: 9px; }
+  .kc-player-settings select { min-height: 27px; font-size: 9px; }
+  .movie-search-inline, .movie-search-inline label { width: 100%; }
+}

@@ -7,6 +7,7 @@ import type { SavedPlayerState } from '../lib/mediaPlayback';
 
 type Subtitle = { language: string; label: string; url: string; format: 'vtt' };
 type Variant = { label: string; height?: number };
+const EMPTY_SUBTITLES: Subtitle[] = [];
 export type KairoPlaybackSource =
   | { provider: string; protocol: 'hls'; manifestUrl: string; subtitles?: Subtitle[]; variants?: Variant[] }
   | { provider: string; protocol: 'file'; mediaUrl: string; mimeType?: string; subtitles?: Subtitle[] }
@@ -58,7 +59,7 @@ export default function KairoMediaPlayer({ source, title, progressKey, introEnd,
 
   if (!safeUrl) return <div className="kc-player-message" role="alert"><h2>Unsafe playback source</h2><p>Kairo only loads secure HTTPS media sources.</p></div>;
   if (source.protocol === 'hls') {
-    return <KairoVideoJsPlayer src={safeUrl.href} title={title} progressKey={progressKey} subtitles={source.subtitles ?? []} mediaType={source.protocol} initialPlayerState={initialPlayerState} defaultPlaybackSpeed={defaultPlaybackSpeed} defaultSubtitleLanguage={defaultSubtitleLanguage} subtitleSize={subtitleSize} introEnd={introEnd} outroStart={outroStart} nextUrl={nextUrl} onProgress={onProgress} />;
+    return <KairoVideoJsPlayer src={safeUrl.href} title={title} progressKey={progressKey} subtitles={source.subtitles ?? EMPTY_SUBTITLES} mediaType={source.protocol} initialPlayerState={initialPlayerState} defaultPlaybackSpeed={defaultPlaybackSpeed} defaultSubtitleLanguage={defaultSubtitleLanguage} subtitleSize={subtitleSize} introEnd={introEnd} outroStart={outroStart} nextUrl={nextUrl} onProgress={onProgress} />;
   }
   if (source.protocol === 'file') {
     return <KairoVideoJsPlayer src={safeUrl.href} title={title} progressKey={progressKey} subtitles={source.subtitles ?? []} mediaType="file" initialPlayerState={initialPlayerState} defaultPlaybackSpeed={defaultPlaybackSpeed} defaultSubtitleLanguage={defaultSubtitleLanguage} subtitleSize={subtitleSize} onProgress={onProgress} />;
