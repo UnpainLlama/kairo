@@ -15,6 +15,8 @@ describe('offline admin password enrolment script', () => {
     const sql = buildAdminPasswordSql('admin-profile-id', username, hash);
     expect(sql).toContain("role='admin' AND account_status='active'");
     expect(sql).toContain('must_change_password');
+    expect(sql).toContain('DELETE FROM sessions WHERE user_id=');
+    expect(sql).toContain('remaining_sessions');
     expect(sql).toContain(hash);
     expect(sql).not.toContain(password);
   });
