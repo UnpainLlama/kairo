@@ -5,8 +5,8 @@
 ## Branch and operational boundary
 
 - Feature branch: `rebuild/username-password-auth`.
-- Latest branch head: [`842dc9207e2e347e57c33e401ec4105dccf52083`](https://github.com/UnpainLlama/kairo/commit/842dc9207e2e347e57c33e401ec4105dccf52083).
-- GitHub Actions run [45405131640](https://github.com/UnpainLlama/kairo/actions/runs/45405131640) passed typecheck, **324 tests across 43 files**, dependency audits and production build on that exact head. Cloudflare deployment was skipped as expected for this feature branch.
+- Latest branch head: [`aea15a1ee649db3b6b377b06ac49dadd4ac09111`](https://github.com/UnpainLlama/kairo/commit/aea15a1ee649db3b6b377b06ac49dadd4ac09111).
+- GitHub Actions run [45406346412](https://github.com/UnpainLlama/kairo/actions/runs/45406346412) passed typecheck, **324 tests across 43 files**, dependency audits and production build on that exact head. Cloudflare deployment was skipped as expected for this feature branch.
 - The feature branch records current `main` ([`e29a4b1bcec54ffec27c2aed80c683cd670860b8`](https://github.com/UnpainLlama/kairo/commit/e29a4b1bcec54ffec27c2aed80c683cd670860b8)) as a parent. The seven Miruro UI changes from `main` were adapted into the rebuilt `KairoApp` structure rather than copying the old application shell.
 - This does **not** merge the feature branch into `main`. No PR has been opened as part of this work.
 - No Cloudflare configuration, Worker secret, Access policy, remote D1 migration/query, deployment, or real administrator credential operation has been performed.
@@ -37,7 +37,7 @@
 
 ## Phase 3 — Identity, profile, shared account and workspaces
 
-- Username/password login, opaque sessions, forced first-login password change, logout and account-administration APIs remain implemented. The public first-admin setup page/component, `/api/v1/admin/bootstrap` endpoint, bootstrap token binding and public middleware exception have been removed. A regression test verifies the removed endpoint is covered by the normal authentication gate. Existing administrator credentials can be provisioned through the offline operator utility.
+- Username/password login, opaque sessions, forced first-login password change, logout and account-administration APIs remain implemented. The public first-admin setup page/component, `/api/v1/admin/bootstrap` endpoint, bootstrap token binding and public middleware exception have been removed. A regression test verifies the removed endpoint is covered by the normal authentication gate. The offline existing-admin recovery utility now only changes the existing active admin's username/credential and revokes its sessions; it no longer writes the legacy bootstrap-completion marker. The legacy schema row remains for readiness compatibility.
 - Frontend screens include profile, Anime/Movies library, watch history, account preferences and restricted administrator management.
 - Worker routes cover profile read/update, opt-in public profiles, account preferences, JSON data export and password-confirmed standard-account deletion.
 - Account deletion retains a minimal tombstone, removes account-owned rows (including provider-backed Anime references) and revokes sessions. Administrator self-deletion remains blocked.
@@ -67,7 +67,7 @@
 1. Browser/mobile checks and live provider/OAuth checks have been skipped at the owner's request. They remain unverified, not passed.
 2. Resolve the PBKDF2 work-factor decision against the intended Workers plan and a real Workerd/staging CPU/latency measurement. The current 100,000-iteration cost is below OWASP's 600,000 PBKDF2-HMAC-SHA256 recommendation; no change has been made without the requested performance evidence.
 3. Apply neither migration 0024 nor 0025 remotely until the owner separately approves the schema/data review and deployment step.
-4. The feature branch has been reconciled with `main` history. Current comparison: 58 commits ahead, 0 behind; merge base `e29a4b1bcec54ffec27c2aed80c683cd670860b8`.
+4. The feature branch has been reconciled with `main` history. Current comparison: 60 commits ahead, 0 behind; merge base `e29a4b1bcec54ffec27c2aed80c683cd670860b8`.
 5. No merge to `main`, PR creation or deployment has been performed.
 
 ## Release and environment boundary
