@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import {
-  Bell, Bookmark, CalendarDays, ChevronRight, Compass, Film, Flame, History, ListVideo,
-  Home, LogIn, Menu, PlayCircle, Search, Settings, Tv, UserRound, Play, Clock, Heart, Info,
+  Bookmark, CalendarDays, ChevronRight, Compass, Film, Flame, History, ListVideo,
+  Home, LogIn, LogOut, Megaphone, Menu, PlayCircle, Search, Settings, Tv, UserRound, Play, Clock, Heart, Info,
   type LucideIcon,
 } from 'lucide-react';
 import SearchBar from './SearchBar';
 import AccountUnavailablePage from './AccountUnavailablePage';
 import HomePage from '../pages/HomePage';
+import AnnouncementsPage from '../pages/AnnouncementsPage';
 import YouTubeFeedPage from '../pages/YouTubeFeedPage';
 import MoviesHomePage from '../pages/MoviesHomePage';
 import MoviesBrowsePage from '../pages/MoviesBrowsePage';
@@ -26,7 +27,6 @@ import WatchPage from '../pages/WatchPage';
 import AdminPage from '../pages/AdminPage';
 import { useKairoAccount } from '../lib/AccountProvider';
 import { resolvePageTitle } from '../lib/pageMetadata';
-import { getWorkspaceSwitches } from '../lib/workspaceNavigation';
 import { AboutPage, AccountPage, HistoryPage, NotFoundPage, ProfilePage } from '../pages/StaticPages';
 
 type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean; active?: boolean };
@@ -38,6 +38,7 @@ const navItems: NavItem[] = [
   { to: '/search', label: 'Search', icon: Search },
   { to: '/browse/seasonal', label: 'Seasonal', icon: CalendarDays },
   { to: '/history', label: 'History', icon: History },
+  { to: '/announcements', label: 'Announcements', icon: Megaphone },
   { to: '/profile', label: 'Profile', icon: UserRound },
 ];
 
@@ -118,16 +119,12 @@ export default function PreMiruroApp({ onSignOut }: { onSignOut: () => Promise<v
       return saved === 'movies' || saved === 'youtube' ? saved : 'anime';
     } catch { return 'anime'; }
   });
-  const sharedChromePath = ['/history', '/profile', '/library', '/favorites', '/settings', '/about', '/search', '/login'].includes(pathname);
+  const sharedChromePath = ['/history', '/announcements', '/profile', '/library', '/favorites', '/settings', '/about', '/search', '/login'].includes(pathname);
   const isYouTubeMode = isAdmin && (pathname.startsWith('/youtube') || (sharedChromePath && lastSectionMode === 'youtube'));
   const isMoviesMode = pathname === '/movies' || pathname.startsWith('/movies/') || (sharedChromePath && lastSectionMode === 'movies');
   const isMoviesWatchMode = pathname.startsWith('/movies/') && pathname.endsWith('/watch');
-  const workspaceMode = isYouTubeMode ? 'youtube' : isMoviesMode ? 'movies' : 'anime';
-  const workspaceIcons: Record<'Anime' | 'Movies' | 'YouTube', LucideIcon> = { Anime: Tv, Movies: Film, YouTube: Play };
-  const workspaceNavItems: NavItem[] = getWorkspaceSwitches(workspaceMode, isAdmin)
-    .map(item => ({ ...item, icon: workspaceIcons[item.label], end: true }));
   const sectionNavItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : navItems;
-  const activeNavItems = [...sectionNavItems, ...workspaceNavItems];
+  const activeNavItems = sectionNavItems;
   const activeMenuItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : menuItems;
   const activeMobileItems = activeNavItems;
   const [menuOpen, setMenuOpen] = useState(false);
@@ -253,7 +250,12 @@ export default function PreMiruroApp({ onSignOut }: { onSignOut: () => Promise<v
         </nav>
         <div className="kc-rail-bottom">
           <RailLink to="/settings" label="Settings" icon={Settings} />
-          <RailLink to={currentUser ? "/profile" : "/login"} label={currentUser ? "Account" : "Login"} icon={currentUser ? UserRound : LogIn} active={false} />
+          {currentUser ? (
+            <button type="button" className="kc-rail-link" aria-label="Sign out" disabled={logoutPending} onClick={() => void logout()}>
+              <LogOut size={20} strokeWidth={1.8} aria-hidden="true" />
+              <span className="kc-rail-tooltip" aria-hidden="true">{logoutPending ? 'Signing out…' : 'Sign out'}</span>
+            </button>
+          ) : <RailLink to="/login" label="Sign in" icon={LogIn} active={false} />}
         </div>
       </aside>
 
@@ -311,9 +313,7 @@ export default function PreMiruroApp({ onSignOut }: { onSignOut: () => Promise<v
                       <CalendarDays size={17} strokeWidth={1.8} aria-hidden="true" /><span>Schedule</span><small>Soon</small>
                     </button>
                   </div>
-                  <button type="button" className="kc-menu-announcement" disabled title="Announcements are coming soon">
-                    <Bell size={15} aria-hidden="true" /><span>Announcements</span><small>Soon</small>
-                  </button>
+                  <MenuLink to="/announcements" label="Announcements" icon={Megaphone} onNavigate={closeMenu} />
                 </>}
                 <div className="kc-menu-footer">
                   <Link to="/settings" onClick={closeMenu}><Settings size={15} aria-hidden="true" />Settings</Link>
@@ -330,6 +330,7 @@ export default function PreMiruroApp({ onSignOut }: { onSignOut: () => Promise<v
         <Routes>
           <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="/" element={<HomePage />} />
+          <Route path="/announcements" element={<AnnouncementsPage />} />
           <Route path="/youtube" element={<AdminOnly><YouTubeFeedPage /></AdminOnly>} />
           <Route path="/movies" element={<MoviesHomePage />} />
           <Route path="/movies/search" element={<MoviesSearchPage />} />

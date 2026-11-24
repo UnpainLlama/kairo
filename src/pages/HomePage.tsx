@@ -4,6 +4,8 @@ import { ChevronDown, ChevronLeft, ChevronRight, Info, Play, Plus, Star } from '
 import { CardGrid, ErrorState, MetaChips, Poster, Section, SkeletonGrid, StatusDot, animeHref } from '../components/catalog';
 import { useApi, type ApiState } from '../lib/useApi';
 import { formatLabel, safeImageUrl, textList, type CatalogCard, type ItemList } from '../lib/catalog';
+import { useKairoAccount } from '../lib/AccountProvider';
+import { listLocalMediaPlayback, parseMediaPlayback, type MediaPlaybackSnapshot } from '../lib/mediaPlayback';
 
 type CardsState = ApiState<ItemList<CatalogCard>> & { reload: () => void };
 const itemsOf = (state: CardsState): CatalogCard[] => (state.status === 'ok' ? state.data.items : []);
@@ -13,7 +15,38 @@ export default function HomePage() {
   const trending = useApi<ItemList<CatalogCard>>('/catalog/trending?limit=12');
   const latest = useApi<ItemList<CatalogCard>>('/catalog/latest?limit=12');
   const airing = useApi<ItemList<CatalogCard>>('/catalog/browse?status=airing&sort=popularity&limit=6');
-  const upcoming = useApi<ItemList<CatalogCard>>('/catalog/browse?status=upcoming&sort=popularity&limit=6');
+  const account = useKairoAccount();
+  const [continueItems, setContinueItems] = useState<MediaPlaybackSnapshot[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      const local = listLocalMediaPlayback(account.accountId).filter((item) => item.mediaType === 'anime');
+      let remote: MediaPlaybackSnapshot[] = [];
+      if (account.accountId) {
+        try {
+          const response = await fetch('/api/v1/me/playback?mediaType=anime&limit=50', {
+            credentials: 'same-origin', headers: { Accept: 'application/json' }, cache: 'no-store',
+          });
+          const payload = response.ok ? await response.json() : null;
+          if (payload?.success && Array.isArray(payload?.data?.items)) {
+            remote = payload.data.items.map(parseMediaPlayback).filter((item: MediaPlaybackSnapshot | null): item is MediaPlaybackSnapshot => Boolean(item && item.mediaType === 'anime'));
+          }
+        } catch { /* Keep local Continue Watching records available while offline. */ }
+      }
+      const newest = new Map<string, MediaPlaybackSnapshot>();
+      for (const item of [...remote, ...local]) {
+        if (item.mediaType !== 'anime' || item.completed || item.progressSeconds <= 0) continue;
+        const existing = newest.get(item.mediaKey);
+        if (!existing || item.updatedAt > existing.updatedAt) newest.set(item.mediaKey, item);
+      }
+      if (active) setContinueItems([...newest.values()].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 12));
+    };
+    void refresh();
+    window.addEventListener('focus', refresh);
+    window.addEventListener('storage', refresh);
+    return () => { active = false; window.removeEventListener('focus', refresh); window.removeEventListener('storage', refresh); };
+  }, [account.accountId]);
 
   const main = [featured, trending, latest];
   const loading = main.some((s) => s.status === 'loading');
@@ -30,15 +63,37 @@ export default function HomePage() {
       {failed && failed.status === 'error' && <ErrorState error={failed.error} onRetry={() => main.forEach((s) => s.reload())} />}
       {nothing && <div className="kc-notice" role="status"><Info size={20} aria-hidden="true" /><div><h3>Nothing to show yet</h3><p>No titles are available right now. Try again in a moment.</p></div></div>}
 
+      {continueItems.length > 0 && <section className="kc-continue">
+        <div className="kc-continue-head"><h2>Continue Watching</h2><Link to="/history">View history <ChevronRight size={14} aria-hidden="true" /></Link></div>
+        <div className="kc-continue-track">
+          {continueItems.map((item) => {
+            const separator = item.mediaKey.lastIndexOf(':');
+            const slug = separator > 0 ? item.mediaKey.slice(0, separator) : '';
+            const episode = separator > 0 ? Number(item.mediaKey.slice(separator + 1)) : NaN;
+            if (!slug || !Number.isInteger(episode) || episode < 1) return null;
+            const image = safeImageUrl(item.artworkUrl);
+            const duration = Math.max(1, item.durationSeconds ?? item.progressSeconds);
+            const percent = Math.max(0, Math.min(100, item.progressSeconds / duration * 100));
+            return <Link key={item.mediaKey} className="kc-continue-card" to={`/watch/${encodeURIComponent(slug)}/${episode}`}>
+              <span className="kc-continue-media">
+                {image ? <img src={image} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <span className="kc-continue-fallback"><Play size={22} aria-hidden="true" /></span>}
+                <span className="kc-continue-play"><Play size={18} fill="currentColor" aria-hidden="true" /></span>
+                <span className="kc-continue-progress"><span style={{ width: percent + '%' }} /></span>
+              </span>
+              <span className="kc-continue-copy"><b>{item.title}</b><small>Episode {episode} · Continue watching</small></span>
+            </Link>;
+          })}
+        </div>
+      </section>}
+
       <div className="kc-home-grid">
         <div className="kc-home-main">
           {loading && !failed && <SkeletonGrid count={8} />}
-          {latestItems.length > 0 && <Section title="Latest updates" to="/browse/latest"><CardGrid items={latestItems} /></Section>}
+          {latestItems.length > 0 && <Section title="Latest anime" to="/browse/latest"><CardGrid items={latestItems} /></Section>}
           {trendingItems.length > 0 && <Section title="Trending now" to="/browse/trending"><CardGrid items={trendingItems} /></Section>}
         </div>
         <aside className="kc-home-side" aria-label="Lists">
           <SidePanel title="Top airing" state={airing} />
-          <SidePanel title="Upcoming" state={upcoming} />
         </aside>
       </div>
     </>

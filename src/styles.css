@@ -2639,3 +2639,28 @@ img { display: block; }
   .mv-watch-loading span { animation: none; }
   .mv-watch-page .mv-player-start-icon { transition: none; }
 }
+
+
+/* Miruro-inspired Anime home additions */
+.kc-continue { margin: 0 0 28px; min-width: 0; }
+.kc-continue-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 13px; }
+.kc-continue-head h2 { font-size: 19px; font-weight: 700; letter-spacing: -.02em; }
+.kc-continue-head a { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.kc-continue-head a:hover { color: var(--text); }
+.kc-continue-track { display: flex; gap: 14px; overflow-x: auto; overscroll-behavior-x: contain; padding: 0 2px 8px; scrollbar-width: thin; }
+.kc-continue-card { display: block; flex: 0 0 clamp(190px, 23vw, 275px); min-width: 0; color: var(--text); }
+.kc-continue-media { position: relative; display: block; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 9px; background: var(--surface-2); }
+.kc-continue-media > img { width: 100%; height: 100%; object-fit: cover; transition: transform .2s ease; }
+.kc-continue-card:hover .kc-continue-media > img { transform: scale(1.035); }
+.kc-continue-fallback { width: 100%; height: 100%; display: grid; place-items: center; color: var(--muted); }
+.kc-continue-play { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; opacity: 0; background: #0007; transition: opacity .15s; }
+.kc-continue-card:hover .kc-continue-play, .kc-continue-card:focus-visible .kc-continue-play { opacity: 1; }
+.kc-continue-progress { position: absolute; inset: auto 0 0; height: 4px; background: #ffffff55; }
+.kc-continue-progress > span { display: block; height: 100%; background: var(--accent); }
+.kc-continue-copy { display: flex; flex-direction: column; gap: 2px; padding: 8px 1px 0; }
+.kc-continue-copy b { overflow: hidden; color: var(--text); font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.kc-continue-copy small { color: var(--muted); font-size: 11px; }
+@media (max-width: 600px) {
+  .kc-continue-card { flex-basis: min(76vw, 270px); }
+  .kc-continue-head h2 { font-size: 17px; }
+}
