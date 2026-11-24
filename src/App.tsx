@@ -280,7 +280,7 @@ export default function App() {
   }
 
   return (
-    <div className={`kc-app${pathname === '/' ? ' kc-home-view' : ''}${isYouTubeMode ? ' yt-app' : ''}${isMoviesMode ? ' mv-app' : ''}${isMoviesWatchMode ? ' mv-watch-app' : ''}`}>
+    <div className={`kc-app${pathname === '/' ? ' kc-home-view' : ''}${!isYouTubeMode && !isMoviesMode ? ' kc-anime-mode' : ''}${isYouTubeMode ? ' yt-app' : ''}${isMoviesMode ? ' mv-app' : ''}${isMoviesWatchMode ? ' mv-watch-app' : ''}`}>
       <a className="kc-skip" href="#main">Skip to content</a>
 
       <aside className="kc-rail" aria-label="Primary">
@@ -296,6 +296,16 @@ export default function App() {
 
       <header className="kc-topbar">
         <div className="kc-topbar-inner">
+          <Link to="/" className="kc-anime-brand" aria-label="Kairo anime home">
+            <img src="/kairo-k.svg" alt="" width="22" height="26" />
+            <span>KAIRO</span>
+          </Link>
+          <nav className="kc-anime-topnav" aria-label="Anime navigation">
+            <NavLink to="/" end>Home</NavLink>
+            <NavLink to="/browse/trending">Trending</NavLink>
+            <NavLink to="/browse/anime">Discover</NavLink>
+            <NavLink to="/browse/seasonal">Seasonal</NavLink>
+          </nav>
           <SearchBar mode={isYouTubeMode ? 'youtube' : isMoviesMode ? 'movies' : 'anime'} />
           <div className="kc-menu-wrap" ref={menuRef}>
             <button

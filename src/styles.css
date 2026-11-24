@@ -2639,3 +2639,321 @@ img { display: block; }
   .mv-watch-loading span { animation: none; }
   .mv-watch-page .mv-player-start-icon { transition: none; }
 }
+
+
+/* --------------------------------------------------------------------------
+   Anime workspace — Miruro-inspired presentation, scoped away from Movies
+   and administrator-only YouTube. Catalogue and account data stay in Kairo.
+   -------------------------------------------------------------------------- */
+.kc-app.kc-anime-mode {
+  --bg: #080808;
+  --surface: #141414;
+  --surface-2: #1d1d1d;
+  --surface-3: #292929;
+  --text: #ededed;
+  --muted: #929292;
+  --dim: #666;
+  --line: rgba(255,255,255,.10);
+  --line-2: rgba(255,255,255,.14);
+  --accent: #55aaff;
+  --gold: #f1c75b;
+  background: var(--bg);
+}
+.kc-anime-mode .kc-rail,
+.kc-anime-mode .kc-mobile-nav { display: none !important; }
+.kc-anime-mode .kc-topbar {
+  left: 0 !important;
+  right: 0;
+  height: 56px;
+  padding: 7px clamp(14px, 2.2vw, 28px);
+  align-items: center;
+  background: rgba(8,8,8,.92);
+  border-bottom: 1px solid rgba(255,255,255,.055);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.kc-anime-mode .kc-topbar-inner {
+  width: 100%;
+  max-width: 1760px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(12px, 2vw, 26px);
+  pointer-events: none;
+}
+.kc-anime-mode .kc-anime-brand {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  color: #f6f6f6;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: .11em;
+  text-decoration: none;
+  pointer-events: auto;
+}
+.kc-anime-mode .kc-anime-brand img { display: block; width: 22px; height: 26px; object-fit: contain; }
+.kc-anime-mode .kc-anime-topnav {
+  display: flex;
+  align-items: center;
+  gap: clamp(12px, 1.7vw, 24px);
+  pointer-events: auto;
+}
+.kc-anime-mode .kc-anime-topnav a {
+  color: #a3a3a3;
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: none;
+  transition: color .16s ease;
+}
+.kc-anime-mode .kc-anime-topnav a:hover,
+.kc-anime-mode .kc-anime-topnav a.active { color: #fff; }
+.kc-anime-mode .kc-topbar-inner .kc-search-wrap {
+  width: min(40vw, 430px);
+  max-width: 430px;
+  flex: 0 1 430px;
+  margin-inline: auto;
+  pointer-events: auto;
+}
+.kc-anime-mode .kc-top-search {
+  min-height: 36px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 7px;
+  background: #121212;
+}
+.kc-anime-mode .kc-menu-wrap { flex: 0 0 auto; pointer-events: auto; }
+.kc-anime-mode .kc-menu-trigger {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #c9c9c9;
+}
+.kc-anime-mode .kc-menu-trigger:hover,
+.kc-anime-mode .kc-menu-trigger.active { background: #202020; color: #fff; }
+.kc-anime-mode .kc-main {
+  min-height: 100vh;
+  margin-left: 0 !important;
+  padding: 70px clamp(14px, 2.2vw, 28px) 42px;
+}
+.kc-anime-mode .kc-main > * { max-width: 1760px; margin-right: auto; margin-left: auto; }
+.kc-anime-mode.kc-home-view .kc-main { padding-top: 68px !important; }
+.kc-anime-mode .kc-main .kc-hero.kc-bleed {
+  width: 100%;
+  height: clamp(238px, 26vw, 360px);
+  min-height: 0 !important;
+  margin: 0 0 22px !important;
+  border-radius: 8px;
+}
+.kc-anime-mode .kc-main .kc-hero-media img {
+  object-position: center 32%;
+  filter: brightness(.92) saturate(1.06);
+}
+.kc-anime-mode .kc-main .kc-hero-shade {
+  background:
+    linear-gradient(90deg, rgba(0,0,0,.72) 0%, rgba(0,0,0,.40) 34%, rgba(0,0,0,.04) 75%),
+    linear-gradient(0deg, rgba(0,0,0,.48), transparent 55%);
+}
+.kc-anime-mode .kc-main .kc-hero-copy {
+  width: min(620px, 66%);
+  padding: 0 26px 25px !important;
+}
+.kc-anime-mode .kc-main .kc-hero-copy h1 {
+  max-width: 620px;
+  margin-bottom: 8px;
+  font-size: clamp(24px, 3.3vw, 42px);
+  letter-spacing: -.5px;
+}
+.kc-anime-mode .kc-main .kc-hero-synopsis {
+  max-width: 550px;
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  -webkit-line-clamp: 2;
+}
+.kc-anime-mode .kc-main .kc-hero .kc-pills { gap: 5px; }
+.kc-anime-mode .kc-main .kc-hero .kc-pills span {
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: rgba(10,10,10,.52);
+  font-size: 10px;
+}
+.kc-anime-mode .kc-main .kc-hero .kc-actions { gap: 8px; margin-top: 13px; }
+.kc-anime-mode .kc-main .kc-hero .kc-btn { min-height: 34px; padding: 0 14px; border-radius: 5px; font-size: 12px; }
+.kc-anime-mode .kc-main .kc-hero .kc-btn-primary { background: #f2f2f2; color: #111; }
+.kc-anime-mode .kc-main .kc-hero .kc-btn-dark { background: rgba(10,10,10,.72); }
+.kc-anime-mode .kc-main .kc-hero-dots { bottom: 15px; }
+.kc-anime-mode .kc-main .kc-hero-arrow { opacity: .72; }
+.kc-anime-mode .kc-home-grid,
+.kc-anime-mode .kc-anime-home-grid { display: block; }
+.kc-anime-mode .kc-home-main { min-width: 0; width: 100%; }
+.kc-anime-mode .kc-anime-collection { margin-top: 4px; }
+.kc-anime-mode .kc-anime-tabs {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin: 0 0 17px;
+  border-bottom: 1px solid rgba(255,255,255,.09);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.kc-anime-mode .kc-anime-tabs::-webkit-scrollbar { display: none; }
+.kc-anime-mode .kc-anime-tabs button {
+  position: relative;
+  flex: 0 0 auto;
+  padding: 0 0 11px;
+  border: 0;
+  background: transparent;
+  color: #8d8d8d;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: color .16s ease;
+}
+.kc-anime-mode .kc-anime-tabs button:hover,
+.kc-anime-mode .kc-anime-tabs button.active { color: #f4f4f4; }
+.kc-anime-mode .kc-anime-tabs button.active::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: #f4f4f4;
+  content: "";
+}
+.kc-anime-mode .kc-anime-collection > [role="tabpanel"] { min-height: 120px; }
+.kc-anime-mode .kc-anime-collection .kc-grid {
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 18px 12px;
+}
+.kc-anime-mode .kc-anime-collection .kc-card { min-width: 0; }
+.kc-anime-mode .kc-anime-collection .kc-poster {
+  border-radius: 6px;
+  background: #151515;
+  box-shadow: 0 4px 14px rgba(0,0,0,.24);
+}
+.kc-anime-mode .kc-anime-collection .kc-poster-img { transition: transform .22s ease, filter .22s ease; }
+.kc-anime-mode .kc-anime-collection .kc-card:hover .kc-poster-img { transform: scale(1.035); filter: brightness(.86); }
+.kc-anime-mode .kc-anime-collection .kc-poster-score {
+  top: 6px;
+  left: 6px;
+  padding: 3px 5px;
+  border-radius: 4px;
+  font-size: 10px;
+}
+.kc-anime-mode .kc-anime-collection .kc-chips {
+  min-height: 17px;
+  margin-top: 5px;
+  gap: 5px;
+}
+.kc-anime-mode .kc-anime-collection .kc-chips span {
+  padding: 0;
+  color: #8c8c8c;
+  font-size: 9px;
+  font-weight: 650;
+}
+.kc-anime-mode .kc-anime-collection .kc-card-title {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: #d7d7d7;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kc-anime-mode .kc-anime-collection .kc-card-title:hover { color: #fff; }
+.kc-anime-mode .kc-anime-empty {
+  padding: 28px 12px;
+  color: #888;
+  font-size: 13px;
+  text-align: center;
+}
+.kc-anime-mode .kc-home-side {
+  position: static;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 34px;
+}
+.kc-anime-mode .kc-home-side .kc-panel {
+  border: 1px solid rgba(255,255,255,.075);
+  border-radius: 7px;
+  background: #101010;
+}
+.kc-anime-mode .kc-home-side .kc-panel-head {
+  padding: 12px 13px;
+  color: #eee;
+  font-size: 12px;
+}
+.kc-anime-mode .kc-home-side .kc-panel ul { padding: 0 12px 10px; }
+.kc-anime-mode .kc-home-side .kc-row { padding: 7px 0; }
+.kc-anime-mode .kc-home-side .kc-row-poster { width: 42px; height: 57px; border-radius: 3px; }
+.kc-anime-mode .kc-home-side .kc-row-copy b { color: #ddd; font-size: 11px; }
+.kc-anime-mode .kc-home-side .kc-row-meta { font-size: 9px; }
+.kc-anime-mode .kc-anime-collection + .kc-section { margin-top: 35px; }
+.kc-anime-mode .kc-page-head h1 { letter-spacing: -.6px; }
+.kc-anime-mode .kc-filter-row { gap: 9px; }
+.kc-anime-mode .kc-detail-hero { border-radius: 8px; }
+.kc-anime-mode .kc-detail-content { padding-top: 23px; }
+.kc-anime-mode .kc-detail-art { border-radius: 6px; }
+.kc-anime-mode .kc-card-title:focus-visible,
+.kc-anime-mode .kc-anime-tabs button:focus-visible,
+.kc-anime-mode .kc-anime-topnav a:focus-visible {
+  outline: 2px solid #6eb8ff;
+  outline-offset: 3px;
+}
+@media (max-width: 1100px) {
+  .kc-anime-mode .kc-anime-topnav { display: none; }
+  .kc-anime-mode .kc-topbar-inner .kc-search-wrap { width: min(48vw, 480px); }
+}
+@media (max-width: 700px) {
+  .kc-anime-mode .kc-topbar { height: 54px; padding: 6px 12px; }
+  .kc-anime-mode .kc-topbar-inner { gap: 9px; }
+  .kc-anime-mode .kc-anime-brand { gap: 5px; font-size: 12px; letter-spacing: .08em; }
+  .kc-anime-mode .kc-anime-brand img { width: 19px; height: 23px; }
+  .kc-anime-mode .kc-topbar-inner .kc-search-wrap { width: auto; max-width: none; flex: 1 1 auto; }
+  .kc-anime-mode .kc-main,
+  .kc-anime-mode.kc-home-view .kc-main { padding: 64px 12px 34px !important; }
+  .kc-anime-mode .kc-main .kc-hero.kc-bleed { height: clamp(230px, 42vw, 300px); margin-bottom: 19px !important; }
+  .kc-anime-mode .kc-main .kc-hero-copy { width: 86%; padding: 0 16px 22px !important; }
+  .kc-anime-mode .kc-main .kc-hero-copy h1 { font-size: clamp(22px, 6vw, 32px); }
+  .kc-anime-mode .kc-main .kc-hero-synopsis { font-size: 11px; }
+  .kc-anime-mode .kc-anime-collection .kc-grid { grid-template-columns: repeat(auto-fill, minmax(94px, 1fr)); gap: 15px 9px; }
+  .kc-anime-mode .kc-home-side { grid-template-columns: 1fr; gap: 12px; margin-top: 26px; }
+}
+@media (max-width: 420px) {
+  .kc-anime-mode .kc-anime-brand span { display: none; }
+  .kc-anime-mode .kc-topbar-inner .kc-search-wrap { min-width: 0; }
+  .kc-anime-mode .kc-main .kc-hero .kc-hero-synopsis { display: none; }
+  .kc-anime-mode .kc-anime-tabs { gap: 17px; }
+  .kc-anime-mode .kc-anime-collection .kc-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* Keep Anime-only header links out of the Movies and YouTube workspaces. */
+.kc-anime-brand,
+.kc-anime-topnav { display: none; }
+.kc-app.kc-anime-mode .kc-anime-brand { display: inline-flex; }
+.kc-app.kc-anime-mode .kc-anime-topnav { display: flex; }
+.kc-app.kc-anime-mode .kc-topbar { left: 0 !important; }
+
+/* Final header positioning override for Kairo's centered-search chrome. */
+.kc-app.kc-anime-mode .kc-topbar {
+  left: 0 !important;
+  background: rgba(8,8,8,.94) !important;
+  border-bottom: 1px solid rgba(255,255,255,.055);
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+}
+.kc-app.kc-anime-mode .kc-menu-wrap {
+  position: relative;
+  top: auto;
+  right: auto;
+  z-index: 90;
+}

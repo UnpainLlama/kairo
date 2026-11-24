@@ -9,34 +9,49 @@ type CardsState = ApiState<ItemList<CatalogCard>> & { reload: () => void };
 const itemsOf = (state: CardsState): CatalogCard[] => (state.status === 'ok' ? state.data.items : []);
 
 export default function HomePage() {
+  const [activeTab, setActiveTab] = useState<'trending' | 'popular' | 'top'>('trending');
   const featured = useApi<ItemList<CatalogCard>>('/catalog/featured');
-  const trending = useApi<ItemList<CatalogCard>>('/catalog/trending?limit=12');
+  const trending = useApi<ItemList<CatalogCard>>('/catalog/trending?limit=24');
+  const popular = useApi<ItemList<CatalogCard>>('/catalog/browse?sort=popularity&limit=24');
+  const topRated = useApi<ItemList<CatalogCard>>('/catalog/browse?sort=rating&limit=24');
   const latest = useApi<ItemList<CatalogCard>>('/catalog/latest?limit=12');
   const airing = useApi<ItemList<CatalogCard>>('/catalog/browse?status=airing&sort=popularity&limit=6');
   const upcoming = useApi<ItemList<CatalogCard>>('/catalog/browse?status=upcoming&sort=popularity&limit=6');
 
-  const main = [featured, trending, latest];
-  const loading = main.some((s) => s.status === 'loading');
-  const failed = main.find((s) => s.status === 'error');
   const featuredItems = itemsOf(featured);
-  const trendingItems = itemsOf(trending);
-  const latestItems = itemsOf(latest);
-  const nothing = main.every((s) => s.status === 'ok') && featuredItems.length + trendingItems.length + latestItems.length === 0;
+  const active = activeTab === 'trending' ? trending : activeTab === 'popular' ? popular : topRated;
+  const activeItems = itemsOf(active);
+  const catalogueStates = [featured, trending, popular, topRated];
+  const nothing = catalogueStates.every((state) => state.status === 'ok')
+    && catalogueStates.every((state) => itemsOf(state).length === 0);
 
   return (
     <>
       {featuredItems.length > 0 ? <Hero items={featuredItems} /> : <div className="kc-hero-spacer" />}
 
-      {failed && failed.status === 'error' && <ErrorState error={failed.error} onRetry={() => main.forEach((s) => s.reload())} />}
+      {featured.status === 'error' && <ErrorState error={featured.error} onRetry={featured.reload} />}
       {nothing && <div className="kc-notice" role="status"><Info size={20} aria-hidden="true" /><div><h3>Nothing to show yet</h3><p>No titles are available right now. Try again in a moment.</p></div></div>}
 
-      <div className="kc-home-grid">
+      <div className="kc-home-grid kc-anime-home-grid">
         <div className="kc-home-main">
-          {loading && !failed && <SkeletonGrid count={8} />}
-          {latestItems.length > 0 && <Section title="Latest updates" to="/browse/latest"><CardGrid items={latestItems} /></Section>}
-          {trendingItems.length > 0 && <Section title="Trending now" to="/browse/trending"><CardGrid items={trendingItems} /></Section>}
+          <section className="kc-anime-collection" aria-label="Anime catalogue">
+            <div className="kc-anime-tabs" role="tablist" aria-label="Anime rankings">
+              <button type="button" role="tab" aria-selected={activeTab === 'trending'} className={activeTab === 'trending' ? 'active' : ''} onClick={() => setActiveTab('trending')}>Trending Anime</button>
+              <button type="button" role="tab" aria-selected={activeTab === 'popular'} className={activeTab === 'popular' ? 'active' : ''} onClick={() => setActiveTab('popular')}>Popular Anime</button>
+              <button type="button" role="tab" aria-selected={activeTab === 'top'} className={activeTab === 'top' ? 'active' : ''} onClick={() => setActiveTab('top')}>Top Anime</button>
+            </div>
+            <div role="tabpanel" aria-label={activeTab === 'trending' ? 'Trending anime' : activeTab === 'popular' ? 'Popular anime' : 'Top rated anime'}>
+              {active.status === 'loading' && <SkeletonGrid count={24} />}
+              {active.status === 'error' && <ErrorState error={active.error} onRetry={active.reload} />}
+              {active.status === 'ok' && activeItems.length === 0 && <div className="kc-anime-empty">No anime found in this collection right now.</div>}
+              {active.status === 'ok' && activeItems.length > 0 && <CardGrid items={activeItems} />}
+            </div>
+          </section>
+          {latest.status === 'ok' && latest.data.items.length > 0 && (
+            <Section title="Latest updates" to="/browse/latest"><CardGrid items={latest.data.items} /></Section>
+          )}
         </div>
-        <aside className="kc-home-side" aria-label="Lists">
+        <aside className="kc-home-side" aria-label="Anime lists">
           <SidePanel title="Top airing" state={airing} />
           <SidePanel title="Upcoming" state={upcoming} />
         </aside>
