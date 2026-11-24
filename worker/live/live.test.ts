@@ -86,7 +86,7 @@ describe('AniList source', () => {
     expect(first.items[0]?.card.id).not.toBe(second.items[0]?.card.id);
   });
   it('features titles with banners first and drops adult entries', async () => {
-    const src = createAniListSource(async () => aniPage([media(1), media(2, { bannerImage: 'https://img.test/b2.jpg' }), media(3, { isAdult: true }), media(4, { bannerImage: 'https://img.test/b4.jpg' }), media(5, { bannerImage: 'https://img.test/b5.jpg' })]), () => NOW);
+    const src = createAniListSource(async () => aniPage([media(1), media(2, { bannerImage: 'https://img.test/b2.jpg' }), media(3, { isAdult: true }), media(4, { bannerImage: 'https://img.test/b4.jpg' }), media(5, { countryOfOrigin: 'CN' })]), () => NOW);
     const out = await src.list('featured', 1, 12, signal);
     expect(out.items).toHaveLength(4);
     expect(out.items.slice(0, 2).every((item) => ['a2', 'a4'].includes(item.card.id))).toBe(true);
