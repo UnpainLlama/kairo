@@ -6,6 +6,7 @@ import { clearSessionCookie, findSessionUser, revokeSession, type SessionUser } 
 import { getRequestUser } from './auth/requestUser';
 import { registerAuthRoutes } from './auth/routes';
 import { registerHistoryPreferenceRoutes } from './auth/preferences';
+import { registerProfileRoutes } from './auth/profile';
 import { registerYouTubeMediaRoutes } from './youtube/routes';
 import { registerAdminRoutes, rotateAdminConsolePath } from './admin/routes';
 import { GENRES_SQL, buildBrowseQuery, buildListQuery, buildRelatedQuery, buildSearchQuery } from './repositories/catalog';
@@ -191,6 +192,7 @@ registerAuthRoutes(app);
 registerYouTubeMediaRoutes(app);
 registerAdminRoutes(app);
 registerHistoryPreferenceRoutes(app);
+registerProfileRoutes(app);
 
 function moviesProviderEnabled(c: AppContext): boolean {
   return c.env.MOVIES_TMDB_ENABLED === 'true' && c.env.MOVIES_TMDB_TERMS_APPROVED === 'true';
