@@ -1,78 +1,74 @@
 # Current implementation snapshot — 2026-11-24
 
-> Status for `rebuild/username-password-auth`. Automated verification is recorded separately from manual browser and remote-environment validation.
+> Status for `rebuild/username-password-auth`. This snapshot separates verified repository/CI work from browser and remote-environment checks.
 
 ## Branch and operational boundary
 
 - Feature branch: `rebuild/username-password-auth`.
-- Latest implementation checkpoint: [`e99d4ecaf152e7dd830219d7c6803a2d942f0ca9`](https://github.com/UnpainLlama/kairo/commit/e99d4ecaf152e7dd830219d7c6803a2d942f0ca9).
-- Automated verification passed for this exact head in GitHub Actions run [45396899695](https://github.com/UnpainLlama/kairo/actions/runs/45396899695).
-- The feature branch has not been merged; no PR has been opened. No changes from this implementation pass have been made to `main`.
-- The feature branch now includes the authenticated-app port of the seven main-only Miruro UI changes. Their old `src/App.tsx` shell and standalone `src/pages/HomePage.tsx` were translated into the current `KairoApp` component/route structure rather than blindly copying the old unauthenticated app shell.
-- The Anime-only header and monochrome visual layer are enabled only for Anime routes. Movies, movie-watch and account/profile/settings pages retain their separate existing styles.
-- No Cloudflare configuration, Worker secret, Access policy, remote D1 migration/query, deployment or real administrator credential operation has been performed.
+- Latest verified functional checkpoint: [`fce3ad6e042d953860163e5b9ded701985d87d11`](https://github.com/UnpainLlama/kairo/commit/fce3ad6e042d953860163e5b9ded701985d87d11).
+- GitHub Actions run [45400747618](https://github.com/UnpainLlama/kairo/actions/runs/45400747618) passed typecheck, tests and production build on that exact commit. Cloudflare deployment was skipped as expected for a feature-branch push.
+- No merge has been performed; no PR has been opened as part of this work.
+- No Cloudflare configuration, Worker secret, Access policy, remote D1 migration/query, deployment, or real administrator credential operation has been performed.
 
 ## Automated verification — passed
 
 - TypeScript project typecheck: passed.
-- Vitest: **322 tests passed across 43 test files**.
-- Production dependency audit (`npm audit --omit=dev`): zero reported vulnerabilities.
-- Full dependency audit: zero reported vulnerabilities.
+- Vitest: **323 tests passed across 43 test files**.
+- Production dependency audit and full dependency audit: zero reported vulnerabilities.
 - Worker and client production build: passed under Node 22.23.5 / npm 10.9.9.
-- Wrangler Access configuration validation in the verification job: passed.
-- The CI deploy job was skipped for this feature-branch push.
-- The build reports a client-bundle size advisory above Vite's 500 kB threshold; the build is successful. Route-level code splitting is a possible performance follow-up.
+- Wrangler Access configuration validation in the CI job: passed.
+- Cloudflare deployment job: skipped for this feature branch.
+- The build still reports a Vite client-bundle advisory: the entry bundle is approximately **953.70 kB** (293.45 kB gzip), above the 500 kB warning threshold. The YouTube route is lazy-loaded as a separate chunk; further route-level splitting may still be worthwhile.
 - There is no lint script in `package.json`; lint is not marked complete.
 
-## Phase 2 — Catalogue
+## Phase 2 — Catalogue and Anime workspace
 
 - Existing catalogue adapters and Worker routes remain for featured, trending, latest, search, filter browse, genres, title details, episodes, related titles and provider attribution.
-- The Anime home page now includes a featured-title carousel, Trending/Popular/Top ranking tabs, Top Airing and Upcoming side panels, Latest updates, and the shared Continue watching rail.
-- Featured carousel supports timed rotation, previous/next controls, keyboard and touch navigation, hidden-tab pause, and reduced-motion behavior.
-- The Anime-only header and monochrome Miruro-inspired layout are scoped to Anime routes. Movies and account pages do not inherit the Anime workspace style.
-- Ranking and featured content continue to use Kairo catalogue endpoints; AniList remains the first-choice live catalogue provider. No Miruro API or direct AniList GraphQL client is introduced.
-- Provider-backed Anime library references support AniList, MAL and HiAnime alongside legacy D1-backed rows. Display metadata is resolved through the configured Kairo title endpoint; browser-supplied title, poster and synopsis metadata is not stored as catalogue truth.
-- Library metadata resolution is incremental: 24 saved provider references are displayed per batch, with at most eight concurrent title lookups.
-- Remaining: verify configured Anime catalogue/episode provider combinations against live responses. Automated provider tests use controlled fixtures.
+- The Anime home page includes a featured-title carousel, Trending/Popular/Top ranking tabs, Top Airing and Upcoming side panels, Latest updates and the shared Continue watching rail.
+- Featured carousel supports timed rotation, previous/next controls, keyboard and touch navigation, hidden-tab pause and reduced-motion behavior.
+- Miruro-inspired Anime navigation and styling are scoped to Anime routes; Movies and account pages retain their own interface.
+- AniList remains the first-choice live catalogue provider. No Miruro API or direct AniList GraphQL client is introduced.
+- Provider-backed Anime library references support AniList, MAL and HiAnime alongside legacy D1-backed rows. Display metadata is resolved through Kairo title endpoints; browser-supplied title/poster/synopsis metadata is not stored as catalogue truth.
+- Remaining: verify configured Anime catalogue and episode-provider combinations against live responses. Automated provider tests use controlled fixtures.
 
-## Phase 3 — Identity, profile and library
+## Phase 3 — Identity, profile, shared account and workspaces
 
 - Username/password login, opaque sessions, forced first-login password change, logout, administrator bootstrap and account administration APIs remain implemented.
 - Frontend screens include profile, Anime/Movies library, watch history, account preferences and restricted administrator management.
 - Worker routes cover profile read/update, opt-in public profiles, account preferences, JSON data export and password-confirmed standard-account deletion.
 - Account deletion retains a minimal tombstone, removes account-owned rows (including provider-backed Anime references) and revokes sessions. Administrator self-deletion remains blocked.
-- Existing profiles without new credentials can be enrolled from the admin console with a one-time temporary password.
-- Additive migration 0024 adds subtitle size; additive migration 0025 adds provider-backed Anime library references. Both are included in the test migration harness. Neither has been applied remotely.
+- The YouTube workspace is restored under `/youtube/*) and is accessible from the main navigation only to administrator accounts. It has separate Home/feed, Search, Channels, Watch, Watch Later and History screens; the workspace is lazy-loaded and visually scoped away from Anime/Movies.
+- YouTube continues to use the existing administrator-only Worker namespaces. Regression tests verify that a standard signed-in account receives 404 for both `/api/v1/youtube/history` and `/api/v1/auth/youtube/status`, while an administrator session can access both.
+- YouTube subscriptions, Watch Later and history remain scoped to the same administrator Kairo user ID. No separate user identity or account system was added.
 
-## Phase 4 — Player and progress
+## Phase 4 — Player and shared progress
 
-- Existing server-side playback resolution and host allowlists remain in place.
+- Existing server-side Anime playback resolution and host allowlists remain in place.
 - Native HLS/file playback restores cloud/local resume positions, applies default speed and subtitle preferences, exposes HLS quality only when manifest levels are returned, exposes subtitle selection only when tracks are supplied, and provides source retry.
-- Playback snapshots retain duration and player state; local progress is retained between throttled cloud sync attempts.
 - Movies remain behind the CineSrc embed boundary and unified account progress API.
-- History pause is enforced server-side for new Anime/Movie account progress; administrator-only YouTube progress remains separate.
+- The YouTube watch page uses the YouTube iframe player API; videos marked non-embeddable offer an external YouTube link instead.
+- YouTube playback snapshots use the shared `/api/v1/me/playback` boundary and local/cloud playback helpers with media type `youtube`. Removing a YouTube history item also deletes its matching shared playback snapshot.
+- YouTube Made for Kids videos are not persisted as viewing activity by this interface.
 - Limitation: an external cross-origin embed without a documented seek API cannot be programmatically resume-restored.
+- Remaining: manual verification of actual YouTube iframe playback, resume behavior, YouTube API quota/configuration and OAuth connectivity.
 
 ## Phase 5 — Quality and manual validation
 
-- Focused route tests cover profile privacy, preferences, account export/deletion, provider-backed Anime save/list/remove, malformed provider IDs, legacy D1 slug compatibility and tombstone cleanup.
-- The provider-library and metadata tests exercise Worker request routing with SQLite-backed D1 and authenticated test sessions.
-- The full CI suite passes on the current code: 322 tests across 43 test files, typecheck and production build.
-- **Still not covered by automated CI:** browser-based accessibility/keyboard testing, mobile-browser layout checks, visual review, and staging/production runtime smoke tests.
+- Focused route tests cover profile privacy, preferences, account export/deletion, provider-backed Anime save/list/remove, malformed provider IDs, legacy D1 slug compatibility, tombstone cleanup and administrator-only YouTube route access.
+- Full CI passes on the latest functional checkpoint: typecheck, 323 tests across 43 test files, dependency audits and production build.
+- Still not covered by automated CI: browser-based accessibility/keyboard testing, visual review, mobile-browser layout checks, and staging/production runtime smoke tests.
 
 ## Remaining before merge
 
-1. Perform the browser/manual regression pass for admin enrolment/deletion, library ownership, public-profile privacy, playback resume/order, history pause, provider failures, keyboard interaction and mobile layout.
-2. Verify live AniList/MAL/HiAnime data and episode-provider combinations; decide how saved titles should display when an upstream provider removes or renames a title.
-3. Review additive migrations 0024/0025 and the PBKDF2 work factor against Cloudflare Worker CPU constraints before any remote application/deployment.
-4. Re-check the merge base and file-level divergence against the live `main` immediately before preparing a PR/merge. Keep reconciliation and merge as a separate reviewed step.
+1. Perform the browser/manual regression pass for authentication, admin access, account isolation, library ownership, public-profile privacy, Anime/Movie playback, YouTube feed/search/watch/history, keyboard interaction and mobile layout.
+2. Verify live AniList/MAL/HiAnime data, episode-provider combinations, YouTube Data API configuration/quota, Google OAuth connectivity and the actual YouTube iframe player.
+3. Review additive migrations 0024 and 0025 and the PBKDF2 work factor against Cloudflare Worker CPU constraints before any remote application/deployment.
+4. Reconcile branch divergence in a separate reviewed step. At this snapshot, `main` is `e29a4b1bcec54ffec27c2aed80c683cd670860b8`; the feature branch is 52 commits ahead and 7 behind, with merge base `08b15184a659a7346d4659ffb214a5a62dbd7b15`. Re-check the live comparison immediately before preparing a PR/merge.
+5. Do not merge or deploy until those reviews and manual validations are complete.
 
 ## Release and environment boundary
 
-- The passed CI build proves the repository's Worker/client build in the GitHub Actions runner. It does not prove that current Cloudflare staging/production secrets, D1 databases, Access policies or remote migrations are provisioned correctly.
-- Review and approve migrations 0024 and 0025 before remote D1 application.
-- Cloudflare Access remains a separately configured outer perimeter; any policy/validator change needs separate approval.
-- Do not deploy, change edge policies, run remote D1 operations, wipe sessions or create real administrator credentials during this feature-branch implementation pass.
+The passed CI build proves the repository's Worker/client build in the GitHub Actions runner. It does not prove that current Cloudflare staging/production secrets, D1 databases, Access policies or remote migrations are provisioned correctly. Keep remote D1 operations, Cloudflare Access changes, secret changes, session resets, administrator credential changes and deployment as separately approved steps.
 
 # Historical implementation status
 
