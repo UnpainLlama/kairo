@@ -31,7 +31,7 @@ export function validatePasswordChange(values: PasswordChangeValues): PasswordCh
   if (passwordBytes > MAX_PASSWORD_BYTES) {
     return {
       field: 'newPassword',
-      message: \`Your new passphrase is too long (\${passwordBytes} UTF-8 bytes). The maximum is 1,024 bytes.\`,
+      message: 'Your new passphrase is too long (' + passwordBytes + ' UTF-8 bytes). The maximum is 1,024 bytes.',
     };
   }
 
@@ -40,7 +40,9 @@ export function validatePasswordChange(values: PasswordChangeValues): PasswordCh
     const remaining = 5 - wordCount;
     return {
       field: 'newPassword',
-      message: \`Kairo counted \${wordCount} \${wordCount === 1 ? 'word' : 'words'} in the new passphrase. Add \${remaining} more \${remaining === 1 ? 'word' : 'words'}, separated by spaces.\`,
+      message: 'Kairo counted ' + wordCount + ' ' + (wordCount === 1 ? 'word' : 'words') +
+        ' in the new passphrase. Add ' + remaining + ' more ' + (remaining === 1 ? 'word' : 'words') +
+        ', separated by spaces.',
     };
   }
 
