@@ -25,6 +25,7 @@ import KairoMediaPlayer, { type KairoPlaybackSource } from './KairoMediaPlayer';
 import MovieEmbedPlayer from './MovieEmbedPlayer';
 
 type PageData<T> = { items: T[] };
+type LoadablePage<T> = ApiState<PageData<T>> & { reload: () => void };
 type Preferences = {
   theme: 'astral-plum' | 'sakura-ember' | 'ocean-circuit' | 'moonlit-jade';
   interfaceLanguage: 'en';
@@ -343,7 +344,7 @@ function DiscoverPage() {
   );
 }
 
-function AnimeSidePanel({ title, state }: { title: string; state: ApiState<PageData<CatalogCard>> }) {
+function AnimeSidePanel({ title, state }: { title: string; state: LoadablePage<CatalogCard> }) {
   const [open, setOpen] = useState(true);
   const items = state.status === 'ok' ? state.data.items : [];
   if (state.status === 'ok' && items.length === 0) return null;
