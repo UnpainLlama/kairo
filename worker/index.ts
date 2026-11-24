@@ -1040,7 +1040,7 @@ app.delete('/api/v1/me/library/:animeId', async (c) => {
   const animeId = parseAnimeLibraryIdentifier(c.req.param('animeId'));
   if (!animeId) return fail(c, 400, 'VALIDATION_ERROR', 'The Anime identifier is invalid.');
   try {
-    const anime = await c.env.DB.prepare('SELECT id FROM anime WHERE id = ? LIMIT 1').bind(animeId).first<{ id: string }>();
+    const anime = await c.env.DB.prepare('SELECT id FROM anime WHERE id = ? OR slug = ? LIMIT 1').bind(animeId, animeId).first<{ id: string }>();
     if (anime) {
       await c.env.DB.prepare('DELETE FROM user_library WHERE user_id = ? AND anime_id = ?').bind(user.id, anime.id).run();
       return ok(c, { removed: true, animeId: anime.id });

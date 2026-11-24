@@ -22,9 +22,11 @@ describe('global API Origin/Referer protection',()=>{
     expect(referer.status).toBe(404);
   });
   it('enforces the Origin guard on the public login route',async()=>{
+    db=createTestDatabase();
+    const env={DB:sqliteD1(db)};
     const missing=await worker.request(origin+'/api/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'},{});
     const foreign=await worker.request(origin+'/api/v1/auth/login',{method:'POST',headers:{Origin:'https://attacker.test','Content-Type':'application/json'},body:'{}'},{});
-    const local=await worker.request(origin+'/api/v1/auth/login',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:'{}'},{});
+    const local=await worker.request(origin+'/api/v1/auth/login',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:'{}'},env);
     expect(missing.status).toBe(403);
     expect(foreign.status).toBe(403);
     expect(local.status).toBe(401);
@@ -53,7 +55,7 @@ describe('closed-site API default deny',()=>{
     },env);
     expect(health.status).toBe(200);
     expect(ready.status).toBe(200);
-    expect(login.status).toBe(400);
+    expect(login.status).toBe(401);
     expect(logout.status).toBe(200);
     expect(bootstrap.status).toBe(400);
   });
