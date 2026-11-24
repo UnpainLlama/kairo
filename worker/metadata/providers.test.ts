@@ -11,7 +11,7 @@ const NOW = '2026-11-06T00:00:00.000Z';
 const json = (body: unknown, init: ResponseInit = {}) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' }, ...init });
 const signal = new AbortController().signal;
 
-const aniMedia = { id: 1535, idMal: 1535, siteUrl: 'https://anilist.co/anime/1535', title: { romaji: 'Death Note', english: 'Death Note', native: 'デスノート' }, synonyms: ['DN'],
+const aniMedia = { id: 1535, idMal: 1535, siteUrl: 'https://anilist.co/anime/1535', countryOfOrigin: 'JP', title: { romaji: 'Death Note', english: 'Death Note', native: 'デスノート' }, synonyms: ['DN'],
   description: 'A <i>notebook</i><br>falls.', format: 'TV', status: 'FINISHED', episodes: 37, season: 'FALL', seasonYear: 2006, startDate: { year: 2006 },
   genres: ['Mystery', 'Thriller'], averageScore: 84, coverImage: { extraLarge: 'https://img.test/x.jpg' }, bannerImage: 'http://insecure.test/b.jpg' };
 
@@ -20,15 +20,19 @@ describe('AniList adapter', () => {
     const m = mapAniListMedia(aniMedia, NOW);
     expect(m).toMatchObject({ provider: 'anilist', externalId: '1535', ids: { anilist: '1535', mal: '1535' }, format: 'series', status: 'finished', season: 'fall', year: 2006, episodeCount: 37, rating: 8.4, posterUrl: 'https://img.test/x.jpg', bannerUrl: null, synopsis: 'A notebook\nfalls.' });
   });
-  it('rejects shapes without a valid id', () => {
+  it('rejects shapes without a valid id and non-Japanese country of origin', () => {
     expect(() => mapAniListMedia({ title: {} }, NOW)).toThrow(ProviderError);
     expect(() => mapAniListMedia('x', NOW)).toThrow(ProviderError);
+    expect(() => mapAniListMedia({ ...aniMedia, countryOfOrigin: 'CN' }, NOW)).toThrow(ProviderError);
   });
   it('fetches by id with a POST to the allowlisted host only', async () => {
     let seen: { url: string; method?: string } | null = null;
-    const p = createAniListProvider(async (url, init) => { seen = { url, method: init?.method }; return json({ data: { Media: aniMedia } }); }, () => NOW);
+    let query = '';
+    const p = createAniListProvider(async (url, init) => { seen = { url, method: init?.method }; query = JSON.parse(String(init?.body)).query; return json({ data: { Media: aniMedia } }); }, () => NOW);
     expect((await p.fetchById('1535', signal)).title).toBe('Death Note');
     expect(seen).toEqual({ url: 'https://graphql.anilist.co', method: 'POST' });
+    expect(query).toContain('countryOfOrigin: JP');
+    expect(query).toContain('isAdult: false');
   });
   it('maps 429 to rate_limited with Retry-After, 404 to not_found, 5xx and network errors to unavailable', async () => {
     const mk = (res: () => Promise<Response>) => createAniListProvider(res, () => NOW);
@@ -38,9 +42,12 @@ describe('AniList adapter', () => {
     await expect(mk(async () => { throw new Error('net'); }).fetchById('1', signal)).rejects.toMatchObject({ kind: 'unavailable' });
     await expect(mk(async () => new Response('<html>', { status: 200 })).fetchById('1', signal)).rejects.toMatchObject({ kind: 'invalid_response' });
   });
-  it('skips malformed search results instead of failing the whole search', async () => {
-    const p = createAniListProvider(async () => json({ data: { Page: { media: [aniMedia, { nope: true }] } } }), () => NOW);
+  it('skips malformed search results and sends the Japanese-origin filter', async () => {
+    let query = '';
+    const p = createAniListProvider(async (_url, init) => { query = JSON.parse(String(init?.body)).query; return json({ data: { Page: { media: [aniMedia, { nope: true }] } } }); }, () => NOW);
     expect(await p.search('death note', signal)).toHaveLength(1);
+    expect(query).toContain('countryOfOrigin: JP');
+    expect(query).toContain('isAdult: false');
   });
   it('rejects non-numeric ids without calling the network', async () => {
     const p = createAniListProvider(async () => { throw new Error('should not be called'); }, () => NOW);

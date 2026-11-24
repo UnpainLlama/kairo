@@ -70,16 +70,16 @@ Search parameters:
 - `page`: integer 1–500.
 - `limit`: integer 1–50; default 24.
 - Optional filters: `genre` (letters/numbers/space/`&`/`'`/`-`, up to 40 chars, matched case-insensitively against a title's genre list), `year` (1900–2100), `format` (`series|movie|ova|ona|special`), `status` (`airing|finished|upcoming|hiatus`), `season` (`winter|spring|summer|fall`), `sort` (`relevance|popularity|trending|latest|rating`). Enum values are case-insensitive. Stored catalogue values must be normalised to these forms at ingestion for the filters to match.
-- `sort=rating` places titles without a rating last; it never invents a rating. In live mode, `sort=trending` uses AniList's `TRENDING_DESC`; fallback providers approximate it with their popularity ordering.
+- `sort=rating` places titles without a rating last; it never invents a rating. Live mode uses AniList's native sort values; there is no alternate catalogue-provider fallback.
 - Reject invalid sort keys rather than interpolating them into SQL.
 
 ### Implementation notes (current behaviour)
 
 - In legacy `CATALOG_SOURCE=db` mode, `trending` ranks by stored `popularity_score` and `latest` by the catalogue row's `updated_at`. In live mode, AniList supplies trending-score ordering and currently airing titles newest-first; see docs/LIVE_CATALOGUE.md.
 - In DB mode, `genres` returns counts derived from stored title genre lists. In live mode, AniList returns its genre collection without counts.
-- Related-title behavior is provider-specific in live mode (AniList relations and recommendations, with provider fallbacks). The legacy DB route uses shared genres. Accepts `limit` (1–24, default 12).
+- Related-title behavior in live mode uses AniList relations and recommendations only. The legacy DB route uses shared genres. Accepts `limit` (1–24, default 12).
 - Filter-only `/api/v1/catalog/browse` is supported in both live and legacy D1 catalogue modes. In D1 mode filters are bound against the stored genre/year/format/status/season fields and sort uses the same fixed whitelist as search.
-- D1 catalogue mode resolves episode servers/playback only through a stored AniList or MAL provider-ID mapping plus the configured independent episode provider. A title without a supported mapping returns `EPISODE_SOURCE_UNAVAILABLE`; a mode without a server-capable episode provider returns `PROVIDER_UNAVAILABLE` rather than a missing-route 404.
+- D1 catalogue mode resolves episode servers/playback through a stored AniList mapping, or a legacy MAL ID used only as an AniList `idMal` lookup, plus the configured independent episode provider. A title without a supported mapping returns `EPISODE_SOURCE_UNAVAILABLE`; a mode without a server-capable episode provider returns `PROVIDER_UNAVAILABLE` rather than a missing-route 404.
 
 ## 2b. Provider routes (added; existing routes unchanged)
 
@@ -132,7 +132,7 @@ Every other `/api/v1/*` route requires an active Kairo session. While `mustChang
 | GET | `/api/v1/me/preferences` | Read theme, interface language, subtitle language/size, autoplay-next, default speed and history-pause preferences. |
 | PUT | `/api/v1/me/preferences` | Update one or more validated account-wide preferences. History pause prevents account-synced Anime and Movie progress; administrator-only YouTube sync remains separate. |
 | GET | `/api/v1/me/library` | Read the signed-in user's legacy D1 Anime rows plus provider-backed Anime references (`references`). |
-| PUT | `/api/v1/me/library/:animeId` | Add/update a legacy D1 Anime row by ID or slug, or a live AniList/MAL/HiAnime provider reference. Only the provider namespace, numeric external ID and validated slug are stored for live titles. |
+| PUT | `/api/v1/me/library/:animeId` | Add/update a legacy D1 Anime row by ID or slug, or a live AniList ID reference. Older `m...` aliases can still resolve through AniList's `idMal` field; new catalogue results use AniList IDs only. |
 | DELETE | `/api/v1/me/library/:animeId` | Remove a legacy D1 Anime row by ID or slug, or a provider-reference entry. |
 | GET | `/api/v1/me/movies/library` | Read the signed-in user's Movies library references. |
 | POST | `/api/v1/me/movies/library` | Add or update a Movies library reference. |
@@ -172,7 +172,7 @@ All state-changing requests require a matching same-origin Origin or Referer. Va
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/v1/anime/:id/episodes/:episodeNumber/servers` | Discover available language/server choices from the configured episode provider. In D1 catalogue mode, the stored title must have a supported AniList or MAL provider-ID mapping. |
+| GET | `/api/v1/anime/:id/episodes/:episodeNumber/servers` | Discover available language/server choices from the configured episode provider. In D1 catalogue mode, the stored title must have a supported AniList mapping or a legacy MAL numeric ID that AniList can resolve via `idMal`. |
 | GET | `/api/v1/anime/:id/episodes/:episodeNumber/servers/:serverId/playback` | Resolve the selected opaque server ID through the configured provider and validate the returned URL against the playback host allowlist. |
 
 A successful playback response may include:

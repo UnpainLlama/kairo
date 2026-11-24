@@ -31,8 +31,8 @@ The report-only policy currently reflects the app's known dependencies:
 | `script-src` | `self`, `www.youtube.com`, `s.ytimg.com` | Kairo bundle and official YouTube IFrame API/player |
 | `style-src` | `self`, `fonts.googleapis.com` | App CSS and Google Fonts CSS |
 | `font-src` | `self`, `fonts.gstatic.com`, `data:` | Local fonts, Google Fonts files, embedded font data |
-| `img-src` | `self`, `image.tmdb.org`, `s4.anilist.co`, `cdn.myanimelist.net`, `i.ytimg.com`, `img.youtube.com`, `yt3.ggpht.com`, `yt3.googleusercontent.com`, known HiAnime mirrors | Catalogue artwork, movie artwork, YouTube thumbnails and provider posters |
-| `connect-src` | `self`, AniList, Jikan, TMDB, Google APIs/OAuth and configured playback hosts | Browser XHR/fetch, YouTube API and player requests and HLS segments. HLS.js is bundled with Kairo; it is not loaded from a CDN. Most catalogue/API calls are Worker-to-provider requests and are not subject to the browser's CSP. |
+| `img-src` | `self`, `image.tmdb.org`, `s4.anilist.co`, `i.ytimg.com`, `img.youtube.com`, `yt3.ggpht.com`, `yt3.googleusercontent.com`, known HiAnime mirrors | AniList catalogue artwork, movie artwork, YouTube thumbnails and approved episode-provider images |
+| `connect-src` | `self`, TMDB, Google APIs/OAuth and configured playback hosts | Browser XHR/fetch, YouTube API and player requests and HLS segments. AniList and Jikan requests are Worker-to-provider calls, not browser XHR; HLS.js is bundled with Kairo. |
 | `frame-src` | `self`, `cinesrc.st`, YouTube, and configured staging playback hosts | Approved movie and episode players |
 | `media-src` | `self`, `blob:`, `data:`, and configured staging playback hosts | Direct media and HLS playback |
 | `worker-src` | `self`, `blob:` | Local code and player workers such as HLS workers |

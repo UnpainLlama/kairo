@@ -1,5 +1,5 @@
 // Stable ids and slugs for live (database-free) titles.
-// A title id is a provider letter plus that provider's numeric id: "a1535" (AniList), "m1535" (MAL) or "h8" (HiAnime).
+// New results use AniList IDs ("a1535"); older "m1535" references resolve through AniList's idMal field.
 // A slug is a readable prefix plus the id: "death-note-a1535". Only the trailing id matters when resolving.
 export type RefKind = 'a' | 'm' | 'h';
 export type Ref = { kind: RefKind; id: number; /** Provider slug for hianime references, when present in the public route. */ slug?: string };
@@ -33,7 +33,7 @@ export function parseRef(raw: string | undefined): Ref | null {
 
 /**
  * Convert a D1 cross-provider mapping into a live-catalogue ref for independent
- * episode discovery. Honor the configured catalogue-provider order.
+ * episode discovery. Prefer native AniList IDs; legacy MAL IDs resolve via AniList's idMal field.
  */
 export function providerRefFromMappings(
   mappings: readonly { provider: string; externalId: string }[],

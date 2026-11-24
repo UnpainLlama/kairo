@@ -5,13 +5,10 @@ import { MemoryCache } from '../metadata/cache';
 import type { ArtworkProvider } from '../artwork/tmdb';
 import { CircuitBreaker } from '../metadata/breaker';
 import { createAniListSource, buildPageQuery } from './anilist';
-import { createJikanSource, mapJikanAnime, Pacer } from './jikan';
-import { createMalSource } from './mal';
 import { createJikanEpisodeProvider } from '../episodes/providers/jikan';
 import { createLiveHandlers, parseBrowse, currentSeason } from './handlers';
 import { makeSlug, parseRef, slugify } from './ids';
-import { parseSourceList, type Deps } from './service';
-import type { CatalogSource, LiveTitle } from './types';
+import type { Deps } from './service';
 import type { LiveRequest } from './types';
 
 const json = (body: unknown, init: ResponseInit = {}) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' }, ...init });
@@ -19,23 +16,16 @@ const signal = new AbortController().signal;
 const NOW = '2026-11-07T00:00:00.000Z';
 
 const media = (id: number, extra: Record<string, unknown> = {}) => ({
-  id, idMal: id + 1000, siteUrl: `https://anilist.co/anime/${id}`, isAdult: false, title: { romaji: `Title ${id}`, english: `Title ${id}`, native: null }, synonyms: [],
+  id, idMal: id + 1000, siteUrl: `https://anilist.co/anime/${id}`, isAdult: false, countryOfOrigin: 'JP', title: { romaji: `Title ${id}`, english: `Title ${id}`, native: null }, synonyms: [],
   description: 'A <b>story</b>.', format: 'TV', status: 'RELEASING', episodes: 12, season: 'FALL', seasonYear: 2026, startDate: { year: 2026 }, genres: ['Action'],
   averageScore: 80, coverImage: { extraLarge: `https://img.test/${id}.jpg` }, bannerImage: null, ...extra,
 });
 const aniPage = (items: unknown[], extra: Record<string, unknown> = {}) => json({ data: { Page: { pageInfo: { total: items.length, hasNextPage: false, ...extra }, media: items } } });
-const jikanAnime = (id: number, extra: Record<string, unknown> = {}) => ({
-  mal_id: id, url: `https://myanimelist.net/anime/${id}`, images: { jpg: { large_image_url: `https://cdn.test/${id}.jpg` } }, title: `Jikan ${id}`, title_english: null, title_japanese: 'ジ',
-  title_synonyms: [], type: 'TV', episodes: 24, status: 'Currently Airing', aired: { prop: { from: { year: 2026 } } }, score: 7.84, synopsis: 'Hello. [Written by MAL Rewrite]',
-  rating: 'PG-13 - Teens 13 or older', season: 'fall', year: 2026, genres: [{ name: 'Comedy' }], ...extra,
-});
-const jikanList = (items: unknown[]) => json({ data: items, pagination: { has_next_page: true, items: { total: 99 } } });
 
-const instant = new Pacer(0, Date.now, async () => {});
 function deps(handler: (url: string, init?: RequestInit) => Promise<Response>, over: Partial<Deps> = {}): Deps {
   const f = (url: string, init?: RequestInit) => handler(url, init);
   return {
-    sources: [createAniListSource(f, () => NOW), createJikanSource(f, { pacer: instant, now: () => NOW })],
+    sources: [createAniListSource(f, () => NOW)],
     episodeProviders: [createJikanEpisodeProvider(f, async () => {})], unknownEpisodeProviders: [],
     cache: new MemoryCache(), breaker: new CircuitBreaker(), now: Date.now, ...over,
   };
@@ -45,9 +35,14 @@ const call = (d: Deps, name: keyof ReturnType<typeof createLiveHandlers>, r: Liv
 const isAni = (url: string) => url === 'https://graphql.anilist.co';
 
 describe('provider configuration', () => {
-  it('defaults to AniList first with MAL as the catalogue fallback', () => {
-    expect(parseSourceList(undefined)).toEqual(['anilist', 'mal']);
-    expect(parseSourceList('anilist,mal,hianime')).toEqual(['anilist', 'mal', 'hianime']);
+  it('exposes AniList as the only catalogue provider and keeps episode discovery separate', async () => {
+    const response = await call(deps(async () => json({})), 'providers', req());
+    expect(response.body).toMatchObject({
+      data: {
+        items: [{ id: 'anilist', displayName: 'AniList', priority: 1 }],
+        episodeProviders: [{ id: 'jikan', displayName: 'Jikan episode catalogue', priority: 1 }],
+      },
+    });
   });
 });
 
@@ -69,6 +64,7 @@ describe('AniList source', () => {
   it('builds queries with only the variables that are set and always excludes adult titles', () => {
     const q = buildPageQuery([{ name: 'genre', gqlType: 'String', value: 'Action' }], 2, 24);
     expect(q.query).toContain('isAdult: false');
+    expect(q.query).toContain('countryOfOrigin: JP');
     expect(q.query).toContain('genre: $genre');
     expect(q.query).not.toContain('$search');
     expect(q.variables).toEqual({ page: 2, perPage: 24, genre: 'Action' });
@@ -91,7 +87,7 @@ describe('AniList source', () => {
     expect(first.items[0]?.card.id).not.toBe(second.items[0]?.card.id);
   });
   it('features titles with banners first and drops adult entries', async () => {
-    const src = createAniListSource(async () => aniPage([media(1), media(2, { bannerImage: 'https://img.test/b2.jpg' }), media(3, { isAdult: true }), media(4, { bannerImage: 'https://img.test/b4.jpg' })]), () => NOW);
+    const src = createAniListSource(async () => aniPage([media(1), media(2, { bannerImage: 'https://img.test/b2.jpg' }), media(3, { isAdult: true }), media(4, { bannerImage: 'https://img.test/b4.jpg' }), media(5, { countryOfOrigin: 'CN', bannerImage: 'https://img.test/b5.jpg' })]), () => NOW);
     const out = await src.list('featured', 1, 12, signal);
     expect(out.items).toHaveLength(3);
     expect(out.items.slice(0, 2).every((item) => ['a2', 'a4'].includes(item.card.id))).toBe(true);
@@ -134,12 +130,23 @@ describe('AniList source', () => {
       genre: 'Adventure', sort: ['POPULARITY_DESC'],
     });
   });
-  it('lists genres without Hentai and looks up by MAL id', async () => {
+  it('lists genres without Hentai and resolves legacy MAL-ID aliases through AniList', async () => {
     let q = '';
     const src = createAniListSource(async (_u, init) => { q = JSON.parse(String(init?.body)).query; return q.includes('GenreCollection') ? json({ data: { GenreCollection: ['Action', 'Hentai', 'Drama'] } }) : json({ data: { Media: media(7) } }); }, () => NOW);
     expect((await src.genres(signal)).map((g) => g.name)).toEqual(['Action', 'Drama']);
     await src.byRef({ kind: 'm', id: 1007 }, signal);
     expect(q).toContain('idMal: $id');
+    expect(q).toContain('countryOfOrigin: JP');
+  });
+  it('excludes non-Japanese-origin entries from browse and direct title resolution', async () => {
+    const source = createAniListSource(async (_url, init) => {
+      const request = JSON.parse(String(init?.body)) as { query: string };
+      if (request.query.includes('Page(')) return aniPage([media(10), media(11, { countryOfOrigin: 'CN' })]);
+      return json({ data: { Media: media(12, { countryOfOrigin: 'CN' }) } });
+    }, () => NOW);
+    const page = await source.browse({ sort: 'popularity', page: 1, limit: 24 }, signal);
+    expect(page.items.map((item) => item.card.id)).toEqual(['a10']);
+    await expect(source.byRef({ kind: 'a', id: 12 }, signal)).rejects.toMatchObject({ kind: 'not_found' });
   });
   it('builds related from relations then recommendations, anime only', async () => {
     const src = createAniListSource(async () => json({ data: { Media: { id: 1, relations: { edges: [{ node: { type: 'ANIME', ...media(2) } }, { node: { type: 'MANGA', ...media(3) } }] }, recommendations: { nodes: [{ mediaRecommendation: media(4) }, { mediaRecommendation: media(1) }, { mediaRecommendation: media(5, { isAdult: true }) }] } } } }), () => NOW);
@@ -151,91 +158,7 @@ describe('AniList source', () => {
   });
 });
 
-describe('Jikan source', () => {
-  it('maps an anime, strips the MAL rewrite tag and rescales nothing', () => {
-    expect(mapJikanAnime(jikanAnime(5), NOW)).toMatchObject({ provider: 'jikan', externalId: '5', title: 'Jikan 5', titleNative: 'ジ', synopsis: 'Hello.', format: 'series', status: 'airing', season: 'fall', year: 2026, episodeCount: 24, rating: 7.8, genres: ['Comedy'], posterUrl: 'https://cdn.test/5.jpg', bannerUrl: null });
-    expect(() => mapJikanAnime({ title: 'x' }, NOW)).toThrow();
-  });
-  it('always asks for sfw, drops Rx titles, and clamps the page size to 25', async () => {
-    let url = '';
-    const src = createJikanSource(async (u) => { url = u; return jikanList([jikanAnime(1), jikanAnime(2, { rating: 'Rx - Hentai' })]); }, { pacer: instant, now: () => NOW });
-    const out = await src.list('trending', 2, 50, signal);
-    expect(url).toContain('/top/anime');
-    expect(url).toContain('filter=bypopularity');
-    expect(url).toContain('sfw=true');
-    expect(url).toContain('limit=25');
-    expect(out).toMatchObject({ total: 99, hasNextPage: true, limit: 25 });
-    expect(out.items.map((t) => t.card.id)).toEqual(['m1']);
-  });
-  it('translates browse filters, resolves genre names to ids, and returns nothing for unsupported filters', async () => {
-    const urls: string[] = [];
-    const src = createJikanSource(async (u) => { urls.push(u); return u.includes('/genres/') ? json({ data: [{ mal_id: 4, name: 'Comedy', count: 5 }] }) : jikanList([jikanAnime(1)]); }, { pacer: instant, now: () => NOW });
-    await src.browse({ q: 'x', sort: 'rating', genre: 'comedy', format: 'movie', status: 'finished', season: 'fall', year: 2026, page: 1, limit: 24 }, signal);
-    const u = new URL(urls[urls.length - 1]!);
-    expect(Object.fromEntries(u.searchParams)).toMatchObject({ q: 'x', genres: '4', type: 'movie', status: 'complete', start_date: '2026-10-01', end_date: '2026-12-31', order_by: 'score', sort: 'desc', sfw: 'true' });
-    expect((await src.browse({ sort: 'popularity', status: 'hiatus', page: 1, limit: 24 }, signal)).items).toEqual([]);
-    expect((await src.browse({ sort: 'popularity', genre: 'Nope', page: 1, limit: 24 }, signal)).items).toEqual([]);
-  });
-  it('uses Jikan’s native seasonal archive for season-only browse and maps format filters', async () => {
-    let url = '';
-    const src = createJikanSource(async (u) => { url = u; return jikanList([jikanAnime(1)]); }, { pacer: instant, now: () => NOW });
-    const out = await src.browse({ sort: 'popularity', season: 'winter', year: 2026, format: 'series', page: 2, limit: 24 }, signal);
-    const parsed = new URL(url);
-    expect(parsed.pathname).toBe('/v4/seasons/2026/winter');
-    expect(Object.fromEntries(parsed.searchParams)).toMatchObject({ filter: 'tv', sfw: 'true', page: '2', limit: '24' });
-    expect(parsed.searchParams.has('start_date')).toBe(false);
-    expect(out.items.map((item) => item.card.id)).toEqual(['m1']);
-    expect(out.items[0]?.card).toMatchObject({
-      synopsis: 'Hello.', rating: 7.8, episodeCount: 24, format: 'series',
-      releaseYear: 2026, season: 'fall', status: 'airing', genres: ['Comedy'],
-      posterUrl: 'https://cdn.test/1.jpg',
-    });
-  });
-  it('maps provider errors for missing and unavailable catalogue titles', async () => {
-    await expect(createJikanSource(async () => json({}, { status: 404 }), { pacer: instant }).byRef({ kind: 'm', id: 1 }, signal)).rejects.toMatchObject({ kind: 'not_found' });
-    await expect(createJikanSource(async () => json({}, { status: 504 }), { pacer: instant }).byRef({ kind: 'm', id: 1 }, signal)).rejects.toMatchObject({ kind: 'unavailable' });
-  });
-  it('only supports MyAnimeList ids', () => {
-    const src = createJikanSource(async () => json({}), { pacer: instant });
-    expect(src.supports({ kind: 'm', id: 1 })).toBe(true);
-    expect(src.supports({ kind: 'a', id: 1 })).toBe(false);
-    expect(src.supports({ kind: 'h', id: 1 })).toBe(false);
-  });
-});
-
-describe('Pacer', () => {
-  it('spaces starts by the gap', async () => {
-    let t = 0; const sleeps: number[] = [];
-    const p = new Pacer(400, () => t, async (ms) => { sleeps.push(ms); });
-    await p.wait(); await p.wait(); await p.wait();
-    expect(sleeps).toEqual([400, 800]);
-  });
-});
-
 describe('service and handlers', () => {
-  it('falls back to AniList when MAL cannot serve an otherwise valid filter such as hiatus', async () => {
-    const mal = createMalSource(async () => json({ data: [] }), 'test-client', { pacer: instant });
-    const ani = createAniListSource(async () => aniPage([media(77, { status: 'HIATUS' })]));
-    const d = deps(async () => json({}), { sources: [mal, ani] });
-    const response = await call(d, 'browse', req({ status: 'hiatus', sort: 'popularity' }));
-    expect(response.body).toMatchObject({
-      data: { items: [{ id: 'a77', status: 'hiatus' }] },
-      meta: { source: 'anilist', degraded: true },
-    });
-  });
-
-  it('marks the MAL catalogue disabled until a Worker Client ID is configured', async () => {
-    const mal = createMalSource(async () => json({ data: [] }), undefined, { pacer: instant });
-    const d = deps(async () => json({}), { sources: [mal] });
-    const response = await call(d, 'providers', req());
-    expect(response.body).toMatchObject({
-      data: {
-        items: [{ id: 'mal', enabled: false }],
-        unknownConfigured: ['mal:client_id_missing'],
-      },
-    });
-  });
-
   it('enriches live catalogue cards with TMDB artwork without changing their Kairo ids', async () => {
     const artworkProvider: ArtworkProvider = {
       id: 'tmdb',
@@ -292,15 +215,6 @@ describe('service and handlers', () => {
     await call(d, 'featured', req());
     expect(calls).toBe(1);
   });
-  it('falls back to Jikan when AniList returns no search matches and does not wait for TMDB artwork', async () => {
-    let tmdbCalls = 0;
-    const artworkProvider: ArtworkProvider = { id: 'tmdb', lookup: async () => { tmdbCalls += 1; return null; } };
-    const d = deps(async (u) => isAni(u) ? aniPage([]) : jikanList([jikanAnime(3)]), { artworkProvider });
-    const response = await call(d, 'search', req({ q: 'Example Anime', sort: 'relevance' }));
-    expect(response).toMatchObject({ status: 200, body: { data: { items: [{ id: 'm3' }] }, meta: { source: 'jikan', degraded: true } } });
-    expect(tmdbCalls).toBe(0);
-  });
-
   it('keeps empty AniList seasonal and discovery results instead of substituting a different provider catalogue', async () => {
     let fallbackCalls = 0;
     const d = deps(async (u) => {
@@ -322,51 +236,9 @@ describe('service and handlers', () => {
     expect(fallbackCalls).toBe(0);
   });
 
-  it('resolves legacy HiAnime title ids while AniList remains the primary catalogue', async () => {
-    const legacyTitle: LiveTitle = {
-      card: {
-        id: 'h8', slug: 'attack-on-titan-8-h8', title: 'Attack on Titan', synopsis: 'Humanity fights for survival.',
-        posterUrl: null, bannerUrl: null, format: 'series', releaseYear: 2013, season: 'spring',
-        status: 'finished', rating: 8.5, episodeCount: 25, genres: ['Action'],
-      },
-      altTitles: ['Shingeki no Kyojin'], malId: null, anilistId: null,
-      url: 'https://hianime.at/watch/attack-on-titan-8', provider: 'hianime',
-    };
-    const legacySource: CatalogSource = {
-      id: 'hianime', displayName: 'HiAnime',
-      attribution: { providerId: 'hianime', displayName: 'HiAnime', text: 'HiAnime catalogue.', url: 'https://hianime.at', termsUrl: 'https://hianime.at', license: null, requirements: [] },
-      maxLimit: 24, supports: (ref) => ref.kind === 'h',
-      list: async (_kind, _page, limit) => ({ items: [], total: 0, hasNextPage: false, limit }),
-      browse: async (query) => ({ items: [], total: 0, hasNextPage: false, limit: query.limit }),
-      genres: async () => [], byRef: async () => legacyTitle, related: async () => [],
-    };
-    const base = deps(async () => json({}));
-    const d = { ...base, sources: [...base.sources, legacySource] };
-    const response = await call(d, 'anime', req({}, { id: 'attack-on-titan-8-h8' }));
-    expect(response).toMatchObject({ status: 200, body: { data: { id: 'h8', title: 'Attack on Titan' } } });
-  });
-
-  it('does not reuse list cache entries after the configured catalogue providers change', async () => {
-    const cache = new MemoryCache();
-    let jikanCalls = 0;
-    const first = deps(async (u) => isAni(u) ? aniPage([media(1)]) : json({}), { cache });
-    await call(first, 'trending', req());
-    const onlyJikan = createJikanSource(async () => { jikanCalls += 1; return jikanList([jikanAnime(2)]); }, { pacer: instant, now: () => NOW });
-    const second: Deps = { ...first, sources: [onlyJikan] };
-    const response = await call(second, 'trending', req());
-    expect(response).toMatchObject({ status: 200, body: { data: { items: [{ id: 'm2' }] }, meta: { source: 'jikan' } } });
-    expect(jikanCalls).toBe(1);
-  });
-
-  it('fails over to Jikan when AniList is rate limited, and marks the response degraded', async () => {
-    const d = deps(async (u) => isAni(u) ? json({ errors: [{ status: 429 }] }, { status: 429, headers: { 'Retry-After': '30' } }) : jikanList([jikanAnime(1)]));
-    const r = await call(d, 'trending', req({ page: '1', limit: '12' }));
-    expect(r.status).toBe(200);
-    expect(r.body).toMatchObject({ data: { items: [{ id: 'm1' }] }, meta: { source: 'jikan', degraded: true, page: 1, hasNextPage: true, total: 99 } });
-  });
-  it('serves stale data when every provider fails, and 503 PROVIDER_UNAVAILABLE when there is nothing cached', async () => {
+  it('serves stale AniList data during a temporary provider failure, and 503 when nothing is cached', async () => {
     let down = false; let t = 1_000_000;
-    const d = deps(async (u) => (down ? json({}, { status: 503 }) : isAni(u) ? aniPage([media(1)]) : jikanList([])), { now: () => t });
+    const d = deps(async () => (down ? json({}, { status: 503 }) : aniPage([media(1)])), { now: () => t });
     await call(d, 'trending', req());
     down = true; t += 2 * 3600 * 1000; // past fresh (1h), inside stale (24h)
     const stale = await call(d, 'trending', req());
@@ -374,12 +246,12 @@ describe('service and handlers', () => {
     const none = await call(deps(async () => json({}, { status: 503 })), 'trending', req());
     expect(none).toMatchObject({ status: 503, body: { success: false, error: { code: 'PROVIDER_UNAVAILABLE' } } });
   });
-  it('does not fail over on not_found and returns 404', async () => {
-    let jikanCalled = false;
-    const d = deps(async (u) => { if (!isAni(u)) jikanCalled = true; return json({ data: { Media: null } }); });
+  it('returns 404 for an AniList title that is not found', async () => {
+    let calls = 0;
+    const d = deps(async () => { calls += 1; return json({ data: { Media: null } }); });
     const r = await call(d, 'anime', req({}, { id: 'gone-a99' }));
     expect(r).toMatchObject({ status: 404, body: { error: { code: 'RESOURCE_NOT_FOUND' } } });
-    expect(jikanCalled).toBe(false);
+    expect(calls).toBe(1);
   });
   it('rejects client-supplied playback URLs and malformed server ids', async () => {
     const d = deps(async () => json({}));
@@ -399,7 +271,7 @@ describe('service and handlers', () => {
     const a = await call(d, 'anime', req({}, { id: 'seven-stars-a7' }));
     expect(a.body).toMatchObject({ data: { id: 'a7', title: 'Seven Stars', altTitles: ['Nana', 'ナナ', 'Seven'] } });
     const m = await call(d, 'metadata', req({}, { id: 'a7' }));
-    expect(m.body).toMatchObject({ data: { title: 'Seven Stars', ids: { anilist: '7', mal: '1007' }, sources: [{ providerId: 'anilist', displayName: 'AniList' }], providers: [{ provider: 'anilist', state: 'cached' }] } });
+    expect(m.body).toMatchObject({ data: { title: 'Seven Stars', ids: { anilist: '7' }, sources: [{ providerId: 'anilist', displayName: 'AniList' }], providers: [{ provider: 'anilist', state: 'cached' }] } });
   });
   it('gets episodes through the MyAnimeList id of an AniList title', async () => {
     const urls: string[] = [];
@@ -452,7 +324,7 @@ describe('service and handlers', () => {
   it('lists providers and reports readiness only when D1 and the complete schema are available', async () => {
     let calls = 0;
     const d = deps(async () => { calls++; return json({}); });
-    expect(await call(d, 'providers', req())).toMatchObject({ body: { data: { items: [{ id: 'anilist', priority: 1, capabilities: { episodes: false } }, { id: 'jikan', priority: 2, capabilities: { episodes: false } }], episodeProviders: [{ id: 'jikan', priority: 1, termsVerified: false, capabilities: { episodes: true } }] } } });
+    expect(await call(d, 'providers', req())).toMatchObject({ body: { data: { items: [{ id: 'anilist', priority: 1, capabilities: { episodes: false } }], episodeProviders: [{ id: 'jikan', priority: 1, termsVerified: false, capabilities: { episodes: true } }] } } });
 
     const schemaTables = [
       'anime', 'episodes', 'user_profiles', 'user_preferences', 'user_library',

@@ -41,10 +41,6 @@ interface Bindings {
   METADATA_CACHE?: KVNamespace;
   /** "live" (default): serve the public catalogue from live providers; account, library and history routes still use D1. "db": use the original D1 catalogue routes. */
   CATALOG_SOURCE?: string;
-  /** Catalogue-provider priority, comma-separated. */
-  LIVE_PROVIDERS?: string;
-  /** Registered MyAnimeList API Client ID stored as a Worker secret. */
-  MAL_CLIENT_ID?: string;
   /** Independent episode-provider priority, e.g. "hianime,jikan". */
   EPISODE_PROVIDERS?: string;
   /** HiAnime mirror base URL; adapter enforces a fixed HTTPS host allowlist. */
@@ -447,8 +443,8 @@ async function resolveDbEpisodeProviderRef(c: AppContext, rawId: string): Promis
     return { error: { status: 404, code: 'RESOURCE_NOT_FOUND', message: 'The requested title was not found.' } };
   }
   const mappings = await c.env.DB.prepare(PROVIDER_IDS_SQL).bind(title.id).all<{ provider: string; externalId: string }>();
-  const preferredProviders = (c.env.LIVE_PROVIDERS ?? 'anilist,mal').split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
-  const ref = providerRefFromMappings(mappings.results ?? [], preferredProviders);
+  // Prefer native AniList IDs; a legacy MAL numeric mapping is retained only as an AniList idMal alias.
+  const ref = providerRefFromMappings(mappings.results ?? [], ['anilist', 'mal']);
   if (!ref) {
     return { error: { status: 503, code: 'EPISODE_SOURCE_UNAVAILABLE', message: 'This stored title has no supported mapping for the configured episode-discovery providers.' } };
   }
