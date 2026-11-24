@@ -1006,7 +1006,7 @@ app.put('/api/v1/me/library/:animeId', async (c) => {
     // remains provider-owned and is fetched via the public title route when displayed.
     const ref = parseRef(animeId);
     if (!ref) return fail(c, 404, 'RESOURCE_NOT_FOUND', 'The requested Anime title was not found.');
-    const providerId = ref.kind === 'a' ? 'anilist' : ref.kind === 'm' ? 'mal' : 'hianime';
+    const providerId = ref.kind === 'a' ? 'legacy' : ref.kind === 'm' ? 'mal' : 'hianime';
     const externalId = String(ref.id);
     if (status === null && !isFavorite) {
       await c.env.DB.prepare(
@@ -1043,7 +1043,7 @@ app.delete('/api/v1/me/library/:animeId', async (c) => {
     }
     const ref = parseRef(animeId);
     if (!ref) return fail(c, 404, 'RESOURCE_NOT_FOUND', 'The requested Anime title was not found.');
-    const providerId = ref.kind === 'a' ? 'anilist' : ref.kind === 'm' ? 'mal' : 'hianime';
+    const providerId = ref.kind === 'a' ? 'legacy' : ref.kind === 'm' ? 'mal' : 'hianime';
     const externalId = String(ref.id);
     await c.env.DB.prepare(
       'DELETE FROM user_anime_library_refs WHERE user_id = ? AND provider_id = ? AND external_id = ?',

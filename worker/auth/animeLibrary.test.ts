@@ -17,7 +17,7 @@ async function setup() {
 }
 
 describe('provider-backed Anime library references', () => {
-  it('saves, lists and removes an AniList reference without trusting client metadata', async () => {
+  it('preserves legacy library references without enabling a legacy catalogue provider', async () => {
     const { session, env } = await setup();
     const headers = {
       Cookie: session.cookie,
@@ -32,12 +32,12 @@ describe('provider-backed Anime library references', () => {
     }, env);
     expect(saved.status).toBe(200);
     expect(await saved.json()).toMatchObject({
-      data: { saved: true, source: 'provider_reference', providerId: 'anilist', externalId: '1535', status: 'watching', isFavorite: true },
+      data: { saved: true, source: 'provider_reference', providerId: 'legacy', externalId: '1535', status: 'watching', isFavorite: true },
     });
 
     const stored = db.prepare('SELECT provider_id AS providerId, external_id AS externalId, slug, status, is_favorite AS isFavorite FROM user_anime_library_refs WHERE user_id = ?').get('library-user');
     expect(stored).toMatchObject({
-      providerId: 'anilist',
+      providerId: 'legacy',
       externalId: '1535',
       slug: 'dorohedoro-a1535',
       status: 'watching',
@@ -49,7 +49,7 @@ describe('provider-backed Anime library references', () => {
     }, env);
     expect(listed.status).toBe(200);
     expect(await listed.json()).toMatchObject({
-      data: { items: [], references: [{ providerId: 'anilist', externalId: '1535', slug: 'dorohedoro-a1535', status: 'watching', isFavorite: true }] },
+      data: { items: [], references: [{ providerId: 'legacy', externalId: '1535', slug: 'dorohedoro-a1535', status: 'watching', isFavorite: true }] },
     });
 
     const removed = await worker.request('https://kairo.test/api/v1/me/library/dorohedoro-a1535', {

@@ -75,6 +75,18 @@ describe('MAL catalogue IDs and mapping', () => {
 });
 
 describe('MAL-backed live handlers', () => {
+  it('does not route legacy a-prefixed library IDs through the live catalogue', async () => {
+    let requested = false;
+    const d = deps(async () => {
+      requested = true;
+      return page([]);
+    });
+    const response = await call(d, 'anime', req({}, { id: 'a1535' }));
+    expect(response.status).toBe(404);
+    expect(response.body).toMatchObject({ error: { code: 'RESOURCE_NOT_FOUND' } });
+    expect(requested).toBe(false);
+  });
+
   it('fetches featured titles from MAL using the registered Client ID and adds TMDB-only artwork', async () => {
     let requestedUrl = '';
     let clientId = '';

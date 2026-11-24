@@ -1,6 +1,6 @@
 // Stable ids and slugs for live (database-free) titles.
-// New live catalogue results use MyAnimeList IDs ("m1535").
-// A slug is a readable prefix plus the id: "death-note-m1535". Only the trailing id matters when resolving.
+// Current catalogue IDs use MAL ("m1535"); HiAnime ("h8") is episode-provider identity.
+// The "a" prefix is retained solely as a legacy saved-library key, never as a live provider.
 export type RefKind = 'a' | 'm' | 'h';
 export type Ref = { kind: RefKind; id: number; /** Provider slug for hianime references, when present in the public route. */ slug?: string };
 
@@ -19,7 +19,7 @@ export function slugify(title: string): string {
 export const makeId = (kind: RefKind, id: number): string => `${kind}${id}`;
 export const makeSlug = (title: string, kind: RefKind, id: number): string => `${slugify(title)}-${kind}${id}`;
 
-/** Accepts provider ids such as a1535, m1535, h8 or slugs such as death-note-8-h8. */
+/** Parses current MAL/HiAnime IDs and legacy a-prefixed saved-library identifiers. */
 export function parseRef(raw: string | undefined): Ref | null {
   if (raw === undefined) return null;
   const m = /^(?:([a-z0-9-]+)-)?([amh])(\d{1,9})$/.exec(raw);

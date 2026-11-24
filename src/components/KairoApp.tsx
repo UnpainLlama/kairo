@@ -57,7 +57,7 @@ type AnimeLibraryEntry = {
   updatedAt: string | number;
 };
 type AnimeLibraryReference = {
-  providerId: 'anilist' | 'mal' | 'hianime';
+  providerId: 'legacy' | 'mal' | 'hianime';
   externalId: string;
   slug: string;
   status: string | null;
@@ -603,7 +603,7 @@ function AnimeDetailPage() {
     void apiGet<AnimeLibraryPayload>('/me/library').then(result => {
       const found = result.items.find(entry => entry.animeId === currentAnimeId);
       const reference = result.references?.find(entry => entry.slug === currentAnimeSlug ||
-        (currentAnimeId.startsWith('a') && entry.providerId === 'anilist' && entry.externalId === currentAnimeId.slice(1)) ||
+        (currentAnimeId.startsWith('a') && entry.providerId === 'legacy' && entry.externalId === currentAnimeId.slice(1)) ||
         (currentAnimeId.startsWith('m') && entry.providerId === 'mal' && entry.externalId === currentAnimeId.slice(1)) ||
         (currentAnimeId.startsWith('h') && entry.providerId === 'hianime' && entry.externalId === currentAnimeId.slice(1)));
       const savedEntry = found ?? reference;

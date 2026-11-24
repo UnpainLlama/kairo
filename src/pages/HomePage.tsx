@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, ChevronLeft, ChevronRight, Info, Play, Plus, Star } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Info, Play, Plus, Star } from 'lucide-react';
 import { CardGrid, ErrorState, MetaChips, Poster, Section, SkeletonGrid, StatusDot, animeHref } from '../components/catalog';
 import { useApi, type ApiState } from '../lib/useApi';
 import { formatLabel, safeImageUrl, textList, type CatalogCard, type ItemList } from '../lib/catalog';
@@ -18,6 +18,82 @@ export default function HomePage() {
   const account = useKairoAccount();
   const accountId = account.accountId;
   const [continueItems, setContinueItems] = useState<MediaPlaybackSnapshot[]>([]);
+  const [savedHeroIds, setSavedHeroIds] = useState<Set<string>>(new Set());
+  const [libraryLoaded, setLibraryLoaded] = useState(false);
+  const [librarySavingId, setLibrarySavingId] = useState<string | null>(null);
+  const [libraryError, setLibraryError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    if (account.status !== 'signed-in' || !accountId) {
+      setSavedHeroIds(new Set());
+      setLibraryError('');
+      setLibraryLoaded(true);
+      return () => { active = false; };
+    }
+
+    setLibraryLoaded(false);
+    setLibraryError('');
+    void fetch('/api/v1/me/library', {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.success || !Array.isArray(payload?.data?.items)) {
+          throw new Error(payload?.error?.message ?? 'Could not load your Anime library.');
+        }
+        const identifiers = new Set<string>();
+        for (const entry of payload.data.items as Array<{ animeId?: unknown; slug?: unknown }>) {
+          if (typeof entry.animeId === 'string') identifiers.add(entry.animeId);
+          if (typeof entry.slug === 'string') identifiers.add(entry.slug);
+        }
+        const references = Array.isArray(payload.data.references) ? payload.data.references as Array<{
+          providerId?: unknown; externalId?: unknown; slug?: unknown;
+        }> : [];
+        for (const entry of references) {
+          if (typeof entry.slug === 'string') identifiers.add(entry.slug);
+          const prefix = entry.providerId === 'mal' ? 'm'
+            : entry.providerId === 'hianime' ? 'h'
+            : entry.providerId === 'legacy' ? 'a' : null;
+          if (prefix && typeof entry.externalId === 'string') identifiers.add(prefix + entry.externalId);
+        }
+        return identifiers;
+      })
+      .then((identifiers) => { if (active) setSavedHeroIds(identifiers); })
+      .catch((error) => {
+        if (active) setLibraryError(error instanceof Error ? error.message : 'Could not load your Anime library.');
+      })
+      .finally(() => { if (active) setLibraryLoaded(true); });
+
+    return () => { active = false; };
+  }, [account.status, accountId]);
+
+  const addFeaturedToLibrary = useCallback(async (item: CatalogCard) => {
+    if (account.status !== 'signed-in' || !accountId || !libraryLoaded || libraryError || librarySavingId) return;
+    if (savedHeroIds.has(item.id) || savedHeroIds.has(item.slug)) return;
+    setLibrarySavingId(item.id);
+    setLibraryError('');
+    try {
+      const response = await fetch('/api/v1/me/library/' + encodeURIComponent(item.id), {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'plan_to_watch', isFavorite: false }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error?.message ?? 'Could not add this title to your Anime library.');
+      }
+      setSavedHeroIds((current) => new Set([...current, item.id, item.slug]));
+      window.dispatchEvent(new Event('kairo:anime-library-change'));
+    } catch (error) {
+      setLibraryError(error instanceof Error ? error.message : 'Could not add this title to your Anime library.');
+    } finally {
+      setLibrarySavingId(null);
+    }
+  }, [account.status, accountId, libraryError, libraryLoaded, librarySavingId, savedHeroIds]);
 
   useEffect(() => {
     let active = true;
@@ -60,7 +136,16 @@ export default function HomePage() {
 
   return (
     <>
-      {featuredItems.length > 0 ? <Hero items={featuredItems} /> : <div className="kc-hero-spacer" />}
+      {featuredItems.length > 0 ? (
+        <Hero
+          items={featuredItems}
+          savedIds={savedHeroIds}
+          libraryReady={libraryLoaded && !libraryError && account.status === 'signed-in'}
+          savingId={librarySavingId}
+          onAddToList={addFeaturedToLibrary}
+        />
+      ) : <div className="kc-hero-spacer" />}
+      {libraryError && <p className="kc-hero-library-error" role="alert">{libraryError}</p>}
 
       {failed && failed.status === 'error' && <ErrorState error={failed.error} onRetry={() => main.forEach((s) => s.reload())} />}
       {nothing && <div className="kc-notice" role="status"><Info size={20} aria-hidden="true" /><div><h3>Nothing to show yet</h3><p>No titles are available right now. Try again in a moment.</p></div></div>}
@@ -135,7 +220,15 @@ function SidePanel({ title, state }: { title: string; state: CardsState }) {
 const HERO_INTERVAL_MS = 20_000;
 const HERO_FADE_MS = 700;
 
-function Hero({ items }: { items: CatalogCard[] }) {
+type HeroProps = {
+  items: CatalogCard[];
+  savedIds: ReadonlySet<string>;
+  libraryReady: boolean;
+  savingId: string | null;
+  onAddToList: (item: CatalogCard) => void;
+};
+
+function Hero({ items, savedIds, libraryReady, savingId, onAddToList }: HeroProps) {
   const count = items.length;
   const [index, setIndex] = useState(0);
   const [leaving, setLeaving] = useState<number | null>(null);
@@ -234,7 +327,17 @@ function Hero({ items }: { items: CatalogCard[] }) {
     >
       <p className="kc-sr" id="kc-hero-keyboard-help">{count > 1 ? 'Use the left and right arrow keys to change featured titles. The featured title also changes automatically every 20 seconds.' : 'Featured anime.'}</p>
       {items.map((item, i) => mounted.has(i) ? (
-        <HeroSlide key={item.id} item={item} position={i + 1} total={count} state={i === active ? 'on' : i === leaving ? 'out' : 'idle'} />
+        <HeroSlide
+          key={item.id}
+          item={item}
+          position={i + 1}
+          total={count}
+          state={i === active ? 'on' : i === leaving ? 'out' : 'idle'}
+          saved={savedIds.has(item.id) || savedIds.has(item.slug)}
+          saving={savingId === item.id}
+          canSave={libraryReady}
+          onAddToList={() => onAddToList(item)}
+        />
       ) : null)}
       {count > 1 && (
         <>
@@ -249,7 +352,18 @@ function Hero({ items }: { items: CatalogCard[] }) {
   );
 }
 
-function HeroSlide({ item, position, total, state }: { item: CatalogCard; position: number; total: number; state: 'on' | 'out' | 'idle' }) {
+function HeroSlide({
+  item, position, total, state, saved, saving, canSave, onAddToList,
+}: {
+  item: CatalogCard;
+  position: number;
+  total: number;
+  state: 'on' | 'out' | 'idle';
+  saved: boolean;
+  saving: boolean;
+  canSave: boolean;
+  onAddToList: () => void;
+}) {
   const [imageFailed, setImageFailed] = useState(false);
   const image = imageFailed ? null : safeImageUrl(item.bannerUrl);
   // Keep the fact row concise like the reference: episode count, year, then genres.
@@ -281,7 +395,17 @@ function HeroSlide({ item, position, total, state }: { item: CatalogCard; positi
         <div className="kc-actions">
           <Link className="kc-btn kc-btn-primary" to={`/watch/${encodeURIComponent(item.slug)}/1`}><Play size={15} fill="currentColor" aria-hidden="true" /> Watch Now</Link>
           <Link className="kc-btn kc-btn-dark" to={animeHref(item)}><Info size={15} aria-hidden="true" /> Details</Link>
-          <button type="button" className="kc-icon-btn kc-hero-add" aria-label="Add to list (requires an account)" title="Saving titles will be available when accounts are enabled" disabled><Plus size={19} aria-hidden="true" /></button>
+          <button
+            type="button"
+            className={`kc-icon-btn kc-hero-add${saved ? ' saved' : ''}`}
+            aria-label={saved ? `${item.title} is in your list` : `Add ${item.title} to your list`}
+            aria-pressed={saved}
+            title={saved ? 'In your Anime library' : !canSave ? 'Your Anime library is unavailable' : saving ? 'Adding to your library…' : 'Add to your Anime library'}
+            disabled={!canSave || saved || saving}
+            onClick={onAddToList}
+          >
+            {saved ? <Check size={19} aria-hidden="true" /> : <Plus size={19} aria-hidden="true" />}
+          </button>
         </div>
       </div>
     </div>

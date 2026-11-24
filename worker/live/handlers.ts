@@ -100,7 +100,11 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
 
   const parseTitle = (req: LiveRequest) => {
     const raw = parseId(req.param('id'));
-    return raw === null ? { bad: true as const } : { bad: false as const, ref: parseRef(raw) };
+    if (raw === null) return { bad: true as const };
+    const ref = parseRef(raw);
+    // The a-prefixed namespace remains readable for old library rows only.
+    // It is deliberately not accepted by the live catalogue or episode APIs.
+    return { bad: false as const, ref: ref?.kind === 'a' ? null : ref };
   };
 
   return {

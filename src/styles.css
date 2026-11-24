@@ -2664,3 +2664,7 @@ img { display: block; }
   .kc-continue-card { flex-basis: min(76vw, 270px); }
   .kc-continue-head h2 { font-size: 17px; }
 }
+
+
+/* Anime hero library feedback */
+.kc-hero-library-error { margin: -14px 0 20px; color: #fca5a5; font-size: 13px; }
