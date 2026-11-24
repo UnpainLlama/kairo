@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNod
 import {
   Activity, ArrowLeft, Bookmark, Check, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Compass, Film,
   Heart, History, Home, Info, Library, LogOut, Menu, Play, Search, Settings, Shield, Sparkles, Star,
-  UserRound, X,
+  UserRound, X, Youtube,
 } from 'lucide-react';
 import { Link, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAccount } from '../lib/AccountProvider';
@@ -23,6 +23,7 @@ import {
 import { shouldSyncPlaybackProgress, type PlaybackSaveReason } from '../lib/playbackSync';
 import KairoMediaPlayer, { type KairoPlaybackSource } from './KairoMediaPlayer';
 import MovieEmbedPlayer from './MovieEmbedPlayer';
+import KairoYouTubeApp from './KairoYouTubeApp';
 
 type PageData<T> = { items: T[] };
 type LoadablePage<T> = ApiState<PageData<T>> & { reload: () => void };
@@ -163,9 +164,10 @@ function AppShell() {
   const account = useAccount();
   const navigate = useNavigate();
   const location = useLocation();
-  const isAnimeWorkspace = location.pathname === '/' || location.pathname === '/anime' ||
+  const isYouTubeWorkspace = location.pathname.startsWith('/youtube');
+  const isAnimeWorkspace = !isYouTubeWorkspace && (location.pathname === '/' || location.pathname === '/anime' ||
     location.pathname.startsWith('/anime/') || location.pathname === '/seasonal' ||
-    location.pathname === '/search' || (location.pathname.startsWith('/watch/') && !location.pathname.startsWith('/watch/movie/'));
+    location.pathname === '/search' || (location.pathname.startsWith('/watch/') && !location.pathname.startsWith('/watch/movie/')));
   const [query, setQuery] = useState('');
   const [mobileOpen, setMobileOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -200,7 +202,9 @@ function AppShell() {
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const value = query.trim();
-    if (value.length >= 2) navigate('/search?q=' + encodeURIComponent(value));
+    if (isYouTubeWorkspace) {
+      navigate(value.length >= 2 ? '/youtube/search?q=' + encodeURIComponent(value) : '/youtube/search');
+    } else if (value.length >= 2) navigate('/search?q=' + encodeURIComponent(value));
     else navigate('/search');
     searchRef.current?.blur();
   }
@@ -219,11 +223,21 @@ function AppShell() {
       <NavLink to="/seasonal"><Sparkles size={18} /><span>Seasonal</span></NavLink>
       <NavLink to="/library"><Library size={18} /><span>My Library</span></NavLink>
       <NavLink to="/history"><History size={18} /><span>History</span></NavLink>
+      {account.user?.role === 'admin' && <NavLink to="/youtube"><Youtube size={18} /><span>YouTube</span></NavLink>}
+    </>
+  );
+  const youtubeNav = (
+    <>
+      <Link to="/youtube" className={location.pathname === '/youtube' ? 'active' : ''}>Home</Link>
+      <Link to="/youtube/search" className={location.pathname.startsWith('/youtube/search') ? 'active' : ''}>Search</Link>
+      <Link to="/youtube/channels" className={location.pathname === '/youtube/channels' ? 'active' : ''}>Channels</Link>
+      <Link to="/youtube/watch-later" className={location.pathname === '/youtube/watch-later' ? 'active' : ''}>Watch Later</Link>
+      <Link to="/youtube/history" className={location.pathname === '/youtube/history' ? 'active' : ''}>History</Link>
     </>
   );
 
   return (
-    <div className={'app-shell' + (isAnimeWorkspace ? ' anime-workspace' : '')}>
+    <div className={'app-shell' + (isAnimeWorkspace ? ' anime-workspace' : '') + (isYouTubeWorkspace ? ' youtube-workspace' : '')}>
       <a className="skip-link" href="#main-content">Skip to content</a>
       <header className="topbar">
         <Link to="/" className="brand" aria-label="Kairo home">
@@ -239,10 +253,12 @@ function AppShell() {
           <Link to="/anime" className={location.pathname === '/anime' ? 'active' : ''}>Discover</Link>
           <Link to="/seasonal" className={location.pathname === '/seasonal' ? 'active' : ''}>Seasonal</Link>
         </nav>}
-        <nav className="desktop-nav" aria-label="Primary navigation">{nav}</nav>
+        {isYouTubeWorkspace
+          ? <nav className="youtube-workspace-nav" aria-label="YouTube navigation">{youtubeNav}</nav>
+          : <nav className="desktop-nav" aria-label="Primary navigation">{nav}</nav>}
         <form className="global-search" role="search" onSubmit={submitSearch}>
           <Search size={17} aria-hidden="true" />
-          <input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search Anime" placeholder="Search anime…" />
+          <input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} aria-label={isYouTubeWorkspace ? 'Search YouTube' : 'Search Anime'} placeholder={isYouTubeWorkspace ? 'Search YouTube…' : 'Search anime…'} />
           <kbd>⌘ K</kbd>
         </form>
         <div className="topbar-actions">
@@ -251,7 +267,16 @@ function AppShell() {
           <button type="button" className="icon-button signout-button" onClick={() => { void signOut().catch(() => undefined); }} aria-label="Sign out"><LogOut size={18} /></button>
         </div>
       </header>
-      {mobileOpen && <nav className="mobile-nav" aria-label="Mobile navigation">{nav}<NavLink to="/settings"><Settings size={18} /><span>Settings</span></NavLink></nav>}
+      {mobileOpen && (isYouTubeWorkspace
+        ? <nav className="mobile-nav youtube-mobile-nav" aria-label="YouTube navigation">
+            <Link to="/youtube" className={location.pathname === '/youtube' ? 'active' : ''}>Home</Link>
+            <Link to="/youtube/search" className={location.pathname.startsWith('/youtube/search') ? 'active' : ''}>Search</Link>
+            <Link to="/youtube/channels" className={location.pathname === '/youtube/channels' ? 'active' : ''}>Channels</Link>
+            <Link to="/youtube/watch-later" className={location.pathname === '/youtube/watch-later' ? 'active' : ''}>Watch Later</Link>
+            <Link to="/youtube/history" className={location.pathname === '/youtube/history' ? 'active' : ''}>History</Link>
+            <Link to="/">Kairo</Link>
+          </nav>
+        : <nav className="mobile-nav" aria-label="Mobile navigation">{nav}<NavLink to="/settings"><Settings size={18} /><span>Settings</span></NavLink></nav>)}
       <main id="main-content" className="main-content" tabIndex={-1}>
         <Outlet />
       </main>
@@ -1294,6 +1319,7 @@ function WorkspaceRoutes() {
         <Route path="profile" element={<ProfilePage />} />
         <Route path="users/:username" element={<PublicProfilePage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="youtube/*" element={<KairoYouTubeApp />} />
         <Route path="*" element={<CatchAllPage adminPath={adminPath} />} />
       </Route>
     </Routes>

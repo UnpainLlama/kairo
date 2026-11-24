@@ -100,4 +100,27 @@ describe('closed-site API default deny',()=>{
     const response=await worker.request(origin+'/api/v1/admin/accounts',{headers:{Cookie:session.cookie}},{DB:sqliteD1(db)});
     expect(response.status).toBe(404);
   });
+
+  it('restricts YouTube media and OAuth endpoints to administrator sessions', async () => {
+    db = createTestDatabase();
+    insertTestProfile(db, { id: 'youtube-member', username: 'youtube.member', role: 'user' });
+    insertTestProfile(db, { id: 'youtube-admin', username: 'youtube.admin', role: 'admin' });
+    await insertTestCredential(db, 'youtube-member', 'a long member password');
+    await insertTestCredential(db, 'youtube-admin', 'a long administrator password');
+    const member = await createTestSession(db, 'youtube-member');
+    const admin = await createTestSession(db, 'youtube-admin');
+    const env = { DB: sqliteD1(db) };
+
+    for (const path of ['/api/v1/youtube/history', '/api/v1/auth/youtube/status']) {
+      const response = await worker.request(origin + path, { headers: { Cookie: member.cookie } }, env);
+      expect(response.status).toBe(404);
+      expect(await response.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
+    }
+
+    const history = await worker.request(origin + '/api/v1/youtube/history', { headers: { Cookie: admin.cookie } }, env);
+    const oauthStatus = await worker.request(origin + '/api/v1/auth/youtube/status', { headers: { Cookie: admin.cookie } }, env);
+    expect(history.status).toBe(200);
+    expect(oauthStatus.status).toBe(200);
+  });
+
 });
