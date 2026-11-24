@@ -60,7 +60,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   useEffect(() => {
-    if (state.status !== 'signed-in' || !state.user) return;
+    if (state.status !== 'signed-in' || !state.user || state.user.mustChangePassword) return;
     const accountId = state.user.id;
     const flush = () => { void flushPendingMediaPlayback(accountId); };
     flush();
@@ -70,7 +70,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('online', flush);
       window.removeEventListener('focus', flush);
     };
-  }, [state.status, state.user?.id]);
+  }, [state.status, state.user?.id, state.user?.mustChangePassword]);
 
   const login = useCallback(async (username: string, password: string) => {
     await authRequest<{ signedIn: boolean; mustChangePassword: boolean }>('/auth/login', {
