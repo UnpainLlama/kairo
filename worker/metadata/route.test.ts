@@ -47,7 +47,7 @@ describe('metadata route end to end (real SQLite, fake provider fetch)', () => {
   });
   it('merges a provider answer, keeps provenance and saves the discovered id', async () => {
     const original = globalThis.fetch;
-    const media = { id: 1535, idMal: 1535, title: { romaji: 'Death Note', english: 'Death Note' }, description: 'A notebook.', format: 'TV', status: 'FINISHED', episodes: 37, seasonYear: 2006, genres: ['Mystery'], averageScore: 84 };
+    const media = { id: 1535, idMal: 1535, countryOfOrigin: 'JP', title: { romaji: 'Death Note', english: 'Death Note' }, description: 'A notebook.', format: 'TV', status: 'FINISHED', episodes: 37, seasonYear: 2006, genres: ['Mystery'], averageScore: 84 };
     globalThis.fetch = (async () => new Response(JSON.stringify({ data: { Page: { media: [media] } } }), { status: 200 })) as never;
     try {
       const res = await apiRequest('/api/v1/anime/a1/metadata');
