@@ -1,6 +1,6 @@
-# Live anime catalogue (AniList-only, Japanese-origin)
+# Live anime catalogue (AniList-only)
 
-Kairo's live Anime catalogue uses **only the public AniList GraphQL API** at `https://graphql.anilist.co`. Every catalogue list, featured card, search, seasonal query, trending query, genre browse, direct title lookup and related-title query is restricted to `countryOfOrigin: JP` and excludes adult entries.
+Kairo's live Anime catalogue uses **only the public AniList GraphQL API** at `https://graphql.anilist.co`. Every catalogue list, featured card, search, seasonal query, trending query, genre browse, direct title lookup and related-title query is and excludes adult entries.
 
 There is no MAL, Jikan or HiAnime catalogue fallback. If AniList is unavailable, Kairo reports the catalogue as unavailable or serves a still-valid cached AniList response; it does not substitute another catalogue. The live catalogue cache namespace was advanced so results previously cached from mixed-provider responses cannot be reused.
 
@@ -9,7 +9,6 @@ There is no MAL, Jikan or HiAnime catalogue fallback. If AniList is unavailable,
 - API: `https://graphql.anilist.co`; public reads require no API key.
 - Kairo uses GraphQL POST requests from the Worker. The browser calls Kairo's `/catalog/*` and `/anime/:id` endpoints; it does not call AniList directly.
 - Queries request only the fields used by cards and detail pages, including titles, descriptions, genres, cover posters and landscape banners.
-- `countryOfOrigin: JP` is applied at the API query and checked again when mapping results. Chinese-origin and other non-Japanese titles are excluded from the catalogue.
 - Adult entries are excluded with `isAdult: false` and checked again when mapping results.
 - Seasonal browsing uses AniList's native `season` and `seasonYear` arguments. Trending uses `TRENDING_DESC`. Discover loads genre choices from `GenreCollection` and filters by genre using AniList.
 - Sort mappings: relevance (`SEARCH_MATCH` when a query is present), popularity (`POPULARITY_DESC`), trending (`TRENDING_DESC`), latest (`START_DATE_DESC`) and rating (`SCORE_DESC`).
@@ -42,4 +41,4 @@ TMDB artwork enrichment is independent of catalogue identity. When `TMDB_ACCESS_
 
 ## Verification
 
-CI tests cover the AniList query builder, Japanese-origin and adult filters, seasonal sorting, GenreCollection discovery, direct title filtering, single-provider reporting and the independent Jikan episode route. These use controlled fixtures, not live AniList responses. After deployment, verify `/api/v1/providers`, `/api/v1/catalog/genres`, a seasonal browse request and a discovery browse request. The provider list should contain exactly one catalogue item: `anilist`.
+CI tests cover the AniList query builder, adult-content filtering, seasonal sorting, GenreCollection discovery, direct title filtering, single-provider reporting and the independent Jikan episode route. These use controlled fixtures, not live AniList responses. After deployment, verify `/api/v1/providers`, `/api/v1/catalog/genres`, a seasonal browse request and a discovery browse request. The provider list should contain exactly one catalogue item: `anilist`.

@@ -16,7 +16,7 @@ const signal = new AbortController().signal;
 const NOW = '2026-11-07T00:00:00.000Z';
 
 const media = (id: number, extra: Record<string, unknown> = {}) => ({
-  id, idMal: id + 1000, siteUrl: `https://anilist.co/anime/${id}`, isAdult: false, countryOfOrigin: 'JP', title: { romaji: `Title ${id}`, english: `Title ${id}`, native: null }, synonyms: [],
+  id, idMal: id + 1000, siteUrl: `https://anilist.co/anime/${id}`, isAdult: false, title: { romaji: `Title ${id}`, english: `Title ${id}`, native: null }, synonyms: [],
   description: 'A <b>story</b>.', format: 'TV', status: 'RELEASING', episodes: 12, season: 'FALL', seasonYear: 2026, startDate: { year: 2026 }, genres: ['Action'],
   averageScore: 80, coverImage: { extraLarge: `https://img.test/${id}.jpg` }, bannerImage: null, ...extra,
 });
@@ -64,7 +64,6 @@ describe('AniList source', () => {
   it('builds queries with only the variables that are set and always excludes adult titles', () => {
     const q = buildPageQuery([{ name: 'genre', gqlType: 'String', value: 'Action' }], 2, 24);
     expect(q.query).toContain('isAdult: false');
-    expect(q.query).toContain('countryOfOrigin: JP');
     expect(q.query).toContain('genre: $genre');
     expect(q.query).not.toContain('$search');
     expect(q.variables).toEqual({ page: 2, perPage: 24, genre: 'Action' });
@@ -87,9 +86,9 @@ describe('AniList source', () => {
     expect(first.items[0]?.card.id).not.toBe(second.items[0]?.card.id);
   });
   it('features titles with banners first and drops adult entries', async () => {
-    const src = createAniListSource(async () => aniPage([media(1), media(2, { bannerImage: 'https://img.test/b2.jpg' }), media(3, { isAdult: true }), media(4, { bannerImage: 'https://img.test/b4.jpg' }), media(5, { countryOfOrigin: 'CN', bannerImage: 'https://img.test/b5.jpg' })]), () => NOW);
+    const src = createAniListSource(async () => aniPage([media(1), media(2, { bannerImage: 'https://img.test/b2.jpg' }), media(3, { isAdult: true }), media(4, { bannerImage: 'https://img.test/b4.jpg' }), media(5, { bannerImage: 'https://img.test/b5.jpg' })]), () => NOW);
     const out = await src.list('featured', 1, 12, signal);
-    expect(out.items).toHaveLength(3);
+    expect(out.items).toHaveLength(4);
     expect(out.items.slice(0, 2).every((item) => ['a2', 'a4'].includes(item.card.id))).toBe(true);
     expect(out.items.some((item) => item.card.id === 'a1')).toBe(true);
     const bannered = out.items[0]!.card.id === 'a2' ? out.items[0]! : out.items[1]!;
@@ -136,17 +135,17 @@ describe('AniList source', () => {
     expect((await src.genres(signal)).map((g) => g.name)).toEqual(['Action', 'Drama']);
     await src.byRef({ kind: 'm', id: 1007 }, signal);
     expect(q).toContain('idMal: $id');
-    expect(q).toContain('countryOfOrigin: JP');
+    expect(q).not.toContain('countryOfOrigin:');
   });
-  it('excludes non-Japanese-origin entries from browse and direct title resolution', async () => {
+  it('accepts non-Japanese AniList anime entries in browse and direct title resolution', async () => {
     const source = createAniListSource(async (_url, init) => {
       const request = JSON.parse(String(init?.body)) as { query: string };
       if (request.query.includes('Page(')) return aniPage([media(10), media(11, { countryOfOrigin: 'CN' })]);
       return json({ data: { Media: media(12, { countryOfOrigin: 'CN' }) } });
     }, () => NOW);
     const page = await source.browse({ sort: 'popularity', page: 1, limit: 24 }, signal);
-    expect(page.items.map((item) => item.card.id)).toEqual(['a10']);
-    await expect(source.byRef({ kind: 'a', id: 12 }, signal)).rejects.toMatchObject({ kind: 'not_found' });
+    expect(page.items.map((item) => item.card.id)).toEqual(['a10', 'a11']);
+    await expect(source.byRef({ kind: 'a', id: 12 }, signal)).resolves.toMatchObject({ card: { id: 'a12' } });
   });
   it('builds related from relations then recommendations, anime only', async () => {
     const src = createAniListSource(async () => json({ data: { Media: { id: 1, relations: { edges: [{ node: { type: 'ANIME', ...media(2) } }, { node: { type: 'MANGA', ...media(3) } }] }, recommendations: { nodes: [{ mediaRecommendation: media(4) }, { mediaRecommendation: media(1) }, { mediaRecommendation: media(5, { isAdult: true }) }] } } } }), () => NOW);

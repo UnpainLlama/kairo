@@ -7,10 +7,10 @@ import { ProviderError, type Attribution, type MetadataProvider, type Normalized
 import { asString, isObject, providerFetch, readJson, USER_AGENT, type FetchLike } from './http';
 
 const ENDPOINT = 'https://graphql.anilist.co';
-const FIELDS = `id idMal siteUrl countryOfOrigin title { romaji english native } synonyms description(asHtml: false) format status episodes season seasonYear
+const FIELDS = `id idMal siteUrl title { romaji english native } synonyms description(asHtml: false) format status episodes season seasonYear
   startDate { year } genres averageScore coverImage { extraLarge large } bannerImage`;
-const BY_ID = `query ($id: Int) { Media(id: $id, type: ANIME, countryOfOrigin: JP, isAdult: false) { ${FIELDS} } }`;
-const SEARCH = `query ($search: String, $perPage: Int) { Page(page: 1, perPage: $perPage) { media(search: $search, type: ANIME, countryOfOrigin: JP, isAdult: false, sort: SEARCH_MATCH) { ${FIELDS} } } }`;
+const BY_ID = `query ($id: Int) { Media(id: $id, type: ANIME, isAdult: false) { ${FIELDS} } }`;
+const SEARCH = `query ($search: String, $perPage: Int) { Page(page: 1, perPage: $perPage) { media(search: $search, type: ANIME, isAdult: false, sort: SEARCH_MATCH) { ${FIELDS} } } }`;
 
 export const ANILIST_ATTRIBUTION: Attribution = {
   providerId: 'anilist',
@@ -32,7 +32,6 @@ export function mapAniListMedia(raw: unknown, fetchedAt: string): NormalizedMeta
   if (!isObject(raw)) throw new ProviderError('invalid_response', 'AniList returned an unexpected media shape.');
   const id = positiveInt(raw.id);
   if (id === null) throw new ProviderError('invalid_response', 'AniList media has no valid id.');
-  if (raw.countryOfOrigin !== 'JP') throw new ProviderError('not_found', 'AniList has no matching Japanese-origin title.');
   const t = isObject(raw.title) ? raw.title : {};
   const english = asString(t.english);
   const romaji = asString(t.romaji);

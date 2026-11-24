@@ -17,7 +17,7 @@ embed requires no Kairo Worker secret. It does not replace the TMDB catalogue AP
 
 ## Anime metadata providers
 
-KAIRO uses **AniList as its sole live Anime catalogue and discovery provider**, restricted to Japanese-origin titles (`countryOfOrigin: JP`). The MAL, Jikan and HiAnime catalogue adapters have been removed. HiAnime and Jikan remain separate episode-discovery/playback providers only. AniList's `idMal` value is retained internally as an identifier bridge for Jikan; Kairo does not call the MAL API and no `MAL_CLIENT_ID` secret is required. See [LIVE_CATALOGUE.md](LIVE_CATALOGUE.md) for the active query filters and provider boundaries.
+KAIRO uses **AniList as its sole live Anime catalogue and discovery provider**. Its existing adult-title exclusion remains in place. The MAL, Jikan and HiAnime catalogue adapters have been removed. HiAnime and Jikan remain separate episode-discovery/playback providers only. AniList's `idMal` value is retained internally as an identifier bridge for Jikan; Kairo does not call the MAL API and no `MAL_CLIENT_ID` secret is required. See [LIVE_CATALOGUE.md](LIVE_CATALOGUE.md) for the active query filters and provider boundaries.
 
 Movie playback is intentionally separate and remains CineSrc-only. The Anime route uses its own `KairoMediaPlayer` and `AnimeEmbedPlayer`; it never mounts the Movie CineSrc iframe.
 

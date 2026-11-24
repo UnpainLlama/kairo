@@ -123,7 +123,7 @@ const candidatesFor = <T>(deps: Deps, ref: Ref, run: (s: CatalogSource, signal: 
   deps.sources.filter((s) => s.supports(ref)).map((source) => ({ source, run: (signal) => run(source, signal) }));
 
 // New namespace invalidates all list/detail records cached under the old mixed-provider catalogue.
-const liveCacheScope = (): string => 'live:v5:anilist-jp';
+const liveCacheScope = (): string => 'live:v5:anilist-only';
 
 export function getList(deps: Deps, kind: ListKind, page: number, limit: number): Promise<Outcome<Paged>> {
   const day = kind === 'featured' ? new Date(deps.now()).toISOString().slice(0, 10) : 'stable';

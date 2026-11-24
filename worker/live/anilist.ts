@@ -13,7 +13,7 @@ const ENDPOINT = 'https://graphql.anilist.co';
 const HOST = 'graphql.anilist.co';
 const MAX_LIMIT = 50;
 
-const FIELDS = `id idMal siteUrl isAdult countryOfOrigin title { romaji english native } synonyms description(asHtml: false) format status episodes season seasonYear
+const FIELDS = `id idMal siteUrl isAdult title { romaji english native } synonyms description(asHtml: false) format status episodes season seasonYear
   startDate { year } genres averageScore coverImage { extraLarge large } bannerImage`;
 
 const SORTS = { relevance: 'SEARCH_MATCH', popularity: 'POPULARITY_DESC', trending: 'TRENDING_DESC', latest: 'START_DATE_DESC', rating: 'SCORE_DESC' } as const;
@@ -32,7 +32,7 @@ export function buildPageQuery(filters: { name: string; gqlType: string; value: 
     args.push(`${f.arg ?? f.name}: $${f.name}`);
     variables[f.name] = f.value;
   }
-  const query = `query (${decl.join(', ')}) { Page(page: $page, perPage: $perPage) { pageInfo { total hasNextPage } media(type: ANIME, isAdult: false, countryOfOrigin: JP${args.length ? `, ${args.join(', ')}` : ''}) { ${FIELDS} } } }`;
+  const query = `query (${decl.join(', ')}) { Page(page: $page, perPage: $perPage) { pageInfo { total hasNextPage } media(type: ANIME, isAdult: false${args.length ? `, ${args.join(', ')}` : ''}) { ${FIELDS} } } }`;
   return { query, variables };
 }
 
@@ -60,7 +60,7 @@ export function createAniListSource(fetchImpl: FetchLike, now: () => string = ()
     const out: LiveTitle[] = [];
     const seen = new Set<number>();
     for (const m of raw) {
-      if (!isObject(m) || m.isAdult === true || m.countryOfOrigin !== 'JP') continue;
+      if (!isObject(m) || m.isAdult === true) continue;
       try {
         const meta = mapAniListMedia(m, at);
         const id = Number(meta.externalId);
@@ -84,7 +84,7 @@ export function createAniListSource(fetchImpl: FetchLike, now: () => string = ()
   }
 
   const byRefQuery = (ref: Ref, body: string) => ({
-    query: `query ($id: Int) { Media(${ref.kind === 'a' ? 'id' : 'idMal'}: $id, type: ANIME, isAdult: false, countryOfOrigin: JP) { ${body} } }`,
+    query: `query ($id: Int) { Media(${ref.kind === 'a' ? 'id' : 'idMal'}: $id, type: ANIME, isAdult: false) { ${body} } }`,
     variables: { id: ref.id } as Vars,
   });
 
@@ -142,7 +142,7 @@ export function createAniListSource(fetchImpl: FetchLike, now: () => string = ()
       const { query, variables } = byRefQuery(ref, FIELDS);
       const data = await gql(query, variables, signal);
       const m = data.Media;
-      if (!isObject(m) || m.isAdult === true || m.countryOfOrigin !== 'JP') throw new ProviderError('not_found', 'AniList has no matching Japanese-origin title.');
+      if (!isObject(m) || m.isAdult === true) throw new ProviderError('not_found', 'AniList has no matching title.');
       return toLiveTitle(mapAniListMedia(m, now()), 'anilist');
     },
 
