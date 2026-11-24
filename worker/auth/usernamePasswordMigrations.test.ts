@@ -23,7 +23,8 @@ describe('username/password migration 0023', () => {
       for (const file of migrationFiles) db.exec(readFileSync('migrations/' + file, 'utf8'));
       db.prepare(`INSERT INTO user_profiles (id,identity_subject,display_name,username,role)
         VALUES ('stable-profile-id','local:stable-profile-id','Existing member','member.one','user')`).run();
-      db.prepare("INSERT INTO user_library (user_id,anime_id,status) VALUES ('stable-profile-id','unused-anime','watching')").run();
+      db.prepare("INSERT INTO anime(id,slug,title) VALUES ('anime-one','anime-one','Anime One')").run();
+      db.prepare("INSERT INTO user_library (user_id,anime_id,status) VALUES ('stable-profile-id','anime-one','watching')").run();
 
       db.prepare(`INSERT INTO user_credentials (user_id,password_hash,must_change_password)
         VALUES ('stable-profile-id','pbkdf2-sha256$v=2$i=100000$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',1)`).run();
