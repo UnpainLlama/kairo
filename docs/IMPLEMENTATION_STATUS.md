@@ -8,6 +8,7 @@
 - Automated verification passed on [`dd218478cbbabd3dcd8ae324ce1643d432d1410b`](https://github.com/UnpainLlama/kairo/commit/dd218478cbbabd3dcd8ae324ce1643d432d1410b), GitHub Actions run [45394157805](https://github.com/UnpainLlama/kairo/actions/runs/45394157805).
 - The verification workflow now runs on pushes to this feature branch. Its Cloudflare deploy job remains restricted to main pushes or explicit manual dispatch; it was skipped for this run.
 - The feature branch has not been merged, no PR has been opened, and `main` has not been modified by this implementation pass.
+- Current history review: the branches share base `08b15184a659a7346d4659ffb214a5a62dbd7b15`; `main` has 7 commits after that base (the Miruro UI integration), while this feature branch has 45. Current `main` head at review was `e29a4b1bcec54ffec27c2aed80c683cd670860b8`.
 - No Cloudflare configuration, Worker secret, Access policy, remote D1 migration/query, deployment or real administrator credential operation has been performed.
 
 ## Automated verification — passed
@@ -60,7 +61,8 @@
 1. Perform the browser/manual regression pass for account enrolment/deletion, library ownership, public-profile privacy, playback resume/order, history pause, provider failures, keyboard interaction and mobile layout.
 2. Verify the live AniList/MAL/HiAnime data and playback provider combinations; decide how saved titles should display when an upstream provider removes or renames a title.
 3. Review additive migrations 0024/0025 and the PBKDF2 work factor against Cloudflare Worker CPU constraints before any remote application/deployment.
-4. Re-check the feature branch's merge base and file-level divergence against the current `main` immediately before preparing the merge. Keep reconciliation and merge as a separate reviewed step.
+4. Reconcile the 7 main-only Miruro UI commits before merge. They update `src/App.tsx`, add `src/pages/HomePage.tsx`, change `src/styles.css` and add `docs/MIRURO_UI_INTEGRATION.md`; this rebuild has replaced the old `App`/home-page structure and has its own styles, so a blind merge risks losing the Anime workspace design. Port or deliberately resolve those changes on this feature branch, then re-run CI.
+5. Re-check the merge base and file-level divergence against the live `main` immediately before preparing the merge. Keep reconciliation and merge as a separate reviewed step.
 
 ## Release and environment boundary
 
