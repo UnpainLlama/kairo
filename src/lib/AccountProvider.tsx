@@ -18,10 +18,15 @@ export type AccountState = {
   error: string | null;
 };
 
+type RefreshOptions = {
+  /** Keep the current signed-in view when a post-mutation refresh fails transiently. */
+  preserveSignedInOnError?: boolean;
+};
+
 type AccountContextValue = AccountState & {
   login(username: string, password: string): Promise<void>;
   logout(): Promise<void>;
-  refresh(signal?: AbortSignal): Promise<AccountUser | null>;
+  refresh(signal?: AbortSignal, options?: RefreshOptions): Promise<AccountUser | null>;
 };
 
 const AccountContext = createContext<AccountContextValue | null>(null);
@@ -33,11 +38,13 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     error: null,
   });
 
-  const refresh = useCallback(async (signal?: AbortSignal): Promise<AccountUser | null> => {
+  const refresh = useCallback(async (signal?: AbortSignal, options: RefreshOptions = {}): Promise<AccountUser | null> => {
     try {
       const result = await authRequest<{ user: AccountUser }>('/me', { method: 'GET', signal });
-      if (!result.data.user || typeof result.data.user.id !== 'string') {
-        throw new AuthApiError(502, 'INVALID_PROFILE', 'The server returned an invalid account profile.');
+      if (!result.data.user || typeof result.data.user.id !== 'string' ||
+          typeof result.data.user.username !== 'string' ||
+          typeof result.data.user.mustChangePassword !== 'boolean') {
+        throw new AuthApiError(502, 'INVALID_PROFILE', 'The server returned an incomplete account profile. Reload Kairo and try again.');
       }
       setState({ status: 'signed-in', user: result.data.user, error: null });
       return result.data.user;
@@ -47,8 +54,10 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         setState({ status: 'signed-out', user: null, error: null });
         return null;
       }
-      const message = error instanceof Error ? error.message : 'The account could not be loaded.';
-      setState({ status: 'error', user: null, error: message });
+      if (!options.preserveSignedInOnError) {
+        const message = error instanceof Error ? error.message : 'The account could not be loaded.';
+        setState({ status: 'error', user: null, error: message });
+      }
       throw error;
     }
   }, []);
