@@ -459,7 +459,7 @@ describe('service and handlers', () => {
       'watch_progress', 'viewing_history', 'data_sources', 'anime_provider_ids',
       'anime_relations', 'anime_field_sources', 'auth_identities', 'password_credentials',
       'sessions', 'email_verification_tokens', 'password_reset_tokens', 'provider_connections',
-      'auth_rate_limits', 'google_oauth_states', 'user_watch_history', 'user_watch_history_tombstones',
+      'auth_rate_limits', 'google_oauth_states', 'user_credentials', 'user_watch_history', 'user_watch_history_tombstones',
       'user_watch_history_clear_markers', 'user_movie_library_refs', 'user_media_playback',
       'movies', 'movie_external_ids', 'movie_genres', 'movie_genre_links', 'movie_credits',
       'movie_availability_offers', 'user_movie_library',
@@ -471,6 +471,7 @@ describe('service and handlers', () => {
       missingTable?: string;
       missingProfileColumns?: boolean;
       missingSessionColumns?: boolean;
+      missingCredentialColumns?: boolean;
       missingYouTubeColumn?: boolean;
       missingPlaybackColumns?: boolean;
       missingSecurityState?: boolean;
@@ -482,7 +483,8 @@ describe('service and handlers', () => {
             return { results: schemaTables.filter((name) => name !== options.missingTable).map((name) => ({ name })) };
           }
           if (sql.includes("FROM user_profiles") && options.missingProfileColumns) throw new Error('username/access_email column missing');
-          if (sql.includes("FROM sessions") && options.missingSessionColumns) throw new Error('sessions.access_email column missing');
+          if (sql.includes("FROM sessions") && options.missingSessionColumns) throw new Error('sessions column missing');
+          if (sql.includes("FROM user_credentials") && options.missingCredentialColumns) throw new Error('user_credentials column missing');
           if (sql.includes("FROM youtube_feed_channels") && options.missingYouTubeColumn) throw new Error('upload_playlist_id column missing');
           if (sql.includes("FROM user_media_playback") && options.missingPlaybackColumns) throw new Error('session_id/sequence columns missing');
           return { results: [] };
@@ -502,6 +504,7 @@ describe('service and handlers', () => {
     });
     expect(await call(d, 'ready', req({}, {}, { DB: makeReadyDb({ missingProfileColumns: true }) as unknown as NonNullable<LiveRequest['env']['DB']> }))).toMatchObject({ status: 503 });
     expect(await call(d, 'ready', req({}, {}, { DB: makeReadyDb({ missingSessionColumns: true }) as unknown as NonNullable<LiveRequest['env']['DB']> }))).toMatchObject({ status: 503 });
+    expect(await call(d, 'ready', req({}, {}, { DB: makeReadyDb({ missingCredentialColumns: true }) as unknown as NonNullable<LiveRequest['env']['DB']> }))).toMatchObject({ status: 503 });
     expect(await call(d, 'ready', req({}, {}, { DB: makeReadyDb({ missingYouTubeColumn: true }) as unknown as NonNullable<LiveRequest['env']['DB']> }))).toMatchObject({ status: 503 });
     expect(await call(d, 'ready', req({}, {}, { DB: makeReadyDb({ missingPlaybackColumns: true }) as unknown as NonNullable<LiveRequest['env']['DB']> }))).toMatchObject({ status: 503 });
     expect(await call(d, 'ready', req({}, {}, { DB: makeReadyDb({ missingSecurityState: true }) as unknown as NonNullable<LiveRequest['env']['DB']> }))).toMatchObject({ status: 503 });

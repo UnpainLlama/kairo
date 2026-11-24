@@ -1,4 +1,4 @@
-import { findSessionUser } from '../auth/session';
+import { getRequestUser } from '../auth/requestUser';
 
 type YouTubeBindings = { DB: D1Database; YOUTUBE_DATA_API_KEY?: string };
 type YouTubeContext = {
@@ -122,7 +122,7 @@ function originAllowed(c: YouTubeContext): boolean {
 }
 
 async function signedInUser(c: YouTubeContext) {
-  return findSessionUser(c.env.DB, c.req.header('Cookie') ?? null, Date.now(), c.get?.('accessEmail') as string | null | undefined, c.get?.('accessSubject') as string | null | undefined);
+  return getRequestUser(c);
 }
 
 function cleanText(value: unknown, max: number, fallback = ''): string {

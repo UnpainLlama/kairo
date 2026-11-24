@@ -34,7 +34,7 @@ const REQUIRED_LIVE_TABLES = [
   'watch_progress', 'viewing_history', 'data_sources', 'anime_provider_ids',
   'anime_relations', 'anime_field_sources', 'auth_identities', 'password_credentials',
   'sessions', 'email_verification_tokens', 'password_reset_tokens', 'provider_connections',
-  'auth_rate_limits', 'google_oauth_states', 'user_watch_history', 'user_watch_history_tombstones',
+  'auth_rate_limits', 'google_oauth_states', 'user_credentials', 'user_watch_history', 'user_watch_history_tombstones',
   'user_watch_history_clear_markers', 'user_movie_library_refs', 'user_media_playback',
   'movies', 'movie_external_ids', 'movie_genres', 'movie_genre_links', 'movie_credits',
   'movie_availability_offers', 'user_movie_library',
@@ -291,7 +291,10 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
           'SELECT id, identity_subject, display_name, username, email, email_verified_at, access_email, account_status, role FROM user_profiles LIMIT 0'
         ).all();
         await req.env.DB.prepare(
-          'SELECT id, user_id, token_hash, access_email, expires_at FROM sessions LIMIT 0'
+          'SELECT id, user_id, token_hash, expires_at FROM sessions LIMIT 0'
+        ).all();
+        await req.env.DB.prepare(
+          'SELECT user_id, password_hash, password_changed_at, must_change_password FROM user_credentials LIMIT 0'
         ).all();
         await req.env.DB.prepare(
           'SELECT user_id, channel_id, channel_title, upload_playlist_id FROM youtube_feed_channels LIMIT 0'
