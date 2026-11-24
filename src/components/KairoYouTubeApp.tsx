@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNod
 import { Link, Navigate, Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Bookmark, BookmarkCheck, ExternalLink, Play, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { useAccount } from '../lib/AccountProvider';
-import { loadMediaPlayback, syncMediaPlayback, writeLocalMediaPlayback, type SavedPlayerState } from '../lib/mediaPlayback';
+import { deleteMediaPlayback, loadMediaPlayback, syncMediaPlayback, writeLocalMediaPlayback, type SavedPlayerState } from '../lib/mediaPlayback';
 import type { PlaybackSaveReason } from '../lib/playbackSync';
 import { shouldSyncPlaybackProgress } from '../lib/playbackSync';
 import YouTubeIframePlayer from './YouTubeIframePlayer';
@@ -310,6 +310,7 @@ function YouTubeChannelsPage() {
 }
 
 function YouTubeLibraryPage({ kind }: { kind: 'history' | 'watch-later' }) {
+  const account = useAccount();
   const [items, setItems] = useState<YouTubeVideo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -326,6 +327,7 @@ function YouTubeLibraryPage({ kind }: { kind: 'history' | 'watch-later' }) {
     setRemoving(videoId); setError('');
     try {
       await youtubeRequest(base + '/' + encodeURIComponent(videoId), { method: 'DELETE' });
+      if (kind === 'history') await deleteMediaPlayback(account.user?.id ?? null, 'youtube', videoId);
       setItems(current => current.filter(video => video.videoId !== videoId));
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not remove video.'); }
     finally { setRemoving(null); }

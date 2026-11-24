@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode, type TouchEvent as ReactTouchEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode, type TouchEvent as ReactTouchEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import {
   Activity, ArrowLeft, Bookmark, Check, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Compass, Film,
   Heart, History, Home, Info, Library, LogOut, Menu, Play, Search, Settings, Shield, Sparkles, Star,
@@ -23,7 +23,6 @@ import {
 import { shouldSyncPlaybackProgress, type PlaybackSaveReason } from '../lib/playbackSync';
 import KairoMediaPlayer, { type KairoPlaybackSource } from './KairoMediaPlayer';
 import MovieEmbedPlayer from './MovieEmbedPlayer';
-import KairoYouTubeApp from './KairoYouTubeApp';
 
 type PageData<T> = { items: T[] };
 type LoadablePage<T> = ApiState<PageData<T>> & { reload: () => void };
@@ -90,6 +89,8 @@ type AdminAccount = {
 };
 type ServerList = { items: EpisodeServer[] };
 type SourceResult = { source: KairoPlaybackSource };
+
+const KairoYouTubeApp = lazy(() => import('./KairoYouTubeApp'));
 
 const DEFAULT_PREFERENCES: Preferences = {
   theme: 'astral-plum', interfaceLanguage: 'en', subtitleLanguage: 'en',
@@ -1319,7 +1320,7 @@ function WorkspaceRoutes() {
         <Route path="profile" element={<ProfilePage />} />
         <Route path="users/:username" element={<PublicProfilePage />} />
         <Route path="settings" element={<SettingsPage />} />
-        <Route path="youtube/*" element={<KairoYouTubeApp />} />
+        <Route path="youtube/*" element={<Suspense fallback={<LoadingPanel label="Loading YouTube workspace…" />}><KairoYouTubeApp /></Suspense>} />
         <Route path="*" element={<CatchAllPage adminPath={adminPath} />} />
       </Route>
     </Routes>
