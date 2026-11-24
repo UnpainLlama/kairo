@@ -36,6 +36,35 @@ describe('username/password authentication routes', () => {
     expect(unknownBody.error).toEqual({ code: 'INVALID_CREDENTIALS', message: 'Username or password is incorrect.' });
   });
 
+  it('counts malformed usernames against the source-IP failure budget', async () => {
+    const { app, env } = await setup();
+    const response = await app.request('https://kairo.test/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '192.0.2.20' },
+      body: JSON.stringify({ username: 'not a username', password: PASSWORD }),
+    }, env);
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({
+      error: { code: 'INVALID_CREDENTIALS', message: 'Username or password is incorrect.' },
+    });
+    expect(db.prepare('SELECT COUNT(*) AS count FROM auth_rate_limits').get()).toEqual({ count: 1 });
+  });
+
+  it('does not let a successful login clear the shared source-IP failure bucket', async () => {
+    const { app, env } = await setup();
+    const request = (password: string) => app.request('https://kairo.test/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '192.0.2.21' },
+      body: JSON.stringify({ username: 'member.one', password }),
+    }, env);
+
+    expect((await request('incorrect passphrase')).status).toBe(401);
+    expect((await request(PASSWORD)).status).toBe(200);
+    // The per-username bucket is cleared; the IP bucket persists for the rolling window.
+    expect(db.prepare('SELECT COUNT(*) AS count FROM auth_rate_limits').get()).toEqual({ count: 1 });
+  });
+
   it('normalizes usernames, creates a hashed server-side session, and exposes mustChangePassword', async () => {
     const { app, env } = await setup(true);
     const response = await app.request('https://kairo.test/api/v1/auth/login', {

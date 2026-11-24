@@ -17,23 +17,40 @@ function loginFailure(c:any){return fail(c,401,'INVALID_CREDENTIALS','Username o
 export function registerAuthRoutes(app:Hono<any>){
   app.post('/api/v1/auth/login',async(c:any)=>{
     c.header('Cache-Control','no-store');
-    const body:unknown=await c.req.json().catch(()=>null);
-    if(!body||typeof body!=='object'||Array.isArray(body))return fail(c,400,'VALIDATION_ERROR','Provide a valid username and password.');
-    const value=body as Record<string,unknown>;
-    const username=normalizeUsername(value.username);
-    const password=typeof value.password==='string'?value.password:'';
     const ip=c.req.header('CF-Connecting-IP')??'unknown';
-    if(!username||typeof value.password!=='string'||new TextEncoder().encode(password).length>1024){
-      try{await verifyPassword('invalid-login-attempt',DUMMY_PASSWORD_HASH);}catch{/* generic failure */}
-      return loginFailure(c);
-    }
-    const pairKey=ip+':'+username;
     try{
-      const [pairLimited,ipLimited]=await Promise.all([
-        isRateLimited(c.env.DB,pairKey,'login-ip-username',LOGIN_PAIR_LIMIT,LOGIN_WINDOW_MS),
-        isRateLimited(c.env.DB,ip,'login-ip',LOGIN_IP_LIMIT,LOGIN_WINDOW_MS),
-      ]);
-      if(pairLimited||ipLimited){c.header('Retry-After','60');return fail(c,429,'RATE_LIMITED','Too many unsuccessful sign-in attempts. Try again later.');}
+      // Apply the source-IP bucket before parsing credentials so malformed payloads
+      // cannot bypass the same failed-attempt budget as valid-looking usernames.
+      if(await isRateLimited(c.env.DB,ip,'login-ip',LOGIN_IP_LIMIT,LOGIN_WINDOW_MS)){
+        c.header('Retry-After','60');
+        return fail(c,429,'RATE_LIMITED','Too many unsuccessful sign-in attempts. Try again later.');
+      }
+
+      const body:unknown=await c.req.json().catch(()=>null);
+      if(!body||typeof body!=='object'||Array.isArray(body)){
+        await recordRateLimitFailure(c.env.DB,ip,'login-ip',LOGIN_WINDOW_MS);
+        return fail(c,400,'VALIDATION_ERROR','Provide a valid username and password.');
+      }
+
+      const value=body as Record<string,unknown>;
+      const username=normalizeUsername(value.username);
+      const password=typeof value.password==='string'?value.password:'';
+      const pairKey=username?ip+':'+username:null;
+
+      if(!username||typeof value.password!=='string'||password.length===0||new TextEncoder().encode(password).length>1024){
+        // Keep malformed/unknown username responses generic and perform comparable
+        // work without accepting empty or oversized passwords.
+        await verifyPassword('invalid-login-attempt',DUMMY_PASSWORD_HASH);
+        if(pairKey) await recordRateLimitFailure(c.env.DB,pairKey,'login-ip-username',LOGIN_WINDOW_MS);
+        await recordRateLimitFailure(c.env.DB,ip,'login-ip',LOGIN_WINDOW_MS);
+        return loginFailure(c);
+      }
+
+      if(await isRateLimited(c.env.DB,pairKey,'login-ip-username',LOGIN_PAIR_LIMIT,LOGIN_WINDOW_MS)){
+        c.header('Retry-After','60');
+        return fail(c,429,'RATE_LIMITED','Too many unsuccessful sign-in attempts. Try again later.');
+      }
+
       const account=await c.env.DB.prepare(`SELECT p.id,p.role,p.account_status AS accountStatus,p.username,
           uc.password_hash AS passwordHash,uc.must_change_password AS mustChangePassword
         FROM user_profiles p LEFT JOIN user_credentials uc ON uc.user_id=p.id
@@ -49,10 +66,10 @@ export function registerAuthRoutes(app:Hono<any>){
         ]);
         return loginFailure(c);
       }
-      await Promise.all([
-        clearRateLimit(c.env.DB,pairKey,'login-ip-username'),
-        clearRateLimit(c.env.DB,ip,'login-ip'),
-      ]);
+
+      // Release only this username/IP pair. Keep the source-IP rolling failures so
+      // one successful user cannot reset the budget for other accounts behind NAT.
+      await clearRateLimit(c.env.DB,pairKey,'login-ip-username');
       if(account.accountStatus!=='active')return fail(c,403,'ACCOUNT_SUSPENDED','This account is suspended. Contact the administrator.');
       if(needsRehash(account.passwordHash)){
         const upgraded=await hashPassword(password);
