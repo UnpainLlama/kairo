@@ -5,10 +5,11 @@
 ## Branch and operational boundary
 
 - Feature branch: `rebuild/username-password-auth`.
-- Automated verification passed on [`dd218478cbbabd3dcd8ae324ce1643d432d1410b`](https://github.com/UnpainLlama/kairo/commit/dd218478cbbabd3dcd8ae324ce1643d432d1410b), GitHub Actions run [45394157805](https://github.com/UnpainLlama/kairo/actions/runs/45394157805).
-- The verification workflow now runs on pushes to this feature branch. Its Cloudflare deploy job remains restricted to main pushes or explicit manual dispatch; it was skipped for this run.
-- The feature branch has not been merged, no PR has been opened, and `main` has not been modified by this implementation pass.
-- Current history review: the branches share base `08b15184a659a7346d4659ffb214a5a62dbd7b15`; `main` has 7 commits after that base (the Miruro UI integration), while this feature branch has 45. Current `main` head at review was `e29a4b1bcec54ffec27c2aed80c683cd670860b8`.
+- Latest implementation checkpoint: [`e99d4ecaf152e7dd830219d7c6803a2d942f0ca9`](https://github.com/UnpainLlama/kairo/commit/e99d4ecaf152e7dd830219d7c6803a2d942f0ca9).
+- Automated verification passed for this exact head in GitHub Actions run [45396899695](https://github.com/UnpainLlama/kairo/actions/runs/45396899695).
+- The feature branch has not been merged; no PR has been opened. No changes from this implementation pass have been made to `main`.
+- The feature branch now includes the authenticated-app port of the seven main-only Miruro UI changes. Their old `src/App.tsx` shell and standalone `src/pages/HomePage.tsx` were translated into the current `KairoApp` component/route structure rather than blindly copying the old unauthenticated app shell.
+- The Anime-only header and monochrome visual layer are enabled only for Anime routes. Movies, movie-watch and account/profile/settings pages retain their separate existing styles.
 - No Cloudflare configuration, Worker secret, Access policy, remote D1 migration/query, deployment or real administrator credential operation has been performed.
 
 ## Automated verification — passed
@@ -19,17 +20,20 @@
 - Full dependency audit: zero reported vulnerabilities.
 - Worker and client production build: passed under Node 22.23.5 / npm 10.9.9.
 - Wrangler Access configuration validation in the verification job: passed.
-- Build note: Vite reports the main client JavaScript chunk at approximately 943 kB (290 kB gzip), above its 500 kB advisory threshold. It does not fail the build; route/player code splitting can be considered as a follow-up performance improvement.
+- The CI deploy job was skipped for this feature-branch push.
+- The build reports a client-bundle size advisory above Vite's 500 kB threshold; the build is successful. Route-level code splitting is a possible performance follow-up.
 - There is no lint script in `package.json`; lint is not marked complete.
 
 ## Phase 2 — Catalogue
 
 - Existing catalogue adapters and Worker routes remain for featured, trending, latest, search, filter browse, genres, title details, episodes, related titles and provider attribution.
-- Frontend catalogue screens cover Discover, Anime browse/seasonal browse, search, Anime details and episode selection.
-- Movies discovery, search and detail pages use existing TMDB endpoints and preserve the metadata-provider enablement/terms gate.
-- Provider-backed Anime library references support AniList, MAL and HiAnime alongside legacy D1-backed rows. The client resolves display metadata through the configured title API; browser-supplied title, poster and synopsis metadata is not written to the catalogue.
+- The Anime home page now includes a featured-title carousel, Trending/Popular/Top ranking tabs, Top Airing and Upcoming side panels, Latest updates, and the shared Continue watching rail.
+- Featured carousel supports timed rotation, previous/next controls, keyboard and touch navigation, hidden-tab pause, and reduced-motion behavior.
+- The Anime-only header and monochrome Miruro-inspired layout are scoped to Anime routes. Movies and account pages do not inherit the Anime workspace style.
+- Ranking and featured content continue to use Kairo catalogue endpoints; AniList remains the first-choice live catalogue provider. No Miruro API or direct AniList GraphQL client is introduced.
+- Provider-backed Anime library references support AniList, MAL and HiAnime alongside legacy D1-backed rows. Display metadata is resolved through the configured Kairo title endpoint; browser-supplied title, poster and synopsis metadata is not stored as catalogue truth.
 - Library metadata resolution is incremental: 24 saved provider references are displayed per batch, with at most eight concurrent title lookups.
-- Remaining: verify configured Anime catalogue/episode provider combinations against live responses. The automated provider tests use controlled fixtures; this change does not add provider-wide catalogue ingestion.
+- Remaining: verify configured Anime catalogue/episode provider combinations against live responses. Automated provider tests use controlled fixtures.
 
 ## Phase 3 — Identity, profile and library
 
@@ -53,20 +57,19 @@
 
 - Focused route tests cover profile privacy, preferences, account export/deletion, provider-backed Anime save/list/remove, malformed provider IDs, legacy D1 slug compatibility and tombstone cleanup.
 - The provider-library and metadata tests exercise Worker request routing with SQLite-backed D1 and authenticated test sessions.
-- The UI has loading/error/empty states, responsive styles, keyboard search handling, skip-to-content and reduced-motion rules.
-- **Still not covered by the automated CI run:** browser-based accessibility/keyboard testing, mobile-browser layout checks, visual review, and staging/production runtime smoke tests.
+- The full CI suite passes on the current code: 322 tests across 43 test files, typecheck and production build.
+- **Still not covered by automated CI:** browser-based accessibility/keyboard testing, mobile-browser layout checks, visual review, and staging/production runtime smoke tests.
 
 ## Remaining before merge
 
-1. Perform the browser/manual regression pass for account enrolment/deletion, library ownership, public-profile privacy, playback resume/order, history pause, provider failures, keyboard interaction and mobile layout.
-2. Verify the live AniList/MAL/HiAnime data and playback provider combinations; decide how saved titles should display when an upstream provider removes or renames a title.
+1. Perform the browser/manual regression pass for admin enrolment/deletion, library ownership, public-profile privacy, playback resume/order, history pause, provider failures, keyboard interaction and mobile layout.
+2. Verify live AniList/MAL/HiAnime data and episode-provider combinations; decide how saved titles should display when an upstream provider removes or renames a title.
 3. Review additive migrations 0024/0025 and the PBKDF2 work factor against Cloudflare Worker CPU constraints before any remote application/deployment.
-4. Reconcile the 7 main-only Miruro UI commits before merge. They update `src/App.tsx`, add `src/pages/HomePage.tsx`, change `src/styles.css` and add `docs/MIRURO_UI_INTEGRATION.md`; this rebuild has replaced the old `App`/home-page structure and has its own styles, so a blind merge risks losing the Anime workspace design. Port or deliberately resolve those changes on this feature branch, then re-run CI.
-5. Re-check the merge base and file-level divergence against the live `main` immediately before preparing the merge. Keep reconciliation and merge as a separate reviewed step.
+4. Re-check the merge base and file-level divergence against the live `main` immediately before preparing a PR/merge. Keep reconciliation and merge as a separate reviewed step.
 
 ## Release and environment boundary
 
-- The passed CI build proves the repository's Worker/client build in the GitHub Actions runner. It does not prove that the current Cloudflare staging/production secrets, D1 databases, Access policies or remote migrations are provisioned correctly.
+- The passed CI build proves the repository's Worker/client build in the GitHub Actions runner. It does not prove that current Cloudflare staging/production secrets, D1 databases, Access policies or remote migrations are provisioned correctly.
 - Review and approve migrations 0024 and 0025 before remote D1 application.
 - Cloudflare Access remains a separately configured outer perimeter; any policy/validator change needs separate approval.
 - Do not deploy, change edge policies, run remote D1 operations, wipe sessions or create real administrator credentials during this feature-branch implementation pass.
