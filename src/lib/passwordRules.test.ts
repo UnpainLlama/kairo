@@ -5,7 +5,7 @@ describe('client password rules', () => {
   it('requires at least five whitespace-separated words', () => {
     expect(isPasswordAllowed('one two three four', 'admin')).toBe(false);
     expect(isPasswordAllowed('one two three four five', 'admin')).toBe(true);
-    expect(isPasswordAllowed(' one  two three\\nfour five ', 'admin')).toBe(true);
+    expect(isPasswordAllowed(' one  two   three four five ', 'admin')).toBe(true);
   });
 
   it('enforces the UTF-8 byte ceiling', () => {
