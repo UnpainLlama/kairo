@@ -5,7 +5,7 @@
 ## Current branch and safety boundary
 
 - Feature branch: `rebuild/username-password-auth`.
-- Latest feature head: [`dcc9a3d86e2a0c9dfa81d11157fa2afa46307d3e`](https://github.com/UnpainLlama/kairo/commit/dcc9a3d86e2a0c9dfa81d11157fa2afa46307d3e). It follows the UI integration, documentation alignment, a guard that delays playback sync until after forced password changes, and login rate-limit hardening.
+- Latest authentication-code hardening commit: [`dcc9a3d86e2a0c9dfa81d11157fa2afa46307d3e`](https://github.com/UnpainLlama/kairo/commit/dcc9a3d86e2a0c9dfa81d11157fa2afa46307d3e). The subsequent commits only refresh this status snapshot. It follows the UI integration, documentation alignment and a guard that delays playback sync until after forced password changes.
 - The branch is based on reset commit `4f77801029da116c79909b69f84433ecd3b67d18` and has continued with additive commits.
 - The feature branch is 29 commits ahead of the reset base and has diverged from current `main` (30 commits ahead, 7 commits behind). Do not merge or retarget directly; plan a dedicated reconciliation first.
 - `main` has not been changed by this work. No PR has been opened.
