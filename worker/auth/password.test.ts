@@ -43,12 +43,13 @@ describe('password hashing', () => {
     expect(await verifyPassword('', 'malformed')).toBe(false);
   });
 
-  it('requires at least 15 Unicode code points and enforces the byte ceiling', () => {
-    expect(isNewPasswordValid('a'.repeat(14))).toBe(false);
-    expect(isNewPasswordValid('a'.repeat(15))).toBe(true);
-    expect(isNewPasswordValid('😀'.repeat(14))).toBe(false);
-    expect(isNewPasswordValid('😀'.repeat(15))).toBe(true);
-    expect(isNewPasswordValid('a'.repeat(1025))).toBe(false);
+  it('requires at least five words and enforces the UTF-8 byte ceiling', () => {
+    expect(isNewPasswordValid('one two three four')).toBe(false);
+    expect(isNewPasswordValid('one two three four five')).toBe(true);
+    expect(isNewPasswordValid(' one  two three\\nfour five ')).toBe(true);
+    expect(isNewPasswordValid('😀 😀 😀 😀 😀')).toBe(true);
+    expect(isNewPasswordValid('a '.repeat(512))).toBe(true);
+    expect(isNewPasswordValid('a '.repeat(513))).toBe(false);
     expect(isNewPasswordValid(null)).toBe(false);
     expect(isPasswordDifferentFromUsername('myusernamepassword', 'myusername')).toBe(true);
     expect(isPasswordDifferentFromUsername('myusername', 'MYUSERNAME')).toBe(false);
