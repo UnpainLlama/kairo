@@ -1,7 +1,7 @@
 import { positiveInt } from '../../metadata/normalize';
 import { ProviderError, type EpisodeLookup, type EpisodePage, type EpisodeProvider } from '../../metadata/types';
 import { asString, isObject, providerFetch, readJson, USER_AGENT, type FetchLike } from '../../metadata/providers/http';
-import { waitForJikanSlot } from '../../live/jikan';
+import { waitForJikanSlot } from './jikanPacer';
 
 const BASE = 'https://api.jikan.moe/v4';
 const HOST = 'api.jikan.moe';
