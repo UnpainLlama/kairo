@@ -13,8 +13,8 @@ const BASE = 'https://api.myanimelist.net/v2';
 const HOST = 'api.myanimelist.net';
 const PAGE_LIMIT = 100;
 const SCAN_LIMIT = 500;
-const LIST_FIELDS = 'alternative_titles{en,ja,synonyms},start_date,mean,rank,popularity,nsfw,rating,media_type,status,num_episodes,start_season{year,season},genres';
-const DETAIL_FIELDS = LIST_FIELDS + ',end_date,synopsis,recommendations{node{id,title,nsfw,rating,media_type,status,num_episodes,start_date,start_season{year,season},mean,genres,alternative_titles{en,ja,synonyms}},num_recommendations},studios';
+const LIST_FIELDS = 'alternative_titles{en,ja,synonyms},start_date,synopsis,mean,rank,popularity,nsfw,rating,media_type,status,num_episodes,start_season{year,season},genres';
+const DETAIL_FIELDS = LIST_FIELDS + ',end_date,recommendations{node{id,title,nsfw,rating,media_type,status,num_episodes,start_date,start_season{year,season},mean,genres,alternative_titles{en,ja,synonyms}},num_recommendations},studios';
 const sharedPacer = new Pacer(1000);
 
 export const MAL_ATTRIBUTION: Attribution = {

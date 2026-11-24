@@ -61,6 +61,7 @@ describe('MyAnimeList API v2 mapping', () => {
     expect(parsed.origin + parsed.pathname).toBe('https://api.myanimelist.net/v2/anime/ranking');
     expect(parsed.searchParams.get('ranking_type')).toBe('bypopularity');
     expect(parsed.searchParams.get('fields')).toContain('genres');
+    expect(parsed.searchParams.get('fields')).toContain('synopsis');
     expect(parsed.searchParams.get('fields')).toContain('alternative_titles{en,ja,synonyms}');
     expect(parsed.searchParams.get('fields')).toContain('start_season{year,season}');
     expect(parsed.searchParams.get('nsfw')).toBeNull();
