@@ -4,7 +4,6 @@ import { EdgeCache, KvCache, MemoryCache, type KvLike, type MetadataCache } from
 import { baseToMetadata, enrichFromProviders, type EnrichDeps, type ProviderOutcome } from './enrich';
 import { mergeMetadata, type Unified } from './merge';
 import { normalizeFormat, normalizeSeason, normalizeStatus, uniqueStrings } from './normalize';
-import { ANILIST_ATTRIBUTION, createAniListProvider } from './providers/anilist';
 import type { FetchLike } from './providers/http';
 import { KITSU_ATTRIBUTION, createKitsuProvider } from './providers/kitsu';
 import { MANAMI_ATTRIBUTION } from './providers/manami';
@@ -12,10 +11,9 @@ import type { Attribution, BaseRecord, ExternalIds, MetadataProvider } from './t
 
 /** Adding a provider = write an adapter and add one line here. Nothing else in the Worker or frontend changes. */
 const FACTORIES: Record<string, (f: FetchLike) => MetadataProvider> = {
-  anilist: createAniListProvider,
   kitsu: createKitsuProvider,
 };
-const ATTRIBUTIONS: Record<string, Attribution> = { anilist: ANILIST_ATTRIBUTION, kitsu: KITSU_ATTRIBUTION, manami: MANAMI_ATTRIBUTION };
+const ATTRIBUTIONS: Record<string, Attribution> = { kitsu: KITSU_ATTRIBUTION, manami: MANAMI_ATTRIBUTION };
 
 export type ProviderInfo = { id: string; displayName: string; enabled: boolean; termsVerified: boolean; capabilities: { byId: boolean; search: boolean }; attribution: Attribution };
 

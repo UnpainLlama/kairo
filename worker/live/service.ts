@@ -6,7 +6,6 @@ import { sharedBreaker, createCache } from '../metadata/service';
 import type { FetchLike } from '../metadata/providers/http';
 import { ProviderError, type EpisodePage, type EpisodeProvider, type EpisodeRecord, type EpisodeServer } from '../metadata/types';
 import { buildEpisodeProviders, listEpisodes as resolveEpisodes } from '../episodes/service';
-import { createAniListSource } from './anilist';
 import { createTmdbArtworkProvider } from '../artwork/tmdb';
 import { buildZokoAnimeEmbedUrl, type ZokoAnimeTrack } from '../providers/zokoanime';
 import { enrichArtwork, enrichArtworkOne, enrichEpisodeArtwork } from '../artwork/service';
@@ -82,9 +81,9 @@ export function resolve<T>(deps: Deps, spec: ResolveSpec<T>): Promise<Outcome<T>
 
 async function doResolve<T>(deps: Deps, spec: ResolveSpec<T>): Promise<Outcome<T>> {
   const first = spec.candidates[0];
-  if (!first) throw new ProviderError('not_found', 'No provider can serve this request.');
-  const primary = first.source.id;
   const cached = await deps.cache.get<Entry<T>>(spec.key);
+  if (!first) throw new ProviderError('unavailable', 'No anime catalogue provider is configured.'); 
+  const primary = first.source.id;
   if (cached && cached.freshUntil > deps.now()) {
     return { value: cached.value, via: cached.via, primary, cached: true, stale: false, degraded: cached.via !== primary };
   }
@@ -123,7 +122,7 @@ const candidatesFor = <T>(deps: Deps, ref: Ref, run: (s: CatalogSource, signal: 
   deps.sources.filter((s) => s.supports(ref)).map((source) => ({ source, run: (signal) => run(source, signal) }));
 
 // New namespace invalidates all list/detail records cached under the old mixed-provider catalogue.
-const liveCacheScope = (): string => 'live:v5:anilist-only';
+const liveCacheScope = (): string => 'live:v6:no-catalogue-provider';
 
 export function getList(deps: Deps, kind: ListKind, page: number, limit: number): Promise<Outcome<Paged>> {
   const day = kind === 'featured' ? new Date(deps.now()).toISOString().slice(0, 10) : 'stable';
@@ -333,7 +332,7 @@ export function buildDeps(env: LiveEnv, fetchImpl: FetchLike, onError?: Deps['on
   const playbackHosts = (env.HIANIME_PLAYBACK_ALLOWED_HOSTS ?? '').split(',').map((host) => host.trim().toLowerCase()).filter((host) => /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i.test(host));
   const episodeRegistry = buildEpisodeProviders(env.EPISODE_PROVIDERS, env.HIANIME_BASE_URL, fetchImpl, playbackHosts);
   return {
-    sources: [createAniListSource(fetchImpl)],
+    sources: [],
     episodeProviders: episodeRegistry.providers,
     unknownEpisodeProviders: episodeRegistry.unknown,
     cache: createCache(env),

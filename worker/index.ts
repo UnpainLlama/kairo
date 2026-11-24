@@ -35,7 +35,7 @@ interface Bindings {
   /** Server-only Google API key for administrator-only YouTube Data API reads. */
   YOUTUBE_DATA_API_KEY?: string;
   ALLOWED_ORIGIN?: string;
-  /** Comma-separated metadata provider ids to enable, e.g. "anilist". Empty = none. */
+  /** Comma-separated metadata provider ids to enable, e.g. "kitsu". Empty = none. */
   METADATA_PROVIDERS?: string;
   /** Optional Workers KV namespace used as the provider-response cache (recommended on workers.dev). */
   METADATA_CACHE?: KVNamespace;
