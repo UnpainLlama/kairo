@@ -19,7 +19,7 @@ export function normalizeUsername(value) {
 
 export function isValidPassword(password, username) {
   return typeof password === 'string' &&
-    Array.from(password).length >= 15 &&
+    password.trim().split(/\s+/u).filter(Boolean).length >= 5 &&
     Buffer.byteLength(password, 'utf8') <= MAX_PASSWORD_BYTES &&
     password.toLowerCase() !== username.toLowerCase();
 }
@@ -107,7 +107,7 @@ export async function run() {
   const confirmation = await readSecret('Confirm admin password (input hidden): ');
   if (password !== confirmation) throw new Error('Passwords do not match.');
   if (!isValidPassword(password, username)) {
-    throw new Error('Password must be at least 15 Unicode code points, at most 1024 UTF-8 bytes, and must not equal the username.');
+    throw new Error('Password must contain at least five words, be at most 1024 UTF-8 bytes, and must not equal the username.');
   }
   const hash = createPasswordHash(password);
   const sql = buildAdminPasswordSql(userId, username, hash);
