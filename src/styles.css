@@ -2942,3 +2942,18 @@ img { display: block; }
 .kc-app.kc-anime-mode .kc-anime-brand { display: inline-flex; }
 .kc-app.kc-anime-mode .kc-anime-topnav { display: flex; }
 .kc-app.kc-anime-mode .kc-topbar { left: 0 !important; }
+
+/* Final header positioning override for Kairo's centered-search chrome. */
+.kc-app.kc-anime-mode .kc-topbar {
+  left: 0 !important;
+  background: rgba(8,8,8,.94) !important;
+  border-bottom: 1px solid rgba(255,255,255,.055);
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+}
+.kc-app.kc-anime-mode .kc-menu-wrap {
+  position: relative;
+  top: auto;
+  right: auto;
+  z-index: 90;
+}
