@@ -16,6 +16,7 @@ type Props = {
   mediaType?: 'hls' | 'file';
   onProgress?: (seconds: number, reason: PlaybackSaveReason, playerState?: SavedPlayerState, durationSeconds?: number | null) => void;
   initialPlayerState?: SavedPlayerState | null;
+  initialProgressSeconds?: number;
   defaultPlaybackSpeed?: number;
   defaultSubtitleLanguage?: string;
   subtitleSize?: 'small' | 'medium' | 'large';
@@ -34,6 +35,7 @@ export default function KairoVideoJsPlayer({
   mediaType = 'hls',
   onProgress,
   initialPlayerState,
+  initialProgressSeconds = 0,
   defaultPlaybackSpeed = 1,
   defaultSubtitleLanguage = 'en',
   subtitleSize = 'medium',
@@ -42,8 +44,8 @@ export default function KairoVideoJsPlayer({
   const hlsRef = useRef<Hls | null>(null);
   const initialPlayerStateRef = useRef(initialPlayerState);
   const initialProgressSecondsRef = useRef(initialProgressSeconds);
-  const initialPlayerStateRef = useRef(initialPlayerState);
   useEffect(() => { initialPlayerStateRef.current = initialPlayerState; }, [initialPlayerState]);
+  useEffect(() => { initialProgressSecondsRef.current = initialProgressSeconds; }, [initialProgressSeconds]);
   const [skip, setSkip] = useState<'intro' | 'outro' | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
   const [playbackError, setPlaybackError] = useState('');
@@ -177,7 +179,7 @@ export default function KairoVideoJsPlayer({
       window.removeEventListener('pagehide', onPageHide);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [src, progressKey, introEnd, outroStart, nextUrl, onProgress, defaultPlaybackSpeed, defaultSubtitleLanguage]);
+  }, [src, progressKey, introEnd, outroStart, nextUrl, onProgress, defaultPlaybackSpeed, defaultSubtitleLanguage, subtitles]);
 
   useEffect(() => {
     const media = mediaRef.current;
@@ -241,6 +243,39 @@ export default function KairoVideoJsPlayer({
 
   return (
     <div className={"kc-videojs-player subtitle-" + subtitleSize} aria-label={title}>
+      {(qualityOptions.length > 0 || subtitles.length > 0) && (
+        <div className="kc-player-settings">
+          {qualityOptions.length > 0 && (
+            <label>
+              Quality
+              <select value={selectedQuality} onChange={event => {
+                const value = event.target.value;
+                const level = value === 'auto' ? -1 : Number(value);
+                if (hlsRef.current) hlsRef.current.currentLevel = Number.isFinite(level) ? level : -1;
+                setSelectedQuality(value);
+              }} aria-label="Video quality">
+                {qualityOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+          )}
+          {subtitles.length > 0 && (
+            <label>
+              Subtitles
+              <select value={selectedSubtitle} onChange={event => {
+                const language = event.target.value;
+                const tracks = mediaRef.current?.textTracks;
+                if (tracks) Array.from(tracks).forEach(track => {
+                  track.mode = language !== 'off' && track.language === language ? 'showing' : 'disabled';
+                });
+                setSelectedSubtitle(language);
+              }} aria-label="Subtitle language">
+                <option value="off">Off</option>
+                {subtitles.map(track => <option key={track.url} value={track.language}>{track.label}</option>)}
+              </select>
+            </label>
+          )}
+        </div>
+      )}
       <video
         ref={mediaRef}
         className="kc-videojs-media kc-videojs-element"
