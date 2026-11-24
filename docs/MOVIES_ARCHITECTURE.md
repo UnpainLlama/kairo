@@ -1,7 +1,7 @@
 # Kairo Movies: catalogue foundation
 
 Movies is a standalone product domain. It does not depend on Anime's `anime`, `episodes`,
-`user_library`, `watch_progress`, AniList, Jikan, HiAnime, or anime episode/playback routes.
+Anime metadata, library, watch-progress, episode, or playback services.
 Only shared account identity and low-level application infrastructure may be reused.
 
 ## Current foundation
