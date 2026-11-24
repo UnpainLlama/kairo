@@ -158,6 +158,7 @@ export function getTitle(deps: Deps, ref: Ref): Promise<Outcome<LiveTitle>> {
     ttl: TTL.detail,
     candidates: deps.sources.filter((s) => s.supports(ref)).map((source) => ({ source, run: (signal: AbortSignal) => source.byRef(ref, signal) })),
   });
+}
 
 export async function getRelated(deps: Deps, ref: Ref, limit: number): Promise<Outcome<LiveTitle[]>> {
   const candidates = candidatesFor(deps, ref, (s, signal) => s.related(ref, limit, signal));
