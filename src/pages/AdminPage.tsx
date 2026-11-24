@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties, type FormEvent } from 'react';
 import { Copy, KeyRound, RefreshCw, ShieldCheck, Trash2, UserPlus } from 'lucide-react';
 import { authRequest } from '../lib/authClient';
 
@@ -61,7 +61,7 @@ export default function AdminPage() {
       });
       setUsername('');
       setDisplayName('');
-      setNotice('Account created. Copy the temporary password and share it with the intended user securely.');
+      setNotice('Account created. Copy its temporary password and deliver it securely.');
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not create the account.');
@@ -71,7 +71,7 @@ export default function AdminPage() {
   }
 
   async function resetPassword(account: Account) {
-    if (!window.confirm('Create a new temporary password for @' + account.username + '? The old password will stop working immediately.')) return;
+    if (!window.confirm('Reset the password for @' + account.username + '? The current password will stop working immediately.')) return;
     setBusy(account.id);
     setError('');
     setNotice('');
@@ -82,7 +82,7 @@ export default function AdminPage() {
         { method: 'POST' },
       );
       setTemporaryCredential({ accountId: account.id, username: account.username, temporaryPassword: result.data.temporaryPassword });
-      setNotice('Password reset. The account must change this temporary password at next sign-in.');
+      setNotice('Password reset. The user must change the temporary password at next sign-in.');
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not reset the password.');
@@ -102,7 +102,7 @@ export default function AdminPage() {
         method: 'PATCH',
         body: JSON.stringify({ status: next }),
       });
-      setNotice(next === 'suspended' ? 'Account suspended and its active sessions revoked.' : 'Account reactivated.');
+      setNotice(next === 'suspended' ? 'Account suspended and active sessions revoked.' : 'Account reactivated.');
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not update the account.');
@@ -121,7 +121,7 @@ export default function AdminPage() {
         method: 'DELETE',
         body: JSON.stringify({ confirmDataDeletion: true }),
       });
-      setNotice('Account and its account-owned data were deleted. A minimal identity tombstone was retained.');
+      setNotice('Account data deleted. A minimal identity tombstone was retained.');
       setTemporaryCredential(null);
       await load();
     } catch (caught) {
@@ -135,7 +135,7 @@ export default function AdminPage() {
     if (!temporaryCredential) return;
     try {
       await navigator.clipboard.writeText(temporaryCredential.temporaryPassword);
-      setNotice('Temporary password copied. Store and deliver it securely; it will not be shown again after leaving this page.');
+      setNotice('Temporary password copied. Store and deliver it securely; it will only be shown here once.');
     } catch {
       setError('Clipboard access was blocked. Select and copy the temporary password manually.');
     }
@@ -143,81 +143,49 @@ export default function AdminPage() {
 
   const count = data?.standardAccountCount ?? 0;
   const limit = data?.standardAccountLimit ?? 15;
+  const panel: CSSProperties = { width: 'min(1080px, calc(100% - 32px))', margin: '40px auto', color: '#f4f4f5', fontFamily: 'system-ui, sans-serif' };
+  const surface: CSSProperties = { background: '#171719', border: '1px solid #303034', borderRadius: 14, padding: 22, marginBottom: 18 };
+  const field: CSSProperties = { display: 'block', width: '100%', boxSizing: 'border-box', padding: '11px 12px', marginTop: 6, background: '#101012', color: '#fff', border: '1px solid #44444a', borderRadius: 8 };
+  const button: CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '10px 14px', borderRadius: 8, border: '1px solid #55555c', background: '#29292e', color: '#fff', cursor: 'pointer' };
 
-  return (
-    <main className="kc-admin-page">
-      <header className="kc-page-head">
-        <p className="kc-section-kicker">PRIVATE CONSOLE</p>
-        <h1>Kairo administration</h1>
-        <p>Manage usernames, temporary passwords and the 15 standard-account allocation.</p>
-      </header>
+  return <main style={panel}>
+    <header style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 24 }}>
+      <div><p style={{ color: '#a1a1aa', margin: 0, letterSpacing: 2, fontSize: 11 }}>PRIVATE CONSOLE</p><h1 style={{ margin: '6px 0' }}>Kairo administration</h1><p style={{ color: '#a1a1aa', margin: 0 }}>Manage usernames, passwords and the 15 standard accounts.</p></div>
+      <button style={button} type="button" onClick={() => { void load(); }} disabled={loading}><RefreshCw size={15}/> Refresh</button>
+    </header>
 
-      {error && <p className="kc-auth-error" role="alert">{error}</p>}
-      {notice && <p className="kc-admin-notice" role="status">{notice}</p>}
+    {error && <p role="alert" style={{ background: '#451a1a', padding: 12, borderRadius: 8 }}>{error}</p>}
+    {notice && <p role="status" style={{ background: '#173323', padding: 12, borderRadius: 8 }}>{notice}</p>}
 
-      {temporaryCredential && (
-        <section className="kc-admin-credential" aria-label="Temporary account password">
-          <div>
-            <span className="kc-section-kicker">TEMPORARY CREDENTIAL · SHOW ONCE</span>
-            <h2>@{temporaryCredential.username}</h2>
-            <code>{temporaryCredential.temporaryPassword}</code>
-            <p>Require the user to replace this temporary password with a private five-word passphrase at first sign-in.</p>
-          </div>
-          <button className="kc-btn kc-btn-primary" type="button" onClick={() => { void copyTemporaryPassword(); }}>
-            <Copy size={15} /> Copy password
-          </button>
-        </section>
-      )}
+    {temporaryCredential && <section style={{ ...surface, borderColor: '#77777f' }}>
+      <p style={{ color: '#a1a1aa', margin: 0, letterSpacing: 2, fontSize: 10 }}>TEMPORARY CREDENTIAL · SHOWN ONCE</p>
+      <h2 style={{ margin: '8px 0' }}>@{temporaryCredential.username}</h2>
+      <code style={{ display: 'block', padding: 13, borderRadius: 8, background: '#09090b', fontSize: 15, overflowWrap: 'anywhere' }}>{temporaryCredential.temporaryPassword}</code>
+      <p style={{ color: '#c4c4ca' }}>The user must change this to a private five-word passphrase at their next sign-in.</p>
+      <button style={button} type="button" onClick={() => { void copyTemporaryPassword(); }}><Copy size={15}/> Copy temporary password</button>
+    </section>}
 
-      <section className="kc-admin-card">
-        <div className="kc-admin-heading">
-          <div>
-            <span className="kc-section-kicker">ACCOUNT ALLOCATION</span>
-            <h2>Standard accounts</h2>
-          </div>
-          <strong>{count} / {limit}</strong>
+    <section style={surface}>
+      <h2 style={{ marginTop: 0 }}>Standard accounts</h2>
+      <p style={{ color: '#c4c4ca' }}>{count} of {limit} allocated. Suspended accounts still count toward the limit.</p>
+      <div style={{ height: 7, background: '#303034', borderRadius: 99, overflow: 'hidden' }}><div style={{ height: '100%', width: Math.min(100, limit > 0 ? count / limit * 100 : 0) + '%', background: '#a1a1aa' }}/></div>
+      <form onSubmit={event => { void createAccount(event); }} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', alignItems: 'end', gap: 12, marginTop: 20 }}>
+        <label>Username<input style={field} value={username} onChange={event => setUsername(event.target.value)} minLength={3} maxLength={32} autoCapitalize="none" autoComplete="off" required /></label>
+        <label>Display name<input style={field} value={displayName} onChange={event => setDisplayName(event.target.value)} minLength={2} maxLength={40} autoComplete="off" required /></label>
+        <button style={button} disabled={busy === 'create' || count >= limit}><UserPlus size={15}/>{busy === 'create' ? 'Creating…' : 'Create account'}</button>
+      </form>
+    </section>
+
+    <section style={surface}>
+      <h2 style={{ marginTop: 0 }}>Manage accounts</h2>
+      {loading ? <p>Loading accounts…</p> : !data?.accounts.length ? <p style={{ color: '#a1a1aa' }}>No standard accounts have been created.</p> : data.accounts.map(account => <article key={account.id} style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '14px 0', borderTop: '1px solid #303034' }}>
+        <div><strong>{account.displayName}</strong><div style={{ color: '#a1a1aa', fontSize: 13 }}>@{account.username} · {account.status}</div><small style={{ color: '#a1a1aa' }}>{account.credentialsConfigured ? (account.mustChangePassword ? 'Temporary password outstanding' : 'Password configured') : 'Credentials not configured'} · Created {new Date(account.createdAt).toLocaleDateString()}</small></div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <button style={button} type="button" disabled={busy === account.id || !account.credentialsConfigured} onClick={() => { void resetPassword(account); }}><KeyRound size={14}/> Reset password</button>
+          <button style={button} type="button" disabled={busy === account.id} onClick={() => { void setStatus(account); }}><ShieldCheck size={14}/>{account.status === 'active' ? 'Suspend' : 'Reactivate'}</button>
+          <button style={{ ...button, borderColor: '#744747' }} type="button" disabled={busy === account.id} onClick={() => { void deleteAccount(account); }}><Trash2 size={14}/> Delete</button>
         </div>
-        <div className="kc-admin-meter"><span style={{ width: Math.min(100, limit > 0 ? count / limit * 100 : 0) + '%' }} /></div>
-        <p className="kc-admin-muted">Suspended accounts continue to count toward the 15-account limit.</p>
-        <form className="kc-admin-create" onSubmit={event => { void createAccount(event); }}>
-          <label>Username<input value={username} onChange={event => setUsername(event.target.value)} minLength={3} maxLength={32} autoCapitalize="none" autoComplete="off" required /></label>
-          <label>Display name<input value={displayName} onChange={event => setDisplayName(event.target.value)} minLength={2} maxLength={40} autoComplete="off" required /></label>
-          <button className="kc-btn kc-btn-primary" disabled={busy === 'create' || count >= limit}>
-            <UserPlus size={15} /> {busy === 'create' ? 'Creating…' : 'Create account'}
-          </button>
-        </form>
-      </section>
-
-      <section className="kc-admin-card">
-        <div className="kc-admin-heading">
-          <div><span className="kc-section-kicker">USER ACCESS</span><h2>Account management</h2></div>
-          <button className="kc-icon-btn" type="button" onClick={() => { void load(); }} disabled={loading} aria-label="Refresh accounts"><RefreshCw size={15} /></button>
-        </div>
-        {loading ? <p className="kc-admin-muted">Loading accounts…</p> :
-          !data?.accounts.length ? <p className="kc-admin-muted">No standard accounts have been created.</p> :
-          <div className="kc-admin-list">
-            {data.accounts.map(account => (
-              <article className="kc-admin-row" key={account.id}>
-                <div className="kc-admin-account">
-                  <strong>{account.displayName}</strong>
-                  <span>@{account.username} · {account.status}</span>
-                  <small>{account.credentialsConfigured ? (account.mustChangePassword ? 'Temporary password outstanding' : 'Password configured') : 'Credentials not configured'} · Created {new Date(account.createdAt).toLocaleDateString()}</small>
-                </div>
-                <div className="kc-admin-actions">
-                  <button className="kc-btn" type="button" disabled={busy === account.id || !account.credentialsConfigured} onClick={() => { void resetPassword(account); }}>
-                    <KeyRound size={14} /> Reset password
-                  </button>
-                  <button className="kc-btn" type="button" disabled={busy === account.id} onClick={() => { void setStatus(account); }}>
-                    <ShieldCheck size={14} /> {account.status === 'active' ? 'Suspend' : 'Reactivate'}
-                  </button>
-                  <button className="kc-btn kc-btn-danger" type="button" disabled={busy === account.id} onClick={() => { void deleteAccount(account); }}>
-                    <Trash2 size={14} /> Delete
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>}
-      </section>
-    </main>
-  );
+      </article>)}
+    </section>
+  </main>;
 }
