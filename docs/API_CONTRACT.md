@@ -92,11 +92,10 @@ Ratings are on a 0-10 scale. See docs/PROVIDERS.md.
 
 ## 3a. Administrator routes
 
-All administrator routes require a valid Kairo session whose server-side profile has `role='admin'`. The one-time bootstrap endpoint is the only exception: it is public at the Kairo API layer but requires the temporary `ADMIN_BOOTSTRAP_TOKEN` Worker secret, a same-origin request, an incomplete bootstrap marker and no existing administrator.
+All administrator routes require a valid Kairo session whose server-side profile has `role='admin'`. There is no public first-administrator bootstrap endpoint; initial administrator credential provisioning is a separately reviewed operator action.
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/v1/admin/bootstrap` | Create the first administrator with a chosen username and password. Requires `X-Kairo-Bootstrap`; succeeds only once and creates an authenticated eight-hour admin session. |
 | GET | `/api/v1/admin/console-path` | Return the current 30-minute administrator console path. |
 | GET | `/api/v1/admin/accounts` | List standard accounts, credential state and the 15-account allocation count. |
 | POST | `/api/v1/admin/accounts` | Create a standard account. Returns a generated temporary password once; the new account must change it at first sign-in. |
@@ -116,7 +115,6 @@ Cloudflare Access remains a separate outer edge perimeter under the current Wran
 Public at the Kairo application layer:
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/logout` (only revokes the caller's Kairo session)
-- `POST /api/v1/admin/bootstrap` (one-time token and origin protected)
 
 Every other `/api/v1/*` route requires an active Kairo session. While `mustChangePassword` is true, the Worker permits only `GET /api/v1/me`, `POST /api/v1/me/password` and `POST /api/v1/auth/logout`. Public registration is disabled; standard accounts are created or enrolled by an administrator.
 

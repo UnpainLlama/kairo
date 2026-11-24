@@ -11,7 +11,7 @@ Kairo has one application account shared by Anime, Movies and administrator-only
 - Usernames are normalized to lowercase. Valid names contain 3–32 ASCII letters, numbers, dots, hyphens or underscores. Reserved names and the `access_*` / `user_*` prefixes are rejected.
 - New standard accounts are created only by an administrator. Public registration is disabled and the server enforces a maximum of 15 active/suspended standard accounts.
 - Existing standard profiles can be enrolled in place without changing their `user_profiles.id`. Existing Access identity tables and old identity-link records are retained for compatibility/history but are not read by the new login/session path.
-- The first administrator is provisioned once by the token-protected bootstrap endpoint. Only one administrator profile is allowed.
+- Only one active administrator profile is supported. Kairo does not expose a first-administrator setup page or public bootstrap API.
 
 Account ownership is always derived from the validated server-side Kairo session. Never accept a user ID, role, or account scope from the browser.
 
@@ -40,15 +40,13 @@ Account ownership is always derived from the validated server-side Kairo session
 - `POST /api/v1/auth/logout` revokes the current session and clears its cookie. It does not sign the browser out of the separate Cloudflare Access edge session.
 - A password-change-required session may only read `/api/v1/me`, change its password or sign out.
 
-## First administrator setup
+## Administrator credential provisioning
 
-1. Generate a one-time token with at least 32 cryptographically random bytes (for example, `openssl rand -hex 32`).
-2. Store it as a Worker **Secret** named `ADMIN_BOOTSTRAP_TOKEN`. Never put it in `wrangler.jsonc`, source control, browser code, issue comments or shell history.
-3. Open `/setup/admin` on the site and enter the one-time token, chosen administrator username and a unique strong password. The token is sent in the `X-Kairo-Bootstrap` request header; it is not persisted in browser storage or bundled into the app.
-4. The server creates the single admin profile, stores the password hash, marks bootstrap complete in D1 and creates an eight-hour Kairo session.
-5. Remove the `ADMIN_BOOTSTRAP_TOKEN` Worker secret after successful provisioning. The D1 completion marker permanently closes bootstrap even if the secret is accidentally left configured.
-
-No real administrator credential has been created as part of source-code implementation. Remote D1 migration and Worker-secret provisioning require a separate, explicit operational step.
+- There is no public administrator setup page, bootstrap secret or bootstrap API.
+- For an existing active administrator profile, use `scripts/set-admin-password.mjs --user-id <profile-id> --username <new-username>`. The script reads the password through a hidden terminal prompt and prints SQL containing a salted hash; it does not connect to or execute against D1.
+- Review and apply that SQL only against the intended database through the separately approved operator process. It changes the existing profile's username, writes its password credential and revokes that administrator's existing sessions.
+- A new/empty database without an administrator profile requires a separately reviewed database-provisioning operation; the application intentionally does not offer a first-admin web setup flow.
+- No real administrator credential or remote D1 operation is performed as part of this source change.
 
 ## Standard-account administration
 
@@ -69,5 +67,5 @@ The current deployment workflow still requires Cloudflare Access perimeter confi
 
 ## Guest mode and data boundaries
 
-There is no anonymous account or guest API mode in the username/password branch. All `/api/v1/*` routes are denied by default except login, logout and the one-time administrator bootstrap. Account library, history and playback data remain owned by the signed-in Kairo profile ID.
+There is no anonymous account or guest API mode in the username/password branch. All `/api/v1/*` routes are denied by default except username/password login and logout. Account library, history and playback data remain owned by the signed-in Kairo profile ID.
 

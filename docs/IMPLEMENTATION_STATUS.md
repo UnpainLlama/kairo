@@ -37,7 +37,7 @@
 
 ## Phase 3 — Identity, profile, shared account and workspaces
 
-- Username/password login, opaque sessions, forced first-login password change, logout, administrator bootstrap and account administration APIs remain implemented.
+- Username/password login, opaque sessions, forced first-login password change, logout and account-administration APIs remain implemented. The public first-admin setup page/API has been removed; existing administrator credentials are provisioned through the offline operator utility.
 - Frontend screens include profile, Anime/Movies library, watch history, account preferences and restricted administrator management.
 - Worker routes cover profile read/update, opt-in public profiles, account preferences, JSON data export and password-confirmed standard-account deletion.
 - Account deletion retains a minimal tombstone, removes account-owned rows (including provider-backed Anime references) and revokes sessions. Administrator self-deletion remains blocked.

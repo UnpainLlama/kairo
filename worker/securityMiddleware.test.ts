@@ -41,25 +41,31 @@ describe('global API Origin/Referer protection',()=>{
 });
 
 describe('closed-site API default deny',()=>{
-  it('keeps health, ready, login, logout and bootstrap reachable without a session',async()=>{
-    db=createTestDatabase();
-    const env={DB:sqliteD1(db),CATALOG_SOURCE:'db',ADMIN_BOOTSTRAP_TOKEN:'b'.repeat(32)};
-    const health=await worker.request(origin+'/api/health',{},env);
-    const ready=await worker.request(origin+'/api/ready',{},env);
-    const login=await worker.request(origin+'/api/v1/auth/login',{
-      method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:'{}',
-    },env);
-    const logout=await worker.request(origin+'/api/v1/auth/logout',{method:'POST',headers:{Origin:origin}},env);
-    const bootstrap=await worker.request(origin+'/api/v1/admin/bootstrap',{
-      method:'POST',headers:{Origin:origin,'X-Kairo-Bootstrap':'b'.repeat(32),'Content-Type':'application/json'},body:'{}',
-    },env);
+  it('keeps health, ready, login and logout reachable without a session', async () => {
+    db = createTestDatabase();
+    const env = { DB: sqliteD1(db), CATALOG_SOURCE: 'db' };
+    const health = await worker.request(origin + '/api/health', {}, env);
+    const ready = await worker.request(origin + '/api/ready', {}, env);
+    const login = await worker.request(origin + '/api/v1/auth/login', {
+      method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: '{}',
+    }, env);
+    const logout = await worker.request(origin + '/api/v1/auth/logout', { method: 'POST', headers: { Origin: origin } }, env);
     expect(health.status).toBe(200);
     expect(ready.status).toBe(200);
     expect(login.status).toBe(401);
     expect(logout.status).toBe(200);
-    expect(bootstrap.status).toBe(400);
   });
 
+  it('denies the removed first-admin bootstrap endpoint without a session', async () => {
+    db = createTestDatabase();
+    const response = await worker.request(origin + '/api/v1/admin/bootstrap', {
+      method: 'POST',
+      headers: { Origin: origin, 'Content-Type': 'application/json', 'X-Kairo-Bootstrap': 'b'.repeat(32) },
+      body: '{}',
+    }, { DB: sqliteD1(db) });
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({ error: { code: 'AUTH_REQUIRED' } });
+  });
   it('denies catalogue, Anime, Movies, stream, admin and YouTube routes without a session',async()=>{
     for(const path of [
       '/api/v1/catalog/genres','/api/v1/anime/a7','/api/v1/movies/discover',

@@ -33,13 +33,11 @@
 
 ## Kairo account setup is separate
 
-### First administrator
+### Administrator credentials
 
-1. Generate a one-time token with at least 32 cryptographically random bytes (for example, `openssl rand -hex 32`).
-2. Store it as a Worker **Secret** named `ADMIN_BOOTSTRAP_TOKEN`. Do not put it in source control, `wrangler.jsonc`, browser code or shell history.
-3. After the reviewed code and additive migration have been deployed/applied through the approved process, open `/setup/admin` and enter the one-time token, the desired administrator username and a unique password of at least 15 characters.
-4. The app sends the token in `X-Kairo-Bootstrap`. The Worker creates one administrator, stores only a salted password hash, sets the permanent D1 bootstrap-completion marker and creates a Kairo session.
-5. Remove the Worker secret immediately after successful setup. Do not create an administrator account as part of code validation.
+There is no first-administrator web setup page, bootstrap API or bootstrap Worker secret. For an existing active administrator profile, use `scripts/set-admin-password.mjs --user-id <profile-id> --username <new-username>`. It reads the password through a hidden terminal prompt and prints SQL containing only a salted hash; it does not connect to D1 or execute any remote operation.
+
+Review and apply the generated SQL only through the separately approved D1 operator process. It updates the existing administrator profile's username, stores its credential hash and revokes that administrator's sessions. An empty database without an administrator profile requires a separately reviewed database-provisioning operation; the application does not provide a public bootstrap flow.
 
 ### Standard accounts
 

@@ -1,7 +1,5 @@
-import { useState } from 'react';
-import { BrowserRouter, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Navigate, useLocation } from 'react-router-dom';
 import LoginPage from './components/LoginPage';
-import AdminSetupPage from './components/AdminSetupPage';
 import PasswordChangePage from './components/PasswordChangePage';
 import KairoApp from './components/KairoApp';
 import { AccountProvider, useAccount } from './lib/AccountProvider';
@@ -18,18 +16,6 @@ function AccountErrorPage({ message, onRetry }: { message: string; onRetry(): vo
 function AppContent() {
   const account = useAccount();
   const location = useLocation();
-  const navigate = useNavigate();
-  const [setupBusy, setSetupBusy] = useState(false);
-
-  async function finishAdministratorSetup() {
-    setSetupBusy(true);
-    try {
-      const user = await account.refresh();
-      if (!user) throw new Error('Administrator setup completed, but the new session could not be loaded.');
-      navigate('/', { replace: true });
-    } finally { setSetupBusy(false); }
-  }
-
   async function changePassword(currentPassword: string, newPassword: string) {
     await authRequest<{ passwordChanged: boolean }>('/me/password', {
       method: 'POST',
@@ -41,12 +27,12 @@ function AppContent() {
     }
   }
 
-  if (account.status === 'loading' || setupBusy) return <LoadingPage />;
+  if (account.status === 'loading') return <LoadingPage />;
   if (account.status === 'error') {
     return <AccountErrorPage message={account.error ?? 'The account could not be loaded.'} onRetry={() => { void account.refresh().catch(() => undefined); }} />;
   }
   if (account.status === 'signed-out' || !account.user) {
-    if (location.pathname === '/setup/admin') return <AdminSetupPage onComplete={finishAdministratorSetup} />;
+    if (location.pathname === '/setup/admin') return <Navigate to='/login' replace />;
     return <LoginPage onLogin={account.login} />;
   }
   if (account.user.mustChangePassword) {

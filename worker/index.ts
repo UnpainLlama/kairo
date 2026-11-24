@@ -26,7 +26,6 @@ import { isStaticAssetPath } from './lib/staticAssets';
 interface Bindings {
   DB: D1Database;
   ASSETS?: Fetcher;
-  ADMIN_BOOTSTRAP_TOKEN?: string;
   APP_ENV?: string;
   APP_BASE_URL?: string;
   GOOGLE_CLIENT_ID?: string;
@@ -100,19 +99,18 @@ app.use('/api/*', async (c, next) => {
 // CORS runs before authentication so browser preflights are not rejected by the session gate.
 app.use('/api/*', async (c,next) => {
   const origin=c.env.ALLOWED_ORIGIN;
-  if (origin) return cors({origin,allowMethods:['GET','POST','PUT','PATCH','DELETE','OPTIONS'],allowHeaders:['Content-Type','Authorization','X-Kairo-Bootstrap','X-Requested-With'],credentials:true})(c,next);
+  if (origin) return cors({origin,allowMethods:['GET','POST','PUT','PATCH','DELETE','OPTIONS'],allowHeaders:['Content-Type','Authorization','X-Requested-With'],credentials:true})(c,next);
   if (c.req.method.toUpperCase()==='OPTIONS') return c.body(null,204);
   return next();
 });
 
-// Closed-site default deny. Only login, logout and initial-admin bootstrap are public.
+// Closed-site default deny. Only username/password login and logout are public.
 app.use('/api/v1/*', async (c,next) => {
   if (c.req.method.toUpperCase()==='OPTIONS') return next();
   const pathname=new URL(c.req.url).pathname;
   const method=c.req.method.toUpperCase();
   const publicRoute=(pathname==='/api/v1/auth/login' && method==='POST') ||
-    (pathname==='/api/v1/auth/logout' && method==='POST') ||
-    (pathname==='/api/v1/admin/bootstrap' && method==='POST');
+    (pathname==='/api/v1/auth/logout' && method==='POST');
   if (publicRoute) { c.set('authUser',null); return next(); }
 
   const user=await findSessionUser(c.env.DB,c.req.header('Cookie')??null);
