@@ -443,7 +443,7 @@ export function AccountPage({ title }: { title: string }) {
   const isAnimeLibraryPage=title==='My Library'||title==='Favorites';
   return <><header className="kc-page-head"><h1>{title}</h1></header>
     {isAnimeLibraryPage&&unavailable?<EmptyState title="Account status unavailable">Kairo could not verify your account, so your personal library remains locked. <button type="button" className="kc-link" onClick={retry}>Retry</button></EmptyState>
-    :isAnimeLibraryPage&&loaded&&!user?<EmptyState title="Sign in to view your library"><Link className="kc-link" to="/login">Continue with approved email</Link> to view your saved Anime titles.</EmptyState>
+    :isAnimeLibraryPage&&loaded&&!user?<EmptyState title="Sign in to view your library"><Link className="kc-link" to="/login">Sign in to Kairo</Link> to view your saved Anime titles.</EmptyState>
     :isAnimeLibraryPage&&!loaded&&!unavailable?<LoadingState label="Checking your account"/>
     :isAnimeLibraryPage&&user&&!animeLibraryLoaded?<LoadingState label="Loading your Anime library"/>
     :isAnimeLibraryPage&&animeLibraryError?<EmptyState title="Library unavailable">{animeLibraryError} <button type="button" className="kc-link" onClick={()=>setAnimeLibraryRetry(value=>value+1)}>Retry</button></EmptyState>
@@ -460,7 +460,7 @@ export function AccountPage({ title }: { title: string }) {
       {youtubeStatus&&<p role="status" className="kc-auth-copy">{youtubeMessages[youtubeStatus]??'YouTube connection status updated.'}</p>}
       {youtubeError&&<p role="alert" className="kc-auth-error">{youtubeError}</p>}</>}
     </section>
-    :title==='Settings'&&loaded?<EmptyState title="Sign in to manage your account"><a className="kc-link" href="/cdn-cgi/access/login">Continue with approved email</a> to manage your account.</EmptyState>
+    :title==='Settings'&&loaded?<EmptyState title="Sign in to manage your account"><Link className="kc-link" to="/login">Sign in to Kairo</Link> to manage your account.</EmptyState>
     :<EmptyState title="Not available yet">{title} features are still being built. You can still <Link className="kc-link" to="/search">search</Link> and browse.</EmptyState>}
   </>;
 }
