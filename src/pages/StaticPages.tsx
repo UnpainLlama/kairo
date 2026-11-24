@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Clock, Heart, LogIn, LogOut, Search, Settings, Trash2, UserRound, Pause, Play, ArrowUpDown } from 'lucide-react';
 import { EmptyState, LoadingState } from '../components/catalog';
-import { useKairoAccount } from '../lib/AccountProvider';
+import { useKairoAccount, useAccount } from '../lib/AccountProvider';
 import { readWatchHistory, watchProgressStorageKey, writeWatchHistory } from '../lib/accountStorage';
 import { useHistoryRecording } from '../hooks/useHistoryRecording';
-import { signOutKairoAccount } from '../lib/authClient';
+
 import { deleteMediaPlayback, listLocalMediaPlayback, parseMediaPlayback, syncMediaPlayback, writeLocalMediaPlayback, type MediaPlaybackSnapshot } from '../lib/mediaPlayback';
 
 type AccountUser = { id: string; displayName: string; email: string | null; username?: string | null; role?: 'user' | 'admin'; emailVerifiedAt?: string | null };
@@ -77,6 +77,8 @@ async function syncWatchHistory(userId: string, options: { deleted?: Array<{ slu
 }
 export function ProfilePage() {
   const {user,loaded,unavailable,retry}=useCurrentUser();
+  const accountSession=useAccount();
+  const navigate=useNavigate();
   const [history,setHistory]=useState<WatchEntry[]>(()=>readHistory(null)); const [historyScope,setHistoryScope]=useState<string|null>(null); const [playbackItems,setPlaybackItems]=useState<MediaPlaybackSnapshot[]>([]); const [libraryCount,setLibraryCount]=useState<number|null>(null);
   const [error,setError]=useState(''); const [busy,setBusy]=useState(false);
   useEffect(()=>{
@@ -161,7 +163,8 @@ export function ProfilePage() {
     setBusy(true);
     setError('');
     try {
-      await signOutKairoAccount(user?.id, (url) => window.location.assign(url));
+      await accountSession.logout();
+      navigate('/login', { replace: true });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not sign out. Please try again.');
       setBusy(false);
@@ -169,9 +172,9 @@ export function ProfilePage() {
   }
   if(!loaded && !unavailable)return <LoadingState label="Loading profile"/>;
   if(unavailable)return <section className="kc-profile-page"><EmptyState title="Account status unavailable">Reconnect to Kairo to load this profile without mixing it with guest data. <button type="button" className="kc-link" onClick={retry}>Retry</button></EmptyState></section>;
-  if(!user)return <section className="kc-profile-page"><div className="kc-profile-hero"><div className="kc-profile-avatar"><UserRound size={34}/></div><div><span className="kc-section-kicker">KAIRO ACCOUNT</span><h1>Your profile</h1><p>Use your approved Cloudflare Access email to sign in. Kairo links your account automatically; no second password is needed.</p></div><a className="kc-btn kc-btn-primary" href="/cdn-cgi/access/login"><LogIn size={15}/> Continue with approved email</a></div><EmptyState title="Your profile starts here">Once Cloudflare Access verifies your approved email, Kairo automatically restores your account and syncs activity across devices. Your local watch history remains available in guest mode.</EmptyState></section>;
+  if(!user)return <section className="kc-profile-page"><div className="kc-profile-hero"><div className="kc-profile-avatar"><UserRound size={34}/></div><div><span className="kc-section-kicker">KAIRO ACCOUNT</span><h1>Your profile</h1><p>Sign in with your Kairo username and password to sync activity across your devices.</p></div><a className="kc-btn kc-btn-primary" href="/login"><LogIn size={15}/> Sign in to Kairo</a></div><EmptyState title="Your profile starts here">Your Kairo account keeps Anime and Movies progress together, with YouTube available to the administrator.</EmptyState></section>;
   return <section className="kc-profile-page">
-    <div className="kc-profile-hero"><div className="kc-profile-avatar"><UserRound size={34}/></div><div className="kc-profile-heading"><span className="kc-section-kicker">KAIRO ACCOUNT</span><h1>{user.displayName}</h1><p>{user.email ?? 'Authenticated through Cloudflare Access'}</p></div><Link className="kc-btn" to="/settings"><Settings size={15}/> Account settings</Link></div>
+    <div className="kc-profile-hero"><div className="kc-profile-avatar"><UserRound size={34}/></div><div className="kc-profile-heading"><span className="kc-section-kicker">KAIRO ACCOUNT</span><h1>{user.displayName}</h1><p>{user.email ?? 'Kairo account'}</p></div><Link className="kc-btn" to="/settings"><Settings size={15}/> Account settings</Link></div>
     <div className="kc-profile-stats">
       <article><span><Clock size={17}/></span><b>{watched}</b><small>Recent episodes</small></article>
       <article><span><Play size={17}/></span><b>{completed}</b><small>Completed episodes</small></article>
@@ -415,8 +418,8 @@ export function AccountPage({ title }: { title: string }) {
   const youtubeMessages:Record<string,string>={
     connected:'YouTube is connected. Kairo can now request access to your subscriptions.',
     cancelled:'You cancelled the YouTube connection.',
-    sign_in_required:'Authenticate with your approved Cloudflare Access email before connecting YouTube.',
-    reauth_required:'Your Cloudflare Access session has expired. Authenticate again, then retry connecting YouTube.',
+    sign_in_required:'Sign in to your Kairo administrator account before connecting YouTube.',
+    reauth_required:'Your Kairo session has expired. Sign in again, then retry connecting YouTube.',
     invalid_response:'The YouTube authorization response could not be verified. Please try again.',
     expired:'The YouTube connection request expired. Please try again.',
     token_exchange_failed:'Google could not complete the YouTube authorization. Please try again.',
@@ -448,7 +451,7 @@ export function AccountPage({ title }: { title: string }) {
     :isAnimeLibraryPage&&user?<section className="kc-account-panel"><ul className="kc-anime-library-list">{filteredAnimeLibrary.map(item=><li key={item.animeId}><Link to={'/anime/'+encodeURIComponent(item.slug)}><strong>{item.title}</strong></Link><span>{item.status.replaceAll('_',' ')}{item.isFavorite===true||Number(item.isFavorite)===1?' · Favorite':''}</span></li>)}</ul></section>
     :title==='Settings'&&unavailable?<EmptyState title="Account status unavailable">Kairo could not verify your account. Your private settings remain locked. <button type="button" className="kc-link" onClick={retry}>Retry</button></EmptyState>
     :title==='Settings'&&loaded&&user?<section className="kc-account-panel">
-      <h2>Account</h2><p>Signed in as <strong>{user.email ?? user.displayName}</strong> through Cloudflare Access.</p>
+      <h2>Account</h2><p>Signed in as <strong>{user.email ?? user.displayName}</strong> with your Kairo username.</p>
       {user.role==='admin'&&<><h3>YouTube</h3>
       <p>Connect YouTube separately to let Kairo read your subscriptions. This does not change how you sign in to Kairo.</p>
       {!youtubeLoaded?<p className="kc-auth-copy" role="status">Checking YouTube connection…</p>
