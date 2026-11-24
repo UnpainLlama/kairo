@@ -215,10 +215,10 @@ describe('service and handlers', () => {
     await call(d, 'featured', req());
     expect(calls).toBe(1);
   });
-  it('keeps empty AniList seasonal and discovery results instead of substituting a different provider catalogue', async () => {
-    let fallbackCalls = 0;
+  it('keeps empty AniList seasonal and discovery results as authoritative responses', async () => {
+    let aniListCalls = 0;
     const d = deps(async () => {
-      fallbackCalls += 1;
+      aniListCalls += 1;
       return aniPage([]);
     });
     const seasonal = await call(d, 'browse', req({ season: 'fall', year: '2026', sort: 'popularity', page: '1', limit: '24' }));
@@ -232,7 +232,7 @@ describe('service and handlers', () => {
       status: 200,
       body: { data: { items: [] }, meta: { source: 'anilist' } },
     });
-    expect(fallbackCalls).toBe(0);
+    expect(aniListCalls).toBe(2);
   });
 
   it('serves stale AniList data during a temporary provider failure, and 503 when nothing is cached', async () => {
