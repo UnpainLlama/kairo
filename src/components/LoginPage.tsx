@@ -60,7 +60,6 @@ export default function LoginPage({ onLogin }: Props) {
           </button>
         </form>
         <p className="form-footnote">Accounts are created by the administrator. Public registration is disabled.</p>
-        <a className="subtle-link" href="/setup/admin">Initial administrator setup</a>
       </section>
     </main>
   );
