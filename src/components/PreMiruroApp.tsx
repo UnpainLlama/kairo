@@ -318,7 +318,7 @@ export default function PreMiruroApp({ onSignOut }: { onSignOut: () => Promise<v
                 <div className="kc-menu-footer">
                   <Link to="/settings" onClick={closeMenu}><Settings size={15} aria-hidden="true" />Settings</Link>
                   {logoutError && <p className="kc-auth-error" role="alert">{logoutError}</p>}
-                  {currentUser ? <button type="button" onClick={logout} disabled={logoutPending}><LogIn size={15} aria-hidden="true" />{logoutPending ? 'Signing out…' : 'Sign out'}</button> : <Link to="/login" onClick={closeMenu}><LogIn size={15} aria-hidden="true" />Sign in</Link>}
+                  {currentUser ? <button type="button" onClick={logout} disabled={logoutPending}><LogOut size={15} aria-hidden="true" />{logoutPending ? 'Signing out…' : 'Sign out'}</button> : <Link to="/login" onClick={closeMenu}><LogIn size={15} aria-hidden="true" />Sign in</Link>}
                 </div>
               </section>
             )}

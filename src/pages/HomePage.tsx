@@ -16,14 +16,15 @@ export default function HomePage() {
   const latest = useApi<ItemList<CatalogCard>>('/catalog/latest?limit=12');
   const airing = useApi<ItemList<CatalogCard>>('/catalog/browse?status=airing&sort=popularity&limit=6');
   const account = useKairoAccount();
+  const accountId = account.user?.id ?? null;
   const [continueItems, setContinueItems] = useState<MediaPlaybackSnapshot[]>([]);
 
   useEffect(() => {
     let active = true;
     const refresh = async () => {
-      const local = listLocalMediaPlayback(account.accountId).filter((item) => item.mediaType === 'anime');
+      const local = listLocalMediaPlayback(accountId).filter((item) => item.mediaType === 'anime');
       let remote: MediaPlaybackSnapshot[] = [];
-      if (account.accountId) {
+      if (accountId) {
         try {
           const response = await fetch('/api/v1/me/playback?mediaType=anime&limit=50', {
             credentials: 'same-origin', headers: { Accept: 'application/json' }, cache: 'no-store',
@@ -46,7 +47,7 @@ export default function HomePage() {
     window.addEventListener('focus', refresh);
     window.addEventListener('storage', refresh);
     return () => { active = false; window.removeEventListener('focus', refresh); window.removeEventListener('storage', refresh); };
-  }, [account.accountId]);
+  }, [accountId]);
 
   const main = [featured, trending, latest];
   const loading = main.some((s) => s.status === 'loading');

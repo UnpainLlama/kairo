@@ -11,7 +11,7 @@ const title: LiveTitle = {
     releaseYear: 2013, season: 'spring', status: 'finished', rating: 8.4,
     episodeCount: 25, genres: ['Action'],
   },
-  altTitles: ['Shingeki no Kyojin'], malId: 8, anilistId: null,
+  altTitles: ['Shingeki no Kyojin'], malId: 8,
   url: 'https://myanimelist.net/anime/8', provider: 'mal',
 };
 
