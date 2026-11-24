@@ -5,7 +5,7 @@ export type Format = 'series' | 'movie' | 'ova' | 'ona' | 'special';
 export type Status = 'airing' | 'finished' | 'upcoming' | 'hiatus';
 export type Season = 'winter' | 'spring' | 'summer' | 'fall';
 
-/** Provider key -> that provider's ID for the same title, e.g. { anilist: '1535', mal: '1535', kitsu: '1376' }. */
+/** Provider key -> that provider's ID for the same title, e.g. { mal: '1535', kitsu: '1376' }. */
 export type ExternalIds = Record<string, string>;
 
 export type Attribution = {

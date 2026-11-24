@@ -1,5 +1,5 @@
-// Short-lived cache for provider responses. This is a cache, not a store: every entry expires, nothing is written to D1,
-// which keeps KAIRO inside AniList's rule against using its API as backup or data storage.
+// Short-lived cache for provider responses. Entries expire and are never written to D1;
+// provider responses remain transient and cannot become a second metadata catalogue or archival store.
 export interface MetadataCache {
   get<T>(key: string): Promise<T | null>;
   put(key: string, value: unknown, ttlSeconds: number): Promise<void>;

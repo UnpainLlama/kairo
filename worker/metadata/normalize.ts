@@ -10,7 +10,7 @@ const FORMATS: Record<string, Format | null> = {
 export const normalizeFormat = (raw: unknown): Format | null => FORMATS[clean(raw)] ?? null;
 
 const STATUSES: Record<string, Status | null> = {
-  // AniList
+  // Common catalogue status values
   // KAIRO's own stored values must round-trip
   AIRING: 'airing', CURRENTLY_AIRING: 'airing',
   FINISHED: 'finished', FINISHED_AIRING: 'finished', RELEASING: 'airing', NOT_YET_RELEASED: 'upcoming', NOT_YET_AIRED: 'upcoming', HIATUS: 'hiatus', CANCELLED: null,
