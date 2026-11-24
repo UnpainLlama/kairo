@@ -1,62 +1,63 @@
 # Current implementation snapshot — 2026-11-24
 
-> Status for `rebuild/username-password-auth`. This records implementation present in source separately from tests/builds and remote operations that have not been performed.
+> Status for `rebuild/username-password-auth`. This separates implementation present in the branch from verification and remote operations that have not been performed.
 
 ## Branch and operational boundary
 
-- Work remains on `rebuild/username-password-auth`; `main` is untouched.
-- The latest committed checkpoint before this provider-library batch is [`83715630e70510a9d3bdedcf2050552b8966aba0`](https://github.com/UnpainLlama/kairo/commit/83715630e70510a9d3bdedcf2050552b8966aba0). The provider-backed Anime library work is being committed as a separate batch.
-- No pull request has been opened. No merge or deployment has occurred.
-- No Cloudflare configuration, Worker secret, remote D1 database, Access policy, or live administrator credential has been changed.
+- Feature branch: `rebuild/username-password-auth`.
+- Latest implementation checkpoint: [`2fbf7adc079a81d9edf67c6bd5815912fa905d78`](https://github.com/UnpainLlama/kairo/commit/2fbf7adc079a81d9edf67c6bd5815912fa905d78).
+- The feature branch has not been merged; `main` remains untouched. No PR has been opened.
+- No Cloudflare configuration, Worker secret, Access policy, remote D1 migration/query, deployment or real administrator credential operation has been performed.
 
 ## Phase 2 — Catalogue
 
-- Catalogue provider adapters and Worker routes remain in place for featured, trending, latest, search, filtered browse, genres, title details, episodes, related titles and provider attribution.
-- Frontend catalogue pages cover Discover, Anime browse, seasonal browse, search, title details and episodes.
-- Movies discovery, search and detail pages use existing TMDB endpoints and preserve the metadata-provider terms/enablement gate.
-- Account Anime library now supports both legacy D1 entries and provider-reference entries for AniList, MAL and HiAnime. Provider metadata is re-fetched from the configured title endpoint; client-supplied title, synopsis and poster data are not stored as catalogue truth.
-- Remaining: verify all configured catalogue/episode provider combinations with live responses and confirm the relevant provider terms/limits. No provider-wide catalogue ingestion is introduced by this library work.
+- Existing catalogue adapters and Worker routes remain for featured, trending, latest, search, filter browse, genres, title details, episodes, related titles and provider attribution.
+- Frontend catalogue screens cover Discover, Anime browse/seasonal browse, search, Anime details and episode selection.
+- Movies discovery, search and detail pages use the existing TMDB endpoints and preserve the metadata-provider enablement/terms gate.
+- Provider-backed Anime library references now support AniList, MAL and HiAnime, alongside legacy D1-backed rows. The client resolves display metadata through the configured title API; browser-supplied title, poster and synopsis metadata is not written to the catalogue.
+- Library metadata resolution is incremental: 24 saved provider references are displayed per batch, with at most eight concurrent title lookups.
+- Remaining: verify configured Anime catalogue/episode provider combinations with live responses. This change does not add provider-wide catalogue ingestion.
 
 ## Phase 3 — Identity, profile and library
 
-- Username/password login, session validation, forced first-login password change, logout, administrator bootstrap and account administration endpoints remain implemented.
-- The frontend contains profile, library, history, preferences/settings and restricted admin pages.
-- Worker routes cover profile read/update, opt-in public profile, theme/playback/history preferences, account JSON export and password-confirmed standard-account deletion.
-- Standard-account deletion retains a minimal tombstone, removes owned records and revokes sessions; administrator self-deletion remains blocked.
-- Existing accounts without credentials can be enrolled by an administrator using a one-time temporary password.
-- Additive migration 0024 adds subtitle size; additive migration 0025 adds account-scoped Anime provider references. The migration test harness includes both. Neither migration has been applied remotely.
+- Username/password login, opaque sessions, forced first-login password change, logout, administrator bootstrap and account administration APIs remain implemented.
+- Frontend screens include profile, Anime/Movies library, watch history, account preferences and restricted administrator management.
+- Worker routes cover profile read/update, opt-in public profiles, account preferences, JSON data export and password-confirmed standard-account deletion.
+- Account deletion retains a minimal tombstone, removes account-owned rows (including provider-backed Anime references) and revokes sessions. Administrator self-deletion remains blocked.
+- Existing profiles without new credentials can be enrolled from the admin console with a one-time temporary password.
+- Additive migration 0024 adds subtitle size; additive migration 0025 adds provider-backed Anime library references. The test migration harness includes both. Neither migration has been applied remotely.
 
 ## Phase 4 — Player and progress
 
-- Existing playback resolution and host allowlists remain in place; unsupported sources are not bypassed.
-- Native HLS/file playback supports cloud/local resume positions, default playback speed and subtitle preferences, source-provided subtitles, Hls.js quality selection when levels are supplied, and retry for fatal source failures.
-- Progress snapshots retain duration and player state; local snapshots update between throttled cloud sync attempts.
-- Movies continue through the CineSrc embed boundary and unified account progress API.
-- Account history pause prevents new Anime/Movie account progress writes, while administrator-only YouTube history remains separate.
-- Limitation: cross-origin embeds without an exposed seek API cannot be remotely seek-restored by the parent page.
+- Existing server-side playback resolution and host allowlists remain in place.
+- Native HLS/file playback restores cloud/local resume positions, applies default speed and subtitle preferences, exposes HLS quality only when manifest levels are returned, exposes subtitle selection only when tracks are supplied, and provides source retry.
+- Playback snapshots retain duration and player state; local progress is retained between throttled cloud sync attempts.
+- Movies remain behind the CineSrc embed boundary and unified account progress API.
+- History pause is enforced server-side for new Anime/Movie account progress; administrator-only YouTube progress remains separate.
+- Limitation: an external cross-origin embed without a documented seek API cannot be programmatically resume-restored.
 
 ## Phase 5 — Quality
 
-- Focused route tests cover authentication/admin flows, preferences, profiles, export/delete and the provider-reference library path; account deletion tests also cover cleanup of Anime reference rows.
-- The provider-reference integration tests exercise the Worker routing stack with the SQLite-backed D1 test adapter.
-- The interface includes loading/error/empty states, responsive styles, keyboard search handling, skip-to-content and reduced-motion rules.
-- **Not yet verified on the current feature head:** TypeScript typecheck, full Vitest suite, production dependency audit, production build, browser-based keyboard/accessibility checks and mobile browser checks.
+- Focused tests now include profile privacy, preferences, data export/delete and provider-backed Anime library save/list/remove, malformed IDs and legacy D1 slug compatibility. The account-deletion test checks cleanup of provider-reference rows.
+- The new provider-library tests exercise the Worker route through its in-process request helper and SQLite-backed D1 test adapter.
+- The UI has loading/error/empty states, responsive styles, keyboard search handling, skip-to-content and reduced-motion rules.
+- **Not verified on the latest branch head:** TypeScript typecheck, full Vitest suite, production dependency audit, production build, browser accessibility/keyboard checks or mobile-browser checks.
+- The repository has a `package-lock.json` and the deploy workflow has a verification job, but feature-branch pushes do not trigger it. No GitHub Actions result is reported for this head.
 - There is no lint script in `package.json`; lint is not marked complete.
-- The current GitHub workflow does not run checks on a feature-branch push alone. No green Actions result is being claimed.
 
 ## Remaining before merge consideration
 
-1. Run the full typecheck, tests, dependency audit and production build on the exact feature head; fix all failures.
-2. Complete browser regression checks for account enrolment/deletion, library ownership, profile privacy, progress sync ordering, history pause, provider failures and mobile/keyboard interaction.
-3. Verify live AniList/MAL/HiAnime responses and confirm how unavailable/removed provider titles should appear in saved libraries.
-4. Re-check divergence against current `main`, then prepare a separate reviewed reconciliation. Do not merge or deploy during this implementation pass.
+1. Run typecheck, the full test suite, production dependency audit and build on the exact feature head; fix every failure.
+2. Complete browser regression checks for admin enrolment/deletion, library ownership, profile privacy, progress ordering, history pause, provider failures, keyboard use and mobile layouts.
+3. Verify live AniList/MAL/HiAnime data and decide how saved titles should display when an upstream provider removes or renames a title.
+4. Re-check branch divergence against current `main`, then prepare a separate reviewed reconciliation. Do not merge or deploy as part of this coding pass.
 
-## Release and operational blockers
+## Release blockers
 
-- Review additive migrations 0024 and 0025 before any remote D1 application.
-- Reassess the current PBKDF2 configuration (100,000 iterations) against current OWASP guidance and actual Cloudflare Worker CPU limits before production use.
-- Cloudflare Access remains a separately configured outer perimeter; any policy/validator change needs a separate decision.
-- Do not deploy, alter edge policies, run remote D1 operations, wipe sessions or create real administrator credentials as part of this feature-branch coding work.
+- Review and approve migrations 0024 and 0025 before remote D1 application.
+- Reassess the current PBKDF2 work factor (100,000 iterations) against current OWASP guidance and actual Cloudflare Worker CPU limits before production use.
+- Cloudflare Access remains a separately configured outer perimeter; any policy/validator change needs a separate approval.
+- Do not deploy, change edge policies, run remote D1 operations, wipe sessions or create real administrator credentials during this feature rebuild.
 
 # Historical implementation status
 
