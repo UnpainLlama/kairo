@@ -31,9 +31,16 @@ function passwordChangeError(reason: unknown): string {
     case 'NETWORK_ERROR':
       return 'The connection was interrupted, so Kairo could not confirm whether the password was saved. Sign out and try signing in with the new passphrase before retrying the change.';
     case 'AUTH_UNAVAILABLE':
-      return 'Kairo authentication is temporarily unavailable. Your password change was not confirmed; try again when the service is available.';
+    case 'API_UNAVAILABLE':
+      return 'Kairo authentication is temporarily unavailable. Try again when the service is available.';
     case 'NON_JSON_RESPONSE':
       return 'Kairo received a web page instead of an API response. Refresh the staging site; check its Worker deployment and Cloudflare Access routing if this continues.';
+    case 'API_ROUTE_NOT_FOUND':
+      return 'The password-change API was not found. The staging Worker may not have the latest deployment.';
+    case 'REQUEST_FORBIDDEN':
+      return 'Kairo or its edge security layer blocked the request. Refresh the staging site and sign in again.';
+    case 'PASSWORD_CHANGE_UNCONFIRMED':
+      return reason.message;
     default:
       if (reason.status === 404) {
         return 'The password-change API was not found. The staging Worker may not have the latest deployment.';
