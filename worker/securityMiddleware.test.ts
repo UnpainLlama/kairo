@@ -88,7 +88,7 @@ describe('closed-site API default deny',()=>{
     const catalog=await worker.request(origin+'/api/v1/catalog/genres',{headers:{Cookie:session.cookie}},env);
     const password=await worker.request(origin+'/api/v1/me/password',{
       method:'POST',headers:{Cookie:session.cookie,Origin:origin,'Content-Type':'application/json'},
-      body:JSON.stringify({currentPassword:'temporary generated phrase',newPassword:'a strong changed passphrase'}),
+      body:JSON.stringify({currentPassword:'temporary generated phrase',newPassword:'a strong changed private passphrase'}),
     },env);
     expect(me.status).toBe(200);
     expect(catalog.status).toBe(403);
