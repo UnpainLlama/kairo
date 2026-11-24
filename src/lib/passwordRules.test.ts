@@ -9,9 +9,9 @@ describe('client password rules', () => {
   });
 
   it('enforces the UTF-8 byte ceiling', () => {
-    expect(isPasswordAllowed('a'.repeat(1024), 'admin')).toBe(true);
-    expect(isPasswordAllowed('a'.repeat(1025), 'admin')).toBe(false);
-    expect(isPasswordAllowed('😀'.repeat(257), 'admin')).toBe(false);
+    expect(isPasswordAllowed('a '.repeat(512), 'admin')).toBe(true);
+    expect(isPasswordAllowed('a '.repeat(513), 'admin')).toBe(false);
+    expect(isPasswordAllowed('😀 '.repeat(205), 'admin')).toBe(false);
   });
 
   it('does not allow a password identical to the username, ignoring case', () => {
