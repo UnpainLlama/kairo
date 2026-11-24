@@ -19,7 +19,7 @@ describe('metadata route end to end (real SQLite, fake provider fetch)', () => {
     session = await createTestSession(db, 'metadata-user');
     db.prepare(`INSERT INTO anime (id, slug, title, format, release_year, status, episode_count, provider_id, provider_title_id) VALUES ('a1','death-note','Death Note','series',2006,'airing',36,'manami','mal:1535')`).run();
     db.prepare(`INSERT INTO anime_provider_ids (anime_id, provider, external_id, source) VALUES ('a1','mal','1535','dataset')`).run();
-    env = { DB: sqliteD1(db), APP_ENV: 'test', METADATA_PROVIDERS: 'anilist', CATALOG_SOURCE: 'db' };
+    env = { DB: sqliteD1(db), APP_ENV: 'test', METADATA_PROVIDERS: '', CATALOG_SOURCE: 'db' };
   });
 
   afterAll(() => { db?.close(); });
@@ -31,9 +31,9 @@ describe('metadata route end to end (real SQLite, fake provider fetch)', () => {
   it('lists providers without secrets', async () => {
     const res = await apiRequest('/api/v1/providers');
     const body = (await res.json()) as { data: { items: { id: string; enabled: boolean }[] } };
-    expect(body.data.items.map((i) => `${i.id}:${i.enabled}`)).toEqual(['anilist:true', 'kitsu:false']);
+    expect(body.data.items.map((i) => `${i.id}:${i.enabled}`)).toEqual(['kitsu:false']);
   });
-  it('degrades to the stored row when the provider is unreachable', async () => {
+  it('serves the stored row without an active metadata enrichment provider', async () => {
     const original = globalThis.fetch;
     globalThis.fetch = (async () => { throw new Error('offline'); }) as never;
     try {
@@ -41,29 +41,29 @@ describe('metadata route end to end (real SQLite, fake provider fetch)', () => {
       const body = (await res.json()) as { success: boolean; data: { title: string; status: string; providers: { state: string }[] }; meta: { degraded: boolean } };
       expect(res.status).toBe(200);
       expect(body.data).toMatchObject({ title: 'Death Note', status: 'airing' });
-      expect(body.data.providers[0].state).toBe('failed');
-      expect(body.meta.degraded).toBe(true);
+      expect(body.data.providers).toEqual([]);
+      expect(body.meta.degraded).toBe(false);
     } finally { globalThis.fetch = original; }
   });
-  it('merges a provider answer, keeps provenance and saves the discovered id', async () => {
+  it('does not call a legacy provider and retains the stored MAL cross-reference', async () => {
     const original = globalThis.fetch;
-    const media = { id: 1535, idMal: 1535, countryOfOrigin: 'JP', title: { romaji: 'Death Note', english: 'Death Note' }, description: 'A notebook.', format: 'TV', status: 'FINISHED', episodes: 37, seasonYear: 2006, genres: ['Mystery'], averageScore: 84 };
-    globalThis.fetch = (async () => new Response(JSON.stringify({ data: { Page: { media: [media] } } }), { status: 200 })) as never;
+    let calls = 0;
+    globalThis.fetch = (async () => { calls += 1; throw new Error('no legacy provider request expected'); }) as never;
     try {
       const res = await apiRequest('/api/v1/anime/a1/metadata');
-      const body = (await res.json()) as { data: { status: string; synopsis: string; rating: number; episodeCount: number; genres: string[]; ids: Record<string, string>; conflicts: { field: string }[]; provenance: Record<string, { provider: string }[]>; sources: { providerId: string }[] } };
-      expect(body.data).toMatchObject({ status: 'finished', synopsis: 'A notebook.', rating: 8.4, episodeCount: 37, genres: ['Mystery'] });
-      expect(body.data.ids).toMatchObject({ mal: '1535', anilist: '1535' });
-      expect(body.data.provenance.status[0].provider).toBe('anilist');
-      expect(body.data.conflicts.map((c) => c.field).sort()).toEqual(['episodeCount', 'status']);
-      expect(body.data.sources.map((s) => s.providerId)).toEqual(['anilist', 'manami']);
-      expect(db.prepare(`SELECT provider, external_id FROM anime_provider_ids WHERE anime_id='a1' ORDER BY provider`).all()).toEqual([{ provider: 'anilist', external_id: '1535' }, { provider: 'mal', external_id: '1535' }]);
+      const body = (await res.json()) as { data: { ids: Record<string, string>; providers: unknown[]; sources: { providerId: string }[] } };
+      expect(res.status).toBe(200);
+      expect(calls).toBe(0);
+      expect(body.data.ids).toMatchObject({ mal: '1535' });
+      expect(body.data.providers).toEqual([]);
+      expect(body.data.sources.map((source) => source.providerId)).toEqual(['manami']);
+      expect(db.prepare("SELECT provider, external_id FROM anime_provider_ids WHERE anime_id='a1' ORDER BY provider").all()).toEqual([{ provider: 'mal', external_id: '1535' }]);
     } finally { globalThis.fetch = original; }
   });
   it('readiness: ready on a migrated database, 503 on a reachable but unmigrated one', async () => {
     const ready = await app.request('/api/ready', {}, env as never);
     expect(ready.status).toBe(200);
-    expect(((await ready.json()) as { data: Record<string, unknown> }).data).toMatchObject({ database: 'ok', schema: 'ok', cache: 'none', providers: ['anilist'] });
+    expect(((await ready.json()) as { data: Record<string, unknown> }).data).toMatchObject({ database: 'ok', schema: 'ok', cache: 'none', providers: [] });
     const empty = { DB: sqliteD1(new DatabaseSync(':memory:')), APP_ENV: 'test', CATALOG_SOURCE: 'db' };
     const notReady = await app.request('/api/ready', {}, empty as never);
     expect(notReady.status).toBe(503);
