@@ -1,132 +1,223 @@
-import { useCallback, useEffect, useState, type FormEvent, type CSSProperties } from 'react';
-import { useKairoAccount } from '../lib/AccountProvider';
-import { signOutKairoAccount } from '../lib/authClient';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Copy, KeyRound, RefreshCw, ShieldCheck, Trash2, UserPlus } from 'lucide-react';
+import { authRequest } from '../lib/authClient';
 
-type Account = { id: string; username: string; accessEmail: string | null; displayName: string; status: 'active' | 'suspended' | 'deleted'; createdAt: string };
-type Payload = { success?: boolean; data?: { accounts?: Account[]; standardAccountCount?: number; standardAccountLimit?: number; account?: Account; accountReset?: boolean }; error?: { message?: string } };
-
-async function request(path: string, method = 'GET', body?: unknown): Promise<Payload> {
-  const response = await fetch(path, {
-    method,
-    credentials: 'same-origin',
-    headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
-    ...(body ? { body: JSON.stringify(body) } : {}),
-    cache: 'no-store',
-  });
-  const payload = await response.json().catch(() => null) as Payload | null;
-  if (!response.ok || !payload?.success) throw new Error(payload?.error?.message ?? 'The request could not be completed.');
-  return payload;
-}
+type Account = {
+  id: string;
+  username: string;
+  displayName: string;
+  status: 'active' | 'suspended' | 'deleted';
+  createdAt: string;
+  credentialsConfigured: number;
+  mustChangePassword: number;
+};
+type AccountsPayload = {
+  accounts: Account[];
+  standardAccountCount: number;
+  standardAccountLimit: number;
+};
+type TemporaryCredential = { username: string; temporaryPassword: string; accountId: string };
 
 export default function AdminPage() {
-  const account = useKairoAccount();
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [count, setCount] = useState(0);
-  const [limit, setLimit] = useState(15);
+  const [data, setData] = useState<AccountsPayload | null>(null);
+  const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [busy, setBusy] = useState('');
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [emailEditId, setEmailEditId] = useState<string | null>(null);
-  const [emailEditValue, setEmailEditValue] = useState('');
+  const [temporaryCredential, setTemporaryCredential] = useState<TemporaryCredential | null>(null);
 
   const load = useCallback(async () => {
-    setLoading(true); setError('');
-    try {
-      const payload = await request('/api/v1/admin/accounts');
-      setAccounts(payload.data?.accounts ?? []);
-      setCount(payload.data?.standardAccountCount ?? 0);
-      setLimit(payload.data?.standardAccountLimit ?? 15);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Could not load accounts.');
-    } finally { setLoading(false); }
-  }, []);
-
-  useEffect(() => {
-    // App owns route metadata. Do not replace its title with a generic title on unmount.
-    void load();
-  }, [load]);
-
-  async function saveAccessEmail(event: FormEvent) {
-    event.preventDefault(); if (!emailEditId) return;
-    setBusy(true); setError(''); setNotice('');
-    try {
-      await request('/api/v1/admin/accounts/' + encodeURIComponent(emailEditId) + '/access-email', 'PATCH', { accessEmail: emailEditValue });
-      setEmailEditId(null); setEmailEditValue('');
-      setNotice('Kairo email binding updated. Update the Cloudflare Access Allow policy to the same address. The user will be signed in automatically at their next visit.');
-      await load();
-    } catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not update approved email.'); }
-    finally { setBusy(false); }
-  }
-
-  async function setStatus(account: Account) {
-    setBusy(true); setError(''); setNotice('');
-    try {
-      await request('/api/v1/admin/accounts/' + encodeURIComponent(account.id) + '/status', 'PATCH', {
-        status: account.status === 'active' ? 'suspended' : 'active',
-      });
-      setNotice(account.status === 'active' ? 'Account suspended. Kairo API access is blocked immediately and existing Kairo sessions were revoked. Remove the email from Cloudflare Access and revoke its Access session to complete perimeter offboarding.' : 'Account reactivated. Ensure its approved email is still in the Cloudflare Access allowlist.');
-      await load();
-    } catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not update account.'); }
-    finally { setBusy(false); }
-  }
-
-  async function signOut() {
-    if (busy) return;
-    setBusy(true);
+    setLoading(true);
     setError('');
     try {
-      await signOutKairoAccount(account.accountId, (url) => window.location.assign(url));
+      const result = await authRequest<AccountsPayload>('/admin/accounts', { method: 'GET' });
+      setData(result.data);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Could not sign out. Please try again.');
-      setBusy(false);
+      setError(caught instanceof Error ? caught.message : 'Could not load accounts.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  async function createAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy('create');
+    setError('');
+    setNotice('');
+    setTemporaryCredential(null);
+    try {
+      const result = await authRequest<TemporaryCredential & { created: boolean; mustChangePassword: boolean }>('/admin/accounts', {
+        method: 'POST',
+        body: JSON.stringify({ username, displayName }),
+      });
+      setTemporaryCredential({
+        accountId: result.data.accountId,
+        username: result.data.username,
+        temporaryPassword: result.data.temporaryPassword,
+      });
+      setUsername('');
+      setDisplayName('');
+      setNotice('Account created. Copy the temporary password and share it with the intended user securely.');
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not create the account.');
+    } finally {
+      setBusy('');
     }
   }
 
-  const panel: CSSProperties = { width: 'min(1080px, calc(100% - 32px))', margin: '40px auto', color: '#f4f4f5', fontFamily: 'system-ui, sans-serif' };
-  const surface: React.CSSProperties = { background: '#171719', border: '1px solid #303034', borderRadius: 14, padding: 22, marginBottom: 18 };
-  const field: React.CSSProperties = { display: 'block', width: '100%', boxSizing: 'border-box', padding: '11px 12px', marginTop: 6, background: '#101012', color: '#fff', border: '1px solid #44444a', borderRadius: 8 };
-  const button: React.CSSProperties = { padding: '10px 14px', borderRadius: 8, border: '1px solid #55555c', background: '#29292e', color: '#fff', cursor: 'pointer' };
+  async function resetPassword(account: Account) {
+    if (!window.confirm('Create a new temporary password for @' + account.username + '? The old password will stop working immediately.')) return;
+    setBusy(account.id);
+    setError('');
+    setNotice('');
+    setTemporaryCredential(null);
+    try {
+      const result = await authRequest<{ reset: boolean; accountId: string; temporaryPassword: string; mustChangePassword: boolean }>(
+        '/admin/accounts/' + encodeURIComponent(account.id) + '/password',
+        { method: 'POST' },
+      );
+      setTemporaryCredential({ accountId: account.id, username: account.username, temporaryPassword: result.data.temporaryPassword });
+      setNotice('Password reset. The account must change this temporary password at next sign-in.');
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not reset the password.');
+    } finally {
+      setBusy('');
+    }
+  }
 
-  return <main style={panel}>
-    <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 24 }}>
-      <div><p style={{ color: '#a1a1aa', margin: 0, letterSpacing: 2, fontSize: 11 }}>PRIVATE CONSOLE</p><h1 style={{ margin: '6px 0' }}>Kairo administration</h1><p style={{ color: '#a1a1aa', margin: 0 }}>Manage the 15 standard accounts. YouTube access is reserved for the administrator.</p></div>
-      <button style={button} onClick={() => void signOut()} disabled={busy}>{busy ? 'Signing out…' : 'Sign out'}</button>
-    </header>
+  async function setStatus(account: Account) {
+    const next = account.status === 'active' ? 'suspended' : 'active';
+    if (!window.confirm((next === 'suspended' ? 'Suspend' : 'Reactivate') + ' @' + account.username + '?')) return;
+    setBusy(account.id);
+    setError('');
+    setNotice('');
+    try {
+      await authRequest('/admin/accounts/' + encodeURIComponent(account.id) + '/status', {
+        method: 'PATCH',
+        body: JSON.stringify({ status: next }),
+      });
+      setNotice(next === 'suspended' ? 'Account suspended and its active sessions revoked.' : 'Account reactivated.');
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not update the account.');
+    } finally {
+      setBusy('');
+    }
+  }
 
-    {error && <p role="alert" style={{ background: '#451a1a', padding: 12, borderRadius: 8 }}>{error}</p>}
-    {notice && <p role="status" style={{ background: '#173323', padding: 12, borderRadius: 8 }}>{notice}</p>}
+  async function deleteAccount(account: Account) {
+    if (!window.confirm('Permanently delete @' + account.username + ' and erase its account-owned data? This cannot be undone.')) return;
+    setBusy(account.id);
+    setError('');
+    setNotice('');
+    try {
+      await authRequest('/admin/accounts/' + encodeURIComponent(account.id), {
+        method: 'DELETE',
+        body: JSON.stringify({ confirmDataDeletion: true }),
+      });
+      setNotice('Account and its account-owned data were deleted. A minimal identity tombstone was retained.');
+      setTemporaryCredential(null);
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not delete the account.');
+    } finally {
+      setBusy('');
+    }
+  }
 
-    <section style={surface}>
-      <h2 style={{ marginTop: 0 }}>Standard accounts</h2>
-      <p style={{ color: '#c4c4ca' }}>{count} of {limit} allocated. Suspended accounts still count toward the limit.</p>
-      <div style={{ height: 7, background: '#303034', borderRadius: 99, overflow: 'hidden' }}><div style={{ height: '100%', width: Math.min(100, count / limit * 100) + '%', background: '#a1a1aa' }} /></div>
-      {loading ? <p>Loading accounts…</p> : accounts.length === 0 ? <p style={{ color: '#a1a1aa' }}>No standard accounts have been created.</p> : <div style={{ marginTop: 16 }}>
-        {accounts.map(account => <article key={account.id} style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '14px 0', borderTop: '1px solid #303034' }}>
-          <div><strong>{account.displayName}</strong><div style={{ color: '#a1a1aa', fontSize: 13 }}>{account.accessEmail ?? 'No Access email bound'} · {account.status}</div></div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {account.status !== 'deleted' && <><button style={button} disabled={busy} onClick={() => { setEmailEditId(emailEditId === account.id ? null : account.id); setEmailEditValue(account.accessEmail ?? ''); }}>Change approved email</button><button style={button} disabled={busy} onClick={() => void setStatus(account)}>{account.status === 'active' ? 'Suspend' : 'Reactivate'}</button></>}
+  async function copyTemporaryPassword() {
+    if (!temporaryCredential) return;
+    try {
+      await navigator.clipboard.writeText(temporaryCredential.temporaryPassword);
+      setNotice('Temporary password copied. Store and deliver it securely; it will not be shown again after leaving this page.');
+    } catch {
+      setError('Clipboard access was blocked. Select and copy the temporary password manually.');
+    }
+  }
+
+  const count = data?.standardAccountCount ?? 0;
+  const limit = data?.standardAccountLimit ?? 15;
+
+  return (
+    <main className="kc-admin-page">
+      <header className="kc-page-head">
+        <p className="kc-section-kicker">PRIVATE CONSOLE</p>
+        <h1>Kairo administration</h1>
+        <p>Manage usernames, temporary passwords and the 15 standard-account allocation.</p>
+      </header>
+
+      {error && <p className="kc-auth-error" role="alert">{error}</p>}
+      {notice && <p className="kc-admin-notice" role="status">{notice}</p>}
+
+      {temporaryCredential && (
+        <section className="kc-admin-credential" aria-label="Temporary account password">
+          <div>
+            <span className="kc-section-kicker">TEMPORARY CREDENTIAL · SHOW ONCE</span>
+            <h2>@{temporaryCredential.username}</h2>
+            <code>{temporaryCredential.temporaryPassword}</code>
+            <p>Require the user to replace this temporary password with a private five-word passphrase at first sign-in.</p>
           </div>
-          {emailEditId === account.id && <form onSubmit={saveAccessEmail} style={{ width: '100%', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            <input style={{ ...field, flex: '1 1 260px', marginTop: 0 }} type="email" autoComplete="off" maxLength={254} placeholder="Approved email address" required value={emailEditValue} onChange={event => setEmailEditValue(event.target.value)} />
-            <button style={button} disabled={busy}>Save approved email</button>
-          </form>}
-        </article>)}
-      </div>}
-    </section>
+          <button className="kc-btn kc-btn-primary" type="button" onClick={() => { void copyTemporaryPassword(); }}>
+            <Copy size={15} /> Copy password
+          </button>
+        </section>
+      )}
 
-    <section style={surface}>
-      <h2 style={{ marginTop: 0 }}>How new users join</h2>
-      <p style={{ color: '#c4c4ca' }}>
-        Add a person's exact email address to the Kairo Cloudflare Access application's Allow policy.
-        Cloudflare blocks other email addresses before they reach the app. On the first successful visit,
-        Kairo automatically creates their standard account and signs them in; no Kairo username or password
-        needs to be issued.
-      </p>
-      <p style={{ color: '#a1a1aa' }}>
-        To remove access, remove the email from the Cloudflare Access Allow policy and suspend the account
-        here. Changing an email binding below must also be reflected in the Cloudflare Access policy.
-      </p>
-    </section>
-  </main>;
+      <section className="kc-admin-card">
+        <div className="kc-admin-heading">
+          <div>
+            <span className="kc-section-kicker">ACCOUNT ALLOCATION</span>
+            <h2>Standard accounts</h2>
+          </div>
+          <strong>{count} / {limit}</strong>
+        </div>
+        <div className="kc-admin-meter"><span style={{ width: Math.min(100, limit > 0 ? count / limit * 100 : 0) + '%' }} /></div>
+        <p className="kc-admin-muted">Suspended accounts continue to count toward the 15-account limit.</p>
+        <form className="kc-admin-create" onSubmit={event => { void createAccount(event); }}>
+          <label>Username<input value={username} onChange={event => setUsername(event.target.value)} minLength={3} maxLength={32} autoCapitalize="none" autoComplete="off" required /></label>
+          <label>Display name<input value={displayName} onChange={event => setDisplayName(event.target.value)} minLength={2} maxLength={40} autoComplete="off" required /></label>
+          <button className="kc-btn kc-btn-primary" disabled={busy === 'create' || count >= limit}>
+            <UserPlus size={15} /> {busy === 'create' ? 'Creating…' : 'Create account'}
+          </button>
+        </form>
+      </section>
+
+      <section className="kc-admin-card">
+        <div className="kc-admin-heading">
+          <div><span className="kc-section-kicker">USER ACCESS</span><h2>Account management</h2></div>
+          <button className="kc-icon-btn" type="button" onClick={() => { void load(); }} disabled={loading} aria-label="Refresh accounts"><RefreshCw size={15} /></button>
+        </div>
+        {loading ? <p className="kc-admin-muted">Loading accounts…</p> :
+          !data?.accounts.length ? <p className="kc-admin-muted">No standard accounts have been created.</p> :
+          <div className="kc-admin-list">
+            {data.accounts.map(account => (
+              <article className="kc-admin-row" key={account.id}>
+                <div className="kc-admin-account">
+                  <strong>{account.displayName}</strong>
+                  <span>@{account.username} · {account.status}</span>
+                  <small>{account.credentialsConfigured ? (account.mustChangePassword ? 'Temporary password outstanding' : 'Password configured') : 'Credentials not configured'} · Created {new Date(account.createdAt).toLocaleDateString()}</small>
+                </div>
+                <div className="kc-admin-actions">
+                  <button className="kc-btn" type="button" disabled={busy === account.id || !account.credentialsConfigured} onClick={() => { void resetPassword(account); }}>
+                    <KeyRound size={14} /> Reset password
+                  </button>
+                  <button className="kc-btn" type="button" disabled={busy === account.id} onClick={() => { void setStatus(account); }}>
+                    <ShieldCheck size={14} /> {account.status === 'active' ? 'Suspend' : 'Reactivate'}
+                  </button>
+                  <button className="kc-btn kc-btn-danger" type="button" disabled={busy === account.id} onClick={() => { void deleteAccount(account); }}>
+                    <Trash2 size={14} /> Delete
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>}
+      </section>
+    </main>
+  );
 }
