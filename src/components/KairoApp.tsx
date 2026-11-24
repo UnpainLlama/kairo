@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode, type TouchEvent as ReactTouchEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import {
-  Activity, ArrowLeft, Bookmark, Check, Clapperboard, Compass, Film,
-  Heart, History, Home, Library, LogOut, Menu, Search, Settings, Shield, Sparkles,
+  Activity, ArrowLeft, Bookmark, Check, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Compass, Film,
+  Heart, History, Home, Info, Library, LogOut, Menu, Play, Search, Settings, Shield, Sparkles, Star,
   UserRound, X,
 } from 'lucide-react';
 import { Link, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -162,6 +162,9 @@ function AppShell() {
   const account = useAccount();
   const navigate = useNavigate();
   const location = useLocation();
+  const isAnimeWorkspace = location.pathname === '/' || location.pathname === '/anime' ||
+    location.pathname.startsWith('/anime/') || location.pathname === '/seasonal' ||
+    location.pathname === '/search' || (location.pathname.startsWith('/watch/') && !location.pathname.startsWith('/watch/movie/'));
   const [query, setQuery] = useState('');
   const [mobileOpen, setMobileOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -219,7 +222,7 @@ function AppShell() {
   );
 
   return (
-    <div className="app-shell">
+    <div className={'app-shell' + (isAnimeWorkspace ? ' anime-workspace' : '')}>
       <a className="skip-link" href="#main-content">Skip to content</a>
       <header className="topbar">
         <Link to="/" className="brand" aria-label="Kairo home">
@@ -229,6 +232,12 @@ function AppShell() {
         <button className="icon-button mobile-menu-button" type="button" onClick={() => setMobileOpen(v => !v)} aria-expanded={mobileOpen} aria-label={mobileOpen ? 'Close navigation' : 'Open navigation'}>
           {mobileOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
+        {isAnimeWorkspace && <nav className="anime-workspace-nav" aria-label="Anime navigation">
+          <Link to="/" className={location.pathname === '/' && !location.search ? 'active' : ''}>Home</Link>
+          <Link to="/?ranking=trending" className={location.pathname === '/' ? 'active' : ''}>Trending</Link>
+          <Link to="/anime" className={location.pathname === '/anime' ? 'active' : ''}>Discover</Link>
+          <Link to="/seasonal" className={location.pathname === '/seasonal' ? 'active' : ''}>Seasonal</Link>
+        </nav>}
         <nav className="desktop-nav" aria-label="Primary navigation">{nav}</nav>
         <form className="global-search" role="search" onSubmit={submitSearch}>
           <Search size={17} aria-hidden="true" />
@@ -255,33 +264,43 @@ function AppShell() {
 }
 
 function DiscoverPage() {
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState<'trending' | 'popular' | 'top'>(() => {
+    const value = searchParams.get('ranking');
+    return value === 'popular' || value === 'top' ? value : 'trending';
+  });
   const featured = useApi<PageData<CatalogCard>>('/catalog/featured');
-  const trending = useApi<PageData<CatalogCard>>('/catalog/trending?page=1&limit=12');
+  const trending = useApi<PageData<CatalogCard>>('/catalog/trending?page=1&limit=24');
+  const popular = useApi<PageData<CatalogCard>>('/catalog/browse?sort=popularity&page=1&limit=24');
+  const topRated = useApi<PageData<CatalogCard>>('/catalog/browse?sort=rating&page=1&limit=24');
   const latest = useApi<PageData<CatalogCard>>('/catalog/latest?page=1&limit=12');
+  const airing = useApi<PageData<CatalogCard>>('/catalog/browse?status=airing&sort=popularity&page=1&limit=6');
+  const upcoming = useApi<PageData<CatalogCard>>('/catalog/browse?status=upcoming&sort=popularity&page=1&limit=6');
   const continueWatching = useApi<PageData<PlaybackItem>>('/me/playback?limit=20');
-  const featuredTitle = featured.status === 'ok' ? featured.data.items[0] : null;
-  const progress = continueWatching.status === 'ok' ? continueWatching.data.items.filter(item => item.mediaType !== 'youtube' && !item.completed && item.progressSeconds > 5) : [];
+
+  useEffect(() => {
+    const value = searchParams.get('ranking');
+    if (value === 'trending' || value === 'popular' || value === 'top') setActiveTab(value);
+  }, [searchParams]);
+
+  const active = activeTab === 'trending' ? trending : activeTab === 'popular' ? popular : topRated;
+  const featuredItems = featured.status === 'ok' ? featured.data.items : [];
+  const progress = continueWatching.status === 'ok'
+    ? continueWatching.data.items.filter(item => item.mediaType !== 'youtube' && !item.completed && item.progressSeconds > 5)
+    : [];
+
   return (
-    <div className="page page-discover">
-      <section className="hero-stage">
-        {featuredTitle?.bannerUrl && safeImageUrl(featuredTitle.bannerUrl) && <img className="hero-background" src={safeImageUrl(featuredTitle.bannerUrl) ?? undefined} alt="" />}
-        <div className="hero-shade" />
-        <div className="hero-copy">
-          <p className="eyebrow"><Sparkles size={14} /> YOUR NEXT STORY STARTS HERE</p>
-          <h1>{featuredTitle?.title ?? 'Find your next favourite story.'}</h1>
-          <p>{featuredTitle?.synopsis || 'Explore anime, discover films, and keep your watch progress in sync across your Kairo account.'}</p>
-          <div className="hero-actions">
-            {featuredTitle ? <Link className="button button-primary" to={'/anime/' + encodeURIComponent(featuredTitle.slug || featuredTitle.id)}>Explore title</Link> : <Link className="button button-primary" to="/anime">Explore anime</Link>}
-            <Link className="button button-glass" to="/library"><Bookmark size={16} /> My library</Link>
-          </div>
-          {featuredTitle && <div className="hero-meta">{[formatLabel(featuredTitle.format), seasonLabel(featuredTitle.season, featuredTitle.releaseYear), statusLabel(featuredTitle.status)].filter(Boolean).join(' · ')}</div>}
-          {featured.status === 'error' && <p className="inline-note">Featured catalogue is unavailable. Other sections may still load.</p>}
-        </div>
-        <div className="hero-orbit" aria-hidden="true"><span /><span /><span /></div>
-      </section>
+    <div className="page page-discover anime-home-page">
+      {featuredItems.length > 0
+        ? <FeaturedAnimeHero items={featuredItems} />
+        : featured.status === 'loading'
+          ? <div className="anime-hero-placeholder" aria-label="Loading featured anime" />
+          : <div className="anime-hero-placeholder anime-hero-placeholder-empty"><p>Discover your next favourite anime.</p><Link className="button button-primary" to="/anime">Browse Anime</Link></div>}
+
+      {featured.status === 'error' && <ItemError error={featured.error} />}
 
       {progress.length > 0 && (
-        <section className="content-section">
+        <section className="content-section anime-continue-section">
           <SectionHeading title="Continue watching" description="Pick up where you left off." action={<Link to="/history">View history <ArrowLeft className="arrow-right" size={15} /></Link>} />
           <div className="continue-rail">
             {progress.slice(0, 8).map(item => {
@@ -298,19 +317,183 @@ function DiscoverPage() {
           </div>
         </section>
       )}
-      <section className="content-section">
-        <SectionHeading title="Trending this week" description="Stories making waves right now." action={<Link to="/anime?sort=trending">Browse anime <ArrowLeft className="arrow-right" size={15} /></Link>} />
-        <LoadableGrid state={trending} />
-      </section>
-      <section className="content-section">
-        <SectionHeading title="Recently updated" description="Freshly surfaced catalogue picks." action={<Link to="/anime?sort=latest">View all <ArrowLeft className="arrow-right" size={15} /></Link>} />
+
+      <div className="anime-home-grid">
+        <section className="anime-ranking-section" aria-label="Anime catalogue rankings">
+          <div className="anime-ranking-tabs" role="tablist" aria-label="Anime rankings">
+            <button type="button" role="tab" aria-selected={activeTab === 'trending'} className={activeTab === 'trending' ? 'active' : ''} onClick={() => setActiveTab('trending')}>Trending Anime</button>
+            <button type="button" role="tab" aria-selected={activeTab === 'popular'} className={activeTab === 'popular' ? 'active' : ''} onClick={() => setActiveTab('popular')}>Popular Anime</button>
+            <button type="button" role="tab" aria-selected={activeTab === 'top'} className={activeTab === 'top' ? 'active' : ''} onClick={() => setActiveTab('top')}>Top Anime</button>
+          </div>
+          <div role="tabpanel" aria-label={activeTab === 'trending' ? 'Trending anime' : activeTab === 'popular' ? 'Popular anime' : 'Top rated anime'}>
+            <LoadableGrid state={active} />
+          </div>
+        </section>
+        <aside className="anime-home-side" aria-label="Anime lists">
+          <AnimeSidePanel title="Top airing" state={airing} />
+          <AnimeSidePanel title="Upcoming" state={upcoming} />
+        </aside>
+      </div>
+
+      <section className="content-section anime-latest-section">
+        <SectionHeading title="Latest updates" description="Recently updated anime from the catalogue." action={<Link to="/anime?sort=latest">Browse anime <ArrowLeft className="arrow-right" size={15} /></Link>} />
         <LoadableGrid state={latest} />
       </section>
-      <section className="content-section movie-teaser">
-        <div><p className="eyebrow">A DIFFERENT KIND OF STORY</p><h2>Switch to the big screen.</h2><p>Discover films and save them alongside your Anime library.</p><Link className="button button-secondary" to="/movies">Explore movies</Link></div>
-        <Film size={80} strokeWidth={1} aria-hidden="true" />
-      </section>
     </div>
+  );
+}
+
+function AnimeSidePanel({ title, state }: { title: string; state: ApiState<PageData<CatalogCard>> }) {
+  const [open, setOpen] = useState(true);
+  const items = state.status === 'ok' ? state.data.items : [];
+  if (state.status === 'ok' && items.length === 0) return null;
+  return (
+    <section className="anime-side-panel">
+      <button type="button" className="anime-side-heading" aria-expanded={open} onClick={() => setOpen(value => !value)}>
+        <ChevronDown size={15} className={open ? '' : 'turned'} aria-hidden="true" />{title}
+      </button>
+      {open && state.status === 'loading' && <p className="anime-side-state" role="status">Loading titles…</p>}
+      {open && state.status === 'error' && <div className="anime-side-state" role="alert"><p>{state.error.message}</p><button type="button" onClick={state.reload}>Try again</button></div>}
+      {open && state.status === 'ok' && (
+        <ul>
+          {items.map(item => (
+            <li key={item.id}>
+              <Link to={'/anime/' + encodeURIComponent(item.slug || item.id)} className="anime-side-row">
+                <span className="anime-side-poster">
+                  {safeImageUrl(item.posterUrl) ? <img src={safeImageUrl(item.posterUrl) ?? undefined} alt="" loading="lazy" /> : <Film size={17} />}
+                </span>
+                <span className="anime-side-copy">
+                  <strong>{item.title}</strong>
+                  <small>{[statusLabel(item.status), item.releaseYear ? String(item.releaseYear) : null].filter(Boolean).join(' · ') || formatLabel(item.format) || 'Anime'}</small>
+                </span>
+                {item.rating !== null && <span className="anime-side-rating"><Star size={10} fill="currentColor" aria-hidden="true" />{item.rating.toFixed(1)}</span>}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+const ANIME_HERO_INTERVAL_MS = 20_000;
+const ANIME_HERO_FADE_MS = 650;
+
+function FeaturedAnimeHero({ items }: { items: CatalogCard[] }) {
+  const count = items.length;
+  const [index, setIndex] = useState(0);
+  const [leaving, setLeaving] = useState<number | null>(null);
+  const [pageVisible, setPageVisible] = useState(() => document.visibilityState !== 'hidden');
+  const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const active = index % count;
+
+  const go = useCallback((target: number) => {
+    const next = ((target % count) + count) % count;
+    if (next === active) return;
+    setLeaving(active);
+    setIndex(next);
+  }, [active, count]);
+
+  useEffect(() => {
+    const visibilityChanged = () => setPageVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', visibilityChanged);
+    return () => document.removeEventListener('visibilitychange', visibilityChanged);
+  }, []);
+  useEffect(() => {
+    const query = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    if (!query) return;
+    const preferenceChanged = (event: MediaQueryListEvent) => setReducedMotion(event.matches);
+    query.addEventListener('change', preferenceChanged);
+    return () => query.removeEventListener('change', preferenceChanged);
+  }, []);
+  useEffect(() => {
+    if (count < 2 || !pageVisible || reducedMotion) return;
+    const timer = window.setTimeout(() => go(active + 1), ANIME_HERO_INTERVAL_MS);
+    return () => window.clearTimeout(timer);
+  }, [active, count, pageVisible, reducedMotion, go]);
+  useEffect(() => {
+    if (leaving === null) return;
+    const timer = window.setTimeout(() => setLeaving(null), ANIME_HERO_FADE_MS);
+    return () => window.clearTimeout(timer);
+  }, [leaving, index]);
+
+  const mounted = new Set<number>([active, (active + 1) % count, (active - 1 + count) % count]);
+  if (leaving !== null) mounted.add(leaving % count);
+
+  const onTouchEnd = (event: ReactTouchEvent<HTMLElement>) => {
+    const start = touchStart.current;
+    touchStart.current = null;
+    const touch = event.changedTouches[0];
+    if (!start || !touch) return;
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    if (Math.abs(dx) >= 48 && Math.abs(dx) > Math.abs(dy) * 1.35) go(active + (dx < 0 ? 1 : -1));
+  };
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.target !== event.currentTarget || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    if (event.key === 'ArrowRight') { event.preventDefault(); go(active + 1); }
+    if (event.key === 'ArrowLeft') { event.preventDefault(); go(active - 1); }
+  };
+
+  return (
+    <section
+      className="anime-featured-hero"
+      tabIndex={0}
+      aria-roledescription="carousel"
+      aria-label="Featured anime"
+      aria-keyshortcuts="ArrowLeft ArrowRight"
+      onKeyDown={onKeyDown}
+      onTouchStart={event => { touchStart.current = event.touches.length === 1 ? { x: event.touches[0].clientX, y: event.touches[0].clientY } : null; }}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={() => { touchStart.current = null; }}
+    >
+      <span className="sr-only">{count > 1 ? 'Featured anime carousel. Use arrow keys or swipe to change featured titles.' : 'Featured anime.'}</span>
+      {items.map((item, i) => mounted.has(i) ? (
+        <FeaturedAnimeSlide key={item.id} item={item} state={i === active ? 'active' : i === leaving ? 'leaving' : 'idle'} position={i + 1} total={count} />
+      ) : null)}
+      {count > 1 && <>
+        <button type="button" className="anime-hero-arrow prev" aria-label="Previous featured anime" onClick={() => go(active - 1)}><ChevronLeft size={20} /></button>
+        <button type="button" className="anime-hero-arrow next" aria-label="Next featured anime" onClick={() => go(active + 1)}><ChevronRight size={20} /></button>
+        <div className="anime-hero-dots">
+          {items.map((item, i) => <button key={item.id} type="button" aria-label={'Show ' + item.title} aria-current={i === active ? 'true' : undefined} className={i === active ? 'active' : ''} onClick={() => go(i)} />)}
+        </div>
+      </>}
+    </section>
+  );
+}
+
+function FeaturedAnimeSlide({ item, state, position, total }: { item: CatalogCard; state: 'active' | 'leaving' | 'idle'; position: number; total: number }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const image = imageFailed ? null : safeImageUrl(item.bannerUrl);
+  const facts = [
+    item.episodeCount ? (item.episodeCount + (item.episodeCount === 1 ? ' Episode' : ' Episodes')) : null,
+    item.releaseYear ? String(item.releaseYear) : null,
+    !item.episodeCount && !item.releaseYear ? formatLabel(item.format) : null,
+    ...textList(item.genres).slice(0, 3),
+  ].filter((value): value is string => Boolean(value));
+  const href = '/anime/' + encodeURIComponent(item.slug || item.id);
+  return (
+    <article className={'anime-hero-slide ' + state} aria-hidden={state !== 'active'} aria-label={'Featured title ' + position + ' of ' + total}>
+      <div className="anime-hero-image" aria-hidden="true">
+        {image
+          ? <img src={image} alt="" decoding="async" loading={state === 'active' ? 'eager' : 'lazy'} onError={() => setImageFailed(true)} />
+          : safeImageUrl(item.posterUrl)
+            ? <img src={safeImageUrl(item.posterUrl) ?? undefined} alt="" loading="lazy" />
+            : <div className="anime-hero-image-fallback"><Film size={48} /></div>}
+      </div>
+      <div className="anime-hero-overlay" />
+      <div className="anime-hero-copy">
+        <p className="eyebrow">FEATURED ANIME</p>
+        <h1>{item.title}</h1>
+        <div className="anime-hero-facts">{facts.map(fact => <span key={fact}>{fact}</span>)}</div>
+        {item.synopsis && <p className="anime-hero-synopsis">{item.synopsis}</p>}
+        <div className="anime-hero-actions">
+          <Link className="anime-hero-primary" to={'/watch/' + encodeURIComponent(item.slug || item.id) + '/1'}><Play size={15} fill="currentColor" /> Watch now</Link>
+          <Link className="anime-hero-secondary" to={href}><Info size={15} /> Details</Link>
+        </div>
+      </div>
+    </article>
   );
 }
 
