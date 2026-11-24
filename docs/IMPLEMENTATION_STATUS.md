@@ -5,9 +5,9 @@
 ## Current branch and safety boundary
 
 - Feature branch: `rebuild/username-password-auth`.
-- Current head: [`429b4071342661b6ed84f40007155e8ff6df59a4`](https://github.com/UnpainLlama/kairo/commit/429b4071342661b6ed84f40007155e8ff6df59a4).
-- The branch is 25 commits ahead of reset base `4f77801029da116c79909b69f84433ecd3b67d18`.
-- Compared with current `main`, GitHub reports the feature branch 26 commits ahead and 7 commits behind. Do not merge or retarget directly; plan a dedicated reconciliation first.
+- Latest application-code integration commit: [`429b4071342661b6ed84f40007155e8ff6df59a4`](https://github.com/UnpainLlama/kairo/commit/429b4071342661b6ed84f40007155e8ff6df59a4). A subsequent docs-only commit aligned the architecture, Access-perimeter and API guides.
+- The branch is based on reset commit `4f77801029da116c79909b69f84433ecd3b67d18` and has continued with additive commits.
+- The feature branch has diverged from current `main`; GitHub reports 7 commits on `main` that are not in the feature branch. Do not merge or retarget directly; plan a dedicated reconciliation first.
 - `main` has not been changed by this work. No PR has been opened.
 - No Cloudflare edge configuration, Worker secret, remote D1 database, deployment or real administrator credential was changed or created.
 
@@ -28,16 +28,16 @@ The reset removed the previous Anime, Movies, profile, library, history, setting
 
 ## Validation status for current head
 
-- No GitHub Actions runs or commit status checks are reported for the current head.
+- No GitHub Actions runs or commit status checks are reported for the latest branch commits.
 - The workflow runs checks on pull requests targeting `main` or `staging`, pushes to `main`, or manual dispatch. A feature-branch push alone does not run CI.
-- Typecheck, Vitest, production dependency audit and build have **not** been executed for `429b407`. The new UI integration is therefore not yet verified by CI.
+- Typecheck, Vitest, production dependency audit and build have **not** been executed for `429b407` and the following docs-only commit. The new UI integration is therefore not yet verified by CI.
 - There is no lint script in `package.json`.
 - Remote D1 read/query capability and the active Cloudflare Workers plan are not available through the current connection.
 
 ## Release and operational blockers
 
 1. Review and run typecheck, tests, production dependency audit and build on the exact feature head before integration.
-2. Reconcile the 26-ahead / 7-behind divergence with `main` in a separate reviewed operation; do not merge directly.
+2. Reconcile the feature branch's seven-commit `main` gap in a separate reviewed operation; do not merge directly.
 3. Review migration 0023 against the actual remote D1 schema, then obtain explicit approval before any remote migration.
 4. Provision `ADMIN_BOOTSTRAP_TOKEN` only through Cloudflare Worker Secret configuration after deployment approval. No real administrator credential has been created.
 5. PBKDF2 v2 is currently configured for 100,000 iterations. OWASP recommends 600,000 iterations for PBKDF2-HMAC-SHA256; benchmark the actual Workers plan and CPU budget before selecting a production work factor. Treat the current setting as a release blocker, not a completed security decision.
