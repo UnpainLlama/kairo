@@ -50,11 +50,9 @@ export function buildAdminPasswordSql(userId, username, passwordHash) {
     'INSERT INTO user_credentials (user_id,password_hash,password_changed_at,must_change_password)',
     `SELECT id,${hash},CURRENT_TIMESTAMP,0 FROM user_profiles WHERE id=${id} AND role='admin' AND account_status='active' AND username=${name}`,
     'ON CONFLICT(user_id) DO UPDATE SET password_hash=excluded.password_hash, password_changed_at=CURRENT_TIMESTAMP, must_change_password=0;',
-    `UPDATE app_security_state SET admin_bootstrap_completed_at=COALESCE(admin_bootstrap_completed_at,CAST(strftime('%s','now') AS INTEGER)*1000) WHERE singleton_id=1 AND EXISTS (SELECT 1 FROM user_profiles WHERE id=${id} AND role='admin' AND account_status='active' AND username=${name}) AND EXISTS (SELECT 1 FROM user_credentials WHERE user_id=${id});`,
     'COMMIT;',
     `SELECT id,username,role,account_status FROM user_profiles WHERE id=${id};`,
     `SELECT user_id,must_change_password,password_changed_at FROM user_credentials WHERE user_id=${id};`,
-    `SELECT id,admin_bootstrap_completed_at FROM app_security_state WHERE singleton_id=1;`,
     `SELECT COUNT(*) AS remaining_sessions FROM sessions WHERE user_id=${id};`,
   ].join('\n');
 }

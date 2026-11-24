@@ -45,7 +45,7 @@ Account ownership is always derived from the validated server-side Kairo session
 - There is no public administrator setup page, bootstrap secret or bootstrap API.
 - For an existing active administrator profile, use `scripts/set-admin-password.mjs --user-id <profile-id> --username <new-username>`. The script reads the password through a hidden terminal prompt and prints SQL containing a salted hash; it does not connect to or execute against D1.
 - Review and apply that SQL only against the intended database through the separately approved operator process. It changes the existing profile's username, writes its password credential and revokes that administrator's existing sessions.
-- A new/empty database without an administrator profile requires a separately reviewed database-provisioning operation; the application intentionally does not offer a first-admin web setup flow.
+- A new/empty database without an administrator profile requires a separately reviewed database-provisioning operation; the application intentionally does not offer a first-admin web setup flow. The legacy `app_security_state` row remains part of migration/readiness compatibility, but the recovery utility no longer writes its former bootstrap-completion marker.
 - No real administrator credential or remote D1 operation is performed as part of this source change.
 
 ## Standard-account administration
