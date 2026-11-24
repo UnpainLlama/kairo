@@ -29,8 +29,8 @@ const deps = () => ({ cache: new MemoryCache(), breaker: new CircuitBreaker(), t
 describe('enrichFromProviders', () => {
   it('looks up by known id first, then serves repeat requests from cache', async () => {
     const d = deps();
-    const a = fake('anilist', {});
-    const withId = { ...base, knownIds: { anilist: '1535' } };
+    const a = fake('fixture', {});
+    const withId = { ...base, knownIds: { fixture: '1535' } };
     const first = await enrichFromProviders(withId, [a.p], d);
     const second = await enrichFromProviders(withId, [a.p], d);
     expect(first.outcomes[0]).toMatchObject({ state: 'ok', matchedBy: 'id' });
@@ -38,45 +38,45 @@ describe('enrichFromProviders', () => {
     expect(a.calls).toEqual({ byId: 1, search: 0 });
   });
   it('searches by title when no id is known, accepts a confident match and reports the discovered id', async () => {
-    const a = fake('anilist', {});
+    const a = fake('fixture', {});
     const r = await enrichFromProviders(base, [a.p], deps());
     expect(r.outcomes[0]).toMatchObject({ state: 'ok', matchedBy: 'title' });
-    expect(r.discovered).toEqual([{ provider: 'anilist', externalId: '1535', confidence: 1 }]);
+    expect(r.discovered).toEqual([{ provider: 'fixture', externalId: '1535', confidence: 1 }]);
   });
   it('refuses a weak title-only match', async () => {
-    const a = fake('anilist', { search: async () => [result('anilist', { ids: { anilist: '99' }, year: null, format: null, episodeCount: null, title: 'Death Note' })] });
+    const a = fake('fixture', { search: async () => [result('fixture', { ids: { fixture: '99' }, year: null, format: null, episodeCount: null, title: 'Death Note' })] });
     const r = await enrichFromProviders({ ...base, knownIds: {}, year: null, format: null, episodeCount: null }, [a.p], deps());
     expect(r.outcomes[0]).toMatchObject({ state: 'not_found', reason: 'no_confident_match' });
     expect(r.results).toEqual([]);
   });
   it('keeps working when one provider fails: the other still contributes and the failure is reported', async () => {
     const bad = fake('kitsu', { byId: async () => { throw new ProviderError('unavailable', 'down'); } });
-    const good = fake('anilist', {});
-    const r = await enrichFromProviders({ ...base, knownIds: { kitsu: '1', anilist: '2' } }, [bad.p, good.p], deps());
-    expect(r.outcomes.map((o) => `${o.provider}:${o.state}`)).toEqual(['kitsu:failed', 'anilist:ok']);
-    expect(r.results.map((x) => x.provider)).toEqual(['anilist']);
+    const good = fake('fixture', {});
+    const r = await enrichFromProviders({ ...base, knownIds: { kitsu: '1', fixture: '2' } }, [bad.p, good.p], deps());
+    expect(r.outcomes.map((o) => `${o.provider}:${o.state}`)).toEqual(['kitsu:failed', 'fixture:ok']);
+    expect(r.results.map((x) => x.provider)).toEqual(['fixture']);
   });
   it('opens the circuit after a 429 and skips that provider without calling it', async () => {
-    const limited = fake('anilist', { byId: async () => { throw new ProviderError('rate_limited', 'slow down', 30); } });
+    const limited = fake('fixture', { byId: async () => { throw new ProviderError('rate_limited', 'slow down', 30); } });
     const d = deps();
-    const withId = { ...base, knownIds: { anilist: '1' } };
+    const withId = { ...base, knownIds: { fixture: '1' } };
     await enrichFromProviders(withId, [limited.p], d);
     const again = await enrichFromProviders(withId, [limited.p], d);
     expect(again.outcomes[0]).toMatchObject({ state: 'skipped', reason: 'circuit_open' });
     expect(limited.calls.byId).toBe(1);
   });
   it('caches not-found so a missing id is not re-requested', async () => {
-    const nf = fake('anilist', { byId: async () => { throw new ProviderError('not_found', 'none'); } });
+    const nf = fake('fixture', { byId: async () => { throw new ProviderError('not_found', 'none'); } });
     const d = deps();
-    const withId = { ...base, knownIds: { anilist: '404' } };
+    const withId = { ...base, knownIds: { fixture: '404' } };
     await enrichFromProviders(withId, [nf.p], d);
     const again = await enrichFromProviders(withId, [nf.p], d);
     expect(again.outcomes[0].state).toBe('not_found');
     expect(nf.calls.byId).toBe(1);
   });
   it('times out a hung provider instead of hanging the request', async () => {
-    const hang = fake('anilist', { byId: () => new Promise(() => {}) });
-    const r = await enrichFromProviders({ ...base, knownIds: { anilist: '1' } }, [hang.p], { ...deps(), timeoutMs: 20 });
+    const hang = fake('fixture', { byId: () => new Promise(() => {}) });
+    const r = await enrichFromProviders({ ...base, knownIds: { fixture: '1' } }, [hang.p], { ...deps(), timeoutMs: 20 });
     expect(r.outcomes[0]).toMatchObject({ state: 'failed', reason: 'unavailable' });
   });
   it('represents the stored row like any provider answer', () => {

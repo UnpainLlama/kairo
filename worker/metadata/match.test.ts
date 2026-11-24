@@ -5,7 +5,7 @@ const s = (o: Partial<MatchSubject>): MatchSubject => ({ ids: {}, titles: [], ye
 
 describe('scoreMatch', () => {
   it('treats a shared external id as certain, and a conflicting id for the same provider as certainly different', () => {
-    expect(scoreMatch(s({ ids: { mal: '1' } }), s({ ids: { mal: '1', anilist: '9' } }))).toBe(1);
+    expect(scoreMatch(s({ ids: { mal: '1' } }), s({ ids: { mal: '1', kitsu: '9' } }))).toBe(1);
     expect(scoreMatch(s({ ids: { mal: '1' }, titles: ['Same'] }), s({ ids: { mal: '2' }, titles: ['Same'] }))).toBe(0);
   });
   it('accepts exact title + same year, and rejects title alone', () => {
