@@ -17,7 +17,7 @@ embed requires no Kairo Worker secret. It does not replace the TMDB catalogue AP
 
 ## Anime metadata providers
 
-KAIRO uses AniList as its first-choice live Anime catalogue and discovery source. MAL is the secondary compatibility provider; HiAnime remains optional for legacy HiAnime IDs. Jikan remains separate for episode discovery and is not in the default catalogue order. See [LIVE_CATALOGUE.md](LIVE_CATALOGUE.md) for the active priority, seasonal/discovery behavior and provider setup.
+KAIRO uses **AniList as its sole live Anime catalogue and discovery provider**. Its existing adult-title exclusion remains in place. The MAL, Jikan and HiAnime catalogue adapters have been removed. HiAnime and Jikan remain separate episode-discovery/playback providers only. AniList's `idMal` value is retained internally as an identifier bridge for Jikan; Kairo does not call the MAL API and no `MAL_CLIENT_ID` secret is required. See [LIVE_CATALOGUE.md](LIVE_CATALOGUE.md) for the active query filters and provider boundaries.
 
 Movie playback is intentionally separate and remains CineSrc-only. The Anime route uses its own `KairoMediaPlayer` and `AnimeEmbedPlayer`; it never mounts the Movie CineSrc iframe.
 
@@ -39,6 +39,8 @@ The catalogue providers remain responsible for title identity and catalogue reco
 Not verified, and so not used: Kitsu's own terms and rate limits; Kitsu/AniList field names against live responses (see section 7). TMDB API authentication, search and image-path documentation were checked, but KAIRO's live API key and title-match quality still need to be validated after deployment.
 
 ## 3. Architecture
+
+The following metadata-enrichment architecture describes the separate legacy D1 metadata route. It is not the live Anime catalogue path used by Home, Trending, Seasonal, Discover or search; those live routes are served exclusively by AniList as described in [LIVE_CATALOGUE.md](LIVE_CATALOGUE.md).
 
 ```
 route /api/v1/anime/:id/metadata
@@ -101,13 +103,16 @@ Static priority per field, highest first: **anilist, kitsu, manami**, with unlis
 
 ## 5. Configuration steps (owner)
 
-**Which providers are on.** `wrangler.jsonc` > `vars` > `METADATA_PROVIDERS` is a comma-separated list. It ships as `"anilist"`. Empty means no live providers (the site still works from the stored catalogue). To enable Kitsu later, first read https://kitsu.io/terms and confirm its limits, then set `"anilist,kitsu"`.
+**Active catalogue.** The live Anime catalogue is hard-wired to AniList and cannot be switched to MAL, Jikan or HiAnime through a Worker variable. The separate legacy D1 metadata-enrichment route uses `METADATA_PROVIDERS`, which ships as `"anilist"`; Kitsu is off and is not part of the live catalogue.
 
 **Cache.** The KV namespace and its `METADATA_CACHE` binding are declared per environment in `wrangler.jsonc`; creating it is step 2b of docs/DEPLOYMENT.md. Without it the Worker still runs, using the Cache API (no effect on workers.dev) or per-isolate memory.
 
 AniList and Kitsu public reads need no API key. TMDB requires an API Read Access Token stored as the Worker secret `TMDB_ACCESS_TOKEN`. Set it with `npx wrangler secret put TMDB_ACCESS_TOKEN --env staging`; do not add it to `wrangler.jsonc` or commit it. For local development, put `TMDB_ACCESS_TOKEN="..."` in gitignored `.dev.vars`. Without the token, Kairo keeps the catalogue's existing artwork and metadata.
 
 ## 6. Adding a provider later
+
+Do not add another live Anime catalogue provider without an explicit owner request; the catalogue is intentionally AniList-only.
+
 1. Write `worker/metadata/providers/<name>.ts` that returns a `MetadataProvider` (a `fetchById` and a `search` returning `NormalizedMetadata`, plus its `Attribution` and `termsVerified`).
 2. Add one line to `FACTORIES` (and `ATTRIBUTIONS`) in `worker/metadata/service.ts`.
 3. Add it to `DEFAULT_PRIORITY` in `merge.ts` if it should outrank the unlisted default.

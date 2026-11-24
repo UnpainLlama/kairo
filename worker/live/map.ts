@@ -1,6 +1,6 @@
 import { uniqueStrings } from '../metadata/normalize';
 import type { NormalizedMetadata } from '../metadata/types';
-import { makeId, makeSlug, type RefKind } from './ids';
+import { makeId, makeSlug } from './ids';
 import type { LiveTitle, SourceId } from './types';
 
 const num = (v: string | undefined): number | null => {
@@ -10,7 +10,6 @@ const num = (v: string | undefined): number | null => {
 
 /** Normalised provider metadata -> the card and record KAIRO serves. */
 export function toLiveTitle(meta: NormalizedMetadata, provider: SourceId): LiveTitle {
-  const kind: RefKind = provider === 'anilist' ? 'a' : provider === 'hianime' ? 'h' : 'm';
   const own = Number(meta.externalId);
   const title = meta.title ?? meta.titleRomaji ?? meta.titleNative ?? 'Untitled';
   const altTitles = uniqueStrings([meta.titleEnglish, meta.titleRomaji, meta.titleNative, ...meta.synonyms])
@@ -18,8 +17,8 @@ export function toLiveTitle(meta: NormalizedMetadata, provider: SourceId): LiveT
     .slice(0, 12);
   return {
     card: {
-      id: makeId(kind, own),
-      slug: makeSlug(title, kind, own),
+      id: makeId('a', own),
+      slug: makeSlug(title, 'a', own),
       title,
       synopsis: meta.synopsis ?? '',
       posterUrl: meta.posterUrl,
@@ -33,8 +32,9 @@ export function toLiveTitle(meta: NormalizedMetadata, provider: SourceId): LiveT
       genres: meta.genres,
     },
     altTitles,
-    malId: provider === 'jikan' || provider === 'mal' ? own : num(meta.ids.mal),
-    anilistId: provider === 'anilist' ? own : num(meta.ids.anilist),
+    // AniList's idMal is retained only as an identifier bridge for Jikan episode discovery.
+    malId: num(meta.ids.mal),
+    anilistId: own,
     url: meta.url,
     provider,
   };

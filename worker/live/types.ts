@@ -3,7 +3,7 @@ import type { Attribution } from '../metadata/types';
 import type { Ref } from './ids';
 import type { SortKey } from '../lib/validation';
 
-export type SourceId = 'mal' | 'anilist' | 'jikan' | 'hianime';
+export type SourceId = 'anilist';
 export type ListKind = 'featured' | 'trending' | 'latest';
 
 export type Card = {
@@ -62,14 +62,10 @@ export type LiveEnv = {
     };
   };
   APP_ENV?: string;
-  /** "live" (default) serves the configured live providers; "db" keeps the original D1 routes. */
+  /** "live" (default) serves the fixed AniList-only catalogue; "db" keeps the original D1 routes. */
   CATALOG_SOURCE?: string;
-  /** Catalogue-provider priority, comma-separated. */
-  LIVE_PROVIDERS?: string;
   /** Independent episode-provider priority. Default "jikan". */
   EPISODE_PROVIDERS?: string;
-  /** Registered MyAnimeList API Client ID; configure as a Worker secret, never as a Vite variable. */
-  MAL_CLIENT_ID?: string;
   /** HiAnime mirror base URL; must be one of the adapter's fixed HTTPS allowlist. */
   HIANIME_BASE_URL?: string;
   /** Comma-separated exact HTTPS playback hosts approved for provider-returned URLs. */

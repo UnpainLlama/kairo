@@ -25,7 +25,6 @@
     "APP_BASE_URL": "http://localhost:5173",
     "METADATA_PROVIDERS": "anilist",
     "CATALOG_SOURCE": "live",
-    "LIVE_PROVIDERS": "anilist,mal,hianime",
     "EPISODE_PROVIDERS": "jikan",
     "HIANIME_BASE_URL": "https://hianimez.to",
     "HIANIME_PLAYBACK_ALLOWED_HOSTS": "",
@@ -84,7 +83,6 @@
         "HIANIME_BASE_URL": "https://hianime.at",
         "HIANIME_PLAYBACK_ALLOWED_HOSTS": "zokoanime.video,megaplay.buzz,hls.dramahot.top,hls1.drama1.cfd,mysubsplay.com,emeralddrift.world,hianime.at",
         "ZOKOANIME_EMBED_ENABLED": "false",
-        "LIVE_PROVIDERS": "anilist,mal,hianime",
         "METADATA_PROVIDERS": "anilist",
         "MOVIES_TMDB_ENABLED": "true",
         "MOVIES_TMDB_TERMS_APPROVED": "true",
@@ -120,7 +118,6 @@
         "ZOKOANIME_EMBED_ENABLED": "false",
         "METADATA_PROVIDERS": "anilist",
         "CATALOG_SOURCE": "live",
-        "LIVE_PROVIDERS": "anilist,jikan",
         "MOVIES_TMDB_ENABLED": "false",
         "MOVIES_TMDB_TERMS_APPROVED": "false",
         "MOVIES_INGESTION_ENABLED": "false"

@@ -253,7 +253,7 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
         return okBody(req, {
           title: title.card.title, synopsis: title.card.synopsis || null, rating: title.card.rating, episodeCount: title.card.episodeCount,
           genres: title.card.genres, posterUrl: title.card.posterUrl, bannerUrl: title.card.bannerUrl,
-          ids: { ...(title.anilistId ? { anilist: String(title.anilistId) } : {}), ...(title.malId ? { mal: String(title.malId) } : {}) },
+          ids: { ...(title.anilistId ? { anilist: String(title.anilistId) } : {}) },
           sources: [...(src ? [{ providerId: src.id, displayName: src.attribution.displayName, text: src.attribution.text, url: title.url ?? src.attribution.url, license: src.attribution.license }] : []), ...(tmdbArtworkUsed ? [{ providerId: 'tmdb', displayName: 'TMDB', text: 'Metadata and artwork from The Movie Database. This product uses the TMDB API but is not endorsed or certified by TMDB.', url: 'https://www.themoviedb.org', license: null }] : [])],
           providers: [...providers, ...(tmdbArtworkUsed ? [{ provider: 'tmdb', state: 'ok' }] : [])],
         }, { degraded: out.degraded, basis: 'live', ...sourceMeta(out), ...artworkMeta(deps) });
@@ -263,9 +263,8 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
     async providers(req) {
       const deps = depsFor(req);
       return okBody(req, {
-        items: deps.sources.map((s, i) => ({ id: s.id, displayName: s.displayName, enabled: s.id !== 'mal' || Boolean(req.env.MAL_CLIENT_ID?.trim()), priority: i + 1, maxPageSize: s.maxLimit, capabilities: { list: true, search: true, details: true, episodes: false }, attribution: s.attribution })),
+        items: deps.sources.map((s, i) => ({ id: s.id, displayName: s.displayName, enabled: true, priority: i + 1, maxPageSize: s.maxLimit, capabilities: { list: true, search: true, details: true, episodes: false }, attribution: s.attribution })),
         episodeProviders: deps.episodeProviders.map((p, i) => ({ id: p.id, displayName: p.displayName, enabled: true, priority: i + 1, termsVerified: p.termsVerified, capabilities: { episodes: true, servers: typeof p.listServers === 'function' } })),
-        unknownConfigured: deps.sources.some((s) => s.id === 'mal') && !req.env.MAL_CLIENT_ID?.trim() ? ['mal:client_id_missing'] : [],
         unknownEpisodeProviders: deps.unknownEpisodeProviders,
         artworkProvider: { id: 'tmdb', displayName: 'The Movie Database', enabled: Boolean(deps.artworkProvider) },
       });

@@ -84,7 +84,7 @@ export function createAniListSource(fetchImpl: FetchLike, now: () => string = ()
   }
 
   const byRefQuery = (ref: Ref, body: string) => ({
-    query: `query ($id: Int) { Media(${ref.kind === 'a' ? 'id' : 'idMal'}: $id, type: ANIME) { ${body} } }`,
+    query: `query ($id: Int) { Media(${ref.kind === 'a' ? 'id' : 'idMal'}: $id, type: ANIME, isAdult: false) { ${body} } }`,
     variables: { id: ref.id } as Vars,
   });
 

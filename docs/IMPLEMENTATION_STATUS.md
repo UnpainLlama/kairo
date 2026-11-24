@@ -31,8 +31,8 @@
 - The Anime home page includes a featured-title carousel, Trending/Popular/Top ranking tabs, Top Airing and Upcoming side panels, Latest updates and the shared Continue watching rail.
 - Featured carousel supports timed rotation, previous/next controls, keyboard and touch navigation, hidden-tab pause and reduced-motion behavior.
 - Miruro-inspired Anime navigation and styling are scoped to Anime routes; Movies and account pages retain their own interface.
-- AniList remains the first-choice live catalogue provider. No Miruro API or direct AniList GraphQL client is introduced.
-- Provider-backed Anime library references support AniList, MAL and HiAnime alongside legacy D1-backed rows. Display metadata is resolved through Kairo title endpoints; browser-supplied title/poster/synopsis metadata is not stored as catalogue truth.
+- AniList is the sole live catalogue provider; MAL, Jikan and HiAnime no longer supply catalogue cards or fallback results. No Miruro API or direct AniList GraphQL client is introduced.
+- New Anime library references use AniList IDs. Older MAL-ID aliases remain resolvable through AniList's `idMal` lookup solely for compatibility and Jikan episode discovery; browser-supplied title/poster/synopsis metadata is not stored as catalogue truth.
 - Live catalogue/episode-provider checks are intentionally skipped for this pass at the owner's request. Automated provider tests use controlled fixtures; live responses are not verified.
 
 ## Phase 3 — Identity, profile, shared account and workspaces

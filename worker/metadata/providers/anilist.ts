@@ -9,8 +9,8 @@ import { asString, isObject, providerFetch, readJson, USER_AGENT, type FetchLike
 const ENDPOINT = 'https://graphql.anilist.co';
 const FIELDS = `id idMal siteUrl title { romaji english native } synonyms description(asHtml: false) format status episodes season seasonYear
   startDate { year } genres averageScore coverImage { extraLarge large } bannerImage`;
-const BY_ID = `query ($id: Int) { Media(id: $id, type: ANIME) { ${FIELDS} } }`;
-const SEARCH = `query ($search: String, $perPage: Int) { Page(page: 1, perPage: $perPage) { media(search: $search, type: ANIME, sort: SEARCH_MATCH) { ${FIELDS} } } }`;
+const BY_ID = `query ($id: Int) { Media(id: $id, type: ANIME, isAdult: false) { ${FIELDS} } }`;
+const SEARCH = `query ($search: String, $perPage: Int) { Page(page: 1, perPage: $perPage) { media(search: $search, type: ANIME, isAdult: false, sort: SEARCH_MATCH) { ${FIELDS} } } }`;
 
 export const ANILIST_ATTRIBUTION: Attribution = {
   providerId: 'anilist',

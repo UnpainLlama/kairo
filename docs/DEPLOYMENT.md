@@ -132,7 +132,7 @@ Playback position is written locally at most once per second and synced to the s
 - Merge/review the current `youtube` promotion PR, then deploy the promoted commit to staging. The final `/api/ready` should report both `database: "ok"` and `schema: "ok"`.
 - Confirm the staging Worker secrets `GOOGLE_CLIENT_SECRET` and `YOUTUBE_TOKEN_ENCRYPTION_KEY` exist. Cloudflare does not expose secret values for read-back; verify by running a controlled administrator-only YouTube connection test after deployment.
 - Confirm the exact YouTube and Google callback URLs are registered in the Google OAuth client.
-- Validate provider endpoints and Jikan/MyAnimeList terms as described in `docs/LIVE_CATALOGUE.md`. The staging deploy's `cache: "kv"` proves the binding is present, not that every KV read/write path has been exercised.
+- Validate the AniList catalogue endpoint and separately configured Jikan/HiAnime episode-provider terms as described in `docs/LIVE_CATALOGUE.md`. No MAL catalogue credential is required. The staging deploy's `cache: "kv"` proves the binding is present, not that every KV read/write path has been exercised.
 - Migration `0007_youtube_oauth.sql` remains pending on staging until a reviewed staging deployment applies it. Production remains blocked and untouched.
 
 ## 8. Production (blocked)

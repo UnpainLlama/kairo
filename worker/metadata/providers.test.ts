@@ -26,9 +26,11 @@ describe('AniList adapter', () => {
   });
   it('fetches by id with a POST to the allowlisted host only', async () => {
     let seen: { url: string; method?: string } | null = null;
-    const p = createAniListProvider(async (url, init) => { seen = { url, method: init?.method }; return json({ data: { Media: aniMedia } }); }, () => NOW);
+    let query = '';
+    const p = createAniListProvider(async (url, init) => { seen = { url, method: init?.method }; query = JSON.parse(String(init?.body)).query; return json({ data: { Media: aniMedia } }); }, () => NOW);
     expect((await p.fetchById('1535', signal)).title).toBe('Death Note');
     expect(seen).toEqual({ url: 'https://graphql.anilist.co', method: 'POST' });
+    expect(query).toContain('isAdult: false');
   });
   it('maps 429 to rate_limited with Retry-After, 404 to not_found, 5xx and network errors to unavailable', async () => {
     const mk = (res: () => Promise<Response>) => createAniListProvider(res, () => NOW);
@@ -38,9 +40,11 @@ describe('AniList adapter', () => {
     await expect(mk(async () => { throw new Error('net'); }).fetchById('1', signal)).rejects.toMatchObject({ kind: 'unavailable' });
     await expect(mk(async () => new Response('<html>', { status: 200 })).fetchById('1', signal)).rejects.toMatchObject({ kind: 'invalid_response' });
   });
-  it('skips malformed search results instead of failing the whole search', async () => {
-    const p = createAniListProvider(async () => json({ data: { Page: { media: [aniMedia, { nope: true }] } } }), () => NOW);
+  it('skips malformed search results for AniList search', async () => {
+    let query = '';
+    const p = createAniListProvider(async (_url, init) => { query = JSON.parse(String(init?.body)).query; return json({ data: { Page: { media: [aniMedia, { nope: true }] } } }); }, () => NOW);
     expect(await p.search('death note', signal)).toHaveLength(1);
+    expect(query).toContain('isAdult: false');
   });
   it('rejects non-numeric ids without calling the network', async () => {
     const p = createAniListProvider(async () => { throw new Error('should not be called'); }, () => NOW);

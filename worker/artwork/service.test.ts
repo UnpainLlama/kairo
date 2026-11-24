@@ -6,11 +6,11 @@ import type { ArtworkProvider } from './tmdb';
 
 const title: LiveTitle = {
   card: {
-    id: 'h8', slug: 'attack-on-titan-8-h8', title: 'Attack on Titan', synopsis: '',
-    posterUrl: 'https://hianime.test/poster.jpg', bannerUrl: null, format: 'series', releaseYear: 2013,
+    id: 'a8', slug: 'attack-on-titan-a8', title: 'Attack on Titan', synopsis: '',
+    posterUrl: 'https://s4.anilist.co/poster.jpg', bannerUrl: null, format: 'series', releaseYear: 2013,
     season: 'spring', status: 'finished', rating: null, episodeCount: 25, genres: ['Action'],
   },
-  altTitles: ['Shingeki no Kyojin'], malId: null, anilistId: null, url: null, provider: 'hianime',
+  altTitles: ['Shingeki no Kyojin'], malId: null, anilistId: null, url: null, provider: 'anilist',
 };
 
 const artwork = {
@@ -24,8 +24,8 @@ describe('TMDB artwork enrichment service', () => {
     const provider: ArtworkProvider = { id: 'tmdb', lookup: vi.fn(async () => artwork) };
     const result = await enrichArtwork([title], provider, new MemoryCache());
     expect(result[0]).toMatchObject({
-      card: { id: 'h8', slug: title.card.slug, posterUrl: artwork.posterUrl, bannerUrl: artwork.bannerUrl, title: title.card.title, format: 'series' },
-      provider: 'hianime', altTitles: title.altTitles,
+      card: { id: 'a8', slug: title.card.slug, posterUrl: artwork.posterUrl, bannerUrl: artwork.bannerUrl, title: title.card.title, format: 'series' },
+      provider: 'anilist', altTitles: title.altTitles,
     });
   });
 
