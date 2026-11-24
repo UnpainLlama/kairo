@@ -1,7 +1,7 @@
 import { BrowserRouter, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import LoginPage from './components/LoginPage';
 import PasswordChangePage from './components/PasswordChangePage';
-import KairoApp from './components/KairoApp';
+import PreMiruroApp from './components/PreMiruroApp';
 import { AccountProvider, useAccount, type AccountUser } from './lib/AccountProvider';
 import { AuthApiError, authRequest } from './lib/authClient';
 
@@ -17,6 +17,14 @@ function AppContent() {
   const account = useAccount();
   const location = useLocation();
   const navigate = useNavigate();
+
+  async function login(username: string, password: string) {
+    await account.login(username, password);
+    const continuation = new URLSearchParams(location.search).get('continue');
+    const destination = continuation === 'admin' ? '/admin' :
+      continuation && continuation.startsWith('/') && !continuation.startsWith('//') ? continuation : '/';
+    navigate(destination, { replace: true });
+  }
 
   async function changePassword(currentPassword: string, newPassword: string) {
     const result = await authRequest<{ passwordChanged: boolean }>('/me/password', {
@@ -55,14 +63,17 @@ function AppContent() {
     return <AccountErrorPage message={account.error ?? 'The account could not be loaded.'} onRetry={() => { void account.refresh().catch(() => undefined); }} />;
   }
   if (account.status === 'signed-out' || !account.user) {
-    if (location.pathname !== '/login') return <Navigate to='/login' replace />;
-    return <LoginPage onLogin={account.login} />;
+    if (location.pathname !== '/login') {
+      const continuation = location.pathname + location.search;
+      return <Navigate to={'/login?continue=' + encodeURIComponent(continuation)} replace />;
+    }
+    return <LoginPage onLogin={login} />;
   }
   if (account.user.mustChangePassword) {
     return <PasswordChangePage username={account.user.username} onChangePassword={changePassword} onLogout={account.logout} />;
   }
   if (location.pathname === '/login' || location.pathname === '/setup/admin') return <Navigate to='/' replace />;
-  return <KairoApp />;
+  return <PreMiruroApp onSignOut={account.logout} />;
 }
 
 export default function App() {
