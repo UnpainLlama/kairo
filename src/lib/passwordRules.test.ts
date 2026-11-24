@@ -16,6 +16,6 @@ describe('client password rules', () => {
 
   it('does not allow a password identical to the username, ignoring case', () => {
     expect(isPasswordAllowed('Admin.User', 'admin.user')).toBe(false);
-    expect(isPasswordAllowed('a different long passphrase', 'admin.user')).toBe(true);
+    expect(isPasswordAllowed('a different and much longer passphrase', 'admin.user')).toBe(true);
   });
 });
