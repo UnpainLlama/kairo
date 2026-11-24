@@ -5,8 +5,8 @@
 ## Branch and operational boundary
 
 - Feature branch: `rebuild/username-password-auth`.
-- Latest verified functional checkpoint: [`fce3ad6e042d953860163e5b9ded701985d87d11`](https://github.com/UnpainLlama/kairo/commit/fce3ad6e042d953860163e5b9ded701985d87d11).
-- GitHub Actions run [45400747618](https://github.com/UnpainLlama/kairo/actions/runs/45400747618) passed typecheck, tests and production build on that exact commit. Cloudflare deployment was skipped as expected for a feature-branch push.
+- Latest branch head: [`d07ac0766e4e5797005444e521c1e6860dac6532`](https://github.com/UnpainLlama/kairo/commit/d07ac0766e4e5797005444e521c1e6860dac6532). The latest functional changes are in [`fce3ad6e042d953860163e5b9ded701985d87d11`](https://github.com/UnpainLlama/kairo/commit/fce3ad6e042d953860163e5b9ded701985d87d11).
+- GitHub Actions run [45401012386](https://github.com/UnpainLlama/kairo/actions/runs/45401012386) passed typecheck, tests and production build on the latest branch head. The functional checkpoint also passed in run [45400747618](https://github.com/UnpainLlama/kairo/actions/runs/45400747618). Cloudflare deployment was skipped for both feature-branch runs.
 - No merge has been performed; no PR has been opened as part of this work.
 - No Cloudflare configuration, Worker secret, Access policy, remote D1 migration/query, deployment, or real administrator credential operation has been performed.
 
@@ -37,7 +37,7 @@
 - Frontend screens include profile, Anime/Movies library, watch history, account preferences and restricted administrator management.
 - Worker routes cover profile read/update, opt-in public profiles, account preferences, JSON data export and password-confirmed standard-account deletion.
 - Account deletion retains a minimal tombstone, removes account-owned rows (including provider-backed Anime references) and revokes sessions. Administrator self-deletion remains blocked.
-- The YouTube workspace is restored under `/youtube/*) and is accessible from the main navigation only to administrator accounts. It has separate Home/feed, Search, Channels, Watch, Watch Later and History screens; the workspace is lazy-loaded and visually scoped away from Anime/Movies.
+- The YouTube workspace is restored under `/youtube/*` and is accessible from the main navigation only to administrator accounts. It has separate Home/feed, Search, Channels, Watch, Watch Later and History screens; the workspace is lazy-loaded and visually scoped away from Anime/Movies.
 - YouTube continues to use the existing administrator-only Worker namespaces. Regression tests verify that a standard signed-in account receives 404 for both `/api/v1/youtube/history` and `/api/v1/auth/youtube/status`, while an administrator session can access both.
 - YouTube subscriptions, Watch Later and history remain scoped to the same administrator Kairo user ID. No separate user identity or account system was added.
 
@@ -63,7 +63,7 @@
 1. Perform the browser/manual regression pass for authentication, admin access, account isolation, library ownership, public-profile privacy, Anime/Movie playback, YouTube feed/search/watch/history, keyboard interaction and mobile layout.
 2. Verify live AniList/MAL/HiAnime data, episode-provider combinations, YouTube Data API configuration/quota, Google OAuth connectivity and the actual YouTube iframe player.
 3. Review additive migrations 0024 and 0025 and the PBKDF2 work factor against Cloudflare Worker CPU constraints before any remote application/deployment.
-4. Reconcile branch divergence in a separate reviewed step. At this snapshot, `main` is `e29a4b1bcec54ffec27c2aed80c683cd670860b8`; the feature branch is 52 commits ahead and 7 behind, with merge base `08b15184a659a7346d4659ffb214a5a62dbd7b15`. Re-check the live comparison immediately before preparing a PR/merge.
+4. Reconcile branch divergence in a separate reviewed step. At this snapshot, `main` is `e29a4b1bcec54ffec27c2aed80c683cd670860b8`; the feature branch is 53 commits ahead and 7 behind, with merge base `08b15184a659a7346d4659ffb214a5a62dbd7b15`. Re-check the live comparison immediately before preparing a PR/merge.
 5. Do not merge or deploy until those reviews and manual validations are complete.
 
 ## Release and environment boundary
