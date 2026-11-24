@@ -1,22 +1,34 @@
 # Current implementation snapshot — 2026-11-24
 
-> Status for `rebuild/username-password-auth`. This separates implementation present in the branch from verification and remote operations that have not been performed.
+> Status for `rebuild/username-password-auth`. Automated verification is recorded separately from manual browser and remote-environment validation.
 
 ## Branch and operational boundary
 
 - Feature branch: `rebuild/username-password-auth`.
-- Latest implementation checkpoint: [`2fbf7adc079a81d9edf67c6bd5815912fa905d78`](https://github.com/UnpainLlama/kairo/commit/2fbf7adc079a81d9edf67c6bd5815912fa905d78).
-- The feature branch has not been merged; `main` remains untouched. No PR has been opened.
+- Automated verification passed on [`dd218478cbbabd3dcd8ae324ce1643d432d1410b`](https://github.com/UnpainLlama/kairo/commit/dd218478cbbabd3dcd8ae324ce1643d432d1410b), GitHub Actions run [45394157805](https://github.com/UnpainLlama/kairo/actions/runs/45394157805).
+- The verification workflow now runs on pushes to this feature branch. Its Cloudflare deploy job remains restricted to main pushes or explicit manual dispatch; it was skipped for this run.
+- The feature branch has not been merged, no PR has been opened, and `main` has not been modified by this implementation pass.
 - No Cloudflare configuration, Worker secret, Access policy, remote D1 migration/query, deployment or real administrator credential operation has been performed.
+
+## Automated verification — passed
+
+- TypeScript project typecheck: passed.
+- Vitest: **322 tests passed across 43 test files**.
+- Production dependency audit (`npm audit --omit=dev`): zero reported vulnerabilities.
+- Full dependency audit: zero reported vulnerabilities.
+- Worker and client production build: passed under Node 22.23.5 / npm 10.9.9.
+- Wrangler Access configuration validation in the verification job: passed.
+- Build note: Vite reports the main client JavaScript chunk at approximately 943 kB (290 kB gzip), above its 500 kB advisory threshold. It does not fail the build; route/player code splitting can be considered as a follow-up performance improvement.
+- There is no lint script in `package.json`; lint is not marked complete.
 
 ## Phase 2 — Catalogue
 
 - Existing catalogue adapters and Worker routes remain for featured, trending, latest, search, filter browse, genres, title details, episodes, related titles and provider attribution.
 - Frontend catalogue screens cover Discover, Anime browse/seasonal browse, search, Anime details and episode selection.
-- Movies discovery, search and detail pages use the existing TMDB endpoints and preserve the metadata-provider enablement/terms gate.
-- Provider-backed Anime library references now support AniList, MAL and HiAnime, alongside legacy D1-backed rows. The client resolves display metadata through the configured title API; browser-supplied title, poster and synopsis metadata is not written to the catalogue.
+- Movies discovery, search and detail pages use existing TMDB endpoints and preserve the metadata-provider enablement/terms gate.
+- Provider-backed Anime library references support AniList, MAL and HiAnime alongside legacy D1-backed rows. The client resolves display metadata through the configured title API; browser-supplied title, poster and synopsis metadata is not written to the catalogue.
 - Library metadata resolution is incremental: 24 saved provider references are displayed per batch, with at most eight concurrent title lookups.
-- Remaining: verify configured Anime catalogue/episode provider combinations with live responses. This change does not add provider-wide catalogue ingestion.
+- Remaining: verify configured Anime catalogue/episode provider combinations against live responses. The automated provider tests use controlled fixtures; this change does not add provider-wide catalogue ingestion.
 
 ## Phase 3 — Identity, profile and library
 
@@ -25,7 +37,7 @@
 - Worker routes cover profile read/update, opt-in public profiles, account preferences, JSON data export and password-confirmed standard-account deletion.
 - Account deletion retains a minimal tombstone, removes account-owned rows (including provider-backed Anime references) and revokes sessions. Administrator self-deletion remains blocked.
 - Existing profiles without new credentials can be enrolled from the admin console with a one-time temporary password.
-- Additive migration 0024 adds subtitle size; additive migration 0025 adds provider-backed Anime library references. The test migration harness includes both. Neither migration has been applied remotely.
+- Additive migration 0024 adds subtitle size; additive migration 0025 adds provider-backed Anime library references. Both are included in the test migration harness. Neither has been applied remotely.
 
 ## Phase 4 — Player and progress
 
@@ -36,28 +48,26 @@
 - History pause is enforced server-side for new Anime/Movie account progress; administrator-only YouTube progress remains separate.
 - Limitation: an external cross-origin embed without a documented seek API cannot be programmatically resume-restored.
 
-## Phase 5 — Quality
+## Phase 5 — Quality and manual validation
 
-- Focused tests now include profile privacy, preferences, data export/delete and provider-backed Anime library save/list/remove, malformed IDs and legacy D1 slug compatibility. The account-deletion test checks cleanup of provider-reference rows.
-- The new provider-library tests exercise the Worker route through its in-process request helper and SQLite-backed D1 test adapter.
+- Focused route tests cover profile privacy, preferences, account export/deletion, provider-backed Anime save/list/remove, malformed provider IDs, legacy D1 slug compatibility and tombstone cleanup.
+- The provider-library and metadata tests exercise Worker request routing with SQLite-backed D1 and authenticated test sessions.
 - The UI has loading/error/empty states, responsive styles, keyboard search handling, skip-to-content and reduced-motion rules.
-- **Not verified on the latest branch head:** TypeScript typecheck, full Vitest suite, production dependency audit, production build, browser accessibility/keyboard checks or mobile-browser checks.
-- The repository has a `package-lock.json` and the deploy workflow has a verification job, but feature-branch pushes do not trigger it. No GitHub Actions result is reported for this head.
-- There is no lint script in `package.json`; lint is not marked complete.
+- **Still not covered by the automated CI run:** browser-based accessibility/keyboard testing, mobile-browser layout checks, visual review, and staging/production runtime smoke tests.
 
-## Remaining before merge consideration
+## Remaining before merge
 
-1. Run typecheck, the full test suite, production dependency audit and build on the exact feature head; fix every failure.
-2. Complete browser regression checks for admin enrolment/deletion, library ownership, profile privacy, progress ordering, history pause, provider failures, keyboard use and mobile layouts.
-3. Verify live AniList/MAL/HiAnime data and decide how saved titles should display when an upstream provider removes or renames a title.
-4. Re-check branch divergence against current `main`, then prepare a separate reviewed reconciliation. Do not merge or deploy as part of this coding pass.
+1. Perform the browser/manual regression pass for account enrolment/deletion, library ownership, public-profile privacy, playback resume/order, history pause, provider failures, keyboard interaction and mobile layout.
+2. Verify the live AniList/MAL/HiAnime data and playback provider combinations; decide how saved titles should display when an upstream provider removes or renames a title.
+3. Review additive migrations 0024/0025 and the PBKDF2 work factor against Cloudflare Worker CPU constraints before any remote application/deployment.
+4. Re-check the feature branch's merge base and file-level divergence against the current `main` immediately before preparing the merge. Keep reconciliation and merge as a separate reviewed step.
 
-## Release blockers
+## Release and environment boundary
 
+- The passed CI build proves the repository's Worker/client build in the GitHub Actions runner. It does not prove that the current Cloudflare staging/production secrets, D1 databases, Access policies or remote migrations are provisioned correctly.
 - Review and approve migrations 0024 and 0025 before remote D1 application.
-- Reassess the current PBKDF2 work factor (100,000 iterations) against current OWASP guidance and actual Cloudflare Worker CPU limits before production use.
-- Cloudflare Access remains a separately configured outer perimeter; any policy/validator change needs a separate approval.
-- Do not deploy, change edge policies, run remote D1 operations, wipe sessions or create real administrator credentials during this feature rebuild.
+- Cloudflare Access remains a separately configured outer perimeter; any policy/validator change needs separate approval.
+- Do not deploy, change edge policies, run remote D1 operations, wipe sessions or create real administrator credentials during this feature-branch implementation pass.
 
 # Historical implementation status
 
