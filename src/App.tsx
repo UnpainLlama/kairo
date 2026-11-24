@@ -18,6 +18,14 @@ function AppContent() {
   const location = useLocation();
   const navigate = useNavigate();
 
+  async function login(username: string, password: string) {
+    await account.login(username, password);
+    const continuation = new URLSearchParams(location.search).get('continue');
+    const destination = continuation === 'admin' ? '/admin' :
+      continuation && continuation.startsWith('/') && !continuation.startsWith('//') ? continuation : '/';
+    navigate(destination, { replace: true });
+  }
+
   async function changePassword(currentPassword: string, newPassword: string) {
     const result = await authRequest<{ passwordChanged: boolean }>('/me/password', {
       method: 'POST',
@@ -55,8 +63,11 @@ function AppContent() {
     return <AccountErrorPage message={account.error ?? 'The account could not be loaded.'} onRetry={() => { void account.refresh().catch(() => undefined); }} />;
   }
   if (account.status === 'signed-out' || !account.user) {
-    if (location.pathname !== '/login') return <Navigate to='/login' replace />;
-    return <LoginPage onLogin={account.login} />;
+    if (location.pathname !== '/login') {
+      const continuation = location.pathname + location.search;
+      return <Navigate to={'/login?continue=' + encodeURIComponent(continuation)} replace />;
+    }
+    return <LoginPage onLogin={login} />;
   }
   if (account.user.mustChangePassword) {
     return <PasswordChangePage username={account.user.username} onChangePassword={changePassword} onLogout={account.logout} />;
