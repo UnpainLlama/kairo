@@ -62,19 +62,23 @@ describe('password-change form validation', () => {
   });
 
   it('rejects a passphrase equal to the username, ignoring case', () => {
+    const passphrase = 'river mountain silver lantern meadow';
     expect(validatePasswordChange({
       ...base,
-      newPassword: 'ADMIN',
-      confirmation: 'ADMIN',
+      username: passphrase.toUpperCase(),
+      newPassword: passphrase,
+      confirmation: passphrase,
     })?.message).toBe('Your new passphrase must be different from your username.');
   });
 
   it('rejects reusing the temporary password', () => {
+    const passphrase = 'river mountain silver lantern meadow';
     expect(validatePasswordChange({
       ...base,
-      newPassword: 'password',
-      confirmation: 'password',
-    })?.message).toBe('Kairo counted 1 word in the new passphrase. Add 4 more words, separated by spaces.');
+      currentPassword: passphrase,
+      newPassword: passphrase,
+      confirmation: passphrase,
+    })?.message).toBe('Your new passphrase must be different from the temporary password.');
   });
 
   it('enforces the 1,024-byte maximum with a specific diagnostic', () => {
