@@ -95,7 +95,7 @@ export function registerAuthRoutes(app:Hono<any>){
     const currentPassword=typeof value.currentPassword==='string'?value.currentPassword:'';
     const newPassword=value.newPassword;
     if(!isNewPasswordValid(newPassword)||!isPasswordDifferentFromUsername(newPassword,user.username))
-      return fail(c,400,'VALIDATION_ERROR','The new password must be at least 15 characters, no more than 1024 UTF-8 bytes, and must not equal the username.');
+      return fail(c,400,'VALIDATION_ERROR','The new password must contain at least five words, be no more than 1024 UTF-8 bytes, and must not equal the username.');
     if(newPassword===currentPassword)return fail(c,400,'PASSWORD_UNCHANGED','Choose a password different from the current password.');
     try{
       const credential=await c.env.DB.prepare('SELECT password_hash AS passwordHash FROM user_credentials WHERE user_id=? LIMIT 1')
