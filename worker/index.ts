@@ -13,7 +13,7 @@ import { GENRES_SQL, buildBrowseQuery, buildListQuery, buildRelatedQuery, buildS
 import { BASE_RECORD_SQL, INSERT_PROVIDER_ID_SQL, PROVIDER_IDS_SQL } from './repositories/providerIds';
 import { buildRegistry, createCache, resolveUnified, sharedBreaker, toBaseRecord, type BaseRow } from './metadata/service';
 import { createLiveHandlers, isLiveMode, parseBrowse, type LiveHandlers } from './live/handlers';
-import { providerRefFromMappings } from './live/ids';
+import { parseRef, providerRefFromMappings } from './live/ids';
 import type { LiveRequest, LiveResult } from './live/types';
 import { createTmdbMovieProvider } from './movies/providers/tmdb';
 import { createMovieCatalogService } from './movies/service';
@@ -193,6 +193,13 @@ registerYouTubeMediaRoutes(app);
 registerAdminRoutes(app);
 registerHistoryPreferenceRoutes(app);
 registerProfileRoutes(app);
+
+function parseAnimeLibraryIdentifier(raw: string): string | null {
+  const value = raw.trim();
+  return value.length <= 128 && /^[A-Za-z0-9][A-Za-z0-9._:-]*(?:-[A-Za-z0-9][A-Za-z0-9._:-]*)*$/.test(value)
+    ? value
+    : null;
+}
 
 function moviesProviderEnabled(c: AppContext): boolean {
   return c.env.MOVIES_TMDB_ENABLED === 'true' && c.env.MOVIES_TMDB_TERMS_APPROVED === 'true';
@@ -970,7 +977,7 @@ app.post('/api/v1/me/history/sync', async (c) => {
 app.put('/api/v1/me/library/:animeId', async (c) => {
   const user = await getRequestUser(c);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to update your Anime library.');
-  const animeId = parseId(c.req.param('animeId'));
+  const animeId = parseAnimeLibraryIdentifier(c.req.param('animeId'));
   if (!animeId) return fail(c, 400, 'VALIDATION_ERROR', 'The Anime identifier is invalid.');
   let body: unknown;
   try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
@@ -983,19 +990,44 @@ app.put('/api/v1/me/library/:animeId', async (c) => {
     return fail(c, 400, 'VALIDATION_ERROR', 'The Anime library status or favorite flag is invalid.');
   }
   try {
-    const anime = await c.env.DB.prepare('SELECT id FROM anime WHERE id = ? LIMIT 1').bind(animeId).first<{ id: string }>();
-    if (!anime) return fail(c, 404, 'RESOURCE_NOT_FOUND', 'The requested Anime title was not found.');
-    if (status === null && !isFavorite) {
-      await c.env.DB.prepare('DELETE FROM user_library WHERE user_id = ? AND anime_id = ?').bind(user.id, animeId).run();
-      return ok(c, { removed: true, animeId });
+    // Preserve the legacy D1 catalogue path for titles that already have a canonical row.
+    const anime = await c.env.DB.prepare('SELECT id FROM anime WHERE id = ? OR slug = ? LIMIT 1').bind(animeId, animeId).first<{ id: string }>();
+    if (anime) {
+      if (status === null && !isFavorite) {
+        await c.env.DB.prepare('DELETE FROM user_library WHERE user_id = ? AND anime_id = ?').bind(user.id, anime.id).run();
+        return ok(c, { removed: true, animeId: anime.id });
+      }
+      await c.env.DB.prepare(`
+        INSERT INTO user_library (user_id, anime_id, status, is_favorite, added_at, updated_at)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id, anime_id) DO UPDATE SET
+          status=excluded.status, is_favorite=excluded.is_favorite, updated_at=CURRENT_TIMESTAMP
+      `).bind(user.id, anime.id, status ?? 'plan_to_watch', isFavorite ? 1 : 0).run();
+      return ok(c, { saved: true, animeId: anime.id, status: status ?? 'plan_to_watch', isFavorite, source: 'd1' });
     }
+
+    // Live catalogue titles are stored as provider references only. The metadata itself
+    // remains provider-owned and is fetched via the public title route when displayed.
+    const ref = parseRef(animeId);
+    if (!ref) return fail(c, 404, 'RESOURCE_NOT_FOUND', 'The requested Anime title was not found.');
+    const providerId = ref.kind === 'a' ? 'anilist' : ref.kind === 'm' ? 'mal' : 'hianime';
+    const externalId = String(ref.id);
+    if (status === null && !isFavorite) {
+      await c.env.DB.prepare(
+        'DELETE FROM user_anime_library_refs WHERE user_id = ? AND provider_id = ? AND external_id = ?',
+      ).bind(user.id, providerId, externalId).run();
+      return ok(c, { removed: true, animeId, providerId, externalId });
+    }
+    const now = Date.now();
     await c.env.DB.prepare(`
-      INSERT INTO user_library (user_id, anime_id, status, is_favorite, added_at, updated_at)
-      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-      ON CONFLICT(user_id, anime_id) DO UPDATE SET
-        status=excluded.status, is_favorite=excluded.is_favorite, updated_at=CURRENT_TIMESTAMP
-    `).bind(user.id, animeId, status ?? 'plan_to_watch', isFavorite ? 1 : 0).run();
-    return ok(c, { saved: true, animeId, status: status ?? 'plan_to_watch', isFavorite });
+      INSERT INTO user_anime_library_refs
+        (user_id, provider_id, external_id, slug, status, is_favorite, added_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, provider_id, external_id) DO UPDATE SET
+        slug=excluded.slug, status=excluded.status, is_favorite=excluded.is_favorite,
+        updated_at=excluded.updated_at
+    `).bind(user.id, providerId, externalId, animeId, status, isFavorite ? 1 : 0, now, now).run();
+    return ok(c, { saved: true, animeId, providerId, externalId, status, isFavorite, source: 'provider_reference' });
   } catch (error) {
     logError(c, 'anime_library_write_failed', error);
     return fail(c, 503, 'LIBRARY_UNAVAILABLE', 'Could not save this Anime title to your account.');
@@ -1005,11 +1037,22 @@ app.put('/api/v1/me/library/:animeId', async (c) => {
 app.delete('/api/v1/me/library/:animeId', async (c) => {
   const user = await getRequestUser(c);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to update your Anime library.');
-  const animeId = parseId(c.req.param('animeId'));
+  const animeId = parseAnimeLibraryIdentifier(c.req.param('animeId'));
   if (!animeId) return fail(c, 400, 'VALIDATION_ERROR', 'The Anime identifier is invalid.');
   try {
-    await c.env.DB.prepare('DELETE FROM user_library WHERE user_id = ? AND anime_id = ?').bind(user.id, animeId).run();
-    return ok(c, { removed: true, animeId });
+    const anime = await c.env.DB.prepare('SELECT id FROM anime WHERE id = ? LIMIT 1').bind(animeId).first<{ id: string }>();
+    if (anime) {
+      await c.env.DB.prepare('DELETE FROM user_library WHERE user_id = ? AND anime_id = ?').bind(user.id, anime.id).run();
+      return ok(c, { removed: true, animeId: anime.id });
+    }
+    const ref = parseRef(animeId);
+    if (!ref) return fail(c, 404, 'RESOURCE_NOT_FOUND', 'The requested Anime title was not found.');
+    const providerId = ref.kind === 'a' ? 'anilist' : ref.kind === 'm' ? 'mal' : 'hianime';
+    const externalId = String(ref.id);
+    await c.env.DB.prepare(
+      'DELETE FROM user_anime_library_refs WHERE user_id = ? AND provider_id = ? AND external_id = ?',
+    ).bind(user.id, providerId, externalId).run();
+    return ok(c, { removed: true, animeId, providerId, externalId });
   } catch (error) {
     logError(c, 'anime_library_delete_failed', error);
     return fail(c, 503, 'LIBRARY_UNAVAILABLE', 'Could not remove this Anime title from your account.');
@@ -1107,18 +1150,32 @@ app.get('/api/v1/me/library', async (c) => {
   const user = await getRequestUser(c);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to access your library.');
   try {
-    const result = await c.env.DB.prepare(
-      `SELECT l.anime_id AS animeId, l.status, l.is_favorite AS isFavorite,
-              l.added_at AS addedAt, l.updated_at AS updatedAt,
-              a.slug, a.title, a.poster_url AS posterUrl, a.banner_url AS bannerUrl,
-              a.format, a.release_year AS releaseYear, a.rating, a.episode_count AS episodeCount
-       FROM user_library l
-       INNER JOIN anime a ON a.id = l.anime_id
-       WHERE l.user_id = ?
-       ORDER BY l.updated_at DESC
-       LIMIT 200`
-    ).bind(user.id).all();
-    return ok(c, { items: result.results ?? [] }, { count: result.results?.length ?? 0 });
+    const [legacy, references] = await Promise.all([
+      c.env.DB.prepare(
+        `SELECT l.anime_id AS animeId, l.status, l.is_favorite AS isFavorite,
+                l.added_at AS addedAt, l.updated_at AS updatedAt,
+                a.slug, a.title, a.poster_url AS posterUrl, a.banner_url AS bannerUrl,
+                a.format, a.release_year AS releaseYear, a.rating, a.episode_count AS episodeCount
+         FROM user_library l
+         INNER JOIN anime a ON a.id = l.anime_id
+         WHERE l.user_id = ?
+         ORDER BY l.updated_at DESC
+         LIMIT 200`,
+      ).bind(user.id).all(),
+      c.env.DB.prepare(
+        `SELECT provider_id AS providerId, external_id AS externalId, slug, status,
+                is_favorite AS isFavorite, added_at AS addedAt, updated_at AS updatedAt
+         FROM user_anime_library_refs
+         WHERE user_id = ? ORDER BY updated_at DESC LIMIT 200`,
+      ).bind(user.id).all(),
+    ]);
+    const normalizedReferences = (references.results ?? []).map((row: Record<string, unknown>) => ({
+      ...row,
+      isFavorite: Number(row.isFavorite) === 1,
+    }));
+    return ok(c, { items: legacy.results ?? [], references: normalizedReferences }, {
+      count: (legacy.results?.length ?? 0) + normalizedReferences.length,
+    });
   } catch (error) {
     logError(c, 'user_library_failed', error);
     return fail(c, 503, 'LIBRARY_UNAVAILABLE', 'Your library is temporarily unavailable.');

@@ -80,10 +80,11 @@ export function registerProfileRoutes(app: any) {
     if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to export account data.');
     c.header('Cache-Control', 'no-store');
     try {
-      const [profile, preferences, animeLibrary, moviesLibrary, history, playback] = await Promise.all([
+      const [profile, preferences, animeLibrary, animeLibraryReferences, moviesLibrary, history, playback] = await Promise.all([
         c.env.DB.prepare('SELECT id, username, display_name AS displayName, email, avatar_url AS avatarUrl, bio, profile_visibility AS visibility, created_at AS createdAt FROM user_profiles WHERE id = ?').bind(user.id).first(),
         c.env.DB.prepare('SELECT theme, interface_language AS interfaceLanguage, subtitle_language AS subtitleLanguage, subtitle_size AS subtitleSize, autoplay_next AS autoplayNext, default_playback_speed AS defaultPlaybackSpeed, history_paused AS historyPaused FROM user_preferences WHERE user_id = ?').bind(user.id).first(),
         c.env.DB.prepare('SELECT anime_id AS animeId, status, is_favorite AS isFavorite, added_at AS addedAt, updated_at AS updatedAt FROM user_library WHERE user_id = ? ORDER BY updated_at DESC').bind(user.id).all(),
+        c.env.DB.prepare('SELECT provider_id AS providerId, external_id AS externalId, slug, status, is_favorite AS isFavorite, added_at AS addedAt, updated_at AS updatedAt FROM user_anime_library_refs WHERE user_id = ? ORDER BY updated_at DESC').bind(user.id).all(),
         c.env.DB.prepare('SELECT provider_id AS providerId, external_id AS externalId, status, is_favorite AS isFavorite, rating, added_at AS addedAt, updated_at AS updatedAt FROM user_movie_library_refs WHERE user_id = ? ORDER BY updated_at DESC').bind(user.id).all(),
         c.env.DB.prepare('SELECT anime_slug AS slug, title, poster_url AS posterUrl, episode_number AS episodeNumber, episode_title AS episodeTitle, duration_seconds AS durationSeconds, progress_seconds AS progressSeconds, updated_at AS updatedAt FROM user_watch_history WHERE user_id = ? ORDER BY updated_at DESC').bind(user.id).all(),
         c.env.DB.prepare('SELECT media_type AS mediaType, media_key AS mediaKey, title, artwork_url AS artworkUrl, duration_seconds AS durationSeconds, progress_seconds AS progressSeconds, completed, player_state_json AS playerStateJson, updated_at AS updatedAt FROM user_media_playback WHERE user_id = ? AND media_type <> \'youtube\' ORDER BY updated_at DESC').bind(user.id).all(),
@@ -98,6 +99,7 @@ export function registerProfileRoutes(app: any) {
         profile,
         preferences,
         animeLibrary: animeLibrary.results ?? [],
+        animeLibraryReferences: animeLibraryReferences.results ?? [],
         moviesLibrary: moviesLibrary.results ?? [],
         watchHistory: history.results ?? [],
         playback: playbackItems,

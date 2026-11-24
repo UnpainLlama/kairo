@@ -79,6 +79,7 @@ describe('account profile privacy routes', () => {
 
   it('prevents administrator self-deletion', async () => {
     const { app, session, env } = await setup('admin');
+    db.prepare("INSERT INTO user_anime_library_refs (user_id, provider_id, external_id, slug, added_at, updated_at) VALUES ('account-1', 'anilist', '1535', 'dorohedoro-a1535', 1, 1)").run();
     const response = await app.request('https://kairo.test/api/v1/me/account', {
       method: 'DELETE',
       headers: { Cookie: session.cookie, Origin: 'https://kairo.test', 'Content-Type': 'application/json' },
@@ -89,6 +90,7 @@ describe('account profile privacy routes', () => {
 
   it('requires the correct password and username to delete an ordinary account', async () => {
     const { app, session, env } = await setup();
+    db.prepare("INSERT INTO user_anime_library_refs (user_id, provider_id, external_id, slug, added_at, updated_at) VALUES ('account-1', 'anilist', '1535', 'dorohedoro-a1535', 1, 1)").run();
     const response = await app.request('https://kairo.test/api/v1/me/account', {
       method: 'DELETE',
       headers: { Cookie: session.cookie, Origin: 'https://kairo.test', 'Content-Type': 'application/json' },
@@ -100,5 +102,6 @@ describe('account profile privacy routes', () => {
       status: 'deleted', username: null, displayName: 'Former account',
     });
     expect(db.prepare("SELECT COUNT(*) AS count FROM user_credentials WHERE user_id = 'account-1'").get().count).toBe(0);
+    expect(db.prepare("SELECT COUNT(*) AS count FROM user_anime_library_refs WHERE user_id = 'account-1'").get().count).toBe(0);
   });
 });

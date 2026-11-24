@@ -133,9 +133,9 @@ Every other `/api/v1/*` route requires an active Kairo session. While `mustChang
 | DELETE | `/api/v1/me/account` | Delete a standard account after current-password and username confirmation; remove owned data and retain a minimal profile tombstone. |
 | GET | `/api/v1/me/preferences` | Read theme, interface language, subtitle language/size, autoplay-next, default speed and history-pause preferences. |
 | PUT | `/api/v1/me/preferences` | Update one or more validated account-wide preferences. History pause prevents account-synced Anime and Movie progress; administrator-only YouTube sync remains separate. |
-| GET | `/api/v1/me/library` | Read the signed-in user's Anime library. |
-| PUT | `/api/v1/me/library/:animeId` | Add or update an Anime library item. |
-| DELETE | `/api/v1/me/library/:animeId` | Remove an Anime library item. |
+| GET | `/api/v1/me/library` | Read the signed-in user's legacy D1 Anime rows plus provider-backed Anime references (`references`). |
+| PUT | `/api/v1/me/library/:animeId` | Add/update a legacy D1 Anime row by ID or slug, or a live AniList/MAL/HiAnime provider reference. Only the provider namespace, numeric external ID and validated slug are stored for live titles. |
+| DELETE | `/api/v1/me/library/:animeId` | Remove a legacy D1 Anime row by ID or slug, or a provider-reference entry. |
 | GET | `/api/v1/me/movies/library` | Read the signed-in user's Movies library references. |
 | POST | `/api/v1/me/movies/library` | Add or update a Movies library reference. |
 | DELETE | `/api/v1/me/movies/library/:providerId/:externalId` | Remove a Movies library reference. |
@@ -144,6 +144,8 @@ Every other `/api/v1/*` route requires an active Kairo session. While `mustChang
 | GET | `/api/v1/me/playback` | Restore one playback snapshot or list recent cross-media snapshots. |
 | POST | `/api/v1/me/playback` | Save an account-owned Anime, Movies or administrator-only YouTube playback snapshot. |
 | DELETE | `/api/v1/me/playback` | Delete one playback snapshot or clear snapshots for a selected media type. |
+
+Live Anime library references are stored in `user_anime_library_refs`; title metadata is re-fetched from the configured catalogue API and is not accepted from browser payloads.
 
 Library status values: `watching`, `plan_to_watch`, `completed`, `on_hold`, `dropped`.
 

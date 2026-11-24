@@ -11,7 +11,7 @@ export async function deleteStandardAccount(db: D1Database, accountId: string): 
     ['google_oauth_states', 'link_user_id'], ['youtube_oauth_states', 'user_id'], ['user_preferences', 'user_id'],
     ['user_library', 'user_id'], ['watch_progress', 'user_id'], ['viewing_history', 'user_id'], ['user_watch_history', 'user_id'],
     ['youtube_feed_channels', 'user_id'], ['youtube_feed_cursors', 'user_id'], ['youtube_watch_history', 'user_id'],
-    ['youtube_watch_later', 'user_id'], ['user_movie_library', 'user_id'], ['user_movie_library_refs', 'user_id'],
+    ['youtube_watch_later', 'user_id'], ['user_anime_library_refs', 'user_id'], ['user_movie_library', 'user_id'], ['user_movie_library_refs', 'user_id'],
     ['user_watch_history_tombstones', 'user_id'], ['user_watch_history_clear_markers', 'user_id'], ['user_media_playback', 'user_id'],
   ];
   const tombstoneGuard = "EXISTS (SELECT 1 FROM user_profiles WHERE id = ? AND account_status = 'deleted')";

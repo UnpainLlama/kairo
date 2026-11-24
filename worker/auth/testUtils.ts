@@ -13,7 +13,7 @@ export const migrationFiles = [
   '0018_cloudflare_access_identity_admin_lockout.sql','0019_session_privacy_retention.sql',
   '0020_cloudflare_access_subject_binding.sql','0021_reassignable_account_seats.sql',
   '0022_account_history_pause_preference.sql','0023_username_password_auth.sql',
-  '0024_account_preference_subtitle_size.sql',
+  '0024_account_preference_subtitle_size.sql','0025_anime_library_provider_refs.sql',
 ] as const;
 
 export function createTestDatabase(): any {

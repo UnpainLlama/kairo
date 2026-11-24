@@ -51,8 +51,21 @@ type AnimeLibraryEntry = {
   posterUrl: string | null;
   status: string;
   isFavorite: boolean | number;
-  addedAt: string;
-  updatedAt: string;
+  addedAt: string | number;
+  updatedAt: string | number;
+};
+type AnimeLibraryReference = {
+  providerId: 'anilist' | 'mal' | 'hianime';
+  externalId: string;
+  slug: string;
+  status: string | null;
+  isFavorite: boolean;
+  addedAt: number;
+  updatedAt: number;
+};
+type AnimeLibraryPayload = {
+  items: AnimeLibraryEntry[];
+  references?: AnimeLibraryReference[];
 };
 type MovieLibraryEntry = {
   providerId: string;
@@ -369,21 +382,38 @@ function AnimeDetailPage() {
   const account = useAccount();
   const [saved, setSaved] = useState(false);
   const [favorite, setFavorite] = useState(false);
+  const currentAnime = title.status === 'ok' ? title.data : null;
+  const currentAnimeId = currentAnime?.id;
+  const currentAnimeSlug = currentAnime?.slug;
 
   useEffect(() => {
+    if (!currentAnimeId) { setSaved(false); setFavorite(false); return; }
     let active = true;
-    void apiGet<PageData<AnimeLibraryEntry>>('/me/library').then(result => {
-      const found = result.items.find(entry => entry.animeId === title.data?.id);
-      if (active && found) { setSaved(true); setLibraryStatus(found.status); setFavorite(Boolean(found.isFavorite)); }
+    void apiGet<AnimeLibraryPayload>('/me/library').then(result => {
+      const found = result.items.find(entry => entry.animeId === currentAnimeId);
+      const reference = result.references?.find(entry => entry.slug === currentAnimeSlug ||
+        (currentAnimeId.startsWith('a') && entry.providerId === 'anilist' && entry.externalId === currentAnimeId.slice(1)) ||
+        (currentAnimeId.startsWith('m') && entry.providerId === 'mal' && entry.externalId === currentAnimeId.slice(1)) ||
+        (currentAnimeId.startsWith('h') && entry.providerId === 'hianime' && entry.externalId === currentAnimeId.slice(1)));
+      const savedEntry = found ?? reference;
+      if (active && savedEntry) {
+        setSaved(true);
+        setLibraryStatus(savedEntry.status ?? 'plan_to_watch');
+        setFavorite(Boolean(savedEntry.isFavorite));
+      } else if (active) {
+        setSaved(false);
+        setFavorite(false);
+      }
     }).catch(() => undefined);
     return () => { active = false; };
-  }, [title.status === 'ok' ? title.data.id : id]);
+  }, [currentAnimeId, currentAnimeSlug]);
 
   async function saveLibrary(nextFavorite = favorite) {
     if (title.status !== 'ok') return;
     setLibraryBusy(true); setLibraryMessage('');
     try {
-      await authRequest('/me/library/' + encodeURIComponent(title.data.id), {
+      const libraryId = title.data.slug || title.data.id;
+      await authRequest('/me/library/' + encodeURIComponent(libraryId), {
         method: 'PUT', body: JSON.stringify({ status: libraryStatus, isFavorite: nextFavorite }),
       });
       setSaved(true); setFavorite(nextFavorite); setLibraryMessage('Saved to your account library.');
@@ -667,10 +697,60 @@ function MovieWatchPage() {
 }
 
 function LibraryPage() {
-  const anime = useApi<PageData<AnimeLibraryEntry>>('/me/library');
+  const anime = useApi<AnimeLibraryPayload>('/me/library');
   const movies = useApi<PageData<MovieLibraryEntry>>('/me/movies/library');
   const [filter, setFilter] = useState('all');
-  const filtered = anime.status === 'ok' ? anime.data.items.filter(item => filter === 'all' || item.status === filter || (filter === 'favorites' && Boolean(item.isFavorite))) : [];
+  const [resolvedReferences, setResolvedReferences] = useState<AnimeLibraryEntry[]>([]);
+  const [referencesLoading, setReferencesLoading] = useState(false);
+  const referenceKey = anime.status === 'ok'
+    ? (anime.data.references ?? []).map(item => item.providerId + ':' + item.externalId + ':' + item.slug).join('|')
+    : '';
+  useEffect(() => {
+    if (anime.status !== 'ok') { setResolvedReferences([]); return; }
+    const references = anime.data.references ?? [];
+    let active = true;
+    if (!references.length) { setResolvedReferences([]); setReferencesLoading(false); return; }
+    setReferencesLoading(true);
+    const items: AnimeLibraryEntry[] = new Array(references.length);
+    let cursor = 0;
+    const resolveNext = async () => {
+      while (active) {
+        const index = cursor++;
+        if (index >= references.length) return;
+        const reference = references[index];
+        try {
+          const title = await apiGet<AnimeDetails>('/anime/' + encodeURIComponent(reference.slug));
+          items[index] = {
+            animeId: reference.slug,
+            slug: title.slug || reference.slug,
+            title: title.title,
+            posterUrl: title.posterUrl,
+            status: reference.status ?? 'plan_to_watch',
+            isFavorite: reference.isFavorite,
+            addedAt: reference.addedAt,
+            updatedAt: reference.updatedAt,
+          };
+        } catch {
+          items[index] = {
+            animeId: reference.slug,
+            slug: reference.slug,
+            title: 'Unavailable Anime (' + reference.providerId + ' ' + reference.externalId + ')',
+            posterUrl: null,
+            status: reference.status ?? 'plan_to_watch',
+            isFavorite: reference.isFavorite,
+            addedAt: reference.addedAt,
+            updatedAt: reference.updatedAt,
+          };
+        }
+      }
+    };
+    void Promise.all(Array.from({ length: Math.min(8, references.length) }, () => resolveNext()))
+      .then(() => { if (active) setResolvedReferences(items); })
+      .finally(() => { if (active) setReferencesLoading(false); });
+    return () => { active = false; };
+  }, [anime.status, referenceKey]);
+  const allAnimeItems = anime.status === 'ok' ? [...anime.data.items, ...resolvedReferences] : [];
+  const filtered = allAnimeItems.filter(item => filter === 'all' || item.status === filter || (filter === 'favorites' && Boolean(item.isFavorite)));
   async function updateStatus(item: AnimeLibraryEntry, status: string) {
     await authRequest('/me/library/' + encodeURIComponent(item.animeId), { method: 'PUT', body: JSON.stringify({ status: status || null, isFavorite: Boolean(item.isFavorite) }) });
     anime.reload();
@@ -687,7 +767,8 @@ function LibraryPage() {
       </div>
       {anime.status === 'loading' && <LoadingPanel label="Loading your library…" />}
       {anime.status === 'error' && <ItemError error={anime.error} onRetry={anime.reload} />}
-      {anime.status === 'ok' && filtered.length === 0 && <EmptyPanel title="No saved Anime here" message="Add titles from their detail pages to start building your library." action={<Link className="button button-primary" to="/anime">Explore Anime</Link>} />}
+      {anime.status === 'ok' && referencesLoading && <LoadingPanel label="Resolving saved Anime titles…" />}
+      {anime.status === 'ok' && !referencesLoading && filtered.length === 0 && <EmptyPanel title="No saved Anime here" message="Add titles from their detail pages to start building your library." action={<Link className="button button-primary" to="/anime">Explore Anime</Link>} />}
       {filtered.length > 0 && <div className="library-list">{filtered.map(item => <article className="library-row" key={item.animeId}>
         <Link to={'/anime/' + encodeURIComponent(item.slug)} className="library-art">{safeImageUrl(item.posterUrl) && <img src={safeImageUrl(item.posterUrl) ?? undefined} alt="" loading="lazy" />}</Link>
         <div className="library-info"><Link to={'/anime/' + encodeURIComponent(item.slug)}><strong>{item.title}</strong></Link><small>{item.status.replaceAll('_', ' ')}{item.isFavorite ? ' · Favourite' : ''}</small></div>
