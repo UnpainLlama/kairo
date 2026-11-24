@@ -46,11 +46,14 @@ export function buildAdminPasswordSql(userId, username, passwordHash) {
   return [
     'BEGIN;',
     `UPDATE user_profiles SET username=${name}, updated_at=CURRENT_TIMESTAMP WHERE id=${id} AND role='admin' AND account_status='active';`,
+    `DELETE FROM sessions WHERE user_id=${id};`,
     'INSERT INTO user_credentials (user_id,password_hash,password_changed_at,must_change_password)',
     `SELECT id,${hash},CURRENT_TIMESTAMP,0 FROM user_profiles WHERE id=${id} AND role='admin' AND account_status='active' AND username=${name}`,
     'ON CONFLICT(user_id) DO UPDATE SET password_hash=excluded.password_hash, password_changed_at=CURRENT_TIMESTAMP, must_change_password=0;',
     'COMMIT;',
-    'SELECT changes() AS credential_rows_written;',
+    `SELECT id,username,role,account_status FROM user_profiles WHERE id=${id};`,
+    `SELECT user_id,must_change_password,password_changed_at FROM user_credentials WHERE user_id=${id};`,
+    `SELECT COUNT(*) AS remaining_sessions FROM sessions WHERE user_id=${id};`,
   ].join('\n');
 }
 
