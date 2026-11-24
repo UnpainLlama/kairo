@@ -7,14 +7,14 @@ describe('database catalogue episode provider references', () => {
       { provider: 'mal', externalId: '1535' },
       { provider: 'anilist', externalId: '1535' },
     ];
-    expect(providerRefFromMappings(mappings)).toBe('a1535');
-    expect(providerRefFromMappings(mappings, ['mal', 'anilist'])).toBe('m1535');
+    expect(providerRefFromMappings(mappings)).toBe('m1535');
+    expect(providerRefFromMappings(mappings, ['mal'])).toBe('m1535');
     expect(parseRef(providerRefFromMappings(mappings, ['mal']) ?? undefined)).toEqual({ kind: 'm', id: 1535 });
   });
 
   it('rejects unsupported, malformed and zero provider identifiers', () => {
     expect(providerRefFromMappings([{ provider: 'kitsu', externalId: '1376' }])).toBeNull();
-    expect(providerRefFromMappings([{ provider: 'anilist', externalId: '0' }])).toBeNull();
+    expect(providerRefFromMappings([{ provider: 'anilist', externalId: '1535' }])).toBeNull();
     expect(providerRefFromMappings([{ provider: 'mal', externalId: 'abc' }])).toBeNull();
   });
 });

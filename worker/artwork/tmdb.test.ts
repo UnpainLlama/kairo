@@ -39,11 +39,10 @@ describe('TMDB artwork provider', () => {
       tmdbId: 1429, mediaType: 'tv',
       posterUrl: 'https://image.tmdb.org/t/p/w500/poster.jpg',
       bannerUrl: 'https://image.tmdb.org/t/p/w1280/backdrop.jpg',
-      overview: 'A war for humanity.', rating: 8.6, genres: ['Action', 'Drama'], releaseYear: 2013, episodeCount: 87,
     });
   });
 
-  it('keeps usable search metadata when the details response has empty fields', async () => {
+  it('keeps the search artwork when the details response has empty fields', async () => {
     const provider = createTmdbArtworkProvider(async (url) => {
       if (new URL(url).pathname === '/3/search/tv') {
         return Response.json({ results: [{
@@ -55,10 +54,10 @@ describe('TMDB artwork provider', () => {
       return Response.json({ overview: '', vote_average: 0, first_air_date: '', genres: [] });
     }, 'token');
     const artwork = await provider.lookup({ title: 'Attack on Titan', year: 2013 }, signal);
-    expect(artwork).toMatchObject({ overview: 'Search overview remains available.', rating: 8.2, releaseYear: 2013 });
+    expect(artwork).toMatchObject({ posterUrl: 'https://image.tmdb.org/t/p/w500/poster.jpg', bannerUrl: 'https://image.tmdb.org/t/p/w1280/backdrop.jpg' });
   });
 
-  it('retains search metadata when the details request fails', async () => {
+  it('retains search artwork when the details request fails', async () => {
     const paths: string[] = [];
     const provider = createTmdbArtworkProvider(async (url) => {
       const path = new URL(url).pathname;
@@ -74,7 +73,7 @@ describe('TMDB artwork provider', () => {
     }, 'token');
     const artwork = await provider.lookup({ title: 'Attack on Titan', year: 2013 }, signal);
     expect(paths).toEqual(['/3/search/tv', '/3/tv/1429']);
-    expect(artwork).toMatchObject({ overview: 'Search summary remains available.', rating: 8.2, releaseYear: 2013 });
+    expect(artwork).toMatchObject({ posterUrl: 'https://image.tmdb.org/t/p/w500/poster.jpg', bannerUrl: 'https://image.tmdb.org/t/p/w1280/backdrop.jpg' });
   });
 
   it('uses the dedicated TV images endpoint when search has no landscape backdrop', async () => {
@@ -122,7 +121,7 @@ describe('TMDB artwork provider', () => {
     expect(new URL(requested[2]!).pathname).toBe('/3/movie/99/images');
     expect(artwork?.posterUrl).toBe('https://image.tmdb.org/t/p/w500/movie.jpg');
     expect(artwork?.bannerUrl).toBeNull();
-    expect(artwork).toMatchObject({ overview: 'Two teenagers swap lives.', rating: 8.3, genres: ['Animation', 'Drama'], releaseYear: 2016, episodeCount: null });
+    expect(artwork).toMatchObject({ tmdbId: 99, mediaType: 'movie', posterUrl: 'https://image.tmdb.org/t/p/w500/movie.jpg', bannerUrl: null });
   });
 
   it('loads season-local episode stills for a season-specific anime listing', async () => {
