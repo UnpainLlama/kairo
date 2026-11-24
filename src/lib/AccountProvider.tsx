@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AuthApiError, authRequest } from './authClient';
+import { flushPendingMediaPlayback } from './mediaPlayback';
 
 export type AccountUser = {
   id: string;
@@ -57,6 +58,19 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     void refresh(controller.signal).catch(() => undefined);
     return () => controller.abort();
   }, [refresh]);
+
+  useEffect(() => {
+    if (state.status !== 'signed-in' || !state.user) return;
+    const accountId = state.user.id;
+    const flush = () => { void flushPendingMediaPlayback(accountId); };
+    flush();
+    window.addEventListener('online', flush);
+    window.addEventListener('focus', flush);
+    return () => {
+      window.removeEventListener('online', flush);
+      window.removeEventListener('focus', flush);
+    };
+  }, [state.status, state.user?.id]);
 
   const login = useCallback(async (username: string, password: string) => {
     await authRequest<{ signedIn: boolean; mustChangePassword: boolean }>('/auth/login', {
