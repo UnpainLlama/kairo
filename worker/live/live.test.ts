@@ -365,7 +365,7 @@ describe('service and handlers', () => {
     const readyDb = makeReadyDb() as unknown as NonNullable<LiveRequest['env']['DB']>;
     expect(await call(d, 'ready', req({}, {}, { DB: readyDb }))).toMatchObject({
       status: 200,
-      body: { data: { status: 'ready', database: 'ok', schema: 'ok', providers: ['anilist', 'jikan'], episodeProviders: ['jikan'] } },
+      body: { data: { status: 'ready', database: 'ok', schema: 'ok', providers: ['anilist'], episodeProviders: ['jikan'] } },
     });
 
     const incompleteDb = makeReadyDb({ missingTable: 'admin_login_security' }) as unknown as NonNullable<LiveRequest['env']['DB']>;

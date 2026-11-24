@@ -24,7 +24,7 @@ describe('TMDB artwork enrichment service', () => {
     const provider: ArtworkProvider = { id: 'tmdb', lookup: vi.fn(async () => artwork) };
     const result = await enrichArtwork([title], provider, new MemoryCache());
     expect(result[0]).toMatchObject({
-      card: { id: 'h8', slug: title.card.slug, posterUrl: artwork.posterUrl, bannerUrl: artwork.bannerUrl, title: title.card.title, format: 'series' },
+      card: { id: 'a8', slug: title.card.slug, posterUrl: artwork.posterUrl, bannerUrl: artwork.bannerUrl, title: title.card.title, format: 'series' },
       provider: 'anilist', altTitles: title.altTitles,
     });
   });
