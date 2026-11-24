@@ -28,8 +28,8 @@ type ParsedHash = {
 };
 
 export function isNewPasswordValid(value: unknown): value is string {
-  return typeof value === 'string' && Array.from(value).length >= 15 &&
-    new TextEncoder().encode(value).length <= MAX_PASSWORD_BYTES;
+  return typeof value === 'string' && new TextEncoder().encode(value).length <= MAX_PASSWORD_BYTES &&
+    value.trim().split(/\s+/u).filter(Boolean).length >= 5;
 }
 
 export function isPasswordDifferentFromUsername(password: string, username: string): boolean {
