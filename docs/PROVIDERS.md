@@ -2,135 +2,99 @@
 
 ## Movies provider boundary
 
-Kairo Movies has two distinct provider roles:
+Kairo Movies uses TMDB for discovery, search, details, genres, artwork and numeric identifiers. CineSrc is the sole Movie playback provider and receives the TMDB movie ID. See [CineSrc setup](CINESRC_SETUP.md) and [the official CineSrc docs](https://cinesrc.st/docs).
 
-| Role | Provider | Responsibility |
+## Anime provider boundary
+
+The live Anime catalogue uses **MyAnimeList API v2 for metadata** and **TMDB for visual artwork only**.
+
+| Role | Provider | Responsibilities |
 |---|---|---|
-| Catalogue and metadata | TMDB | Discovery, search, movie details, genres, artwork and numeric TMDB identifiers |
-| Playback | CineSrc | The single Movie iframe player, addressed with the TMDB movie ID |
+| Catalogue metadata | MyAnimeList API v2 | Search, title identity, alternate titles, synopsis, format, airing status, season/year, episode count, genres and MAL score |
+| Posters and hero images | TMDB | Poster and backdrop URLs; optional episode still thumbnails |
+| Episode discovery | Jikan, HiAnime | Episode lists and provider episode identifiers |
+| Playback | Existing Anime player and approved embed boundary | Server discovery and playback resolution |
 
-CineSrc is the **only** Movie playback provider. Kairo does not configure VidLink, alternate
-Movie players, direct-stream resolvers, or provider fallback. CineSrc's documented iframe
-embed requires no Kairo Worker secret. It does not replace the TMDB catalogue API. See
-[docs/CINESRC_SETUP.md](CINESRC_SETUP.md) and
-[the official CineSrc docs](https://cinesrc.st/docs).
+MAL images are deliberately ignored. TMDB cannot supply or overwrite synopsis, rating, genres, season, release year, format, status or episode count. No provider is assumed to supply another provider's role.
 
-## Anime metadata providers
+The catalogue is fail-closed: if the Worker secret MAL_CLIENT_ID is missing, the active catalogue provider list is empty and live catalogue routes return 503. There is no secondary metadata provider or fallback.
 
-KAIRO uses **AniList as its sole live Anime catalogue and discovery provider**. Its existing adult-title exclusion remains in place. The MAL, Jikan and HiAnime catalogue adapters have been removed. HiAnime and Jikan remain separate episode-discovery/playback providers only. AniList's `idMal` value is retained internally as an identifier bridge for Jikan; Kairo does not call the MAL API and no `MAL_CLIENT_ID` secret is required. See [LIVE_CATALOGUE.md](LIVE_CATALOGUE.md) for the active query filters and provider boundaries.
+## 1. MyAnimeList API v2
 
-Movie playback is intentionally separate and remains CineSrc-only. The Anime route uses its own `KairoMediaPlayer` and `AnimeEmbedPlayer`; it never mounts the Movie CineSrc iframe.
+- Base URL: https://api.myanimelist.net/v2.
+- Public catalogue reads are made by the Worker with the X-MAL-CLIENT-ID request header. The Client ID must be a Worker secret, never a browser variable.
+- Create a Kairo application through [MyAnimeList API settings](https://myanimelist.net/apiconfig). Review and comply with the current API License and Developer Agreement, including any application notice or review conditions, before public release.
+- Kairo uses anime ranking, seasonal anime, search and title detail/recommendations.
+- MAL has no separate trending endpoint in this integration: Kairo uses popularity ranking for the Trending collection.
+- "Latest" is a list of current-season titles ordered by start date. MAL does not provide a global latest-episodes feed.
+- MAL has no standalone genre directory. Kairo derives genre filter choices from a bounded sample of ranked results; it is not a complete genre index.
+- A fixed numeric request limit was not verified. Kairo uses a one-second per-isolate request pacer, handles HTTP 429 / Retry-After and caches responses. The pacer is not a globally shared rate budget across Worker isolates.
+- The adult-content filter fails closed: entries without the expected safe nsfw grade, or with an RX rating, are excluded.
+- MAL supplies metadata only. It is not used for episode extraction or streams.
 
-**Separate services.** Catalogue metadata, episode discovery (`EpisodeProvider`) and playback (`worker/providers/playback.ts`) are independent. A metadata or artwork provider is never assumed to supply episode records or playable streams. TMDB's optional episode stills enrich thumbnails only.
+The adapter is worker/live/mal.ts; regression fixtures are in worker/live/mal.test.ts. They are hand-authored fixtures, not captured live responses. A passing build does not prove the registered Client ID is accepted by MAL.
 
-## 1. Provider roles
+## 2. TMDB artwork
 
-The catalogue providers remain responsible for title identity and catalogue records. **TMDB is a separate artwork and sparse-metadata enrichment service**: after a confident title/year match, it retrieves poster/backdrop images and can fill missing synopsis, rating, genres, release year and total TV episode count. It can also add season-specific episode still thumbnails. TMDB never replaces Kairo catalogue IDs or supplies episode lists or playable streams; existing non-empty catalogue metadata takes precedence.
+The Anime artwork adapter matches a MAL title to a TMDB TV or movie result using title variants, release year and format. A confident match supplies only posterUrl (w500), bannerUrl (w1280) and optional episode stills (w780).
 
-## 2. What was verified (2026-11-06)
+The Worker may read TMDB detail and image endpoints to locate the right artwork, but the adapter returns only the TMDB ID, media type and image URLs. Kairo merges only poster and banner URLs into the MAL record. It never takes synopsis, rating, genres, year or episode count from TMDB.
 
-| Source | Role | Auth | Rate limit | Terms | Status |
-|---|---|---|---|---|---|
-| **AniList** (GraphQL, `graphql.anilist.co`) | Live detail: synopsis, genres, banner, score | None for public reads | 90 requests/min. A burst limiter also exists, and 429 carries `Retry-After`. One docs page warns of a temporary 30/min degraded mode. | Read in full at docs.anilist.co/guide/terms-of-use | **Verified.** Free for non-commercial use; no use as backup or data storage; no hoarding or mass collection; naming guidelines; no competing list/tracker services. |
-| **Kitsu** (JSON:API, `kitsu.io/api/edge`) | Live detail (secondary) | Third-party client docs say public reads need no key | Not published in anything I could read | `kitsu.io/terms` **could not be fetched**; not read | **Unverified.** Adapter is built but `termsVerified = false` and it is OFF by default. |
-| **anime-offline-database** (manami-project) | Catalogue index and cross-provider ID map (dataset, not an API) | None (a file download) | n/a | Recent releases: ODbL-1.0 (attribution and share-alike). Older releases: AGPL-3.0. The file carries its own `license` field. | **Partly verified** from repository pages. The importer refuses any licence that is not ODbL-1.0. Re-check the release you import. |
-| **TMDB** (v3 REST API) | Independent poster/backdrop and episode-still artwork; fills missing synopsis, rating, genres, year and total TV episode count | API Read Access Token (Bearer secret) | Rate limiting applies; KAIRO uses bounded concurrency, caching and fail-open behavior | Developer API is free for non-commercial use with attribution; commercial use requires a separate licence | **Enabled only when `TMDB_ACCESS_TOKEN` is configured in live mode.** It does not supply catalogue identity, episode lists or playback. |
+Artwork is optional and fails open: TMDB failures do not make a MAL catalogue request fail. Successful matches are cached for 30 days, no-match results for 7 days and failures for 5 minutes. Episode stills are separately cached. Images are hotlinked from image.tmdb.org; Kairo does not re-host them.
 
-Not verified, and so not used: Kitsu's own terms and rate limits; Kitsu/AniList field names against live responses (see section 7). TMDB API authentication, search and image-path documentation were checked, but KAIRO's live API key and title-match quality still need to be validated after deployment.
+TMDB requires attribution. Its developer API is free for non-commercial use with attribution; commercial use requires a separate licence. Use the TMDB logo as required and show this notice in the application's About/Credits area:
 
-## 3. Architecture
+> This product uses the TMDB API but is not endorsed or certified by TMDB.
 
-The following metadata-enrichment architecture describes the separate legacy D1 metadata route. It is not the live Anime catalogue path used by Home, Trending, Seasonal, Discover or search; those live routes are served exclusively by AniList as described in [LIVE_CATALOGUE.md](LIVE_CATALOGUE.md).
+See the [official TMDB FAQ](https://developer.themoviedb.org/docs/faq), [Getting Started](https://developer.themoviedb.org/docs/getting-started) and [API authentication guide](https://developer.themoviedb.org/docs/authentication-application).
 
-```
-route /api/v1/anime/:id/metadata
-  -> stored catalogue row (always the floor)        worker/repositories/providerIds.ts
-  -> for each ENABLED provider (in parallel):       worker/metadata/enrich.ts
-       circuit breaker -> cache -> by known ID, else title search + duplicate matching
-       timeout, 429/5xx/invalid-response mapped to outcomes, never to a failed page
-  -> merge with field priorities + provenance       worker/metadata/merge.ts
-  -> response: unified record, sources, per-provider outcomes, meta.degraded
-```
+## 3. Independent episode and playback services
 
-| Need | Where |
+Jikan and HiAnime remain independent episode-discovery providers configured by EPISODE_PROVIDERS. They do not supply catalogue cards or metadata fallbacks. The MAL ID on a catalogue title is passed into episode lookup as the cross-provider identifier.
+
+The ZokoAnime helper, when explicitly enabled, builds only the documented MAL-ID iframe route. It does not call a private JSON API, fetch iframe content, extract media URLs, proxy streams or trust postMessage events. It remains disabled by default pending owner review of the provider terms and player event contract.
+
+## 4. Legacy D1 metadata enrichment
+
+The separate legacy CATALOG_SOURCE=db metadata route remains provider-neutral. It reads the stored D1 title row, then optionally enriches it using providers selected by METADATA_PROVIDERS. That variable is blank in the committed Wrangler config.
+
+- Kitsu remains implemented in worker/metadata/providers/kitsu.ts, but is off by default; its terms and rate limits have not been verified from a primary source.
+- The manami adapter is a dataset mapper, not a live API. Its import path checks each dataset release's licence and accepts only ODbL-1.0.
+- The legacy metadata registry contains no retired catalogue adapter.
+
+The merge priorities in worker/metadata/merge.ts rank Kitsu ahead of the stored manami snapshot when Kitsu is explicitly enabled. This is separate from the live MAL catalogue and is not a fallback for it.
+
+## 5. Configuration
+
+Configure these as Cloudflare Worker secrets in each environment:
+
+| Secret | Purpose |
 |---|---|
-| Provider adapters | `worker/metadata/providers/{anilist,kitsu,manami}.ts` |
-| Normalisation to KAIRO vocabulary | `normalize.ts` (formats, statuses, seasons, 0-10 rating, plain-text synopsis, https-only URLs) |
-| Duplicate detection | `match.ts` |
-| Cross-provider ID mapping | table `anime_provider_ids`; new IDs found by a confident title match are saved (first writer wins) |
-| Conflict resolution | `merge.ts` |
-| Source attribution | `data_sources` table, `Attribution` per adapter, shown on each title page |
-| Fallback | each provider fails independently; the stored row is always returned |
-| Caching | `cache.ts` (KV, edge Cache API or memory) |
-| Error handling | `ProviderError` kinds `not_found`, `rate_limited`, `unavailable`, `invalid_response` |
+| MAL_CLIENT_ID | Required for the live Anime catalogue. Register your own application at [MAL API settings](https://myanimelist.net/apiconfig). |
+| TMDB_ACCESS_TOKEN | Required for TMDB Anime artwork and enabled Movies discovery. |
 
-### Duplicate detection rules
-1. A shared external ID is a certain match (score 1). A different ID from the same provider is a certain non-match (0).
-2. Otherwise an exact normalised title overlap scores 0.7, then: same year +0.15 (one year apart -0.2, more than one year apart = 0); same format +0.1 (different -0.3); same episode count +0.05 (different -0.1).
-3. 0.85 or more is accepted. 0.6 to 0.85 is "ambiguous" and is NOT merged. A tie between candidates is refused.
-4. There is no fuzzy matching on purpose: a wrong merge puts one show's data on another, which is worse than a missed merge.
+Example commands:
 
-### TMDB enrichment
-- TMDB matching is independent of the AniList/Kitsu/manami metadata-provider merge and never changes title identity or provider IDs. It searches TV shows for series/OVA/ONA/special titles and movies for films.
-- Candidate titles are compared against the catalogue title and alternate titles, with release year used as a confidence signal. Low-confidence matches are ignored.
-- After a confident match, the adapter requests the TV/movie details endpoint for overview, vote average, genre names, release year and (for TV) total episode count. When a detail field is absent or empty, usable search-result metadata is retained.
-- Non-empty catalogue synopsis, rating, genres, release year and episode count are not overwritten. TMDB fills only missing fields in live catalogue cards and title details. This separate service does not participate in `DEFAULT_PRIORITY` or the provenance conflict resolver above.
-- Search/details poster and backdrop paths are preferred. If an image slot is still missing, the adapter requests the matching TV/movie images endpoint and selects an approved alternate. Paths are converted to HTTPS `image.tmdb.org` URLs (`w500` poster and `w1280` backdrop). Episode rows can receive matching season stills; episode discovery and playback remain with their own providers.
-- Positive matches are cached for 30 days; no-match results for 7 days; provider failures are briefly cached. TMDB errors never make catalogue requests fail. Enrichment runs in live mode; legacy `CATALOG_SOURCE=db` routes do not invoke this service.
+    npx wrangler secret put MAL_CLIENT_ID --env staging
+    npx wrangler secret put TMDB_ACCESS_TOKEN --env staging
 
-### Conflict resolution
-Static priority per field, highest first: **anilist, kitsu, manami**, with unlisted providers last (alphabetical). Edit `DEFAULT_PRIORITY` in `merge.ts` to change it.
+Do not add either value to wrangler.jsonc, frontend source, .env.example with a real value, or a committed file. In local development use gitignored Wrangler .dev.vars.
 
-- A missing value never wins; the next provider in priority is used. Nothing is invented.
-- Status is `airing`, `finished`, `upcoming` or `hiatus`. Live providers beat the stored dataset snapshot, which can be weeks old.
-- Genres, alternative titles and IDs are unions.
-- Rating is never averaged across providers. It is taken from the highest-priority provider and is always on a 0-10 scale.
-- When providers disagree on format, status, season, year, episode count or rating, the response lists a `conflicts` entry with the chosen value and the alternatives. Wording and image fields (title, synopsis, posters) differ by nature and are not logged as conflicts.
-- Every value has `provenance`: which provider supplied it and when it was fetched.
+With no MAL_CLIENT_ID, /api/ready can still verify Worker/D1 readiness but reports an empty catalogue providers array, and live catalogue endpoints fail with 503. Do not deploy the new live catalogue to a target where the MAL secret is not configured and tested.
 
-### Caching and terms
-- AniList forbids using its API as storage, so provider responses are **never written to D1**. They live in a cache with an expiry: 6 hours for hits, 1 hour for "not found", 1 minute after errors.
-- Only IDs are persisted (`anime_provider_ids`), not provider content.
-- **Cloudflare's docs say the Cache API has no effect on `*.workers.dev` and does not replicate between data centres.** For a workers.dev deploy, use the KV cache (section 4).
-- The circuit breaker is held in one Worker isolate's memory, so it is a best-effort guard. A 429 opens it for the `Retry-After` period (default 60 s).
+## 6. Caching, identifiers and persistence
 
-## 4. Attribution
-- Each title page lists the sources that contributed to it, with the provider's attribution text and link. The footer states that.
-- AniList: the terms do not require an on-page credit; it is shown as a courtesy and says KAIRO is unofficial. Never name anything "AniList" alone.
-- anime-offline-database: ODbL requires attribution, shown. Share-alike applies to a *publicly shared* derived database. KAIRO is a private personal site and does not distribute the database. If that ever changes, review this first.
-- TMDB artwork and supplementary title metadata: image assets are hotlinked from TMDB's image CDN and never re-hosted. Include the official TMDB logo and the notice “This product uses the TMDB API but is not endorsed or certified by TMDB.” in the app footer/About area. The developer API is for non-commercial use with attribution; contact TMDB for commercial licensing.
-- Other artwork: hotlinked from its source provider, never re-hosted. Rights stay with their owners.
+Live catalogue records and artwork lookups use the short-lived provider cache. Live provider metadata is not written to D1. D1 continues to hold user accounts, library references, watch history and shared Anime/Movies/YouTube playback state. No schema migration is required for this provider switch.
 
-## 5. Configuration steps (owner)
+New live Anime IDs use MAL references such as m1535 and slugs such as death-note-m1535. Existing historical a... user-library references are retained as legacy stored identifiers so existing account rows are not silently deleted; they do not invoke a catalogue or network provider.
 
-**Active catalogue.** The live Anime catalogue is hard-wired to AniList and cannot be switched to MAL, Jikan or HiAnime through a Worker variable. The separate legacy D1 metadata-enrichment route uses `METADATA_PROVIDERS`, which ships as `"anilist"`; Kitsu is off and is not part of the live catalogue.
+## 7. First live check
 
-**Cache.** The KV namespace and its `METADATA_CACHE` binding are declared per environment in `wrangler.jsonc`; creating it is step 2b of docs/DEPLOYMENT.md. Without it the Worker still runs, using the Cache API (no effect on workers.dev) or per-isolate memory.
+The MAL adapter tests use controlled fixtures. The live Client ID, actual MAL response shape, TMDB token, artwork match quality and current upstream availability still require verification in the target environment.
 
-AniList and Kitsu public reads need no API key. TMDB requires an API Read Access Token stored as the Worker secret `TMDB_ACCESS_TOKEN`. Set it with `npx wrangler secret put TMDB_ACCESS_TOKEN --env staging`; do not add it to `wrangler.jsonc` or commit it. For local development, put `TMDB_ACCESS_TOKEN="..."` in gitignored `.dev.vars`. Without the token, Kairo keeps the catalogue's existing artwork and metadata.
-
-## 6. Adding a provider later
-
-Do not add another live Anime catalogue provider without an explicit owner request; the catalogue is intentionally AniList-only.
-
-1. Write `worker/metadata/providers/<name>.ts` that returns a `MetadataProvider` (a `fetchById` and a `search` returning `NormalizedMetadata`, plus its `Attribution` and `termsVerified`).
-2. Add one line to `FACTORIES` (and `ATTRIBUTIONS`) in `worker/metadata/service.ts`.
-3. Add it to `DEFAULT_PRIORITY` in `merge.ts` if it should outrank the unlisted default.
-4. Add it to `METADATA_PROVIDERS`. The frontend needs no change: sources and statuses come from the API.
-
-## 7. First live check (not done yet)
-The adapters were tested only against **hand-written fixtures** that follow each provider's documented shape (`worker/metadata/providers.test.ts` says so). No real provider response has been captured. After the first deploy:
-1. Open `/api/v1/providers`, `/api/v1/anime/<slug>` and `/api/v1/anime/<slug>/metadata` for a title that exists in the catalogue.
-2. For TMDB, confirm the card fields are filled only where the catalogue had gaps, and that `sources[]`/`providers[]` include TMDB when it contributed. The full card route exposes `releaseYear`; the metadata route exposes synopsis, rating, episode count, genres and artwork.
-3. Check the other metadata providers' `providers[]`: `ok` is good; `failed` with `invalid_response` means a real response differs from the fixture. Adapters fail closed: an unexpected shape becomes an `invalid_response` outcome, never guessed data.
-
-## 8. ZokoAnime iframe adapter (opt-in)
-The public ZokoAnime landing page documents an iframe route shaped as `/stream/{mal|anilist}/{id}/{episode}/{sub|hsub|dub}`, with an optional `color` query parameter. Kairo builds this URL from the already-resolved title's MAL/AniList ID and the requested episode/track. It does not call a private JSON API, fetch the iframe content, extract media URLs, proxy streams, or trust the provider's `postMessage` events.
-
-This adapter is gated by `ZOKOANIME_EMBED_ENABLED=true`; it is **off by default in every environment**. The public page describes progress/complete/error messages but does not publish a stable payload schema, and a separate provider terms/licensing document was not located during this review. Until the owner has reviewed the applicable terms and permission for the intended use, the route must remain disabled. Progress/history for this iframe is therefore not attributed to Kairo; the provider owns its player UI and state.
-
-## 9. Not built yet
-- The dataset import job (download a release, check its licence, map, load chunked SQL into D1). The mapper and the licence check exist in `providers/manami.ts`; D1's current bulk-load limits still need checking.
-- Dataset "tags" are not mapped to genres (they are not the same thing), so imported titles have no genres until a provider fills them in on demand.
-- Kitsu episode discovery (a separate `EpisodeProvider`, only after Kitsu's terms are verified).
-- Authentication. Decision: a standard identity provider for public users, with Cloudflare Access reserved for admin tools. Not chosen or built; it stays behind its own module so it can be swapped.
+After the MAL secret is registered:
+1. Verify /api/ready reports providers: ["mal"] and configured episode providers separately.
+2. Verify /api/v1/providers lists MAL as the only catalogue provider and TMDB as artwork provider.
+3. Test /api/v1/catalog/featured, /api/v1/catalog/trending, /api/v1/catalog/latest, /api/v1/catalog/search and /api/v1/catalog/browse.
+4. Test a title detail route and confirm synopsis, score, genres, year and episode count are from MAL, while poster and banner URLs point to image.tmdb.org.
+5. Test Jikan/HiAnime episode discovery separately. A valid MAL response does not prove episode discovery or playback is available.

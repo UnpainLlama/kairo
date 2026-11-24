@@ -1,84 +1,59 @@
-# KAIRO — TMDB artwork and metadata setup
+# KAIRO — TMDB artwork-only setup
 
-This update adds TMDB as an independent artwork and metadata-enrichment provider. AniList is Kairo's sole live Anime catalogue provider; HiAnime/Jikan remain separate episode providers configured by `EPISODE_PROVIDERS`. TMDB does not change anime IDs, episode discovery, server discovery, or playback. In live mode, TMDB can fill missing synopsis, rating, genres, release year, and total episode count after a title match. Existing non-empty catalogue metadata takes precedence. The enrichment applies to the live catalogue path; the legacy `CATALOG_SOURCE=db` routes do not use this TMDB artwork service.
+The live Anime catalogue uses MyAnimeList API v2 for all title metadata. TMDB is used only for visual assets: portrait posters, landscape hero/backdrop images and optional episode still thumbnails. TMDB never supplies or overwrites synopsis, rating, genres, season, year, format, airing status or episode count.
+
+The same TMDB_ACCESS_TOKEN secret is also used by the separate Movies catalogue when that feature is enabled.
 
 ## 1. Create a TMDB API Read Access Token
 
-Create an API application in your TMDB account and copy its **API Read Access Token** (Bearer token). Do not use the short API key in this setting. Keep the token private.
+Create an API application in your TMDB account and copy its API Read Access Token (Bearer token). The official guide is https://developer.themoviedb.org/docs/authentication-application. Keep the token private.
+
+TMDB's developer API is free for non-commercial use with attribution. Commercial use requires a separate licence. Read TMDB's current FAQ and Terms before using the service in a public or commercial deployment:
+- https://developer.themoviedb.org/docs/faq
+- https://developer.themoviedb.org/docs/getting-started
 
 ## 2. Set the Cloudflare Worker secret
 
-From the Kairo repository root, run:
+From the Kairo repository root:
 
-```bash
-npx wrangler secret put TMDB_ACCESS_TOKEN --env staging
-```
+    npx wrangler secret put TMDB_ACCESS_TOKEN --env staging
 
-Paste the API Read Access Token when Wrangler prompts for it. Do not add it to `wrangler.jsonc`, `.env`, committed files, or GitHub source code. For production, only configure the secret after confirming the project's licence permits that use:
+Paste the API Read Access Token when Wrangler prompts. Do not add it to wrangler.jsonc, .env.example, frontend code or GitHub source. For production, configure the token only after verifying the intended use is permitted and the environment is approved.
 
-```bash
-npx wrangler secret put TMDB_ACCESS_TOKEN --env production
-```
+## 3. MAL metadata prerequisite
 
-## 3. Local development
+Anime catalogue cards are supplied by MyAnimeList API v2. The Worker must also have a separately configured MAL_CLIENT_ID secret; see https://myanimelist.net/apiconfig. Without it, the Anime catalogue intentionally reports no active catalogue provider and returns 503. The TMDB token does not replace the MAL credential.
 
-Create or update the gitignored `.dev.vars` file in the repository root:
+## 4. Image behavior
 
-```dotenv
-TMDB_ACCESS_TOKEN="your-tmdb-api-read-access-token"
-```
-
-Do not commit `.dev.vars`.
-
-## 4. Verify after deployment
-
-Open:
-
-- `/api/ready` — `artworkProvider` should report `tmdb` when the secret is present.
-- `/api/v1/providers` — `artworkProvider.enabled` should be `true`.
-- `/api/v1/catalog/featured` — inspect card artwork and missing synopsis, rating, genres, release year and episode count.
-- `/api/v1/anime/<slug>` — inspect the full enriched card, including `releaseYear`.
-- `/api/v1/anime/<slug>/metadata` — inspect `synopsis`, `rating`, `episodeCount`, `genres`, image URLs, and TMDB source/provider attribution.
-
-If the secret is absent, invalid, or TMDB is rate-limiting requests, the catalogue still works and keeps upstream artwork and metadata. The first request for an uncached title may take longer while TMDB is queried; matches are cached for 30 days, misses for 7 days, and errors for 5 minutes.
-
-## 5. Artwork behavior
-
-- TMDB TV search is used for series, OVA, ONA and specials; movie search is used for films.
-- Matching considers the title, up to two alternate titles and release year.
-- Search-result poster/backdrop paths are preferred. If either is missing, the corresponding TV/movie image endpoint is queried for an alternate poster or backdrop.
-- After a confident title match, the TV/movie details endpoint is queried for overview, rating, named genres, release year, and (for TV) total episode count. Search-result values remain fallbacks if the details request is unavailable.
-- TMDB fills missing catalogue metadata; existing non-empty synopsis, rating, genres, year, and episode count remain unchanged. A missing value is represented as `null` or an empty genre list in Kairo, but this is a fallback result—not a replacement for the TMDB request.
-- Poster URLs use the `w500` image size; landscape backdrops use `w1280`.
+- MAL image fields are ignored.
+- Kairo searches TMDB TV for series, OVA, ONA and specials; films use TMDB movie search.
+- Candidate artwork is matched using title variants, year and format. Low-confidence matches are ignored.
+- TMDB poster images use w500; landscape backdrops use w1280.
+- If search/details do not return a usable image for a slot, the matching TMDB image collection is checked for an alternate.
+- Episode stills are sourced from TMDB season data and returned as thumbnailUrl; if a still is missing, the episode card can use the series backdrop or poster.
 - Only TMDB's HTTPS image CDN URLs are accepted.
-- A portrait poster is not stretched into a hero backdrop. When there is no landscape artwork, the UI keeps its dark fallback treatment.
+- TMDB errors are non-fatal. MAL metadata remains usable even when artwork lookup fails.
+- Successful artwork matches are cached for 30 days, no-match results for 7 days and failures for 5 minutes. Episode stills are cached separately.
 
-## 6. Attribution and usage terms
+## 5. Verify after deployment
+
+Once both secrets are configured in staging:
+
+- /api/ready should report providers: ["mal"] and artworkProvider: "tmdb".
+- /api/v1/providers should show MAL as the only catalogue metadata provider, episode providers separately, and TMDB as the artwork provider.
+- /api/v1/catalog/featured should return MAL metadata with poster/backdrop URLs hosted at image.tmdb.org.
+- /api/v1/anime/<m-id> should keep MAL synopsis, rating, genres, release year and episode count, with only poster and banner filled from TMDB.
+- /api/v1/anime/<m-id>/episodes should continue to use the configured episode providers and may include TMDB still thumbnails.
+
+## 6. Attribution
 
 TMDB requires its logo and this notice in an About/Credits area:
 
 > This product uses the TMDB API but is not endorsed or certified by TMDB.
 
-The TMDB developer API is offered for non-commercial use with attribution. Commercial use requires a separate licence from TMDB. Review the current terms for your use case before enabling this in a commercial deployment.
-
-Official references:
-
-- https://developer.themoviedb.org/docs/getting-started
-- https://developer.themoviedb.org/docs/authentication-application
-- https://developer.themoviedb.org/reference/search-tv
-- https://developer.themoviedb.org/reference/tv-series-images
-- https://developer.themoviedb.org/docs/image-basics
-- https://www.themoviedb.org/faq/api
-
-
-## Episode stills
-
-The Worker also enriches live episode rows with TMDB season stills. It resolves the matched TV series, selects a season using an explicit season number in the catalogue title when available and otherwise the nearest season air year, then reads `still_path` from the TV season details response. The episode API returns these as `thumbnailUrl`. If an episode has no TMDB still, Kairo falls back to the series backdrop or poster. This is optional: a TMDB lookup failure never prevents episode discovery.
-
+Use the official TMDB logo without modification: https://www.themoviedb.org/about/logos-attribution.
 
 ## Movie playback boundary
 
-TMDB supplies Movies discovery and metadata; it is not a playback provider. CineSrc is
-Kairo's sole Movie playback provider and uses the numeric TMDB movie ID in its documented
-iframe embed. No CineSrc API key or Worker secret is required. See
-[docs/CINESRC_SETUP.md](docs/CINESRC_SETUP.md).
+TMDB supplies Movies discovery and metadata; it is not a playback provider. CineSrc remains Kairo's sole Movie playback provider. See docs/CINESRC_SETUP.md.

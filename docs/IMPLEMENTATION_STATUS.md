@@ -31,9 +31,11 @@
 - The Anime home page includes a featured-title carousel, Trending/Popular/Top ranking tabs, Top Airing and Upcoming side panels, Latest updates and the shared Continue watching rail.
 - Featured carousel supports timed rotation, previous/next controls, keyboard and touch navigation, hidden-tab pause and reduced-motion behavior.
 - Miruro-inspired Anime navigation and styling are scoped to Anime routes; Movies and account pages retain their own interface.
-- AniList is the sole live catalogue provider; MAL, Jikan and HiAnime no longer supply catalogue cards or fallback results. No Miruro API or direct AniList GraphQL client is introduced.
-- New Anime library references use AniList IDs. Older MAL-ID aliases remain resolvable through AniList's `idMal` lookup solely for compatibility and Jikan episode discovery; browser-supplied title/poster/synopsis metadata is not stored as catalogue truth.
-- Live catalogue/episode-provider checks are intentionally skipped for this pass at the owner's request. Automated provider tests use controlled fixtures; live responses are not verified.
+- MAL is the sole live Anime metadata provider when MAL_CLIENT_ID is configured; a missing secret leaves the active catalogue provider list empty and live catalogue routes fail closed. Retired provider adapters and live calls have been removed.
+- TMDB supplies poster/backdrop URLs and optional episode stills only. MAL remains authoritative for synopsis, score, genres, season, year, format, status and episode count.
+- Jikan and HiAnime remain separate episode-discovery providers. New Anime catalogue IDs use MAL-native m... references; historical library identifiers are retained as stored references without an upstream lookup.
+- Miruro-inspired Anime navigation and home composition include the icon rail, Continue Watching carousel and Top Airing sidebar. The desktop OS dock in the uploaded recording is not part of the app and is not copied.
+- MAL and TMDB fixtures are automated; live credentials and upstream response validation remain to be completed in a target Worker environment.
 
 ## Phase 3 — Identity, profile, shared account and workspaces
 
@@ -96,12 +98,12 @@ Working log for the master build prompt. Update after each session.
 ## Session log: provider architecture (2026-11-06)
 
 **Built and verified in a sandbox (typecheck, 72 tests, build, 0 audit findings; not yet run on GitHub CI):**
-- Multi-provider metadata architecture: adapters (AniList, Kitsu, anime-offline-database mapper), normalisation, duplicate detection, cross-provider ID map, priority-based merging with provenance and conflict records, fallback, circuit breaker, caching (KV / edge / memory), error mapping. See docs/PROVIDERS.md.
+- Legacy D1 metadata architecture: adapters (Kitsu, anime-offline-database mapper), normalisation, duplicate detection, cross-provider ID map, priority-based merging with provenance and conflict records, fallback, circuit breaker, caching (KV / edge / memory), error mapping. See docs/PROVIDERS.md.
 - Migration `0002_provider_architecture.sql` (additive; applied twice against SQLite to prove it is re-runnable). New routes `GET /api/v1/providers` and `GET /api/v1/anime/:id/metadata`; no existing route changed.
 - `worker/metadata/route.test.ts` runs the real route against real SQLite with only the provider's HTTP faked. It found and fixed two bugs during development (a hung provider could hang a request; stored `airing` status was dropped).
 - Title page uses the unified record and lists its sources.
 
-**Assumed / not verified:** adapters were tested against hand-written fixtures, not live responses; Kitsu's terms and limits were not read, so Kitsu is off; AniList's 90/min figure is from its docs, with one page warning of a 30/min degraded mode; the KV cache is not yet created.
+**Assumed / not verified:** adapters were tested against hand-written fixtures, not live responses; Kitsu's terms and limits were not read, so Kitsu is off; MAL's published request limit was not verified; the per-isolate pacer is a best-effort guard, not a global rate limit.
 
 **Not built:** dataset import job; Kitsu episodes; authentication; filter-only browse endpoint.
 

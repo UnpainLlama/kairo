@@ -13,7 +13,7 @@ or direct-stream extraction fallback. The iframe integration needs no additional
 Worker secret. See [docs/CINESRC_SETUP.md](CINESRC_SETUP.md).
 
 
-All routes are same-origin behind the Cloudflare Worker unless a deployment architecture explicitly separates the API. Use JSON and UTF-8. Query values must be validated and bounded. In live mode, when the `TMDB_ACCESS_TOKEN` Worker secret is configured, catalogue cards and anime details are enriched with TMDB poster/backdrop URLs and TMDB may fill missing synopsis, rating, genres, release year and total TV episode count. Existing non-empty catalogue metadata takes precedence. Episode rows may receive TMDB still thumbnails, but episode discovery and playback remain separate. The legacy `CATALOG_SOURCE=db` routes do not use this enrichment. Catalogue results remain available if TMDB is unavailable.
+All routes are same-origin behind the Cloudflare Worker unless a deployment architecture explicitly separates the API. Use JSON and UTF-8. Query values must be validated and bounded. Live Anime metadata comes from MAL when MAL_CLIENT_ID is configured. TMDB is used only for poster, backdrop and optional episode-still image URLs; it never supplies synopsis, score, genres, year, status, format or episode count. Artwork failures do not make a MAL catalogue response fail. Legacy CATALOG_SOURCE=db routes do not use the live MAL/TMDB artwork pipeline.
 
 ## 1. Response envelope
 
@@ -70,16 +70,16 @@ Search parameters:
 - `page`: integer 1–500.
 - `limit`: integer 1–50; default 24.
 - Optional filters: `genre` (letters/numbers/space/`&`/`'`/`-`, up to 40 chars, matched case-insensitively against a title's genre list), `year` (1900–2100), `format` (`series|movie|ova|ona|special`), `status` (`airing|finished|upcoming|hiatus`), `season` (`winter|spring|summer|fall`), `sort` (`relevance|popularity|trending|latest|rating`). Enum values are case-insensitive. Stored catalogue values must be normalised to these forms at ingestion for the filters to match.
-- `sort=rating` places titles without a rating last; it never invents a rating. Live mode uses AniList's native sort values; there is no alternate catalogue-provider fallback.
+- `sort=rating` places titles without a rating last; it never invents a rating. In live mode, sort keys use the supported MAL ranking/season ordering. `trending` uses MAL popularity ranking because MAL has no separate trending endpoint.
 - Reject invalid sort keys rather than interpolating them into SQL.
 
 ### Implementation notes (current behaviour)
 
-- In legacy `CATALOG_SOURCE=db` mode, `trending` ranks by stored `popularity_score` and `latest` by the catalogue row's `updated_at`. In live mode, AniList supplies trending-score ordering and currently airing titles newest-first; see docs/LIVE_CATALOGUE.md.
-- In DB mode, `genres` returns counts derived from stored title genre lists. In live mode, AniList returns its genre collection without counts.
-- Related-title behavior in live mode uses AniList relations and recommendations only. The legacy DB route uses shared genres. Accepts `limit` (1–24, default 12).
+- In legacy `CATALOG_SOURCE=db` mode, `trending` ranks by stored `popularity_score` and `latest` by the catalogue row's `updated_at`. In live mode, trending uses MAL popularity ranking and latest uses current-season MAL titles ordered by start date; neither is a global latest-episodes feed.
+- In DB mode, `genres` returns counts derived from stored title genre lists. In live mode, genre choices are derived from a bounded sample of MAL ranking results; the list is not a complete MAL genre directory.
+- Related-title behavior in live mode uses MAL recommendations. The legacy DB route uses shared genres. Accepts `limit` (1–24, default 12).
 - Filter-only `/api/v1/catalog/browse` is supported in both live and legacy D1 catalogue modes. In D1 mode filters are bound against the stored genre/year/format/status/season fields and sort uses the same fixed whitelist as search.
-- D1 catalogue mode resolves episode servers/playback through a stored AniList mapping, or a legacy MAL ID used only as an AniList `idMal` lookup, plus the configured independent episode provider. A title without a supported mapping returns `EPISODE_SOURCE_UNAVAILABLE`; a mode without a server-capable episode provider returns `PROVIDER_UNAVAILABLE` rather than a missing-route 404.
+- D1 catalogue mode resolves episode servers/playback through a stored MAL mapping and the configured independent episode provider. Historical a... user-library identifiers remain stored for compatibility but do not trigger network metadata lookups. A title without a supported MAL mapping returns `EPISODE_SOURCE_UNAVAILABLE`.
 
 ## 2b. Provider routes (added; existing routes unchanged)
 
@@ -132,7 +132,7 @@ Every other `/api/v1/*` route requires an active Kairo session. While `mustChang
 | GET | `/api/v1/me/preferences` | Read theme, interface language, subtitle language/size, autoplay-next, default speed and history-pause preferences. |
 | PUT | `/api/v1/me/preferences` | Update one or more validated account-wide preferences. History pause prevents account-synced Anime and Movie progress; administrator-only YouTube sync remains separate. |
 | GET | `/api/v1/me/library` | Read the signed-in user's legacy D1 Anime rows plus provider-backed Anime references (`references`). |
-| PUT | `/api/v1/me/library/:animeId` | Add/update a legacy D1 Anime row by ID or slug, or a live AniList ID reference. Older `m...` aliases can still resolve through AniList's `idMal` field; new catalogue results use AniList IDs only. |
+| PUT | `/api/v1/me/library/:animeId` | Add/update a legacy D1 Anime row by ID or slug, or a live MAL ID reference (`m...`). Historical a... library references remain in D1 and are not migrated or deleted by this provider change. |
 | DELETE | `/api/v1/me/library/:animeId` | Remove a legacy D1 Anime row by ID or slug, or a provider-reference entry. |
 | GET | `/api/v1/me/movies/library` | Read the signed-in user's Movies library references. |
 | POST | `/api/v1/me/movies/library` | Add or update a Movies library reference. |
@@ -172,7 +172,7 @@ All state-changing requests require a matching same-origin Origin or Referer. Va
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/v1/anime/:id/episodes/:episodeNumber/servers` | Discover available language/server choices from the configured episode provider. In D1 catalogue mode, the stored title must have a supported AniList mapping or a legacy MAL numeric ID that AniList can resolve via `idMal`. |
+| GET | `/api/v1/anime/:id/episodes/:episodeNumber/servers` | Discover available language/server choices from the configured episode provider. In D1 catalogue mode, the stored title must have a supported MAL mapping. |
 | GET | `/api/v1/anime/:id/episodes/:episodeNumber/servers/:serverId/playback` | Resolve the selected opaque server ID through the configured provider and validate the returned URL against the playback host allowlist. |
 
 A successful playback response may include:

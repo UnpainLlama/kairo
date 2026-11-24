@@ -67,8 +67,8 @@ Open these in a browser (replace the host with your staging URL):
 |---|---|
 | `/api/health` | The handler returns JSON with `"success":true`; requests from unauthenticated clients are intercepted by Cloudflare Access unless an exact public path override is configured. |
 | `/api/ready` | The handler checks D1/schema and returns success or 503; requests from unauthenticated clients are intercepted by Cloudflare Access unless an exact public path override is configured. In live catalogue mode readiness checks D1 because account, library and watch-history routes depend on it. |
-| `/api/v1/providers` | The configured live catalogue providers, independent episode providers, attribution details and artwork provider. Do not assume the legacy DB-mode AniList/Kitsu response. |
-| `/` | The site loads and displays results from the configured live catalogue providers. The catalogue is not expected to be empty in live mode. |
+| `/api/v1/providers` | The configured live catalogue providers, independent episode providers, attribution details and artwork provider. In live mode MAL is the sole Anime catalogue provider when MAL_CLIENT_ID is configured; episode and artwork providers are reported separately. |
+| `/` | The site loads and displays results from the configured live catalogue providers. The catalogue is not expected to be empty in live mode once MAL_CLIENT_ID is configured; without it the catalogue intentionally fails closed. |
 
 `/api/ready` returns 503 if D1 is unreachable, if any required migration table is missing, or if the extended `user_profiles` account columns are unavailable. It does not call external catalogue providers, so the readiness probe does not consume their rate limits. With `ACCESS_ENFORCED=true`, the Worker intentionally returns only a generic ready status; if Cloudflare Access protects the path at the edge, unauthenticated deployment probes receive an Access login redirect instead. CI tests exercise the handler and readiness schema checks using test bindings, but that is not a substitute for a live D1 response. The deploy summary distinguishes this case rather than presenting a redirect as a successful database probe.
 
@@ -83,12 +83,13 @@ Open these in a browser (replace the host with your staging URL):
 | `ACCESS_ENFORCED` | Worker variable | `wrangler.jsonc` per environment | Must be `true` for staging and production; Worker API routes fail closed without a valid Access identity |
 | `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` | Worker variables | `wrangler.jsonc` per environment | Exact Cloudflare Access team issuer and application audience. Staging and production use their own app settings; both are checked by the deploy workflow before deployment |
 | `GOOGLE_CLIENT_ID` | Worker variable | `wrangler.jsonc` per environment | OAuth client used only for administrator-only YouTube authorization |
-| `METADATA_PROVIDERS` | var | `wrangler.jsonc` | Enabled metadata providers. `anilist` now; add `kitsu` only after its terms are verified |
+| `METADATA_PROVIDERS` | var | `wrangler.jsonc` | Legacy D1 metadata enrichment providers. Blank by default; Kitsu is off pending terms review. Live Anime uses MAL_CLIENT_ID separately |
 | `ALLOWED_ORIGIN` | var, optional | not set | Only for cross-origin API use |
 | `GOOGLE_CLIENT_SECRET` | Worker secret | Cloudflare Worker environment | Required for the administrator's YouTube OAuth connection |
 | `YOUTUBE_TOKEN_ENCRYPTION_KEY` | Worker secret | Cloudflare Worker environment | Required for YouTube token encryption; 32 random bytes, unpadded base64url |
 | `YOUTUBE_DATA_API_KEY` | Worker secret | Cloudflare Worker environment | Required for administrator-only YouTube video/channel search, uploads and watch metadata; restrict to YouTube Data API v3 |
-| `TMDB_ACCESS_TOKEN` | Worker secret | Cloudflare Worker environment | Required for TMDB Movies discovery/search/details where `MOVIES_TMDB_ENABLED=true`; also used for optional Anime artwork enrichment |
+| `MAL_CLIENT_ID` | Worker secret | Cloudflare Worker environment | Required for live Anime metadata requests. Register a Kairo app at https://myanimelist.net/apiconfig; never expose it to the browser |
+| `TMDB_ACCESS_TOKEN` | Worker secret | Cloudflare Worker environment | Required for TMDB Movies discovery/search/details where `MOVIES_TMDB_ENABLED=true`; also required for Anime poster/backdrop/episode-still artwork |
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | GitHub environment **secrets** | GitHub only | Deploying. Never in the repo or the Worker |
 | `STAGING_DEPLOY_ENABLED` | GitHub variable | GitHub | Auto-deploy staging on merge to main |
 | `STAGING_URL`, `PRODUCTION_URL` | GitHub variables, optional | GitHub | Environment-specific fallback URL if the deploy log URL cannot be read; a production check never falls back to the staging URL |
@@ -132,7 +133,7 @@ Playback position is written locally at most once per second and synced to the s
 - Merge/review the current `youtube` promotion PR, then deploy the promoted commit to staging. The final `/api/ready` should report both `database: "ok"` and `schema: "ok"`.
 - Confirm the staging Worker secrets `GOOGLE_CLIENT_SECRET` and `YOUTUBE_TOKEN_ENCRYPTION_KEY` exist. Cloudflare does not expose secret values for read-back; verify by running a controlled administrator-only YouTube connection test after deployment.
 - Confirm the exact YouTube and Google callback URLs are registered in the Google OAuth client.
-- Validate the AniList catalogue endpoint and separately configured Jikan/HiAnime episode-provider terms as described in `docs/LIVE_CATALOGUE.md`. No MAL catalogue credential is required. The staging deploy's `cache: "kv"` proves the binding is present, not that every KV read/write path has been exercised.
+- Configure and verify MAL_CLIENT_ID before deploying the live Anime catalogue. Confirm /api/ready reports providers: ["mal"], and separately verify Jikan/HiAnime episode discovery. Configure TMDB_ACCESS_TOKEN for Anime artwork; without it MAL metadata can load but poster/backdrop slots will be empty. The staging deploy's `cache: "kv"` proves the binding is present, not that every KV read/write path has been exercised.
 - Migration `0007_youtube_oauth.sql` remains pending on staging until a reviewed staging deployment applies it. Production remains blocked and untouched.
 
 ## 8. Production (blocked)

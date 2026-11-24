@@ -4,8 +4,8 @@ The authenticated username/password application now carries the Anime-only Mirur
 
 ## Boundaries
 
-- The Anime workspace uses the existing Kairo `/catalog/*` and `/anime/:id` APIs. AniList remains the primary live catalogue provider; the frontend does not call Miruro or AniList GraphQL directly.
-- Featured titles, trending, popularity, rating, latest, airing and upcoming collections are sourced from existing catalogue endpoints.
+- The Anime workspace uses the existing Kairo `/catalog/*` and `/anime/:id` APIs. MAL is the sole live Anime metadata provider and TMDB supplies artwork only; the frontend does not call Miruro or external catalogue APIs directly.
+- Featured, trending/popularity, latest-season, airing and discovery collections are sourced from existing catalogue endpoints. MAL does not provide a global latest-episodes feed.
 - The featured banner has manual controls, keyboard navigation, swipe support, reduced-motion handling and pauses automatic rotation while the tab is hidden.
 - Ranking tabs are a local view state over separate Kairo catalogue queries; they do not store a second catalogue or account.
 - The home page's Continue watching rail reads the shared `/me/playback` endpoint, so Anime and Movies progress continue to use the same account data.
@@ -18,4 +18,4 @@ The homepage Watch now action continues into the existing Kairo Anime watch rout
 
 ## Styling and dependencies
 
-The Anime workspace uses scoped styles in `src/styles.css` and existing React Router, Lucide and catalogue components. No runtime dependency, API provider, catalogue cache or database migration is added for this visual integration.
+The Anime workspace uses scoped styles in `src/styles.css` and existing React Router, Lucide and catalogue components. It reuses Kairo's shared account and playback data; no duplicate Anime account/library or D1 migration is introduced.

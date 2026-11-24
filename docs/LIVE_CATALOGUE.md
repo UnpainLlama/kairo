@@ -8,7 +8,7 @@ KAIRO uses the official MyAnimeList API v2 for Anime catalogue metadata and The 
 - **Artwork:** TMDB search and image endpoints, requested by the Worker using `TMDB_ACCESS_TOKEN`. Posters use TMDB poster images; hero backgrounds use TMDB backdrops; episode cards may use TMDB episode stills.
 - **Episodes:** Jikan and HiAnime remain independent episode-discovery providers. The catalogue provider does not supply streams or playback URLs.
 
-When `MAL_CLIENT_ID` is absent, the live catalogue reports no active providers and catalogue requests fail closed with 503. There is no AniList or other catalogue fallback.
+When `MAL_CLIENT_ID` is absent, the live catalogue reports no active providers and catalogue requests fail closed with 503. There is no secondary catalogue provider or fallback.
 
 ## MAL API behaviour
 
