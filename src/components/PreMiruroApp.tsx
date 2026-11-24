@@ -71,7 +71,7 @@ const moviesNavItems: NavItem[] = [
 function AdminOnly({ children }: { children: ReactNode }) {
   const account = useKairoAccount();
   if (account.status === 'loading') return null;
-  if (account.status === 'unavailable') return <main style={{ padding: 32 }}>Access could not be verified. Please refresh and try again.</main>;
+  if (account.status === 'unavailable') return <main style={{ padding: 32 }}>Your Kairo account session could not be verified. Refresh and try again.</main>;
   if (account.status !== 'signed-in') return <Navigate to="/login?continue=admin" replace />;
   if (account.role !== 'admin') return <NotFoundPage />;
   return <>{children}</>;
@@ -237,11 +237,6 @@ export default function PreMiruroApp({ onSignOut }: { onSignOut: () => Promise<v
   }, [menuOpen]);
 
   const closeMenu = (_event?: MouseEvent<HTMLAnchorElement>) => setMenuOpen(false);
-  const signOutFromAccessNotice = (event: MouseEvent<HTMLAnchorElement>) => {
-    event.preventDefault();
-    void logout();
-  };
-
   if (account.status === 'unavailable') return <AccountUnavailablePage onRetry={account.retry} />;
 
 
