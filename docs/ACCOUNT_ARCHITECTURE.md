@@ -25,7 +25,7 @@ Account ownership is always derived from the validated server-side Kairo session
 
 ## Password policy and storage
 
-- New passwords require at least 15 Unicode code points and no more than 1024 UTF-8 bytes. A password cannot be identical to its username, ignoring case.
+- New passwords require at least five whitespace-separated words and no more than 1024 UTF-8 bytes. A password cannot be identical to its username, ignoring case.
 - Password hashes are versioned PBKDF2-HMAC-SHA256 values with a random 16-byte salt and a 32-byte derived key. The Worker verifies only explicit allowlisted hash profiles; the legacy v1 format remains readable so a successful login can rehash it to the current format.
 - **Current release gate:** hash profile v2 uses 100,000 iterations. This is below OWASP's current 600,000-iteration PBKDF2-HMAC-SHA256 recommendation. Do not treat this as production-approved; benchmark the target Workers plan/CPU budget and raise the cost (or select a suitable alternative) before production. Do not guess the Workers plan or change the cost without measuring the actual runtime.
 - Login failures use a generic response for unknown usernames and incorrect passwords. Attempts are rate-limited by IP+username and by IP.
