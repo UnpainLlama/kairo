@@ -46,7 +46,8 @@ export default function HomePage() {
     void refresh();
     window.addEventListener('focus', refresh);
     window.addEventListener('storage', refresh);
-    return () => { active = false; window.removeEventListener('focus', refresh); window.removeEventListener('storage', refresh); };
+    window.addEventListener('kairo:history-change', refresh);
+    return () => { active = false; window.removeEventListener('focus', refresh); window.removeEventListener('storage', refresh); window.removeEventListener('kairo:history-change', refresh); };
   }, [accountId]);
 
   const main = [featured, trending, latest];
