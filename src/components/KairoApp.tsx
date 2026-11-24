@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
-  Activity, ArrowLeft, Bookmark, Check, ChevronDown, Clapperboard, Compass, Film,
+  Activity, ArrowLeft, Bookmark, Check, Clapperboard, Compass, Film,
   Heart, History, Home, Library, LogOut, Menu, Search, Settings, Shield, Sparkles,
   UserRound, X,
 } from 'lucide-react';
-import { Link, NavLink, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAccount } from '../lib/AccountProvider';
-import { apiGet, type ApiMeta } from '../lib/api';
+import { apiGet } from '../lib/api';
 import { authRequest } from '../lib/authClient';
 import { useApi, type ApiState } from '../lib/useApi';
 import {
@@ -14,10 +14,10 @@ import {
   statusLabel, textList, type AnimeDetails, type CatalogCard, type Episode, type EpisodeServer,
 } from '../lib/catalog';
 import {
-  movieDate, movieHref, movieRating, movieYear, type MovieDetail, type MoviePage, type MovieSummary,
+  movieHref, movieRating, movieYear, type MovieDetail, type MoviePage, type MovieSummary,
 } from '../lib/movies';
 import {
-  deleteMediaPlayback, loadMediaPlayback, syncMediaPlayback, type MediaPlaybackSnapshot,
+  deleteMediaPlayback, loadMediaPlayback, syncMediaPlayback, writeLocalMediaPlayback, type MediaPlaybackSnapshot,
   type SavedPlayerState,
 } from '../lib/mediaPlayback';
 import { shouldSyncPlaybackProgress, type PlaybackSaveReason } from '../lib/playbackSync';
@@ -36,7 +36,7 @@ type Preferences = {
 };
 type Profile = {
   id: string;
-  username: string;
+  username: string | null;
   displayName: string;
   email: string | null;
   avatarUrl: string | null;
@@ -44,8 +44,11 @@ type Profile = {
   visibility: 'private' | 'public';
   createdAt: string;
 };
-type AnimeLibraryEntry = CatalogCard & {
+type AnimeLibraryEntry = {
   animeId: string;
+  slug: string;
+  title: string;
+  posterUrl: string | null;
   status: string;
   isFavorite: boolean | number;
   addedAt: string;
@@ -62,7 +65,7 @@ type MovieLibraryEntry = {
 type PlaybackItem = MediaPlaybackSnapshot;
 type AdminAccount = {
   id: string;
-  username: string;
+  username: string | null;
   displayName: string;
   status: 'active' | 'suspended' | 'deleted';
   createdAt: string;
@@ -311,14 +314,14 @@ function AnimeBrowsePage({ seasonal = false }: { seasonal?: boolean }) {
   const setFilter = (key: string, value: string) => {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value); else next.delete(key);
-    next.set('page', '1');
+    if (key !== 'page') next.set('page', '1');
     setParams(next);
   };
   return (
     <div className="page">
       <PageHeading eyebrow={seasonal ? 'CURRENT SEASON' : 'THE ANIME CATALOGUE'} title={seasonal ? 'Seasonal picks' : 'Explore Anime'} description={seasonal ? 'Titles currently associated with this calendar season.' : 'Search by genre, browse what is trending, and find your next watch.'} />
       <div className="filter-bar">
-        <label>Genre <select value={genre} onChange={event => setFilter('genre', event.target.value)}><option value="">All genres</option>{(genres.status === 'ok' ? genres.data.items : []).map(g => <option key={g.name} value={g.name}>{g.name}</option>)}</select></label>
+        <label>Genre <select value={genre} onChange={event => setFilter('genre', event.target.value)}><option value="">All genres</option>{(genres.status === 'ok' ? genres.data.items.map(g => typeof g === 'string' ? g : g.name) : []).map(genreName => <option key={genreName} value={genreName}>{genreName}</option>)}</select></label>
         {!seasonal && <label>Season <select value={season} onChange={event => setFilter('season', event.target.value)}><option value="">Any season</option><option value="winter">Winter</option><option value="spring">Spring</option><option value="summer">Summer</option><option value="fall">Fall</option><option value="current">Current season</option></select></label>}
         <label>Sort <select value={sort} onChange={event => setFilter('sort', event.target.value)}><option value="popularity">Popularity</option><option value="trending">Trending</option><option value="latest">Latest</option><option value="rating">Rating</option><option value="relevance">Relevance</option></select></label>
         {(genre || (!seasonal && season) || sort !== 'popularity') && <button type="button" className="text-action" onClick={() => setParams(seasonal ? new URLSearchParams() : new URLSearchParams())}>Clear filters</button>}
@@ -365,24 +368,25 @@ function AnimeDetailPage() {
   const [libraryStatus, setLibraryStatus] = useState('plan_to_watch');
   const account = useAccount();
   const [saved, setSaved] = useState(false);
+  const [favorite, setFavorite] = useState(false);
 
   useEffect(() => {
     let active = true;
     void apiGet<PageData<AnimeLibraryEntry>>('/me/library').then(result => {
       const found = result.items.find(entry => entry.animeId === title.data?.id);
-      if (active && found) { setSaved(true); setLibraryStatus(found.status); }
+      if (active && found) { setSaved(true); setLibraryStatus(found.status); setFavorite(Boolean(found.isFavorite)); }
     }).catch(() => undefined);
     return () => { active = false; };
   }, [title.status === 'ok' ? title.data.id : id]);
 
-  async function saveLibrary(favorite = false) {
+  async function saveLibrary(nextFavorite = favorite) {
     if (title.status !== 'ok') return;
     setLibraryBusy(true); setLibraryMessage('');
     try {
       await authRequest('/me/library/' + encodeURIComponent(title.data.id), {
-        method: 'PUT', body: JSON.stringify({ status: libraryStatus, isFavorite: favorite || saved }),
+        method: 'PUT', body: JSON.stringify({ status: libraryStatus, isFavorite: nextFavorite }),
       });
-      setSaved(true); setLibraryMessage('Saved to your account library.');
+      setSaved(true); setFavorite(nextFavorite); setLibraryMessage('Saved to your account library.');
     } catch (error) { setLibraryMessage(error instanceof Error ? error.message : 'Could not save this title.'); }
     finally { setLibraryBusy(false); }
   }
@@ -444,6 +448,8 @@ function AnimeWatchPage() {
   const preferencesState = useApi<Preferences>('/me/preferences');
   const [serverId, setServerId] = useState('');
   const [snapshot, setSnapshot] = useState<MediaPlaybackSnapshot | null>(null);
+  const snapshotRef = useRef<MediaPlaybackSnapshot | null>(null);
+  const lastLocalSavedAt = useRef(0);
   const [snapshotLoading, setSnapshotLoading] = useState(true);
   const [sourceAttempt, setSourceAttempt] = useState(0);
   const sourcePath = serverId ? '/anime/' + encodeURIComponent(titleId) + '/episodes/' + episodeNumber + '/servers/' + encodeURIComponent(serverId) + '/playback?attempt=' + sourceAttempt : null;
@@ -462,26 +468,39 @@ function AnimeWatchPage() {
     let active = true;
     setSnapshotLoading(true);
     void loadMediaPlayback(account.user?.id ?? null, 'anime', mediaKey).then(value => {
-      if (active) { setSnapshot(value); lastSynced.current = { at: Date.now(), seconds: value?.progressSeconds ?? 0 }; }
+      if (active) {
+        snapshotRef.current = value;
+        setSnapshot(value);
+        lastSynced.current = { at: Date.now(), seconds: value?.progressSeconds ?? 0 };
+      }
     }).finally(() => { if (active) setSnapshotLoading(false); });
     return () => { active = false; };
   }, [account.user?.id, mediaKey]);
 
-  const saveProgress = useCallback((seconds: number, reason: PlaybackSaveReason, playerState: SavedPlayerState = {}) => {
+  const saveProgress = useCallback((seconds: number, reason: PlaybackSaveReason, playerState: SavedPlayerState = {}, reportedDuration?: number | null) => {
     if (!Number.isFinite(seconds) || seconds < 0 || title.status !== 'ok') return;
     const now = Date.now();
-    const duration = snapshot?.durationSeconds ?? null;
-    if (!shouldSyncPlaybackProgress(reason, lastSynced.current.at, lastSynced.current.seconds, seconds, now, JSON.stringify(playerState) !== JSON.stringify(snapshot?.playerState ?? {}))) return;
+    const previous = snapshotRef.current;
+    const duration = typeof reportedDuration === 'number' && Number.isFinite(reportedDuration) && reportedDuration > 0
+      ? reportedDuration
+      : previous?.durationSeconds ?? null;
+    const stateChanged = JSON.stringify(playerState) !== JSON.stringify(previous?.playerState ?? {});
     const next: MediaPlaybackSnapshot = {
       mediaType: 'anime', mediaKey: title.data.id + ':' + episodeNumber, title: title.data.title,
-      artworkUrl: title.data.posterUrl, progressSeconds: seconds, durationSeconds: duration,
-      completed: reason === 'ended' || Boolean(duration && seconds >= duration - 2),
+      artworkUrl: title.data.posterUrl, progressSeconds: duration ? Math.min(seconds, duration) : seconds,
+      durationSeconds: duration, completed: reason === 'ended' || Boolean(duration && seconds >= duration - 2),
       playerState, updatedAt: now,
     };
+    if (reason !== 'open' && (reason !== 'timeupdate' || now - lastLocalSavedAt.current >= 5_000)) {
+      writeLocalMediaPlayback(account.user?.id ?? null, next);
+      lastLocalSavedAt.current = now;
+    }
+    snapshotRef.current = next;
+    if (!shouldSyncPlaybackProgress(reason, lastSynced.current.at, lastSynced.current.seconds, next.progressSeconds, now, stateChanged)) return;
     setSnapshot(next);
-    lastSynced.current = { at: now, seconds };
+    lastSynced.current = { at: now, seconds: next.progressSeconds };
     void syncMediaPlayback(account.user?.id ?? null, next, reason === 'pagehide');
-  }, [account.user?.id, episodeNumber, snapshot, title.status === 'ok' ? title.data.id : '', title.status === 'ok' ? title.data.title : '', title.status === 'ok' ? title.data.posterUrl : null]);
+  }, [account.user?.id, episodeNumber, title.status === 'ok' ? title.data.id : '', title.status === 'ok' ? title.data.title : '', title.status === 'ok' ? title.data.posterUrl : null]);
 
   if (!Number.isInteger(episodeNumber) || episodeNumber < 1) return <div className="page"><EmptyPanel title="Invalid episode" message="This watch link does not contain a valid episode number." action={<Link className="button button-primary" to="/anime">Browse anime</Link>} /></div>;
   if (title.status === 'loading' || servers.status === 'loading' || snapshotLoading) return <div className="page"><LoadingPanel label="Preparing your player…" /></div>;
@@ -507,6 +526,10 @@ function AnimeWatchPage() {
         progressKey={account.user!.id + ':' + mediaKey}
         nextUrl={nextUrl}
         initialPlayerState={snapshot?.playerState}
+        initialProgressSeconds={snapshot?.progressSeconds ?? 0}
+        defaultPlaybackSpeed={preferences.defaultPlaybackSpeed}
+        defaultSubtitleLanguage={preferences.subtitleLanguage}
+        subtitleSize={preferences.subtitleSize}
         onProgress={saveProgress}
       />}
       {source.status === 'ok' && snapshot && snapshot.progressSeconds > 15 && !snapshot.completed && <p className="inline-note">Resume point saved at {Math.floor(snapshot.progressSeconds / 60)}:{String(Math.floor(snapshot.progressSeconds % 60)).padStart(2, '0')}.</p>}
@@ -518,18 +541,36 @@ function AnimeWatchPage() {
 function MovieBrowsePage() {
   const [params, setParams] = useSearchParams();
   const kind = params.get('kind') ?? 'trending_week';
+  const queryParam = params.get('q') ?? '';
+  const [query, setQuery] = useState(queryParam);
+  useEffect(() => setQuery(queryParam), [queryParam]);
   const page = Number(params.get('page') ?? 1);
-  const path = '/movies/discover?' + new URLSearchParams({ kind, page: String(Number.isInteger(page) && page > 0 ? page : 1) });
+  const safePage = Number.isInteger(page) && page > 0 ? page : 1;
+  const path = queryParam.trim()
+    ? '/movies/search?' + new URLSearchParams({ q: queryParam.trim(), page: String(safePage) }).toString()
+    : '/movies/discover?' + new URLSearchParams({ kind, page: String(safePage) }).toString();
   const results = useApi<MoviePage>(path);
-  const title = kind === 'trending_week' ? 'Trending movies' : kind.replaceAll('_', ' ');
+  const title = queryParam.trim() ? 'Movie search' : kind === 'trending_week' ? 'Trending movies' : kind.replaceAll('_', ' ');
+  function submitSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const q = query.trim();
+    setParams(q ? { q, page: '1' } : { kind, page: '1' });
+  }
   return (
     <div className="page">
-      <PageHeading eyebrow="MOVIES" title={title.charAt(0).toUpperCase() + title.slice(1)} description="Film discovery powered by the configured metadata provider." />
-      <div className="filter-bar"><label>Collection <select value={kind} onChange={event => setParams({ kind: event.target.value, page: '1' })}><option value="trending_week">Trending this week</option><option value="trending_day">Trending today</option><option value="popular">Popular</option><option value="top_rated">Top rated</option><option value="upcoming">Upcoming</option><option value="now_playing">Now playing</option></select></label></div>
+      <PageHeading eyebrow="MOVIES" title={title.charAt(0).toUpperCase() + title.slice(1)} description="Discover films and save them alongside your Anime library." />
+      <div className="filter-bar movie-filter-bar">
+        <form className="movie-search-inline" role="search" onSubmit={submitSearch}>
+          <label>Search movies<input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search films…" maxLength={120} /></label>
+          <button className="button button-primary small" type="submit">Search</button>
+          {queryParam && <button className="text-action" type="button" onClick={() => { setQuery(''); setParams({ kind, page: '1' }); }}>Clear search</button>}
+        </form>
+        {!queryParam && <label>Collection <select value={kind} onChange={event => setParams({ kind: event.target.value, page: '1' })}><option value="trending_week">Trending this week</option><option value="trending_day">Trending today</option><option value="popular">Popular</option><option value="top_rated">Top rated</option><option value="upcoming">Upcoming</option><option value="now_playing">Now playing</option></select></label>}
+      </div>
       {results.status === 'loading' && <LoadingPanel label="Loading movie catalogue…" />}
       {results.status === 'error' && <ItemError error={results.error} onRetry={results.reload} />}
-      {results.status === 'ok' && (results.data.items.length ? <PosterGrid items={results.data.items} kind="movie" /> : <EmptyPanel title="No movies in this collection" message="The provider returned no results for this collection." />)}
-      {results.status === 'ok' && results.data.totalPages > results.data.page && <div className="pagination"><button className="button button-secondary" onClick={() => setParams({ kind, page: String(page + 1) })}>Next page</button></div>}
+      {results.status === 'ok' && (results.data.items.length ? <PosterGrid items={results.data.items} kind="movie" /> : <EmptyPanel title="No movies found" message="Try another title or collection." />)}
+      {results.status === 'ok' && results.data.totalPages > results.data.page && <div className="pagination"><button className="button button-secondary" onClick={() => setParams(queryParam ? { q: queryParam, page: String(page + 1) } : { kind, page: String(page + 1) })}>Next page</button></div>}
       <p className="provider-attribution">Movie metadata and artwork are supplied by TMDB when enabled. Kairo is not endorsed or certified by TMDB.</p>
     </div>
   );
@@ -538,10 +579,19 @@ function MovieBrowsePage() {
 function MovieDetailPage() {
   const { id = '' } = useParams();
   const detail = useApi<MovieDetail>('/movies/' + encodeURIComponent(id));
+  const movieLibrary = useApi<PageData<MovieLibraryEntry>>('/me/movies/library');
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<'watchlist' | 'watched' | null>('watchlist');
   const [favorite, setFavorite] = useState(false);
   const [notice, setNotice] = useState('');
+  useEffect(() => {
+    if (movieLibrary.status !== 'ok') return;
+    const found = movieLibrary.data.items.find(item => item.providerId === 'tmdb' && item.externalId === id);
+    if (found) {
+      setStatus(found.status);
+      setFavorite(Boolean(found.isFavorite));
+    }
+  }, [movieLibrary.status, movieLibrary.status === 'ok' ? movieLibrary.data.items.length : 0, id]);
   async function save() {
     setSaving(true); setNotice('');
     try {
@@ -652,8 +702,9 @@ function LibraryPage() {
         {movies.status === 'ok' && movies.data.items.length === 0 && <p className="muted-text">No saved movies yet.</p>}
         {movies.status === 'ok' && movies.data.items.map(item => <article className="library-row compact" key={item.providerId + item.externalId}>
           <div className="library-art movie-art"><Film size={24} /></div>
-          <div className="library-info"><Link to={'/movies/' + encodeURIComponent(item.externalId)}><strong>Movie #{item.externalId}</strong></Link><small>{item.status ?? 'Favourite'}{item.isFavorite ? ' · Favourite' : ''}{item.rating !== null ? ' · ' + item.rating.toFixed(1) : ''}</small></div>
+          <div className="library-info"><Link to={'/movies/' + encodeURIComponent(item.externalId)}><strong>Saved movie · TMDB #{item.externalId}</strong></Link><small>{item.status ?? 'Favourite'}{item.isFavorite ? ' · Favourite' : ''}{item.rating !== null ? ' · ' + item.rating.toFixed(1) : ''}</small></div>
           <Link className="text-action" to={'/movies/' + encodeURIComponent(item.externalId)}>View details</Link>
+          <button type="button" className="text-action danger" onClick={() => { void authRequest('/me/movies/library/tmdb/' + encodeURIComponent(item.externalId), { method: 'DELETE' }).then(movies.reload).catch(() => undefined); }}>Remove</button>
         </article>)}
       </section>
     </div>
@@ -701,6 +752,25 @@ function HistoryPage() {
   );
 }
 
+function PublicProfilePage() {
+  const { username = '' } = useParams();
+  const state = useApi<{ profile: Omit<Profile, 'id' | 'email' | 'visibility' | 'updatedAt'> }>('/profiles/' + encodeURIComponent(username));
+  if (state.status === 'loading') return <div className="page"><LoadingPanel label="Loading public profile…" /></div>;
+  if (state.status === 'error') return <div className="page"><ItemError error={state.error} onRetry={state.reload} /></div>;
+  const profile = state.data.profile;
+  return (
+    <div className="page">
+      <Link className="back-link" to="/"><ArrowLeft size={16} /> Back to Kairo</Link>
+      <section className="settings-card public-profile-card">
+        <div className="profile-avatar">{profile.displayName.slice(0, 1).toUpperCase() || <UserRound />}</div>
+        <div><h1>{profile.displayName}</h1><p className="muted-text">@{profile.username}</p></div>
+        <p>{profile.bio || 'This profile has not added a bio yet.'}</p>
+        <small className="muted-text">Kairo member since {dateLabel(profile.createdAt) ?? '—'}</small>
+      </section>
+    </div>
+  );
+}
+
 function ProfilePage() {
   const state = useApi<{ profile: Profile }>('/me/profile');
   const account = useAccount();
@@ -736,7 +806,8 @@ function ProfilePage() {
           <label>Display name<input value={displayName} onChange={event => setDisplayName(event.target.value)} minLength={2} maxLength={40} required /></label>
           <label>Bio<textarea value={bio} onChange={event => setBio(event.target.value)} maxLength={280} rows={4} /></label>
           <label>Profile visibility<select value={visibility} onChange={event => setVisibility(event.target.value as 'private' | 'public')}><option value="private">Private</option><option value="public">Public</option></select></label>
-          <p className="muted-text">Your profile is private by default. Public visibility may be used by future Kairo community features.</p>
+          <p className="muted-text">Only your username, display name, avatar and bio are shown on a public profile. Email, library and watch history remain private.</p>
+          {visibility === 'public' && account.user?.username && <Link className="text-action" to={'/users/' + encodeURIComponent(account.user.username)}>View your public profile</Link>}
           {notice && <p className="inline-note" role="status">{notice}</p>}
           <button className="button button-primary" disabled={busy}>{busy ? 'Saving…' : 'Save profile'}</button>
         </form>
@@ -810,7 +881,7 @@ function SettingsPage() {
         <section className="settings-card">
           <h2>Privacy</h2>
           <label className="check-row"><input type="checkbox" checked={prefs.historyPaused} onChange={event => { void update({ historyPaused: event.target.checked }); }} disabled={busy} /> Pause watch history recording</label>
-          <p className="muted-text">When paused, player progress is kept only for the current playback session and is not sent to your account history.</p>
+          <p className="muted-text">When paused, your browser may keep a local resume point, but new progress is not synced to your account or other devices.</p>
           <button className="button button-secondary" type="button" disabled={exporting} onClick={() => { void exportData(); }}>{exporting ? 'Preparing export…' : 'Export my account data'}</button>
         </section>
         <section className="settings-card danger-card">
@@ -847,10 +918,18 @@ function AdminConsolePage() {
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Could not create account.'); }
     finally { setBusy(false); }
   }
-  async function accountAction(id: string, action: 'reset' | 'suspend' | 'activate' | 'delete') {
+  async function accountAction(id: string, action: 'enroll' | 'reset' | 'suspend' | 'activate' | 'delete') {
     setMessage(''); setOneTimeSecret('');
     try {
-      if (action === 'reset') {
+      if (action === 'enroll') {
+        const newUsername = window.prompt('Choose a username for this existing account (3–32 characters).')?.trim() ?? '';
+        if (!newUsername) return;
+        const result = await authRequest<{ temporaryPassword: string; username: string }>('/admin/accounts/' + encodeURIComponent(id) + '/enroll', {
+          method: 'POST', body: JSON.stringify({ username: newUsername }),
+        });
+        setOneTimeSecret('Username: ' + result.data.username + '\nTemporary password: ' + result.data.temporaryPassword);
+        setMessage('Existing account enrolled. Deliver the temporary password securely; it must be changed at next sign-in.');
+      } else if (action === 'reset') {
         const result = await authRequest<{ temporaryPassword: string; username?: string }>('/admin/accounts/' + encodeURIComponent(id) + '/password', { method: 'POST' });
         setOneTimeSecret('Temporary password: ' + result.data.temporaryPassword);
         setMessage('Password reset. Deliver this temporary password securely; the user must change it on next sign-in.');
@@ -885,9 +964,9 @@ function AdminConsolePage() {
       <section className="content-section">
         <SectionHeading title="Standard accounts" description="Temporary passwords are only displayed in the response that creates or resets them." />
         <div className="admin-account-list">{data.accounts.map(item => <article className="admin-account-row" key={item.id}>
-          <div><strong>{item.displayName}</strong><small>@{item.username} · {item.status} · {item.credentialsConfigured ? 'Credentials set' : 'Needs enrolment'}{item.mustChangePassword ? ' · Must change password' : ''}</small></div>
+          <div><strong>{item.displayName}</strong><small>@{item.username ?? 'not enrolled'} · {item.status} · {item.credentialsConfigured ? 'Credentials set' : 'Needs enrolment'}{item.mustChangePassword ? ' · Must change password' : ''}</small></div>
           <div className="admin-account-actions">
-            <button className="text-action" type="button" onClick={() => { void accountAction(item.id, 'reset'); }}>Reset password</button>
+            {item.credentialsConfigured ? <button className="text-action" type="button" onClick={() => { void accountAction(item.id, 'reset'); }}>Reset password</button> : <button className="text-action" type="button" onClick={() => { void accountAction(item.id, 'enroll'); }}>Enroll account</button>}
             {item.status === 'suspended' ? <button className="text-action" type="button" onClick={() => { void accountAction(item.id, 'activate'); }}>Reactivate</button> : <button className="text-action" type="button" onClick={() => { void accountAction(item.id, 'suspend'); }}>Suspend</button>}
             <button className="text-action danger" type="button" onClick={() => { void accountAction(item.id, 'delete'); }}>Delete</button>
           </div>
@@ -923,6 +1002,7 @@ function WorkspaceRoutes() {
         <Route path="library" element={<LibraryPage />} />
         <Route path="history" element={<HistoryPage />} />
         <Route path="profile" element={<ProfilePage />} />
+        <Route path="users/:username" element={<PublicProfilePage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<CatchAllPage adminPath={adminPath} />} />
       </Route>

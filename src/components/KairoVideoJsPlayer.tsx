@@ -125,7 +125,7 @@ export default function KairoVideoJsPlayer({
         lastLocalSaveAt = now;
       }
       // The watch page throttles remote writes to one per 15 seconds.
-      onProgress?.(time, 'timeupdate', readPlayerState());
+      onProgress?.(time, 'timeupdate', readPlayerState(), Number.isFinite(duration) && duration > 0 ? duration : null);
       setSkip(introEnd && time > 5 && time < introEnd ? 'intro' : outroStart && time >= outroStart ? 'outro' : null);
       setRemaining(nextUrl && Number.isFinite(duration) && duration - time <= 15 && duration - time > 0
         ? Math.ceil(duration - time)

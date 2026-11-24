@@ -39,29 +39,6 @@ function sameSecret(a:string,b:string):boolean{const l=enc.encode(a),r=enc.encod
 function isUsernameConflict(error:unknown):boolean{const m=error instanceof Error?error.message:String(error);return m.toLowerCase().includes('unique constraint failed: user_profiles.username')||m.includes('idx_user_profiles_username');}
 function isAccountLimitError(error:unknown):boolean{const m=error instanceof Error?error.message:String(error);return m.includes('standard_account_limit_reached');}
 
-/** Delete account-owned rows but retain a minimal profile tombstone; no profile FK cascade runs. */
-export async function deleteStandardAccount(db:D1Database,accountId:string):Promise<'not-found'|'deleted'>{
-  const target=await db.prepare("SELECT id FROM user_profiles WHERE id=? AND role='user' AND account_status IN ('active','suspended')").bind(accountId).first<{id:string}>();
-  if(!target)return 'not-found';
-  const ownedTables=[
-    ['sessions','user_id'],['user_credentials','user_id'],['auth_identities','user_id'],
-    ['email_verification_tokens','user_id'],['password_reset_tokens','user_id'],['provider_connections','user_id'],
-    ['google_oauth_states','link_user_id'],['youtube_oauth_states','user_id'],['user_preferences','user_id'],
-    ['user_library','user_id'],['watch_progress','user_id'],['viewing_history','user_id'],['user_watch_history','user_id'],
-    ['youtube_feed_channels','user_id'],['youtube_feed_cursors','user_id'],['youtube_watch_history','user_id'],
-    ['youtube_watch_later','user_id'],['user_movie_library','user_id'],['user_movie_library_refs','user_id'],
-    ['user_watch_history_tombstones','user_id'],['user_watch_history_clear_markers','user_id'],['user_media_playback','user_id'],
-  ];
-  const existsTombstone="EXISTS(SELECT 1 FROM user_profiles WHERE id=? AND account_status='deleted')";
-  const results=await db.batch([
-    db.prepare(`UPDATE user_profiles SET display_name='Former account',avatar_url=NULL,bio='',profile_visibility='private',
-      email=NULL,email_verified_at=NULL,username=NULL,account_status='deleted',updated_at=CURRENT_TIMESTAMP
-      WHERE id=? AND role='user' AND account_status IN ('active','suspended')`).bind(accountId),
-    ...ownedTables.map(([table,column])=>db.prepare(`DELETE FROM ${table} WHERE ${column}=? AND ${existsTombstone}`).bind(accountId,accountId)),
-  ]);
-  return Number(results[0]?.meta?.changes??0)===1?'deleted':'not-found';
-}
-
 export function registerAdminRoutes(app:any){
   app.get('/api/v1/admin/console-path',async(c:any)=>{
     noStore(c);if(!await currentAdmin(c))return fail(c,404,'NOT_FOUND','Not found.');
@@ -105,7 +82,7 @@ export function registerAdminRoutes(app:any){
       const [accounts,count]=await Promise.all([
         c.env.DB.prepare(`SELECT p.id,p.username,p.display_name AS displayName,p.account_status AS status,p.created_at AS createdAt,
           CASE WHEN uc.user_id IS NULL THEN 0 ELSE 1 END AS credentialsConfigured,COALESCE(uc.must_change_password,1) AS mustChangePassword
-          FROM user_profiles p LEFT JOIN user_credentials uc ON uc.user_id=p.id WHERE p.role='user' ORDER BY p.created_at ASC`).all(),
+          FROM user_profiles p LEFT JOIN user_credentials uc ON uc.user_id=p.id WHERE p.role='user' AND p.account_status IN ('active','suspended') ORDER BY p.created_at ASC`).all(),
         c.env.DB.prepare("SELECT COUNT(*) AS count FROM user_profiles WHERE role='user' AND account_status IN ('active','suspended')").first() as Promise<{count:number}|null>,
       ]);
       return ok(c,{accounts:accounts.results??[],standardAccountCount:Number(count?.count??0),standardAccountLimit:15});

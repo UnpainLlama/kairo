@@ -20,8 +20,9 @@ type Props = {
   introEnd?: number | null;
   outroStart?: number | null;
   nextUrl?: string | null;
-  onProgress?: (seconds: number, reason: PlaybackSaveReason, playerState?: SavedPlayerState) => void;
+  onProgress?: (seconds: number, reason: PlaybackSaveReason, playerState?: SavedPlayerState, durationSeconds?: number | null) => void;
   initialPlayerState?: SavedPlayerState | null;
+  initialProgressSeconds?: number;
   defaultPlaybackSpeed?: number;
   defaultSubtitleLanguage?: string;
   subtitleSize?: 'small' | 'medium' | 'large';
@@ -52,25 +53,25 @@ function readSavedSeconds(progressKey: string): number {
   } catch { return 0; }
 }
 
-export default function KairoMediaPlayer({ source, title, progressKey, introEnd, outroStart, nextUrl, onProgress, initialPlayerState, defaultPlaybackSpeed = 1, defaultSubtitleLanguage = 'en', subtitleSize = 'medium' }: Props) {
+export default function KairoMediaPlayer({ source, title, progressKey, introEnd, outroStart, nextUrl, onProgress, initialPlayerState, initialProgressSeconds = 0, defaultPlaybackSpeed = 1, defaultSubtitleLanguage = 'en', subtitleSize = 'medium' }: Props) {
   const rawUrl = source.protocol === 'hls' ? source.manifestUrl : source.protocol === 'file' ? source.mediaUrl : source.embedUrl;
   const safeUrl = useMemo(() => safeHttpsUrl(rawUrl), [rawUrl]);
   const videoId = useMemo(() => safeUrl ? youtubeVideoId(safeUrl) : null, [safeUrl]);
 
   if (!safeUrl) return <div className="kc-player-message" role="alert"><h2>Unsafe playback source</h2><p>Kairo only loads secure HTTPS media sources.</p></div>;
   if (source.protocol === 'hls') {
-    return <KairoVideoJsPlayer src={safeUrl.href} title={title} progressKey={progressKey} subtitles={source.subtitles ?? EMPTY_SUBTITLES} mediaType={source.protocol} initialPlayerState={initialPlayerState} defaultPlaybackSpeed={defaultPlaybackSpeed} defaultSubtitleLanguage={defaultSubtitleLanguage} subtitleSize={subtitleSize} introEnd={introEnd} outroStart={outroStart} nextUrl={nextUrl} onProgress={onProgress} />;
+    return <KairoVideoJsPlayer src={safeUrl.href} title={title} progressKey={progressKey} subtitles={source.subtitles ?? EMPTY_SUBTITLES} mediaType={source.protocol} initialPlayerState={initialPlayerState} initialProgressSeconds={initialProgressSeconds} defaultPlaybackSpeed={defaultPlaybackSpeed} defaultSubtitleLanguage={defaultSubtitleLanguage} subtitleSize={subtitleSize} introEnd={introEnd} outroStart={outroStart} nextUrl={nextUrl} onProgress={onProgress} />;
   }
   if (source.protocol === 'file') {
-    return <KairoVideoJsPlayer src={safeUrl.href} title={title} progressKey={progressKey} subtitles={source.subtitles ?? []} mediaType="file" initialPlayerState={initialPlayerState} defaultPlaybackSpeed={defaultPlaybackSpeed} defaultSubtitleLanguage={defaultSubtitleLanguage} subtitleSize={subtitleSize} onProgress={onProgress} />;
+    return <KairoVideoJsPlayer src={safeUrl.href} title={title} progressKey={progressKey} subtitles={source.subtitles ?? EMPTY_SUBTITLES} mediaType="file" initialPlayerState={initialPlayerState} initialProgressSeconds={initialProgressSeconds} defaultPlaybackSpeed={defaultPlaybackSpeed} defaultSubtitleLanguage={defaultSubtitleLanguage} subtitleSize={subtitleSize} onProgress={onProgress} />;
   }
   if (videoId) {
     return <YouTubeIframePlayer
       videoId={videoId}
       title={title}
-      startSeconds={readSavedSeconds(progressKey)}
+      startSeconds={Math.max(readSavedSeconds(progressKey), Number.isFinite(initialProgressSeconds) ? initialProgressSeconds : 0)}
       initialPlayerState={initialPlayerState}
-      onProgress={(seconds, _duration, _completed, reason, state) => onProgress?.(seconds, reason, state)}
+      onProgress={(seconds, duration, _completed, reason, state) => onProgress?.(seconds, reason, state, duration)}
     />;
   }
 

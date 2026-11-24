@@ -18,6 +18,7 @@ function originAllowed(c: any): boolean {
 
 export function registerProfileRoutes(app: any) {
   app.get('/api/v1/profiles/:username', async (c: any) => {
+    c.header('Cache-Control', 'private, no-store');
     const viewer = await getRequestUser(c);
     if (!viewer) return fail(c, 401, 'AUTH_REQUIRED', 'A Kairo account session is required to view profiles.');
     const username = c.req.param('username').trim();

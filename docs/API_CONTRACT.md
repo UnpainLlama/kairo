@@ -126,8 +126,13 @@ Every other `/api/v1/*` route requires an active Kairo session. While `mustChang
 | POST | `/api/v1/auth/logout` | Revoke the current Kairo session and clear its HttpOnly cookie. It does not terminate the separate Cloudflare Access browser session. |
 | GET | `/api/v1/me` | Return the authenticated profile, role, username and forced-password-change state. |
 | POST | `/api/v1/me/password` | Verify the current password, set a new password, clear forced-change state and revoke every other session for the account. |
-| GET | `/api/v1/me/preferences` | Read the account-wide history recording preference (`historyPaused`). |
-| PUT | `/api/v1/me/preferences` | Update the account-wide history recording preference (`historyPaused`); applies to Anime and Movies on all devices. |
+| GET | `/api/v1/me/profile` | Read the signed-in user's profile details. |
+| PUT | `/api/v1/me/profile` | Update display name, short bio and private/public profile visibility. |
+| GET | `/api/v1/profiles/:username` | Read the allowlisted fields of a profile only when its owner opted into public visibility; still requires a Kairo session. |
+| GET | `/api/v1/me/export` | Export the signed-in user's profile, preferences, libraries, watch history and non-YouTube playback snapshots as JSON. |
+| DELETE | `/api/v1/me/account` | Delete a standard account after current-password and username confirmation; remove owned data and retain a minimal profile tombstone. |
+| GET | `/api/v1/me/preferences` | Read theme, interface language, subtitle language/size, autoplay-next, default speed and history-pause preferences. |
+| PUT | `/api/v1/me/preferences` | Update one or more validated account-wide preferences. History pause prevents account-synced Anime and Movie progress; administrator-only YouTube sync remains separate. |
 | GET | `/api/v1/me/library` | Read the signed-in user's Anime library. |
 | PUT | `/api/v1/me/library/:animeId` | Add or update an Anime library item. |
 | DELETE | `/api/v1/me/library/:animeId` | Remove an Anime library item. |
@@ -142,7 +147,7 @@ Every other `/api/v1/*` route requires an active Kairo session. While `mustChang
 
 Library status values: `watching`, `plan_to_watch`, `completed`, `on_hold`, `dropped`.
 
-All state-changing requests require a matching same-origin Origin or Referer. Validate finite non-negative playback values, enforce sensible duration/position bounds, and derive the owner only from the authenticated Kairo session. Never accept `userId` from a request body.
+All state-changing requests require a matching same-origin Origin or Referer. Validate finite non-negative playback values, enforce sensible duration/position bounds, and derive the owner only from the authenticated Kairo session. Never accept `userId` from a request body. Public profile reads disclose only username, display name, avatar, bio and creation date when visibility is explicitly public; email, account IDs, role, library and history are not exposed.
 
 ## 3c. YouTube playback and personal video library
 

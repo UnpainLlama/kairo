@@ -1,53 +1,65 @@
 # Current implementation snapshot — 2026-11-24
 
-> Branch-specific status for `rebuild/username-password-auth`. This snapshot supersedes the historical Access-only summaries below. It reports repository evidence and explicitly distinguishes code present from work that has not been run or operationally verified.
+> Branch-specific snapshot for `rebuild/username-password-auth`. This documents code present in the feature branch and distinguishes source changes from checks that have not been run.
 
-## Current branch and safety boundary
+## Branch and operational boundary
 
 - Feature branch: `rebuild/username-password-auth`.
-- Latest authentication-code hardening commit: [`dcc9a3d86e2a0c9dfa81d11157fa2afa46307d3e`](https://github.com/UnpainLlama/kairo/commit/dcc9a3d86e2a0c9dfa81d11157fa2afa46307d3e). The subsequent commits only refresh this status snapshot. It follows the UI integration, documentation alignment and a guard that delays playback sync until after forced password changes.
-- The branch is based on reset commit `4f77801029da116c79909b69f84433ecd3b67d18` and has continued with additive commits.
-- The feature branch is 29 commits ahead of the reset base and has diverged from current `main` (30 commits ahead, 7 commits behind). Do not merge or retarget directly; plan a dedicated reconciliation first.
-- `main` has not been changed by this work. No PR has been opened.
-- No Cloudflare edge configuration, Worker secret, remote D1 database, deployment or real administrator credential was changed or created.
+- Latest grouped implementation commit: [`b182bf6ea1ab361aed13ac8a1630e1a53aaddb82`](https://github.com/UnpainLlama/kairo/commit/b182bf6ea1ab361aed13ac8a1630e1a53aaddb82).
+- The branch is based on reset commit `4f77801029da116c79909b69f84433ecd3b67d18` and has diverged from `main`; re-check the comparison immediately before any merge/reconciliation.
+- No PR has been opened and `main` has not been changed.
+- No deployment, Cloudflare edge/configuration change, Worker secret change, remote D1 migration/query, session wipe or real administrator credential operation has been performed.
 
-## Implemented on this branch
+## Phase 2 — Catalogue
 
-- Additive migration `0023_username_password_auth.sql` adds `user_credentials` without deleting the legacy Access identity tables or existing profile IDs.
-- Username normalization/reserved-name checks and version-allowlisted PBKDF2 password verification are implemented. Legacy v1 hashes remain verifiable and are upgraded after successful authentication.
-- Username/password login issues opaque server-side sessions. Login failures are generic and rate-limited by IP+username and IP.
-- Password change clears forced-change state and revokes other sessions while retaining the current session. Logout revokes the current session.
-- The admin API supports one-time bootstrap, account listing/creation/enrollment, temporary-password reset, suspension/reactivation and confirmed account deletion.
-- A hidden-terminal offline admin password utility prints SQL containing only a salted hash; it does not connect to or execute against D1.
-- The frontend now connects the AccountProvider to the application, renders the username/password login, supplies the token-protected `/setup/admin` form, enforces the forced first-login password change and exposes a signed-in/sign-out shell.
-- Client password validation has focused Unicode and UTF-8 byte-limit unit tests.
-- Pending media-playback flush is deferred while `mustChangePassword` is true.
-- Malformed login attempts are included in the source-IP failure bucket; successful sign-in clears only the matching username/IP bucket, not shared IP failures. Focused route tests cover both behaviours.
+- Existing catalogue provider adapters and Worker routes remain in place: featured, trending, latest, search, filter browse, genres, title details, episodes, related titles and provider attribution.
+- Restored frontend pages: Discover, Anime browsing and filtering, seasonal filter, search, Anime detail, episode selection and related titles.
+- Movie discover/search/detail screens use existing TMDB routes and preserve the provider enablement/terms gate.
+- Provider results and errors are surfaced as loading, empty or unavailable states; no demo titles are injected.
+- Remaining: catalogue ingestion is not implemented in this client rebuild; a provider/terms-approved ingestion path and a populated D1 library must be verified separately. Live provider Anime IDs must be reconciled with account-library persistence before claiming saved Anime works for every provider result.
 
-## Frontend scope still incomplete
+## Phase 3 — Identity, profile and library
 
-The reset removed the previous Anime, Movies, profile, library, history, settings and administrator screens. This commit only restores the authentication entry flows and a temporary signed-in shell. The full client rebuild and administrator account-management UI remain outstanding; do not describe the application as feature-complete.
+- Username/password session login, first-login password change, logout and administrator account APIs remain implemented.
+- Frontend routes now include profile, account preferences, Anime library, Movies library, watch history and restricted account administration.
+- Worker routes now provide profile read/update, opt-in public-profile read, preferences (theme, subtitle language/size, autoplay, speed and history pause), JSON account export and password-confirmed standard-account deletion.
+- A shared account-deletion helper retains a minimal tombstone and removes account-owned rows; administrator self-deletion remains blocked.
+- Account routes are session-scoped; public profile responses are explicitly allowlisted and do not return email, account IDs, libraries or history.
+- Existing accounts without password credentials can be enrolled from the administrator UI; generated temporary passwords are displayed once in the current admin session.
+- Additive migration `0024_account_preference_subtitle_size.sql` adds subtitle scale. Test DB migration list includes 0024. This migration has **not** been applied to any remote database.
 
-## Validation status for current head
+## Phase 4 — Player and progress
 
-- No GitHub Actions runs or commit status checks are reported for the latest branch commits.
-- The workflow runs checks on pull requests targeting `main` or `staging`, pushes to `main`, or manual dispatch. A feature-branch push alone does not run CI.
-- Typecheck, Vitest, production dependency audit and build have **not** been executed for the current head. The UI integration and latest authentication hardening are therefore not yet verified by CI.
-- There is no lint script in `package.json`.
-- Remote D1 read/query capability and the active Cloudflare Workers plan are not available through the current connection.
+- Existing server-side playback resolution still enforces the provider host allowlist; unsupported/unapproved sources remain unavailable rather than bypassed.
+- Anime HLS/file player now restores cloud and local resume positions, saves player settings, exposes quality choices only when Hls.js receives manifest levels, exposes subtitles only when supplied by the selected source, and offers a retry for source failures.
+- Account playback snapshots retain duration and player state; client-local snapshots update between throttled cloud syncs.
+- Movie playback continues through the CineSrc iframe boundary; its progress integration uses the unified account playback API.
+- Account-wide history pause is enforced server-side for Anime/Movie playback and legacy Anime watch-history updates; administrator-only YouTube sync remains separate.
+- Limitation: external Anime embeds that do not expose a documented time-control API cannot be programmatically seek-restored. Kairo does not inject controls into cross-origin frames.
+
+## Phase 5 — Quality
+
+- Focused profile and preference route tests have been added/expanded, including opt-in public visibility, same-origin checks, data export, account tombstoning and validated preference persistence.
+- Existing auth, admin, playback, provider, API and catalogue test suites remain in the repository.
+- UI includes loading/error/empty states, skip-to-content, keyboard search shortcut, reduced-motion rules and responsive layouts.
+- **Not verified on this branch head:** TypeScript typecheck, Vitest, production dependency audit, accessibility/keyboard pass, mobile-browser pass and production build.
+- There is no lint script in `package.json`; do not mark lint complete.
+- Feature-branch pushes do not trigger the repository's current CI workflow. No Actions result is being represented as passing.
+
+## Remaining work before merge consideration
+
+1. Reconcile the live Anime provider-ID / account-library relationship so titles returned from live catalogue providers can always be saved and restored reliably without trusting client-supplied title metadata.
+2. Audit all UI/backend payload types and complete the remaining integration tests (especially playback sync ordering, pause-history behavior, admin enrollment/deletion and Movie list operations).
+3. Run typecheck, tests, audit and production build on the exact feature head in a controlled local/CI environment; fix all failures.
+4. Perform the accessibility, keyboard, provider failure, responsive and account-ownership regression passes.
+5. Re-check branch divergence against current `main` and prepare a separate reconciliation. Do not merge or deploy as part of this coding pass.
 
 ## Release and operational blockers
 
-1. Review and run typecheck, tests, production dependency audit and build on the exact feature head before integration.
-2. Reconcile the feature branch's seven-commit `main` gap in a separate reviewed operation; do not merge directly.
-3. Review migration 0023 against the actual remote D1 schema, then obtain explicit approval before any remote migration.
-4. Provision `ADMIN_BOOTSTRAP_TOKEN` only through Cloudflare Worker Secret configuration after deployment approval. No real administrator credential has been created.
-5. PBKDF2 v2 is currently configured for 100,000 iterations. OWASP recommends 600,000 iterations for PBKDF2-HMAC-SHA256; benchmark the actual Workers plan and CPU budget before selecting a production work factor. Treat the current setting as a release blocker, not a completed security decision.
-6. Keep Cloudflare Access as a separate outer edge perimeter for now: the deployment validator still requires its environment configuration, while Kairo account identity is local username/password. Any edge policy/validator change needs separate approval.
-7. Do not deploy, alter edge policies, run remote D1 operations, wipe sessions or create real admin credentials as part of this coding phase.
-
----
-
+- Review and approve migration 0024 before any remote D1 application.
+- Review the current PBKDF2 work factor (100,000 iterations) against measured Cloudflare Worker CPU constraints and the current OWASP guidance before production use.
+- Keep Cloudflare Access as the separately configured outer perimeter until a separate, approved edge-policy decision.
+- Do not deploy, alter edge policies, run remote D1 operations, wipe sessions or create real admin credentials during the feature rebuild.
 # Historical implementation status
 
 The older session logs below are retained as history. Their Access-only identity descriptions and old route claims are superseded by the current branch status above.

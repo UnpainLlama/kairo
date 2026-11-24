@@ -15,6 +15,14 @@ Kairo has one application account shared by Anime, Movies and administrator-only
 
 Account ownership is always derived from the validated server-side Kairo session. Never accept a user ID, role, or account scope from the browser.
 
+## Profile, preferences and lifecycle
+
+- Profile editing is limited to display name, a 280-character bio and explicit private/public visibility. A signed-in viewer can read another user's profile only when it is opted into public visibility; that endpoint returns a small allowlist and never library/history/account identifiers.
+- Account preferences are stored per stable profile ID. Current fields include theme, interface language, subtitle language/size, autoplay-next, default playback speed and history pause.
+- A user can export account profile, preferences, Anime/Movies library references, watch history and non-YouTube playback state as JSON.
+- Standard-account self-deletion requires the current password and a username confirmation. It removes owned rows and credentials, revokes sessions, and retains a minimal `Former account` tombstone. The administrator account cannot self-delete.
+- These route/schema changes are source changes only; apply the additive subtitle-size migration through the separately approved deployment process.
+
 ## Password policy and storage
 
 - New passwords require at least 15 Unicode code points and no more than 1024 UTF-8 bytes. A password cannot be identical to its username, ignoring case.
