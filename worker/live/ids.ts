@@ -1,6 +1,6 @@
 // Stable ids and slugs for live (database-free) titles.
 // New live catalogue results use MyAnimeList IDs ("m1535").
-// A slug is a readable prefix plus the id: "death-note-a1535". Only the trailing id matters when resolving.
+// A slug is a readable prefix plus the id: "death-note-m1535". Only the trailing id matters when resolving.
 export type RefKind = 'a' | 'm' | 'h';
 export type Ref = { kind: RefKind; id: number; /** Provider slug for hianime references, when present in the public route. */ slug?: string };
 
@@ -40,7 +40,7 @@ export function providerRefFromMappings(
   preferredProviders: readonly string[] = ['mal'],
 ): string | null {
   for (const provider of preferredProviders) {
-    const prefix = provider === 'anilist' ? 'a' : provider === 'mal' ? 'm' : null;
+    const prefix = provider === 'mal' ? 'm' : null;
     if (!prefix) continue;
     const raw = mappings.find((item) => item.provider.toLowerCase() === provider)?.externalId;
     if (raw && /^[1-9][0-9]{0,8}$/.test(raw)) return prefix + raw;

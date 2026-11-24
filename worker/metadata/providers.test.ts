@@ -24,7 +24,6 @@ describe('Kitsu adapter', () => {
     const k = createKitsuProvider(async () => json({}));
     expect(k.termsVerified).toBe(false);
     expect(buildRegistry(undefined, fetch).enabled).toEqual([]);
-    expect(buildRegistry(undefined, fetch).enabled).toEqual([]);
     expect(buildRegistry('kitsu, nope', fetch)).toMatchObject({ unknown: ['nope'] });
   });
   it('encodes the search text and only contacts kitsu.io', async () => {

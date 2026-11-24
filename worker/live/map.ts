@@ -34,7 +34,6 @@ export function toLiveTitle(meta: NormalizedMetadata, provider: SourceId): LiveT
     altTitles,
     // The MAL catalogue ID is also the cross-reference used by Jikan episode discovery.
     malId: num(meta.ids.mal) ?? own,
-    anilistId: null,
     url: meta.url,
     provider,
   };

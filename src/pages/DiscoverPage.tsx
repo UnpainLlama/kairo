@@ -5,7 +5,7 @@ import { EmptyState, ErrorState, LoadingState, Poster, animeHref } from '../comp
 import { useApi } from '../lib/useApi';
 import { episodeCountLabel, formatLabel, safeImageUrl, seasonLabel, textList, type CatalogCard, type GenreCount, type ItemList } from '../lib/catalog';
 
-/** Discover: AniList genre collections with popularity-ranked titles and a random-title shortcut. */
+/** Discover: MAL genre collections with popularity-ranked titles and a random-title shortcut. */
 export default function DiscoverPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();

@@ -10,16 +10,16 @@ export type Field = ScalarField | SetField;
 export type PriorityTable = Record<ScalarField, string[]>;
 
 export const DEFAULT_PRIORITY: PriorityTable = {
-  title: ['anilist', 'kitsu', 'manami'],
-  synopsis: ['anilist', 'kitsu', 'manami'],
-  format: ['anilist', 'kitsu', 'manami'],
-  status: ['anilist', 'kitsu', 'manami'], // live providers beat the stored snapshot
-  season: ['anilist', 'kitsu', 'manami'],
-  year: ['anilist', 'kitsu', 'manami'],
-  episodeCount: ['anilist', 'kitsu', 'manami'],
-  posterUrl: ['anilist', 'kitsu', 'manami'],
-  bannerUrl: ['anilist', 'kitsu', 'manami'],
-  rating: ['anilist', 'kitsu', 'manami'],
+  title: ['kitsu', 'manami'],
+  synopsis: ['kitsu', 'manami'],
+  format: ['kitsu', 'manami'],
+  status: ['kitsu', 'manami'], // live providers beat the stored snapshot
+  season: ['kitsu', 'manami'],
+  year: ['kitsu', 'manami'],
+  episodeCount: ['kitsu', 'manami'],
+  posterUrl: ['kitsu', 'manami'],
+  bannerUrl: ['kitsu', 'manami'],
+  rating: ['kitsu', 'manami'],
 };
 
 /** Presentation fields differ by nature (wording, image size), so a difference is not recorded as a data conflict. */

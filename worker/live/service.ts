@@ -7,6 +7,7 @@ import type { FetchLike } from '../metadata/providers/http';
 import { ProviderError, type EpisodePage, type EpisodeProvider, type EpisodeRecord, type EpisodeServer } from '../metadata/types';
 import { buildEpisodeProviders, listEpisodes as resolveEpisodes } from '../episodes/service';
 import { createTmdbArtworkProvider } from '../artwork/tmdb';
+import { createMalSource } from './mal';
 import { buildZokoAnimeEmbedUrl, type ZokoAnimeTrack } from '../providers/zokoanime';
 import { enrichArtwork, enrichArtworkOne, enrichEpisodeArtwork } from '../artwork/service';
 import type { Ref } from './ids';
@@ -177,7 +178,6 @@ export async function getEpisodes(deps: Deps, ref: Ref, page: number): Promise<E
     title: title.card.title,
     alternateTitles: title.altTitles,
     externalIds: {
-      ...(title.anilistId ? { anilist: String(title.anilistId) } : {}),
       ...(title.malId ? { mal: String(title.malId) } : {}),
     },
     providerUrl: title.url,
@@ -208,7 +208,6 @@ export async function getEpisodePlayback(deps: Deps, ref: Ref, episodeNumber: nu
     title: title.card.title,
     alternateTitles: title.altTitles,
     externalIds: {
-      ...(title.anilistId ? { anilist: String(title.anilistId) } : {}),
       ...(title.malId ? { mal: String(title.malId) } : {}),
     },
     providerUrl: title.url,
@@ -216,7 +215,7 @@ export async function getEpisodePlayback(deps: Deps, ref: Ref, episodeNumber: nu
   if (serverId.startsWith('z_')) {
     if (!deps.zokoAnimeEmbedEnabled) throw new ProviderError('unavailable', 'ZokoAnime iframe playback is disabled until its terms and permissions are reviewed.');
     const track = serverId.slice(2) as ZokoAnimeTrack;
-    const embedUrl = buildZokoAnimeEmbedUrl({ malId: title.malId, anilistId: title.anilistId, episodeNumber, track });
+    const embedUrl = buildZokoAnimeEmbedUrl({ malId: title.malId, episodeNumber, track });
     if (!embedUrl) throw new ProviderError('not_found', 'ZokoAnime does not have a usable external title id for this episode.');
 
     // Re-confirm that this episode is in the configured episode catalogue before
@@ -288,7 +287,6 @@ export async function getEpisodeServers(deps: Deps, ref: Ref, episodeNumber: num
     title: title.card.title,
     alternateTitles: title.altTitles,
     externalIds: {
-      ...(title.anilistId ? { anilist: String(title.anilistId) } : {}),
       ...(title.malId ? { mal: String(title.malId) } : {}),
     },
     providerUrl: title.url,
@@ -305,7 +303,7 @@ export async function getEpisodeServers(deps: Deps, ref: Ref, episodeNumber: num
       if (match?.providerEpisodeId) {
         const items = await withTimeout(deps.timeoutMs ?? 8000, (signal) => provider.listServers!(match.providerEpisodeId!, lookup, signal));
         deps.breaker.recordSuccess(breakerKey);
-        const zokoItems: EpisodeServer[] = deps.zokoAnimeEmbedEnabled && (title.malId || title.anilistId)
+        const zokoItems: EpisodeServer[] = deps.zokoAnimeEmbedEnabled && title.malId
           ? (['sub', 'hsub', 'dub'] as const).map((track) => ({
               id: `z_${track}`,
               type: track,
