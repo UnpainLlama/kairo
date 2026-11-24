@@ -2,7 +2,7 @@ import { BrowserRouter, Navigate, useLocation, useNavigate } from 'react-router-
 import LoginPage from './components/LoginPage';
 import PasswordChangePage from './components/PasswordChangePage';
 import KairoApp from './components/KairoApp';
-import { AccountProvider, useAccount } from './lib/AccountProvider';
+import { AccountProvider, useAccount, type AccountUser } from './lib/AccountProvider';
 import { AuthApiError, authRequest } from './lib/authClient';
 
 function LoadingPage() {
@@ -27,7 +27,7 @@ function AppContent() {
       throw new AuthApiError(502, 'PASSWORD_CHANGE_UNCONFIRMED', 'Kairo did not confirm that the new password was saved. Keep this page open and try again.');
     }
 
-    let user;
+    let user: AccountUser | null;
     try {
       // Do not replace the password-change screen with a generic account error if
       // the password was saved but the follow-up profile read is temporarily down.
