@@ -1,5 +1,5 @@
 import {getRequestUser} from '../auth/requestUser';
-import {hashPassword,isNewPasswordValid,isPasswordDifferentFromUsername} from '../auth/password';
+import {hashPassword,isPasswordDifferentFromUsername} from '../auth/password';
 import {createTemporaryPassword} from '../auth/temporaryPassword';
 import {validateUsername} from '../auth/username';
 import {deleteStandardAccount} from '../auth/accountDeletion';
@@ -23,7 +23,6 @@ export async function rotateAdminConsolePath(db:D1Database):Promise<void>{
     ON CONFLICT(singleton_id) DO UPDATE SET path_value=excluded.path_value,rotated_at=excluded.rotated_at,expires_at=excluded.expires_at
     WHERE admin_console_access.expires_at<=?`).bind(newConsolePath(),now,now+30*60*1000,now).run();
 }
-function originAllowed(c:any){const expected=new URL(c.req.url).origin;const origin=c.req.header('Origin');if(origin)return origin===expected;const referer=c.req.header('Referer');if(!referer)return false;try{return new URL(referer).origin===expected;}catch{return false;}}
 function noStore(c:any){c.header('Cache-Control','no-store');}
 function isUsernameConflict(error:unknown):boolean{const m=error instanceof Error?error.message:String(error);return m.toLowerCase().includes('unique constraint failed: user_profiles.username')||m.includes('idx_user_profiles_username');}
 function isAccountLimitError(error:unknown):boolean{const m=error instanceof Error?error.message:String(error);return m.includes('standard_account_limit_reached');}
