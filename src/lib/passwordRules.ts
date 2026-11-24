@@ -31,16 +31,16 @@ export function validatePasswordChange(values: PasswordChangeValues): PasswordCh
   if (passwordBytes > MAX_PASSWORD_BYTES) {
     return {
       field: 'newPassword',
-      message: `Your new passphrase is too long (${passwordBytes} UTF-8 bytes). The maximum is 1,024 bytes.`,
+      message: \`Your new passphrase is too long (\${passwordBytes} UTF-8 bytes). The maximum is 1,024 bytes.\`,
     };
   }
 
-  const wordCount = newPassword.trim().split(/\\s+/u).filter(Boolean).length;
+  const wordCount = newPassword.trim().split(/\s+/u).filter(Boolean).length;
   if (wordCount < 5) {
     const remaining = 5 - wordCount;
     return {
       field: 'newPassword',
-      message: `Kairo counted ${wordCount} ${wordCount === 1 ? 'word' : 'words'} in the new passphrase. Add ${remaining} more ${remaining === 1 ? 'word' : 'words'}, separated by spaces.`,
+      message: \`Kairo counted \${wordCount} \${wordCount === 1 ? 'word' : 'words'} in the new passphrase. Add \${remaining} more \${remaining === 1 ? 'word' : 'words'}, separated by spaces.\`,
     };
   }
 
@@ -64,6 +64,6 @@ export function validatePasswordChange(values: PasswordChangeValues): PasswordCh
 export function isPasswordAllowed(password: string, username: string): boolean {
   if (typeof password !== 'string' || typeof username !== 'string') return false;
   if (new TextEncoder().encode(password).length > MAX_PASSWORD_BYTES) return false;
-  if (password.trim().split(/\\s+/u).filter(Boolean).length < 5) return false;
+  if (password.trim().split(/\s+/u).filter(Boolean).length < 5) return false;
   return password.toLocaleLowerCase('en-US') !== username.toLocaleLowerCase('en-US');
 }
