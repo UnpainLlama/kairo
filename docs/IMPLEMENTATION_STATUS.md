@@ -5,9 +5,9 @@
 ## Current branch and safety boundary
 
 - Feature branch: `rebuild/username-password-auth`.
-- Latest application-code integration commit: [`429b4071342661b6ed84f40007155e8ff6df59a4`](https://github.com/UnpainLlama/kairo/commit/429b4071342661b6ed84f40007155e8ff6df59a4). A subsequent docs-only commit aligned the architecture, Access-perimeter and API guides.
+- Latest feature head: [`dcc9a3d86e2a0c9dfa81d11157fa2afa46307d3e`](https://github.com/UnpainLlama/kairo/commit/dcc9a3d86e2a0c9dfa81d11157fa2afa46307d3e). It follows the UI integration, documentation alignment, a guard that delays playback sync until after forced password changes, and login rate-limit hardening.
 - The branch is based on reset commit `4f77801029da116c79909b69f84433ecd3b67d18` and has continued with additive commits.
-- The feature branch has diverged from current `main`; GitHub reports 7 commits on `main` that are not in the feature branch. Do not merge or retarget directly; plan a dedicated reconciliation first.
+- The feature branch is 29 commits ahead of the reset base and has diverged from current `main` (30 commits ahead, 7 commits behind). Do not merge or retarget directly; plan a dedicated reconciliation first.
 - `main` has not been changed by this work. No PR has been opened.
 - No Cloudflare edge configuration, Worker secret, remote D1 database, deployment or real administrator credential was changed or created.
 
@@ -21,6 +21,8 @@
 - A hidden-terminal offline admin password utility prints SQL containing only a salted hash; it does not connect to or execute against D1.
 - The frontend now connects the AccountProvider to the application, renders the username/password login, supplies the token-protected `/setup/admin` form, enforces the forced first-login password change and exposes a signed-in/sign-out shell.
 - Client password validation has focused Unicode and UTF-8 byte-limit unit tests.
+- Pending media-playback flush is deferred while `mustChangePassword` is true.
+- Malformed login attempts are included in the source-IP failure bucket; successful sign-in clears only the matching username/IP bucket, not shared IP failures. Focused route tests cover both behaviours.
 
 ## Frontend scope still incomplete
 
@@ -30,7 +32,7 @@ The reset removed the previous Anime, Movies, profile, library, history, setting
 
 - No GitHub Actions runs or commit status checks are reported for the latest branch commits.
 - The workflow runs checks on pull requests targeting `main` or `staging`, pushes to `main`, or manual dispatch. A feature-branch push alone does not run CI.
-- Typecheck, Vitest, production dependency audit and build have **not** been executed for `429b407` and the following docs-only commit. The new UI integration is therefore not yet verified by CI.
+- Typecheck, Vitest, production dependency audit and build have **not** been executed for the current head. The UI integration and latest authentication hardening are therefore not yet verified by CI.
 - There is no lint script in `package.json`.
 - Remote D1 read/query capability and the active Cloudflare Workers plan are not available through the current connection.
 
