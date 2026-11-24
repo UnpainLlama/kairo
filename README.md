@@ -4,7 +4,7 @@ Kairo is a closed-access React, TypeScript, Vite and Cloudflare Workers media-di
 
 ## Project areas
 
-- **Anime:** catalogue discovery, metadata enrichment, episode discovery and provider-gated playback.
+- **Anime:** MyAnimeList API v2 supplies catalogue metadata; TMDB supplies posters, backdrops and optional episode stills only. Jikan and HiAnime remain separate episode-discovery providers; playback remains behind the existing provider gate.
 - **Movies:** TMDB-powered catalogue search and details, with **CineSrc as the only movie playback provider**.
 - **YouTube (administrator only):** video/channel discovery and a saved channel feed through the official YouTube Data API. Standard accounts and anonymous visitors cannot access YouTube pages or APIs.
 
