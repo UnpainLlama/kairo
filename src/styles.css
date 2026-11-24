@@ -2935,3 +2935,10 @@ img { display: block; }
   .kc-anime-mode .kc-anime-tabs { gap: 17px; }
   .kc-anime-mode .kc-anime-collection .kc-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+/* Keep Anime-only header links out of the Movies and YouTube workspaces. */
+.kc-anime-brand,
+.kc-anime-topnav { display: none; }
+.kc-app.kc-anime-mode .kc-anime-brand { display: inline-flex; }
+.kc-app.kc-anime-mode .kc-anime-topnav { display: flex; }
+.kc-app.kc-anime-mode .kc-topbar { left: 0 !important; }
