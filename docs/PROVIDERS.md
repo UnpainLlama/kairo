@@ -86,7 +86,7 @@ With no MAL_CLIENT_ID, /api/ready can still verify Worker/D1 readiness but repor
 
 Live catalogue records and artwork lookups use the short-lived provider cache. Live provider metadata is not written to D1. D1 continues to hold user accounts, library references, watch history and shared Anime/Movies/YouTube playback state. No schema migration is required for this provider switch.
 
-New live Anime IDs use MAL references such as m1535 and slugs such as death-note-m1535. Existing historical a... user-library references are retained as legacy stored identifiers so existing account rows are not silently deleted; they do not invoke a catalogue or network provider.
+New live Anime IDs use MAL references such as m1535 and slugs such as death-note-m1535. Existing historical a... user-library references are retained as legacy stored identifiers so existing account rows are not silently deleted; they do not invoke a catalogue or network provider. Migration 0026 rebuilds the library-reference constraint around the legacy, MAL and HiAnime namespaces, converts old provider mappings to the inert legacy namespace, and removes the retired provider's data-source registration. Earlier migration files remain unchanged so already-applied migration history stays valid.
 
 ## 7. First live check
 

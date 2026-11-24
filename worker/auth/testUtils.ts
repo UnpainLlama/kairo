@@ -14,6 +14,7 @@ export const migrationFiles = [
   '0020_cloudflare_access_subject_binding.sql','0021_reassignable_account_seats.sql',
   '0022_account_history_pause_preference.sql','0023_username_password_auth.sql',
   '0024_account_preference_subtitle_size.sql','0025_anime_library_provider_refs.sql',
+  '0026_retire_legacy_anime_provider.sql',
 ] as const;
 
 export function createTestDatabase(): any {

@@ -18,4 +18,4 @@ The homepage Watch now action continues into the existing Kairo Anime watch rout
 
 ## Styling and dependencies
 
-The Anime workspace uses scoped styles in `src/styles.css` and existing React Router, Lucide and catalogue components. It reuses Kairo's shared account and playback data; no duplicate Anime account/library or D1 migration is introduced.
+The Anime workspace uses scoped styles in `src/styles.css` and existing React Router, Lucide and catalogue components. It reuses Kairo's shared account and playback data; no separate Anime account, library or catalogue is created. The provider-retirement migration only normalizes historical library references and does not create another user-data store.
