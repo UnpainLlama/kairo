@@ -27,7 +27,7 @@ describe('global API Origin/Referer protection',()=>{
     const local=await worker.request(origin+'/api/v1/auth/login',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:'{}'},{});
     expect(missing.status).toBe(403);
     expect(foreign.status).toBe(403);
-    expect(local.status).toBe(400);
+    expect(local.status).toBe(401);
   });
   it('allows same-origin browser CORS preflight before the session gate',async()=>{
     const response=await worker.request(origin+'/api/v1/auth/login',{
