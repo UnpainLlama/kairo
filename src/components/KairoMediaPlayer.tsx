@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import KairoVideoJsPlayer from './KairoVideoJsPlayer';
 import type { PlaybackSaveReason } from '../lib/playbackSync';
+import { PLAYER_IFRAME_SANDBOX } from '../lib/playerSandbox';
 
 type Subtitle = { language: string; label: string; url: string; format: 'vtt' };
 type Variant = { label: string; height?: number };
@@ -57,6 +58,7 @@ export default function KairoMediaPlayer({ source, title, progressKey, introEnd,
       className="kc-player-frame"
       src={youtubeUrl ?? safeUrl.href}
       title={`${title} — ${youtubeUrl ? 'YouTube' : source.provider} player`}
+      sandbox={PLAYER_IFRAME_SANDBOX}
       allow="autoplay; encrypted-media; picture-in-picture; fullscreen; accelerometer; gyroscope"
       allowFullScreen
       referrerPolicy="strict-origin-when-cross-origin"
