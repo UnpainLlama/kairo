@@ -1,6 +1,6 @@
 # KAIRO — TMDB artwork and metadata setup
 
-This update adds TMDB as an independent artwork and metadata-enrichment provider. HiAnime remains the catalogue/episode provider selected by `LIVE_PROVIDERS` and `EPISODE_PROVIDERS`; TMDB does not change anime IDs, episode discovery, server discovery, or playback. In live mode, TMDB can fill missing synopsis, rating, genres, release year, and total episode count after a title match. Existing non-empty catalogue metadata takes precedence. The enrichment applies to the live catalogue path; the legacy `CATALOG_SOURCE=db` routes do not use this TMDB artwork service.
+KAIRO's live Anime catalogue uses official MyAnimeList API v2. TMDB is the exclusive source of Anime posters, backdrops, banners and episode stills; MAL supplies catalogue metadata and identity. Episode discovery and playback remain separately configured and are not supplied by MAL or TMDB. See [docs/LIVE_CATALOGUE.md](docs/LIVE_CATALOGUE.md) for the current page/provider mapping. In live mode, TMDB can fill missing synopsis, rating, genres, release year, and total episode count after a title match. Existing non-empty catalogue metadata takes precedence. The enrichment applies to the live catalogue path; the legacy `CATALOG_SOURCE=db` routes do not use this TMDB artwork service.
 
 ## 1. Create a TMDB API Read Access Token
 

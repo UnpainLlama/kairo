@@ -6,9 +6,7 @@ import { sharedBreaker, createCache } from '../metadata/service';
 import type { FetchLike } from '../metadata/providers/http';
 import { ProviderError, type EpisodePage, type EpisodeProvider, type EpisodeRecord, type EpisodeServer } from '../metadata/types';
 import { buildEpisodeProviders, listEpisodes as resolveEpisodes } from '../episodes/service';
-import { createAniListSource } from './anilist';
-import { createJikanSource } from './jikan';
-import { createHiAnimeSource } from './hianime';
+import { createMalSource } from './mal';
 import { createTmdbArtworkProvider } from '../artwork/tmdb';
 import { buildZokoAnimeEmbedUrl, type ZokoAnimeTrack } from '../providers/zokoanime';
 import { enrichArtwork, enrichArtworkOne, enrichEpisodeArtwork } from '../artwork/service';
@@ -142,9 +140,8 @@ async function doResolve<T>(deps: Deps, spec: ResolveSpec<T>): Promise<Outcome<T
 const candidatesFor = <T>(deps: Deps, ref: Ref, run: (s: CatalogSource, signal: AbortSignal) => Promise<T>): Candidate<T>[] =>
   deps.sources.filter((s) => s.supports(ref)).map((source) => ({ source, run: (signal) => run(source, signal) }));
 
-// Version and provider order are part of every live cache key. This prevents
-// pre-AniList HiAnime ids in KV from being served after the catalogue changes.
-const liveCacheScope = (deps: Deps): string => `live:v3:${deps.sources.map((source) => source.id).join(',') || 'none'}`;
+// Version the cache when the canonical ID namespace changes to MAL.
+const liveCacheScope = (deps: Deps): string => `live:v4:${deps.sources.map((source) => source.id).join(',') || 'none'}`;
 
 export function getList(deps: Deps, kind: ListKind, page: number, limit: number): Promise<Outcome<Paged>> {
   const day = kind === 'featured' ? new Date(deps.now()).toISOString().slice(0, 10) : 'stable';
@@ -174,8 +171,8 @@ export function getGenres(deps: Deps): Promise<Outcome<{ name: string; count: nu
 }
 
 export function getTitle(deps: Deps, ref: Ref): Promise<Outcome<LiveTitle>> {
-  // MyAnimeList ids try Jikan first. AniList ids can only come from AniList.
-  const ordered = ref.kind === 'm' ? [...deps.sources].sort((a, b) => Number(b.id === 'jikan') - Number(a.id === 'jikan')) : deps.sources;
+  // MAL is the canonical anime identity. Episode discovery remains a separate service.
+  const ordered = deps.sources;
   return resolve(deps, {
     key: `${liveCacheScope(deps)}:title:${ref.kind}${ref.id}`,
     ttl: TTL.detail,
@@ -358,18 +355,24 @@ export async function getEpisodeServers(deps: Deps, ref: Ref, episodeNumber: num
   }
 }
 
-const FACTORIES: Record<SourceId, (f: FetchLike, baseUrl?: string) => CatalogSource> = { anilist: (f) => createAniListSource(f), jikan: (f) => createJikanSource(f), hianime: (f, baseUrl) => createHiAnimeSource(f, baseUrl) };
+const FACTORIES: Partial<Record<SourceId, (f: FetchLike, clientId?: string) => CatalogSource>> = {
+  mal: (f, clientId) => createMalSource(f, clientId),
+};
 
-export function parseSourceList(csv: string | undefined): SourceId[] {
-  const wanted = (csv ?? 'anilist,jikan').split(',').map((s) => s.trim().toLowerCase()).filter((s): s is SourceId => s in FACTORIES);
-  return wanted.length > 0 ? [...new Set(wanted)] : ['anilist', 'jikan'];
+/** MAL is the only enabled live anime catalogue. Episode providers are configured independently. */
+export function parseSourceList(_csv: string | undefined): SourceId[] {
+  return ['mal'];
 }
 
 export function buildDeps(env: LiveEnv, fetchImpl: FetchLike, onError?: Deps['onError']): Deps {
   const playbackHosts = (env.HIANIME_PLAYBACK_ALLOWED_HOSTS ?? '').split(',').map((host) => host.trim().toLowerCase()).filter((host) => /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i.test(host));
   const episodeRegistry = buildEpisodeProviders(env.EPISODE_PROVIDERS, env.HIANIME_BASE_URL, fetchImpl, playbackHosts);
   return {
-    sources: parseSourceList(env.LIVE_PROVIDERS).map((id) => FACTORIES[id](fetchImpl, env.HIANIME_BASE_URL)),
+    sources: parseSourceList(env.LIVE_PROVIDERS).map((id) => {
+      const factory = FACTORIES[id];
+      if (!factory) throw new Error(`Unsupported live anime catalogue provider: ${id}`);
+      return factory(fetchImpl, env.MAL_CLIENT_ID);
+    }),
     episodeProviders: episodeRegistry.providers,
     unknownEpisodeProviders: episodeRegistry.unknown,
     cache: createCache(env),

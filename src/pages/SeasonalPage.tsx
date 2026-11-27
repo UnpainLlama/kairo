@@ -19,7 +19,7 @@ type Sort = (typeof SORTS)[number];
 const cap = (value: string): string => value.charAt(0).toUpperCase() + value.slice(1);
 const isOneOf = <T extends string>(value: string, values: readonly T[]): value is T => (values as readonly string[]).includes(value);
 
-/** AniList-inspired seasonal discovery, powered by Kairo's live AniList catalogue endpoint. */
+/** Seasonal discovery powered by the official MyAnimeList seasonal anime endpoint. */
 export default function SeasonalPage() {
   const [params, setParams] = useSearchParams();
   const current = currentAnimeSeason();
@@ -71,8 +71,8 @@ export default function SeasonalPage() {
   const formatOptions: SelectOption<Format>[] = [{ value: '', label: 'All formats' }, ...FORMATS.map((value) => ({ value, label: formatLabel(value) ?? value }))];
   const statusOptions: SelectOption<Status>[] = [{ value: '', label: 'All statuses' }, ...STATUSES.map((value) => ({ value, label: statusLabel(value) ?? value }))];
   const sortOptions: SelectOption<Sort>[] = [
-    { value: 'popularity', label: 'Popularity' },
-    { value: 'trending', label: 'Trending' },
+    { value: 'popularity', label: 'Season popularity' },
+    { value: 'trending', label: 'Overall popularity' },
     { value: 'rating', label: 'Highest rated' },
     { value: 'latest', label: 'Newest first' },
   ];

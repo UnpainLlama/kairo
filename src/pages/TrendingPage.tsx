@@ -12,7 +12,7 @@ const SEASONS = ANIME_SEASONS;
 const isSeason = (v: string | null): v is Season => v !== null && (SEASONS as readonly string[]).includes(v);
 const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
-/** AniList trending score, optionally scoped to a season and year. */
+/** MyAnimeList popularity ranking scoped to a season and year; MAL does not expose a trending-score endpoint. */
 export default function TrendingPage() {
   const [params, setParams] = useSearchParams();
   const now = currentAnimeSeason();
@@ -32,7 +32,7 @@ export default function TrendingPage() {
   for (let y = now.year + 1; y >= 1960; y -= 1) years.push({ value: String(y), label: String(y) });
   return <>
     <header className="kc-page-head kc-trending-head">
-      <div><h1>Trending</h1><p>Trending anime · {cap(season)} {year}</p></div>
+      <div><h1>Trending</h1><p>Popular anime · {cap(season)} {year}</p></div>
       <div className="kc-seasons" role="tablist" aria-label="Season">
         {SEASONS.map((s) => <button key={s} type="button" role="tab" aria-selected={s === season} className={s === season ? 'active' : ''} onClick={() => go({ season: s })}>{s}</button>)}
       </div>

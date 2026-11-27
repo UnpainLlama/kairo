@@ -74,16 +74,18 @@ Example:
 ```bash
 npx wrangler secret put IDENTITY_PROVIDER_CLIENT_SECRET
 npx wrangler secret put PROVIDER_SERVER_TOKEN
+npx wrangler secret put MAL_CLIENT_ID
 npx wrangler secret put TMDB_ACCESS_TOKEN
 ```
 
-Use names matching the integrations actually implemented. Do not add unused secret declarations. Never paste production secrets into prompts, source files, issue trackers, or GitHub commits. `TMDB_ACCESS_TOKEN` is required in an environment where `MOVIES_TMDB_ENABLED=true` (Movies discovery/search/details) and is also used for optional Anime artwork enrichment. For local development put the token in `.dev.vars`; for staging use `npx wrangler secret put TMDB_ACCESS_TOKEN --env staging`; for production use `npx wrangler secret put TMDB_ACCESS_TOKEN --env production` only after confirming your TMDB licence permits that use. CineSrc is the sole Movie playback provider and its documented iframe embed requires no Worker secret or proxy.
+Use names matching the integrations actually implemented. Do not add unused secret declarations. Never paste production secrets into prompts, source files, issue trackers, or GitHub commits. `MAL_CLIENT_ID` is required for the live Anime catalogue. Register an API client with MyAnimeList and set it with `npx wrangler secret put MAL_CLIENT_ID --env staging`; configure production separately only after reviewing the API Developer Agreement. `TMDB_ACCESS_TOKEN` is required where `MOVIES_TMDB_ENABLED=true` and also supplies all Anime artwork. For local development put the token in `.dev.vars`; for staging use `npx wrangler secret put TMDB_ACCESS_TOKEN --env staging`; for production use `npx wrangler secret put TMDB_ACCESS_TOKEN --env production` only after confirming your TMDB licence permits that use. CineSrc is the sole Movie playback provider and its documented iframe embed requires no Worker secret or proxy.
 
 For local secret values, create `.dev.vars` in the project root. It is gitignored. Example structure only:
 
 ```dotenv
 IDENTITY_PROVIDER_CLIENT_SECRET="local-development-value"
 PROVIDER_SERVER_TOKEN="local-development-value"
+MAL_CLIENT_ID="your-myanimelist-client-id"
 TMDB_ACCESS_TOKEN="your-tmdb-api-read-access-token"
 ```
 

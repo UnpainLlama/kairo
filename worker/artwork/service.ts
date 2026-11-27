@@ -104,8 +104,8 @@ export async function enrichArtwork(
     while (cursor < titles.length) {
       const index = cursor++;
       const item = titles[index]!;
-      // AniList already supplies most card fields. Avoid a TMDB lookup when the card is complete;
-      // this keeps search/listing requests fast and reserves TMDB for missing hero/detail data.
+      // MAL supplies descriptive metadata but no KAIRO artwork. TMDB is the sole image source,
+      // so uncached titles must always attempt artwork resolution.
       if (!needsArtwork(item)) continue;
       const input: ArtworkLookup = {
         title: item.card.title,
@@ -181,6 +181,7 @@ export async function enrichEpisodeArtwork(
   }
   return episodes.map((episode) => ({
     ...episode,
-    thumbnailUrl: stills?.[episode.episodeNumber] ?? episode.thumbnailUrl ?? fallback,
+    // Never pass through an episode provider image URL: all anime imagery is TMDB-only.
+    thumbnailUrl: stills?.[episode.episodeNumber] ?? fallback ?? null,
   }));
 }

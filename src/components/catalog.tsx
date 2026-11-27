@@ -2,14 +2,14 @@ import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, ChevronLeft, ChevronRight, Info, RefreshCw, Star } from 'lucide-react';
 import type { ApiError } from '../lib/api';
-import { formatLabel, safeImageUrl, textList, type CatalogCard } from '../lib/catalog';
+import { formatLabel, safeTmdbImageUrl, textList, type CatalogCard } from '../lib/catalog';
 
 export const animeHref = (item: Pick<CatalogCard, 'slug'>): string => `/anime/${encodeURIComponent(item.slug)}`;
 
 /** Remote artwork is hotlinked and never re-hosted. With no usable image we show a plain placeholder, not invented art. */
 export function Poster({ item }: { item: Pick<CatalogCard, 'title' | 'posterUrl'> }) {
   const [failed, setFailed] = useState(false);
-  const src = safeImageUrl(item.posterUrl);
+  const src = safeTmdbImageUrl(item.posterUrl);
   if (!src || failed) {
     return <div className="kc-poster-fallback" role="img" aria-label={`No artwork available for ${item.title}`}><span>{item.title.slice(0, 2).toUpperCase()}</span></div>;
   }
