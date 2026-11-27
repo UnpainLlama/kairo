@@ -6,7 +6,6 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import SearchBar from './components/SearchBar';
-import HomePage from './pages/HomePage';
 import YouTubeFeedPage from './pages/YouTubeFeedPage';
 import MoviesHomePage from './pages/MoviesHomePage';
 import MoviesBrowsePage from './pages/MoviesBrowsePage';
@@ -83,7 +82,7 @@ function RailLink({ to, label, icon: Icon, end, active }: NavItem) {
 export default function App() {
   const { pathname, search } = useLocation();
   const isYouTubeMode = pathname.startsWith('/youtube');
-  const isMoviesMode = pathname === '/movies' || pathname.startsWith('/movies/');
+  const isMoviesMode = pathname === '/' || pathname === '/movies' || pathname.startsWith('/movies/');
   const isMoviesWatchMode = pathname.startsWith('/movies/') && pathname.endsWith('/watch');
   const activeNavItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : navItems;
   const activeMobileItems = [
@@ -244,7 +243,7 @@ export default function App() {
           <Route path="/login" element={<AuthPage mode="login" />} />
           <Route path="/register" element={<AuthPage mode="register" />} />
           <Route path="/verify-email" element={<AuthPage mode="register" />} />
-          <Route path="/" element={<HomePage />} />
+          <Route path="/" element={<Navigate to="/movies" replace />} />
           <Route path="/youtube" element={<YouTubeFeedPage />} />
           <Route path="/movies" element={<MoviesHomePage />} />
           <Route path="/movies/search" element={<MoviesSearchPage />} />
