@@ -11,12 +11,6 @@ type DiscoveryVideo = YouTubeCardVideo & { recommendationReason: string };
 type SearchFilter = 'all' | 'shorts' | 'videos' | 'recent';
 type FeedError = { message: string };
 
-const FALLBACK_SEEDS: DiscoverySeed[] = [
-  { query: 'cinematic music performances', channelId: null, channelTitle: 'Music', reason: 'Popular music picks' },
-  { query: 'technology deep dives', channelId: null, channelTitle: 'Technology', reason: 'Popular technology picks' },
-  { query: 'independent documentaries', channelId: null, channelTitle: 'Documentaries', reason: 'Popular documentary picks' },
-];
-
 function isShort(video: Pick<YouTubeCardVideo, 'title' | 'description'>): boolean {
   return /(?:^|\s)#(?:youtube)?shorts?\b/i.test((video.title || '') + ' ' + (video.description || ''));
 }
@@ -63,7 +57,7 @@ function buildDiscoverySeeds(history: HistoryVideo[]): DiscoverySeed[] {
     }
   }
 
-  return seeds.length ? seeds : FALLBACK_SEEDS;
+  return seeds;
 }
 
 function mixResults(buckets: Array<{ seed: DiscoverySeed; videos: YouTubeCardVideo[] }>, watchedIds: Set<string>): DiscoveryVideo[] {
@@ -158,6 +152,10 @@ export default function YouTubeFeedPage() {
       if (signal.aborted) return;
       setHistory(recentHistory);
       const seeds = buildDiscoverySeeds(recentHistory);
+      if (seeds.length === 0) {
+        setVideos([]);
+        return;
+      }
       const settled = await Promise.allSettled(seeds.map(async (seed) => ({
         seed,
         videos: await searchSeed(seed),
@@ -313,14 +311,17 @@ export default function YouTubeFeedPage() {
         </div>
 
         {!loading && !error && history.length === 0 && (
-          <div className="yt-start-here">
-            <Sparkles size={19} />
-            <div><b>Your feed gets smarter as you watch</b><p>Start with a topic or creator. Kairo will use your visited channels and watch history to find similar videos from a wider mix of creators.</p></div>
-            <Link to="/youtube/search" className="yt-button yt-button-quiet">Find something to watch</Link>
+          <div className="yt-first-visit-empty">
+            <div className="yt-first-visit-panel">
+              <span className="yt-first-visit-icon"><Sparkles size={22} /></span>
+              <h2>Try searching to get started</h2>
+              <p>Start watching videos to help Kairo build a feed of videos and creators you’ll love.</p>
+              <Link to="/youtube/search" className="yt-button yt-button-primary">Search videos <ArrowUpRight size={15} /></Link>
+            </div>
           </div>
         )}
 
-        {!loading && !error && visibleVideos.length === 0 && (
+        {!loading && !error && history.length > 0 && visibleVideos.length === 0 && (
           <div className="yt-empty">
             <Youtube size={28} />
             <h3>{filter === 'shorts' ? 'No labelled Shorts in this mix yet' : 'No recommendations to show'}</h3>
