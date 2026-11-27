@@ -90,6 +90,7 @@ export async function loadMovieProgress(
   accountId: string | null,
   signal: AbortSignal,
   limit = 100,
+  continueOnly = false,
 ): Promise<MovieProgressEntry[]> {
   const local = readMovieProgress(accountId);
   if (!accountId) return local.slice(0, limit);
@@ -143,7 +144,10 @@ export async function loadMovieProgress(
     }
   }
 
-  const rows = [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, Math.max(1, Math.min(limit, 100)));
+  const rows = [...byId.values()]
+    .filter(row => !continueOnly || (!row.completed && row.currentTime >= 5))
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, Math.max(1, Math.min(limit, 100)));
   const entries: MovieProgressEntry[] = [];
   for (let offset = 0; offset < rows.length; offset += 8) {
     const batch = await Promise.all(rows.slice(offset, offset + 8).map(async row => {
