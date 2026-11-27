@@ -93,7 +93,8 @@ export async function loadMovieProgress(
   continueOnly = false,
 ): Promise<MovieProgressEntry[]> {
   const local = readMovieProgress(accountId);
-  if (!accountId) return local.slice(0, limit);
+  const selectLocal = () => (continueOnly ? local.filter(entry => !entry.watchProgress.completed && entry.watchProgress.currentTime >= 5) : local).slice(0, Math.max(1, Math.min(limit, 100)));
+  if (!accountId) return selectLocal();
 
   const response = await fetch('/api/v1/me/movies/progress', {
     credentials: 'same-origin',
@@ -103,7 +104,7 @@ export async function loadMovieProgress(
   });
   const payload = await response.json().catch(() => null);
   if (!response.ok || !payload?.success || !Array.isArray(payload?.data?.items)) {
-    if (local.length) return local.slice(0, limit);
+    if (local.length) return selectLocal();
     throw new Error(payload?.error?.message ?? 'Could not load movie playback progress.');
   }
 
