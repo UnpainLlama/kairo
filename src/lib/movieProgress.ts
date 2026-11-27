@@ -170,3 +170,41 @@ export async function loadMovieProgress(
   });
   return entries;
 }
+
+
+export async function loadMovieProgressForMovie(
+  accountId: string | null,
+  movie: MovieSummary,
+  signal: AbortSignal,
+): Promise<MovieWatchProgress | null> {
+  const local = readMovieProgress(accountId).find(entry =>
+    entry.providerId === movie.providerId && entry.externalId === movie.externalId
+  ) ?? null;
+  if (!accountId) return local?.watchProgress ?? null;
+
+  const query = new URLSearchParams({ providerId: movie.providerId, externalId: movie.externalId });
+  try {
+    const response = await fetch('/api/v1/me/movies/progress?' + query.toString(), {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+      signal,
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload?.success || !Array.isArray(payload?.data?.items)) {
+      return local?.watchProgress ?? null;
+    }
+    const remote = normalizeRemote(payload.data.items[0]);
+    if (local && (!remote || local.watchProgress.updatedAt > remote.updatedAt)) {
+      try { await pushProgress(movie, local.watchProgress, signal); } catch { /* keep the local timestamped position */ }
+      return local.watchProgress;
+    }
+    if (!remote) return local?.watchProgress ?? null;
+    const progress = progressOf(remote);
+    writeMovieProgress(accountId, movie, progress);
+    return progress;
+  } catch {
+    if (signal.aborted) return null;
+    return local?.watchProgress ?? null;
+  }
+}
