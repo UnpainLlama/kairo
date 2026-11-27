@@ -7,7 +7,7 @@ import { useApi } from '../lib/useApi';
 import { useAccountScope } from '../hooks/useAccountScope';
 import { accountPreferenceStorageKey, historyPausedStorageKey, readWatchHistory, watchProgressIdentity, watchProgressStorageKey, writeWatchHistory } from '../lib/accountStorage';
 import { shouldSyncPlaybackProgress, type PlaybackSaveReason } from '../lib/playbackSync';
-import { dateLabel, durationLabel, episodeNumberLabel, safeImageUrl, type AnimeDetails, type Episode, type EpisodeServer, type ItemList } from '../lib/catalog';
+import { dateLabel, durationLabel, episodeNumberLabel, safeTmdbImageUrl, type AnimeDetails, type Episode, type EpisodeServer, type ItemList } from '../lib/catalog';
 
 type ServerList = ItemList<EpisodeServer>;
 type PlaybackResponse = { source: KairoPlaybackSource; urlValidated: boolean };
@@ -269,7 +269,7 @@ export default function WatchPage() {
   const current = episodePages.find((episode) => episode.episodeNumber === parsedEpisode);
   const subServers = serverItems.filter((server) => server.type === 'sub');
   const dubServers = serverItems.filter((server) => server.type === 'dub');
-  const currentThumb = safeImageUrl(current?.thumbnailUrl ?? null);
+  const currentThumb = safeTmdbImageUrl(current?.thumbnailUrl ?? null);
   const ordered = [...episodePages].sort((a, b) => a.episodeNumber - b.episodeNumber);
   const position = ordered.findIndex((episode) => episode.episodeNumber === parsedEpisode);
   const prev = position > 0 ? ordered[position - 1] : null;
@@ -385,7 +385,7 @@ export default function WatchPage() {
           <div className="kc-queue-list">
             {visibleEpisodes.map((episode) => {
               const selected = episode.episodeNumber === parsedEpisode;
-              const thumb = safeImageUrl(episode.thumbnailUrl);
+              const thumb = safeTmdbImageUrl(episode.thumbnailUrl);
               return (
                 <Link key={episode.id} to={`/watch/${key}/${episode.episodeNumber}`} className={`kc-queue-item${selected ? ' active' : ''}`} aria-current={selected ? 'page' : undefined}>
                   <span className="kc-queue-thumb">{thumb ? <img src={thumb} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <ListVideo size={16} aria-hidden="true" />}<span className="kc-ep-badge">EP {episodeNumberLabel(episode.episodeNumber)}</span>{progressFor(episode.episodeNumber) > 0 && <span className="kc-episode-progress" style={{ width: `${progressFor(episode.episodeNumber)}%` }} />}</span>
