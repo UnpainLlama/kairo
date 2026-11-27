@@ -124,19 +124,16 @@ function LibraryContent() {
           partialProgressError = 'Playback progress could not be refreshed. Showing locally cached progress.';
         }
 
-        const progressById = new Map(localProgress.map(entry => [identity(entry), entry]));
+        const progressById = new Map(localProgress.map(entry => [identity(entry), entry.watchProgress]));
         progressRows.forEach(row => {
           const id = identity(row);
           const progress = progressOf(row);
           if (!progress) return;
           const previous = progressById.get(id);
-          if (!previous || previous.watchProgress.updatedAt <= progress.updatedAt) {
-            const cached = previous;
-            if (cached) {
-              const updated = { ...cached, watchProgress: progress };
-              progressById.set(id, updated);
-              writeMovieProgress(accountId, cached, progress);
-            }
+          if (!previous || previous.updatedAt <= progress.updatedAt) {
+            progressById.set(id, progress);
+            const cached = localProgress.find(entry => identity(entry) === id);
+            if (cached) writeMovieProgress(accountId, cached, progress);
           }
         });
         const refs = [
@@ -144,11 +141,11 @@ function LibraryContent() {
           ...progressRows,
           ...localProgress,
         ];
-        const result = await loadRemoteMovies(refs, controller.signal, [...progressById.values()]);
+        const result = await loadRemoteMovies(refs, controller.signal, localProgress);
         if (controller.signal.aborted) return;
         const enriched = result.movies.map(movie => {
           const progress = progressById.get(identity(movie));
-          return progress ? { ...movie, watchProgress: progress.watchProgress } : movie;
+          return progress ? { ...movie, watchProgress: progress } : movie;
         });
         setMovies(enriched);
         const messages = [
