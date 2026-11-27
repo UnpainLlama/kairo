@@ -72,7 +72,7 @@ export default function SeasonalPage() {
   const statusOptions: SelectOption<Status>[] = [{ value: '', label: 'All statuses' }, ...STATUSES.map((value) => ({ value, label: statusLabel(value) ?? value }))];
   const sortOptions: SelectOption<Sort>[] = [
     { value: 'popularity', label: 'Popularity' },
-    { value: 'trending', label: 'Trending' },
+    { value: 'trending', label: 'Popularity' },
     { value: 'rating', label: 'Highest rated' },
     { value: 'latest', label: 'Newest first' },
   ];
