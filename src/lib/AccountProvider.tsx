@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 export type AccountStatus = 'loading' | 'guest' | 'signed-in' | 'unavailable';
 export type KairoAccountState = {
@@ -17,14 +17,20 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const [accountId, setAccountId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
+  const hasResolvedSession = useRef(false);
 
   useEffect(() => {
     let active = true;
     const refresh = () => setAttempt((value) => value + 1);
-    setStatus('loading');
-    setAccountId(null);
-    setDisplayName(null);
-    setEmail(null);
+    const authChanged = () => {
+      // Explicit sign-in/sign-out changes should invalidate the previous identity.
+      hasResolvedSession.current = false;
+      setStatus('loading');
+      setAccountId(null);
+      setDisplayName(null);
+      setEmail(null);
+      refresh();
+    };
 
     const load = async () => {
       try {
@@ -34,7 +40,13 @@ export function AccountProvider({ children }: { children: ReactNode }) {
           cache: 'no-store',
         });
         if (response.status === 401) {
-          if (active) setStatus('guest');
+          if (active) {
+            setAccountId(null);
+            setDisplayName(null);
+            setEmail(null);
+            setStatus('guest');
+            hasResolvedSession.current = true;
+          }
           return;
         }
         if (!response.ok) throw new Error('Account lookup failed.');
@@ -48,18 +60,21 @@ export function AccountProvider({ children }: { children: ReactNode }) {
           setDisplayName(typeof user.displayName === 'string' ? user.displayName : null);
           setEmail(typeof user.email === 'string' ? user.email : null);
           setStatus('signed-in');
+          hasResolvedSession.current = true;
         }
       } catch {
-        if (active) setStatus('unavailable');
+        // A transient focus revalidation failure must not unmount a working player.
+        // Only an initial unresolved lookup becomes unavailable.
+        if (active && !hasResolvedSession.current) setStatus('unavailable');
       }
     };
 
     void load();
-    window.addEventListener('kairo:auth-change', refresh);
+    window.addEventListener('kairo:auth-change', authChanged);
     window.addEventListener('focus', refresh);
     return () => {
       active = false;
-      window.removeEventListener('kairo:auth-change', refresh);
+      window.removeEventListener('kairo:auth-change', authChanged);
       window.removeEventListener('focus', refresh);
     };
   }, [attempt]);
