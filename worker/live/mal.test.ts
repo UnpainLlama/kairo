@@ -58,6 +58,15 @@ describe('MyAnimeList API v2 source', () => {
     expect(result.items.map((item) => item.card.id)).toEqual(['m1']);
   });
 
+  it('uses global MAL popularity for Trending and filters it to the requested season', async () => {
+    let requested = '';
+    const src = source(async (url) => { requested = url; return response({ data: [anime(1)], paging: {} }); });
+    const result = await src.browse({ season: 'fall', year: 2026, sort: 'trending', page: 1, limit: 24 }, signal);
+    expect(new URL(requested).pathname).toBe('/v2/anime/ranking');
+    expect(new URL(requested).searchParams.get('ranking_type')).toBe('bypopularity');
+    expect(result.items.map((item) => item.card.id)).toEqual(['m1']);
+  });
+
   it('searches by text, paginates within a bounded window, and applies title filters', async () => {
     const requested: string[] = [];
     const src = source(async (url) => { requested.push(url); return response({ data: [anime(1), anime(2, { title: 'Unrelated', alternative_titles: { en: 'Other', ja: '', synonyms: [] } })], paging: {} }); });
