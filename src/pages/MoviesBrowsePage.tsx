@@ -5,6 +5,7 @@ import { ApiError, apiGet } from '../lib/api';
 import type { MovieGenre, MoviePage as MoviePageData, MovieSummary } from '../lib/movies';
 import { GridSkeleton, MovieGrid, useSentinel } from '../components/MovieCard';
 import { TitleModal } from '../components/TitleDetail';
+import { NotFoundPage } from './StaticPages';
 import { MyListProvider } from '../lib/useMyList';
 import '../styles-netflix.css';
 
@@ -48,7 +49,10 @@ function GenreMenu({ genres, activeId }: { genres: MovieGenre[]; activeId: strin
 function BrowseContent({ category }: { category: string }) {
   const genreRaw = category.startsWith('genre-') ? category.slice(6) : null;
   const genreId = genreRaw && /^\d{1,8}$/.test(genreRaw) ? genreRaw : null;
-  const config = CATEGORIES[category] ?? { title: 'Popular Movies', kind: 'popular' };
+  const invalidGenre = genreRaw !== null && genreId === null;
+  const config = CATEGORIES[category];
+  if (invalidGenre || (!config && !genreId)) return <NotFoundPage />;
+  const activeConfig = config ?? { title: 'Popular Movies', kind: 'popular' };
   const [items, setItems] = useState<MovieSummary[]>([]);
   const [genres, setGenres] = useState<MovieGenre[]>([]);
   const [page, setPage] = useState(1);
@@ -70,7 +74,7 @@ function BrowseContent({ category }: { category: string }) {
     const controller = new AbortController();
     if (page === 1) setLoading(true); else setMore(true);
     setError(null);
-    const query = new URLSearchParams({ kind: config.kind, page: String(page) });
+    const query = new URLSearchParams({ kind: activeConfig.kind, page: String(page) });
     if (genreId) query.set('genres', genreId);
     apiGet<MoviePageData>('/movies/discover?' + query.toString(), controller.signal)
       .then(result => {
@@ -88,10 +92,10 @@ function BrowseContent({ category }: { category: string }) {
       })
       .finally(() => { if (!controller.signal.aborted) { setLoading(false); setMore(false); } });
     return () => controller.abort();
-  }, [config.kind, genreId, page, retry]);
+  }, [activeConfig.kind, genreId, page, retry]);
 
   const genreName = useMemo(() => genres.find(genre => genre.externalId === genreId)?.name, [genres, genreId]);
-  const title = genreId ? (genreName ? genreName + ' Movies' : 'Movies') : config.title;
+  const title = genreId ? (genreName ? genreName + ' Movies' : 'Movies') : activeConfig.title;
   const sentinel = useSentinel(() => setPage(current => current + 1), !loading && !more && !error && page < totalPages && items.length > 0, items.length);
 
   return (
