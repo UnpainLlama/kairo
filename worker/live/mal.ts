@@ -297,7 +297,7 @@ export function createMalSource(
       const result = await collect('/anime/ranking', { ranking_type: 'all' }, signal);
       const counts = new Map<string, number>();
       for (const row of result.rows) {
-        if (isAdult(row.node) || !Array.isArray(row.node.genres)) continue;
+        if (isAdult(row.node) || mapFormat(row.node.media_type) === null || !Array.isArray(row.node.genres)) continue;
         for (const genre of row.node.genres) {
           if (!isObject(genre) || typeof genre.name !== 'string' || /^(hentai|erotica)$/i.test(genre.name.trim())) continue;
           counts.set(genre.name, (counts.get(genre.name) ?? 0) + 1);
