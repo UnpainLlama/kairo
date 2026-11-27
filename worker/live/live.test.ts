@@ -236,13 +236,13 @@ describe('service and handlers', () => {
     await call(d, 'featured', req());
     expect(calls).toBe(1);
   });
-  it('falls back to Jikan when AniList returns no search matches and does not wait for TMDB artwork', async () => {
+  it('falls back to Jikan on an empty search and still enriches artwork through TMDB', async () => {
     let tmdbCalls = 0;
     const artworkProvider: ArtworkProvider = { id: 'tmdb', lookup: async () => { tmdbCalls += 1; return null; } };
     const d = deps(async (u) => isAni(u) ? aniPage([]) : jikanList([jikanAnime(3)]), { artworkProvider });
     const response = await call(d, 'search', req({ q: 'Example Anime', sort: 'relevance' }));
     expect(response).toMatchObject({ status: 200, body: { data: { items: [{ id: 'm3' }] }, meta: { source: 'jikan', degraded: true } } });
-    expect(tmdbCalls).toBe(0);
+    expect(tmdbCalls).toBe(1);
   });
 
   it('falls back to Jikan when AniList has no seasonal browse results', async () => {
