@@ -632,6 +632,35 @@ describe('YouTube keyword video search', () => {
     }
   });
 
+  it('passes live and upload-date filters to the public YouTube search API', async () => {
+    const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/videos/search');
+    const providerFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith('/search')) {
+        expect(url.searchParams.get('eventType')).toBe('live');
+        const publishedAfter = url.searchParams.get('publishedAfter');
+        expect(publishedAfter).toBeTruthy();
+        expect(Date.now() - Date.parse(publishedAfter!)).toBeGreaterThanOrEqual(6 * 86400000);
+        expect(Date.now() - Date.parse(publishedAfter!)).toBeLessThan(8 * 86400000);
+        return new Response(JSON.stringify({ items: [] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ items: [] }), { status: 200 });
+    });
+    vi.stubGlobal('fetch', providerFetch);
+    try {
+      const ctx = makeContext({
+        url: canonicalOrigin + '/api/v1/youtube/videos/search?q=live+music&eventType=live&uploadDate=week',
+        env: { DB: mockDb({ authenticated: false }), YOUTUBE_DATA_API_KEY: 'worker-test-key' },
+      });
+      const response = await handler(ctx.context);
+      expect(response.status).toBe(200);
+      expect(ctx.jsonBody).toMatchObject({ success: true, data: { videos: [] } });
+      expect(providerFetch).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('allows public keyword search for guests without a Kairo or YouTube session', async () => {
     const handler = routeFor(registerYouTubeAuthRoutes, '/api/v1/youtube/videos/search');
     const providerFetch = vi.fn(async (input: RequestInfo | URL) => {

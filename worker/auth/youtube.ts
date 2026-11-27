@@ -592,6 +592,8 @@ export function registerYouTubeAuthRoutes(app: any): void {
     const term = params.get('q')?.trim() ?? '';
     const order = params.get('order') ?? 'relevance';
     const duration = params.get('duration') ?? 'any';
+    const uploadDate = params.get('uploadDate') ?? 'any';
+    const eventType = params.get('eventType') ?? 'any';
     const pageToken = params.get('pageToken') ?? '';
     if (term.length < 2 || term.length > 80 || /[\u0000-\u001F\u007F]/.test(term)) {
       return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Enter a video title, topic or creator between 2 and 80 characters.' } }, 400);
@@ -601,6 +603,12 @@ export function registerYouTubeAuthRoutes(app: any): void {
     }
     if (!['any', 'short', 'medium', 'long'].includes(duration)) {
       return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Choose a supported video duration.' } }, 400);
+    }
+    if (!['any', 'today', 'week', 'month', 'year'].includes(uploadDate)) {
+      return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Choose a supported upload date.' } }, 400);
+    }
+    if (!['any', 'live'].includes(eventType)) {
+      return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Choose a supported video feature.' } }, 400);
     }
     if (pageToken.length > 512 || /[\u0000-\u001F\u007F]/.test(pageToken)) {
       return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'The search page token is invalid. Start a new search.' } }, 400);
@@ -621,6 +629,11 @@ export function registerYouTubeAuthRoutes(app: any): void {
         safeSearch: 'moderate',
       };
       if (duration !== 'any') searchParams.videoDuration = duration;
+      if (eventType === 'live') searchParams.eventType = 'live';
+      if (uploadDate !== 'any') {
+        const days = uploadDate === 'today' ? 1 : uploadDate === 'week' ? 7 : uploadDate === 'month' ? 30 : 365;
+        searchParams.publishedAfter = new Date(Date.now() - days * 86400000).toISOString();
+      }
       if (pageToken) searchParams.pageToken = pageToken;
       const result = await youtubeApiGet(apiKey, 'search', searchParams);
       const candidates = (Array.isArray(result.items) ? result.items : []).map((item: any) => {
