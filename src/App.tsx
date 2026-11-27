@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Bell, Bookmark, CalendarDays, ChevronRight, Compass, Film, Flame, History, ListVideo,
-  Home, LogIn, Menu, PlayCircle, Search, Settings, Tv, UserRound, Youtube,
+  Bell, Bookmark, CalendarDays, ChevronRight, Clapperboard, Compass, Flame, History, ListVideo,
+  Home, LogIn, LogOut, Menu, PlayCircle, Search, Settings, Tv, UserRound, Youtube,
   type LucideIcon,
 } from 'lucide-react';
 import SearchBar from './components/SearchBar';
@@ -42,7 +42,7 @@ const menuItems: NavItem[] = [
   { to: '/', label: 'Home', icon: Home, end: true },
   { to: '/browse/trending', label: 'Trending', icon: Flame },
   { to: '/browse/anime', label: 'Anime', icon: Tv },
-  { to: '/movies', label: 'Movies', icon: Film },
+  { to: '/movies', label: 'Movies', icon: Clapperboard },
   { to: '/browse/anime', label: 'Discover', icon: Compass },
   { to: '/search', label: 'Search', icon: Search },
   { to: '/browse/seasonal', label: 'Seasonal', icon: CalendarDays },
@@ -208,7 +208,7 @@ export default function App() {
                 </>}
                 <div className="kc-menu-footer">
                   <Link to="/settings" onClick={closeMenu}><Settings size={15} aria-hidden="true" />Settings</Link>
-                  {currentUser ? <button type="button" onClick={() => void logout()} disabled={authBusy}><LogIn size={15} aria-hidden="true" />{authBusy ? 'Signing out…' : 'Sign out'}</button> : <Link to="/login" onClick={closeMenu}><LogIn size={15} aria-hidden="true" />Login</Link>}
+                  {currentUser ? <button type="button" onClick={() => void logout()} disabled={authBusy}><LogOut size={15} aria-hidden="true" />{authBusy ? 'Signing out…' : 'Sign out'}</button> : <Link to="/login" onClick={closeMenu}><LogIn size={15} aria-hidden="true" />Login</Link>}
                 </div>
               </section>
             )}
