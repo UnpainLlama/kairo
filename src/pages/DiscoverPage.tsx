@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Info, Play, Shuffle } from 'lucide-react';
 import { EmptyState, ErrorState, LoadingState, Poster, animeHref } from '../components/catalog';
 import { useApi } from '../lib/useApi';
-import { episodeCountLabel, formatLabel, safeImageUrl, seasonLabel, textList, type CatalogCard, type GenreCount, type ItemList } from '../lib/catalog';
+import { episodeCountLabel, formatLabel, safeTmdbImageUrl, seasonLabel, textList, type CatalogCard, type GenreCount, type ItemList } from '../lib/catalog';
 
 /** Discover: a themed showcase. Pick a genre, flip through its most popular titles, or jump to a random one. */
 export default function DiscoverPage() {
@@ -32,7 +32,7 @@ export default function DiscoverPage() {
     navigate(animeHref(pool[Math.floor(Math.random() * pool.length)]));
   };
 
-  const backdrop = item ? safeImageUrl(item.bannerUrl) : null;
+  const backdrop = item ? safeTmdbImageUrl(item.bannerUrl) : null;
   const chips = item ? [formatLabel(item.format), seasonLabel(item.season, item.releaseYear), episodeCountLabel(item.episodeCount), ...textList(item.genres).slice(0, 3)].filter((v): v is string => Boolean(v)) : [];
 
   return (
