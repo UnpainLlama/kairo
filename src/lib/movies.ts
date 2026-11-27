@@ -24,6 +24,8 @@ export type MovieSummary = {
   adult: boolean;
 };
 
+export type MovieProgressEntry = MovieSummary & { watchProgress: MovieWatchProgress };
+
 export type MoviePage = {
   items: MovieSummary[];
   page: number;
