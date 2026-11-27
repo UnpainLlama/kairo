@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Check, Play, Plus } from 'lucide-react';
 import { apiGet, ApiError } from '../lib/api';
+import { useAccountScope } from '../hooks/useAccountScope';
+import { loadMovieProgress } from '../lib/movieProgress';
 import type { MovieGenre, MoviePage, MovieSummary } from '../lib/movies';
 import { MovieRail, RowSkeleton, useOpenTitle, watchHref } from '../components/MovieCard';
 import { TitleModal } from '../components/TitleDetail';
@@ -75,10 +77,11 @@ function Billboard({ movie }: { movie: MovieSummary }) {
         <h1 className="nf-bb-title"><button type="button" onClick={() => open(movie)} aria-label={'More info: ' + movie.title}>{movie.title}</button></h1>
         <div className="nf-bb-buttons">
           <Link to={watchHref(movie)} className="nf-btn play"><Play size={18} fill="currentColor" aria-hidden="true" /> Play</Link>
-          <button type="button" className="nf-btn list" aria-pressed={inList} aria-busy={!list.ready || list.busy} onClick={() => void list.update(movie, { status: inList ? null : 'watchlist' })}>
+          <button type="button" className="nf-btn list" aria-pressed={inList} aria-busy={!list.ready || list.busy} disabled={!list.ready || list.busy} onClick={() => void list.update(movie, { status: inList ? null : 'watchlist' })}>
             {inList ? <Check size={18} aria-hidden="true" /> : <Plus size={18} aria-hidden="true" />} My List
           </button>
         </div>
+        {list.error && <p className="nf-detail-note" role="alert">{list.error} <button type="button" onClick={list.retry}>Retry</button></p>}
         {movie.overview && <p className="nf-bb-text">{movie.overview}</p>}
       </div>
     </header>
@@ -115,6 +118,11 @@ function HomeContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
   const [refresh, setRefresh] = useState(0);
+  const { accountId, resolved: accountResolved, error: accountError } = useAccountScope();
+  const [continueWatching, setContinueWatching] = useState<MovieSummary[]>([]);
+  const [progressLoading, setProgressLoading] = useState(true);
+  const [progressError, setProgressError] = useState('');
+  const [progressRetry, setProgressRetry] = useState(0);
 
   const load = useCallback((signal: AbortSignal) => {
     setLoading(true);
@@ -135,6 +143,31 @@ function HomeContent() {
     return () => controller.abort();
   }, [load, refresh]);
 
+  useEffect(() => {
+    if (!accountResolved) return;
+    const controller = new AbortController();
+    setProgressLoading(true);
+    setProgressError('');
+    if (accountError) {
+      setContinueWatching([]);
+      setProgressError('Account status could not be verified, so synced playback progress is unavailable.');
+      setProgressLoading(false);
+      return () => controller.abort();
+    }
+    loadMovieProgress(accountId, controller.signal, 24)
+      .then(entries => {
+        if (controller.signal.aborted) return;
+        setContinueWatching(entries
+          .filter(entry => !entry.watchProgress.completed && entry.watchProgress.currentTime >= 5)
+          .map(entry => ({ ...entry, watchProgress: entry.watchProgress })));
+      })
+      .catch(caught => {
+        if (!controller.signal.aborted) setProgressError(caught instanceof Error ? caught.message : 'Could not load Continue Watching.');
+      })
+      .finally(() => { if (!controller.signal.aborted) setProgressLoading(false); });
+    return () => controller.abort();
+  }, [accountId, accountResolved, accountError, progressRetry]);
+
   const featured = data.trending.find(movie => movie.backdropUrl) ?? data.popular.find(movie => movie.backdropUrl) ?? null;
   const disabled = error?.code === 'MOVIES_DISABLED';
 
@@ -151,6 +184,9 @@ function HomeContent() {
       )}
 
       <div className="nf-rows">
+        {progressLoading && <RowSkeleton title="Continue Watching" />}
+        {!progressLoading && continueWatching.length > 0 && <MovieRail title="Continue Watching" items={continueWatching} to="/movies/library" />}
+        {progressError && <p className="nf-detail-note" role="status">{progressError} <button type="button" onClick={() => setProgressRetry(value => value + 1)}>Retry</button></p>}
         {loading && ['Top 10 Movies This Week', 'Popular Movies', 'Top Rated'].map(label => <RowSkeleton key={label} title={label} />)}
         {!loading && (
           <>
