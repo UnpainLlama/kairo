@@ -130,8 +130,8 @@ export async function loadMovieProgress(
         });
       } catch {
         if (signal.aborted) return [];
-        // Keep the timestamped browser copy; the next visit retries the account sync.
-        if (!remote) byId.set(key, {
+        // Prefer the newer browser snapshot even when syncing fails. The next visit retries it.
+        byId.set(key, {
           providerId: entry.providerId,
           externalId: entry.externalId,
           currentTime: progress.currentTime,
