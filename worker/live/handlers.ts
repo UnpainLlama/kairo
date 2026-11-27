@@ -257,7 +257,10 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
     async providers(req) {
       const deps = depsFor(req);
       return okBody(req, {
-        items: deps.sources.map((s, i) => ({ id: s.id, displayName: s.displayName, enabled: true, priority: i + 1, maxPageSize: s.maxLimit, capabilities: { list: true, search: true, details: true, episodes: false }, attribution: s.attribution })),
+        items: deps.sources.map((s, i) => {
+          const configured = s.id !== 'mal' || Boolean(req.env.MAL_CLIENT_ID?.trim());
+          return { id: s.id, displayName: s.displayName, enabled: configured, configured, priority: i + 1, maxPageSize: s.maxLimit, capabilities: { list: true, search: true, details: true, episodes: false }, attribution: s.attribution };
+        }),
         episodeProviders: deps.episodeProviders.map((p, i) => ({ id: p.id, displayName: p.displayName, enabled: true, priority: i + 1, termsVerified: p.termsVerified, capabilities: { episodes: true, servers: typeof p.listServers === 'function' } })),
         unknownConfigured: [],
         unknownEpisodeProviders: deps.unknownEpisodeProviders,
@@ -284,7 +287,7 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
         await req.env.DB.prepare(
           'SELECT id, identity_subject, display_name, email, email_verified_at, account_status, role FROM user_profiles LIMIT 0'
         ).all();
-        return okBody(req, { status: 'ready', catalogSource: 'live', database: 'ok', schema: 'ok', cache: req.env.METADATA_CACHE ? 'kv' : 'none', providers: deps.sources.map((s) => s.id), episodeProviders: deps.episodeProviders.map((p) => p.id), artworkProvider: deps.artworkProvider?.id ?? null, unknownEpisodeProviders: deps.unknownEpisodeProviders });
+        return okBody(req, { status: 'ready', catalogSource: 'live', database: 'ok', schema: 'ok', cache: req.env.METADATA_CACHE ? 'kv' : 'none', providers: deps.sources.map((s) => s.id), catalogueConfigured: Boolean(req.env.MAL_CLIENT_ID?.trim()), episodeProviders: deps.episodeProviders.map((p) => p.id), artworkProvider: deps.artworkProvider?.id ?? null, unknownEpisodeProviders: deps.unknownEpisodeProviders });
       } catch (error) {
         console.error(JSON.stringify({ event: 'live_readiness_failed', requestId: req.requestId, message: error instanceof Error ? error.message : 'unknown' }));
         return failBody(req, 503, 'DATABASE_UNAVAILABLE', 'The account database is unavailable or its schema is incomplete.');
