@@ -1,6 +1,6 @@
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import { TitleDetail } from '../components/TitleDetail';
+import { TitleDetail, TitleModal } from '../components/TitleDetail';
 import { MyListProvider } from '../lib/useMyList';
 import '../styles-netflix.css';
 
@@ -13,6 +13,7 @@ export default function MoviesDetailPage() {
         <Link to="/movies" className="nf-back"><ArrowLeft size={18} aria-hidden="true" /> Browse</Link>
         <div className="nf-modal"><TitleDetail key={externalId} externalId={externalId} /></div>
       </div>
+      <TitleModal />
     </MyListProvider>
   );
 }
