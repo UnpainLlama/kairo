@@ -34,6 +34,8 @@ export default function MovieCard({ movie, variant = 'landscape', edge = null, o
   const saved = list.get(movie);
   const inList = saved.status === 'watchlist';
   const year = movieYear(movie);
+  const progress = movie.watchProgress;
+  const progressPercent = progress && progress.duration > 0 ? Math.max(0, Math.min(100, Math.round(progress.currentTime / progress.duration * 100))) : null;
   const percent = movie.voteAverage && movie.voteAverage > 0 ? Math.round(movie.voteAverage * 10) : null;
   const image = variant === 'poster' ? movie.posterUrl || movie.backdropUrl : movie.backdropUrl || movie.posterUrl;
   const locked = !list.ready || list.busy;
@@ -52,6 +54,7 @@ export default function MovieCard({ movie, variant = 'landscape', edge = null, o
             ? <img src={image} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" />
             : <span className="nf-thumb-fallback">{movie.title}</span>}
           {variant === 'landscape' && image && <span className="nf-thumb-title">{movie.title}</span>}
+          {progress && progressPercent !== null && <span className="nf-card-progress" aria-hidden="true"><i style={{ width: (progress.completed ? 100 : progressPercent) + '%' }} /></span>}
         </Link>
         {onRemove && (
           <button type="button" className="nf-remove" onClick={onRemove} aria-label={'Remove ' + movie.title + ' from My List'}>
@@ -75,6 +78,7 @@ export default function MovieCard({ movie, variant = 'landscape', edge = null, o
             {movie.adult && <span className="nf-box">18+</span>}
             {year && <span>{year}</span>}
             {movie.originalLanguage && <span className="nf-box">{movie.originalLanguage.toUpperCase()}</span>}
+            {progress && progressPercent !== null && <span>{progress.completed ? 'Watched' : progressPercent + '% watched'}</span>}
           </p>
         </div>
       </div>
