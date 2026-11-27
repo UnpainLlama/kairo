@@ -37,6 +37,8 @@ interface Bindings {
   CATALOG_SOURCE?: string;
   /** Catalogue-provider priority, comma-separated. */
   LIVE_PROVIDERS?: string;
+  /** Server-side MyAnimeList API v2 Client ID. Configure with wrangler secret put MAL_CLIENT_ID. */
+  MAL_CLIENT_ID?: string;
   /** Independent episode-provider priority, e.g. "hianime,jikan". */
   EPISODE_PROVIDERS?: string;
   /** HiAnime mirror base URL; adapter enforces a fixed HTTPS host allowlist. */
