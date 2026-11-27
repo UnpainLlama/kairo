@@ -1,4 +1,4 @@
-import { useParams, useSearchParams } from 'react-router-dom';
+import { Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { CardGrid, EmptyState, ErrorState, Pager, SkeletonGrid } from '../components/catalog';
 import { useApi } from '../lib/useApi';
 import type { CatalogCard, ItemList } from '../lib/catalog';
@@ -10,11 +10,14 @@ import { NotFoundPage } from './StaticPages';
 // Plain list pages. Trending and Discover (/browse/anime) have their own layouts.
 const LISTS: Record<string, { title: string; blurb: string; endpoint: string }> = {
   latest: { title: 'Recently updated', blurb: 'Currently airing, newest first.', endpoint: '/catalog/latest' },
-  movies: { title: 'Movies', blurb: 'Feature films, most popular first.', endpoint: '/catalog/browse?format=movie&sort=popularity' },
 };
 
 export default function BrowsePage() {
   const { category } = useParams();
+  // The old /browse/movies page queried Anime's "format=movie" catalogue.
+  // Keep a component-level fallback as well as the explicit App route so this
+  // legacy URL can never silently show Anime records as the TMDB Movies catalogue.
+  if (category === 'movies') return <Navigate to="/movies" replace />;
   if (category === 'trending') return <TrendingPage />;
   if (category === 'seasonal') return <SeasonalPage />;
   if (category === 'anime') return <DiscoverPage />;

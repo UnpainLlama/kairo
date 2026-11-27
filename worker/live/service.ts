@@ -4,12 +4,13 @@ import type { CircuitBreaker } from '../metadata/breaker';
 import type { MetadataCache } from '../metadata/cache';
 import { sharedBreaker, createCache } from '../metadata/service';
 import type { FetchLike } from '../metadata/providers/http';
-import { ProviderError, type EpisodePage, type EpisodeProvider, type EpisodeRecord } from '../metadata/types';
+import { ProviderError, type EpisodePage, type EpisodeProvider, type EpisodeRecord, type EpisodeServer } from '../metadata/types';
 import { buildEpisodeProviders, listEpisodes as resolveEpisodes } from '../episodes/service';
 import { createAniListSource } from './anilist';
 import { createJikanSource } from './jikan';
 import { createHiAnimeSource } from './hianime';
 import { createTmdbArtworkProvider } from '../artwork/tmdb';
+import { buildZokoAnimeEmbedUrl, type ZokoAnimeTrack } from '../providers/zokoanime';
 import { enrichArtwork, enrichArtworkOne, enrichEpisodeArtwork } from '../artwork/service';
 import type { Ref } from './ids';
 import type { BrowseQuery, CatalogSource, ListKind, LiveEnv, LiveTitle, Paged, SourceId } from './types';
@@ -25,6 +26,8 @@ export type Deps = {
   onError?: (source: SourceId, error: ProviderError) => void;
   onEpisodeError?: (source: string, error: ProviderError) => void;
   artworkProvider?: ReturnType<typeof createTmdbArtworkProvider>;
+  /** Explicit opt-in; false/undefined keeps the external ZokoAnime iframe route unavailable. */
+  zokoAnimeEmbedEnabled?: boolean;
 };
 
 /** Artwork enrichment is deliberately independent from the catalogue provider and fails open. */
@@ -229,7 +232,7 @@ export async function getEpisodes(deps: Deps, ref: Ref, page: number): Promise<E
  */
 export async function getEpisodePlayback(deps: Deps, ref: Ref, episodeNumber: number, serverId: string) {
   if (!Number.isInteger(episodeNumber) || episodeNumber < 1 || episodeNumber > 100_000 ||
-      typeof serverId !== 'string' || !/^(?:\d{1,12}|h_[A-Za-z0-9_-]{1,1800})$/.test(serverId)) {
+      typeof serverId !== 'string' || !/^(?:\d{1,12}|h_[A-Za-z0-9_-]{1,1800}|z_(?:sub|hsub|dub))$/.test(serverId)) {
     throw new ProviderError('not_found', 'Invalid episode or server identifier.');
   }
   const title = (await getTitle(deps, ref)).value;
@@ -243,6 +246,41 @@ export async function getEpisodePlayback(deps: Deps, ref: Ref, episodeNumber: nu
     },
     providerUrl: title.url,
   };
+  if (serverId.startsWith('z_')) {
+    if (!deps.zokoAnimeEmbedEnabled) throw new ProviderError('unavailable', 'ZokoAnime iframe playback is disabled until its terms and permissions are reviewed.');
+    const track = serverId.slice(2) as ZokoAnimeTrack;
+    const embedUrl = buildZokoAnimeEmbedUrl({ malId: title.malId, anilistId: title.anilistId, episodeNumber, track });
+    if (!embedUrl) throw new ProviderError('not_found', 'ZokoAnime does not have a usable external title id for this episode.');
+
+    // Re-confirm that this episode is in the configured episode catalogue before
+    // producing the external iframe URL. The browser still supplies only an opaque server id.
+    const episodeProvider = deps.episodeProviders.find((item) => typeof item.listServers === 'function');
+    if (!episodeProvider?.listServers) throw new ProviderError('unavailable', 'No episode discovery provider is enabled for ZokoAnime playback.');
+    const breakerKey = `episode:${episodeProvider.id}`;
+    if (!deps.breaker.canRequest(breakerKey, deps.now())) {
+      throw new ProviderError('unavailable', `${episodeProvider.displayName} is temporarily paused after repeated failures.`);
+    }
+    try {
+      for (let page = 1; page <= 20; page++) {
+        const episodes = await withTimeout(deps.timeoutMs ?? 8000, (signal) => episodeProvider.listEpisodes(lookup, page, signal));
+        const match = episodes.items.find((item) => item.episodeNumber === episodeNumber);
+        if (match?.providerEpisodeId) {
+          await withTimeout(deps.timeoutMs ?? 8000, (signal) => episodeProvider.listServers!(match.providerEpisodeId!, lookup, signal));
+          deps.breaker.recordSuccess(breakerKey);
+          return { provider: 'zokoanime', protocol: 'embed' as const, embedUrl };
+        }
+        if (!episodes.hasNextPage) break;
+      }
+      deps.breaker.recordSuccess(breakerKey);
+      throw new ProviderError('not_found', 'The selected episode is not listed by the configured episode provider.');
+    } catch (error) {
+      if (error instanceof ProviderError && error.kind === 'not_found') throw error;
+      const providerError = error instanceof ProviderError ? error : new ProviderError('unavailable', 'Unexpected episode validation failure.');
+      deps.breaker.recordFailure(breakerKey, deps.now(), providerError.retryAfterSeconds);
+      deps.onEpisodeError?.(episodeProvider.id, providerError);
+      throw providerError;
+    }
+  }
   const provider = deps.episodeProviders.find((item) => typeof item.listServers === 'function' && typeof item.resolveServer === 'function');
   if (!provider?.listServers || !provider.resolveServer) throw new ProviderError('unavailable', 'No approved playback resolver is configured.');
   const breakerKey = `episode:${provider.id}`;
@@ -297,7 +335,15 @@ export async function getEpisodeServers(deps: Deps, ref: Ref, episodeNumber: num
       if (match?.providerEpisodeId) {
         const items = await withTimeout(deps.timeoutMs ?? 8000, (signal) => provider.listServers!(match.providerEpisodeId!, lookup, signal));
         deps.breaker.recordSuccess(breakerKey);
-        return { items, via: provider.id };
+        const zokoItems: EpisodeServer[] = deps.zokoAnimeEmbedEnabled && (title.malId || title.anilistId)
+          ? (['sub', 'hsub', 'dub'] as const).map((track) => ({
+              id: `z_${track}`,
+              type: track,
+              name: `ZokoAnime · ${track === 'sub' ? 'Sub' : track === 'hsub' ? 'Hard Sub' : 'Dub'}`,
+            }))
+          : [];
+        const seen = new Set(items.map((server) => server.id));
+        return { items: [...items, ...zokoItems.filter((server) => !seen.has(server.id))], via: provider.id };
       }
       if (!episodes.hasNextPage) break;
     }
@@ -330,6 +376,7 @@ export function buildDeps(env: LiveEnv, fetchImpl: FetchLike, onError?: Deps['on
     breaker: sharedBreaker,
     now: Date.now,
     onError,
+    zokoAnimeEmbedEnabled: env.ZOKOANIME_EMBED_ENABLED === 'true',
     ...(env.TMDB_ACCESS_TOKEN?.trim() ? { artworkProvider: createTmdbArtworkProvider(fetchImpl, env.TMDB_ACCESS_TOKEN) } : {}),
     onEpisodeError: (source, error) => console.error(JSON.stringify({ event: 'episode_provider_failed', source, kind: error.kind })),
   };

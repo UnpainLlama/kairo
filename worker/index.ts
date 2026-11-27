@@ -1,15 +1,20 @@
 /// <reference types="@cloudflare/workers-types" />
 import { Hono, type Context, type Next } from 'hono';
-import { Innertube } from 'youtubei.js';
 import { cors } from 'hono/cors';
 import { boundedInt, parseId, parsePagination, parseSearchParams } from './lib/validation';
 import { clearSessionCookie, findSessionUser, revokeSession } from './auth/session';
 import { registerAuthRoutes } from './auth/routes';
+import { registerYouTubeMediaRoutes } from './youtube/routes';
 import { GENRES_SQL, buildListQuery, buildRelatedQuery, buildSearchQuery } from './repositories/catalog';
 import { BASE_RECORD_SQL, INSERT_PROVIDER_ID_SQL, PROVIDER_IDS_SQL } from './repositories/providerIds';
 import { buildRegistry, createCache, resolveUnified, sharedBreaker, toBaseRecord, type BaseRow } from './metadata/service';
 import { createLiveHandlers, isLiveMode, type LiveHandlers } from './live/handlers';
 import type { LiveRequest, LiveResult } from './live/types';
+import { createTmdbMovieProvider } from './movies/providers/tmdb';
+import { createMovieCatalogService } from './movies/service';
+import { movieIdentity, persistMovieDetail, persistMovieSummary, searchStoredMovies } from './movies/repository';
+import type { MovieDiscoverQuery, MovieListKind } from './movies/types';
+import { ProviderError } from './metadata/types';
 
 interface Bindings {
   DB: D1Database;
@@ -20,13 +25,15 @@ interface Bindings {
   GOOGLE_CLIENT_SECRET?: string;
   /** Base64url-encoded 32-byte AES-GCM key used only for YouTube OAuth token encryption. */
   YOUTUBE_TOKEN_ENCRYPTION_KEY?: string;
+  /** Server-only Google API key for public YouTube Data API reads. */
+  YOUTUBE_DATA_API_KEY?: string;
   AUTH_EMAIL_FROM?: string;
   ALLOWED_ORIGIN?: string;
   /** Comma-separated metadata provider ids to enable, e.g. "anilist". Empty = none. */
   METADATA_PROVIDERS?: string;
   /** Optional Workers KV namespace used as the provider-response cache (recommended on workers.dev). */
   METADATA_CACHE?: KVNamespace;
-  /** "live" (default): serve the catalogue from configured live providers, no database. "db": the original D1 routes. */
+  /** "live" (default): serve the public catalogue from live providers; account, library and history routes still use D1. "db": use the original D1 catalogue routes. */
   CATALOG_SOURCE?: string;
   /** Catalogue-provider priority, comma-separated. */
   LIVE_PROVIDERS?: string;
@@ -34,10 +41,16 @@ interface Bindings {
   EPISODE_PROVIDERS?: string;
   /** HiAnime mirror base URL; adapter enforces a fixed HTTPS host allowlist. */
   HIANIME_BASE_URL?: string;
+  /** Opt-in to ZokoAnime's documented iframe route; disabled unless explicitly set to true. */
+  ZOKOANIME_EMBED_ENABLED?: string;
   /** TMDB API Read Access Token stored as a Cloudflare Worker secret. */
   TMDB_ACCESS_TOKEN?: string;
-  /** Staging-only bearer secret for the experimental YouTube cookie-feed endpoint. */
-  YOUTUBE_STAGING_TOKEN?: string;
+  /** Enable TMDB-powered Movies discovery/search only after credentials and provider terms are approved. */
+  MOVIES_TMDB_ENABLED?: string;
+  /** Explicit owner approval for the provider's applicable licence, caching, and attribution terms. */
+  MOVIES_TMDB_TERMS_APPROVED?: string;
+  /** Enable admin-only incremental D1 ingestion. Requires MOVIES_TMDB_TERMS_APPROVED=true. */
+  MOVIES_INGESTION_ENABLED?: string;
 }
 
 type Variables = { requestId: string };
@@ -62,6 +75,15 @@ app.use('/api/*', async (c, next) => {
   await next();
 });
 
+app.use('/api/v1/me', async (c, next) => {
+  c.header('Cache-Control', 'no-store');
+  await next();
+});
+app.use('/api/v1/me/*', async (c, next) => {
+  c.header('Cache-Control', 'no-store');
+  await next();
+});
+
 function ok<T>(c: Context<{ Bindings: Bindings; Variables: Variables }>, data: T, meta: Record<string, unknown> = {}) {
   return c.json({ success: true, data, meta: { requestId: c.get('requestId'), ...meta } });
 }
@@ -71,6 +93,190 @@ function fail(c: Context<{ Bindings: Bindings; Variables: Variables }>, status: 
 }
 
 registerAuthRoutes(app);
+registerYouTubeMediaRoutes(app);
+
+function moviesProviderEnabled(c: AppContext): boolean {
+  return c.env.MOVIES_TMDB_ENABLED === 'true' && c.env.MOVIES_TMDB_TERMS_APPROVED === 'true';
+}
+
+function movieCatalog(c: AppContext) {
+  const provider = createTmdbMovieProvider(fetch, c.env.TMDB_ACCESS_TOKEN);
+  return createMovieCatalogService(provider, createCache(c.env));
+}
+
+function movieProviderFailure(c: AppContext, error: unknown) {
+  if (error instanceof ProviderError) {
+    if (error.kind === 'not_found') return fail(c, 404, 'MOVIE_NOT_FOUND', 'The requested movie was not found.');
+    if (error.kind === 'rate_limited') {
+      c.header('Retry-After', String(error.retryAfterSeconds ?? 60));
+      return fail(c, 429, 'MOVIE_PROVIDER_RATE_LIMITED', 'The movie metadata provider is rate limiting requests.');
+    }
+    if (error.kind === 'invalid_response') return fail(c, 503, 'MOVIE_PROVIDER_INVALID_RESPONSE', 'The movie metadata provider returned an unexpected response.');
+  }
+  logError(c, 'movies_provider_failed', error);
+  return fail(c, 503, 'MOVIES_UNAVAILABLE', 'Movie discovery is temporarily unavailable.');
+}
+
+const MOVIE_LIST_KINDS: MovieListKind[] = [
+  'trending_day', 'trending_week', 'popular', 'top_rated', 'upcoming', 'now_playing',
+];
+
+app.get('/api/v1/movies/discover', async (c) => {
+  if (!moviesProviderEnabled(c)) return fail(c, 503, 'MOVIES_DISABLED', 'Movies metadata is not enabled or its provider terms have not been approved.');
+  const kindRaw = c.req.query('kind') ?? 'trending_week';
+  if (!MOVIE_LIST_KINDS.includes(kindRaw as MovieListKind)) return fail(c, 400, 'VALIDATION_ERROR', 'kind must be trending_day, trending_week, popular, top_rated, upcoming, or now_playing.');
+  const page = boundedInt(c.req.query('page'), 1, 1, 500);
+  const yearRaw = c.req.query('year');
+  let year: number | undefined;
+  if (yearRaw !== undefined) {
+    const parsedYear = boundedInt(yearRaw, 2000, 1800, 2200);
+    if (parsedYear === null) return fail(c, 400, 'VALIDATION_ERROR', 'year must be 1800–2200.');
+    year = parsedYear;
+  }
+  if (page === null) return fail(c, 400, 'VALIDATION_ERROR', 'page must be 1–500.');
+  const genreIds = (c.req.query('genres') ?? '').split(',').map((value) => value.trim()).filter((value) => /^\d{1,8}$/.test(value)).slice(0, 10);
+  const language = c.req.query('language');
+  if (language && !/^[a-z]{2,3}$/.test(language)) return fail(c, 400, 'VALIDATION_ERROR', 'language must be a 2–3 character ISO language code.');
+  const query: MovieDiscoverQuery = {
+    kind: kindRaw as MovieListKind,
+    page,
+    ...(year === undefined ? {} : { year }),
+    ...(genreIds.length ? { genreIds } : {}),
+    ...(language ? { originalLanguage: language } : {}),
+    includeAdult: c.req.query('include_adult') === 'true',
+  };
+  try {
+    const result = await movieCatalog(c).discover(query);
+    return ok(c, result.data, { provider: 'tmdb', cache: result.cache, globalCatalogue: true });
+  } catch (error) {
+    return movieProviderFailure(c, error);
+  }
+});
+
+app.get('/api/v1/movies/search', async (c) => {
+  if (!moviesProviderEnabled(c)) return fail(c, 503, 'MOVIES_DISABLED', 'Movies metadata is not enabled or its provider terms have not been approved.');
+  const q = (c.req.query('q') ?? '').trim();
+  if (q.length < 1 || q.length > 120) return fail(c, 400, 'VALIDATION_ERROR', 'q must contain 1–120 characters.');
+  const page = boundedInt(c.req.query('page'), 1, 1, 500);
+  const yearRaw = c.req.query('year');
+  let year: number | undefined;
+  if (yearRaw !== undefined) {
+    const parsedYear = boundedInt(yearRaw, 2000, 1800, 2200);
+    if (parsedYear === null) return fail(c, 400, 'VALIDATION_ERROR', 'year must be 1800–2200.');
+    year = parsedYear;
+  }
+  const language = c.req.query('language');
+  if (page === null) return fail(c, 400, 'VALIDATION_ERROR', 'page must be 1–500.');
+  if (language && !/^[a-z]{2}-[A-Z]{2}$/.test(language)) return fail(c, 400, 'VALIDATION_ERROR', 'language must use the format en-US.');
+  try {
+    const result = await movieCatalog(c).search({
+      query: q,
+      page,
+      ...(year === undefined ? {} : { year }),
+      ...(language ? { language } : {}),
+      includeAdult: c.req.query('include_adult') === 'true',
+    });
+    return ok(c, result.data, { provider: 'tmdb', cache: result.cache, globalCatalogue: true });
+  } catch (error) {
+    return movieProviderFailure(c, error);
+  }
+});
+
+app.get('/api/v1/movies/genres', async (c) => {
+  if (!moviesProviderEnabled(c)) return fail(c, 503, 'MOVIES_DISABLED', 'Movies metadata is not enabled or its provider terms have not been approved.');
+  const language = c.req.query('language') ?? 'en-US';
+  if (!/^[a-z]{2}-[A-Z]{2}$/.test(language)) return fail(c, 400, 'VALIDATION_ERROR', 'language must use the format en-US.');
+  try {
+    const result = await movieCatalog(c).genres(language);
+    return ok(c, { items: result.data }, { provider: 'tmdb', cache: result.cache });
+  } catch (error) {
+    return movieProviderFailure(c, error);
+  }
+});
+
+/** Search only the movies already ingested into D1; this route never contacts a metadata provider. */
+app.get('/api/v1/movies/catalogue/search', async (c) => {
+  const q = (c.req.query('q') ?? '').trim();
+  if (q.length < 1 || q.length > 100) return fail(c, 400, 'VALIDATION_ERROR', 'q must contain 1–100 characters.');
+  const page = boundedInt(c.req.query('page'), 1, 1, 500);
+  const limit = boundedInt(c.req.query('limit'), 20, 1, 50);
+  if (page === null || limit === null) return fail(c, 400, 'VALIDATION_ERROR', 'page must be 1–500 and limit must be 1–50.');
+  try {
+    const result = await searchStoredMovies(c.env.DB, q, page, limit);
+    return ok(c, result, { source: 'd1', globalCatalogue: true });
+  } catch (error) {
+    logError(c, 'movies_catalogue_search_failed', error);
+    return fail(c, 503, 'MOVIES_UNAVAILABLE', 'The stored movie catalogue is temporarily unavailable.');
+  }
+});
+
+/** Bounded, admin-only, one-page-at-a-time ingestion. No provider-wide scraping job is exposed. */
+app.post('/api/v1/movies/ingest', async (c) => {
+  if (c.env.MOVIES_INGESTION_ENABLED !== 'true' || !moviesProviderEnabled(c)) {
+    return fail(c, 503, 'MOVIES_INGESTION_DISABLED', 'Movie ingestion is disabled until the metadata provider terms and persistence rules are approved.');
+  }
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to continue.');
+  if (user.role !== 'admin') return fail(c, 403, 'ADMIN_REQUIRED', 'Administrator access is required.');
+  const body: unknown = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(c, 400, 'VALIDATION_ERROR', 'A JSON request body is required.');
+  const record = body as Record<string, unknown>;
+  const kind = record.kind === undefined ? 'popular' : record.kind;
+  if (typeof kind !== 'string' || !MOVIE_LIST_KINDS.includes(kind as MovieListKind)) return fail(c, 400, 'VALIDATION_ERROR', 'Invalid movie list kind.');
+  const pageRaw = record.page === undefined ? '1' : String(record.page);
+  const page = boundedInt(pageRaw, 1, 1, 10);
+  if (page === null) return fail(c, 400, 'VALIDATION_ERROR', 'Ingestion page must be 1–10 per request.');
+  const year = typeof record.year === 'number' && Number.isInteger(record.year) && record.year >= 1800 && record.year <= 2200 ? record.year : undefined;
+  const genreIds = Array.isArray(record.genreIds) ? record.genreIds.filter((v): v is string => typeof v === 'string' && /^\d{1,8}$/.test(v)).slice(0, 10) : [];
+  const language = typeof record.originalLanguage === 'string' && /^[a-z]{2,3}$/.test(record.originalLanguage) ? record.originalLanguage : undefined;
+  try {
+    const result = await movieCatalog(c).discover({
+      kind: kind as MovieListKind,
+      page,
+      ...(year === undefined ? {} : { year }),
+      ...(genreIds.length ? { genreIds } : {}),
+      ...(language ? { originalLanguage: language } : {}),
+      includeAdult: record.includeAdult === true,
+    });
+    const fetchedAt = new Date().toISOString();
+    let stored = 0;
+    for (const movie of result.data.items) {
+      await persistMovieSummary(c.env.DB, movie, fetchedAt);
+      stored += 1;
+    }
+    return ok(c, { stored, page, kind, provider: 'tmdb' }, { cache: result.cache, boundedIngestion: true });
+  } catch (error) {
+    return movieProviderFailure(c, error);
+  }
+});
+
+app.post('/api/v1/movies/ingest/:externalId', async (c) => {
+  if (c.env.MOVIES_INGESTION_ENABLED !== 'true' || !moviesProviderEnabled(c)) {
+    return fail(c, 503, 'MOVIES_INGESTION_DISABLED', 'Movie ingestion is disabled until the metadata provider terms and persistence rules are approved.');
+  }
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to continue.');
+  if (user.role !== 'admin') return fail(c, 403, 'ADMIN_REQUIRED', 'Administrator access is required.');
+  const externalId = c.req.param('externalId');
+  try {
+    const result = await movieCatalog(c).byId(externalId);
+    const movieId = await persistMovieDetail(c.env.DB, result.data, new Date().toISOString());
+    return ok(c, { id: movieId, slug: movieIdentity(result.data.providerId, result.data.externalId).slug, provider: 'tmdb' }, { cache: result.cache });
+  } catch (error) {
+    return movieProviderFailure(c, error);
+  }
+});
+
+app.get('/api/v1/movies/:externalId', async (c) => {
+  if (!moviesProviderEnabled(c)) return fail(c, 503, 'MOVIES_DISABLED', 'Movies metadata is not enabled or its provider terms have not been approved.');
+  const externalId = c.req.param('externalId');
+  try {
+    const result = await movieCatalog(c).byId(externalId);
+    return ok(c, result.data, { provider: 'tmdb', cache: result.cache });
+  } catch (error) {
+    return movieProviderFailure(c, error);
+  }
+});
 
 app.get('/api/health', (c) => ok(c, { status: 'ok', service: 'kairo-api', environment: c.env.APP_ENV ?? 'unknown' }));
 
@@ -273,96 +479,58 @@ app.get('/api/v1/anime/:id/metadata', async (c) => {
 });
 
 
-// Experimental YouTube.js subscriptions-feed probe. Staging only; cookie is request-scoped and never persisted or logged.
-app.post('/api/staging/youtube/feed', async (c) => {
-  if (c.env.APP_ENV !== 'staging') return fail(c, 404, 'RESOURCE_NOT_FOUND', 'The requested API route was not found.');
-  if (!c.env.YOUTUBE_STAGING_TOKEN) return fail(c, 503, 'FEATURE_NOT_CONFIGURED', 'The staging YouTube test is not configured.');
-  const origin = c.req.header('Origin');
-  if (origin && origin !== new URL(c.req.url).origin) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This test can only be used from the Kairo staging site.');
-  const authorization = c.req.header('Authorization') ?? '';
-  const suppliedToken = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
-  const expected = c.env.YOUTUBE_STAGING_TOKEN;
-  const encoder = new TextEncoder();
-  const [providedHash, expectedHash] = await Promise.all([
-    crypto.subtle.digest('SHA-256', encoder.encode(suppliedToken)),
-    crypto.subtle.digest('SHA-256', encoder.encode(expected)),
-  ]);
-  const a = new Uint8Array(providedHash);
-  const b = new Uint8Array(expectedHash);
-  let mismatch = 0;
-  for (let i = 0; i < a.length; i += 1) mismatch |= a[i] ^ b[i];
-  if (!suppliedToken || mismatch !== 0) return fail(c, 401, 'STAGING_AUTH_REQUIRED', 'The staging access token is missing or incorrect.');
-
-  let body: { cookie?: unknown; maxPages?: unknown };
-  try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid JSON request.'); }
-  const cookie = typeof body.cookie === 'string' ? body.cookie.trim() : '';
-  if (!cookie || cookie.length > 16000 || /[\r\n]/.test(cookie)) {
-    return fail(c, 400, 'VALIDATION_ERROR', 'Provide a valid YouTube Cookie header (maximum 16 KB).');
-  }
-  const maxPages = typeof body.maxPages === 'number' && Number.isFinite(body.maxPages)
-    ? Math.min(3, Math.max(1, Math.floor(body.maxPages))) : 1;
-
-  try {
-    const innertube = await Innertube.create({ cookie, enable_session_cache: false });
-    let feed = await innertube.getSubscriptionsFeed();
-    const videosById = new Map<string, Record<string, unknown>>();
-    for (let page = 1; page <= maxPages; page += 1) {
-      for (const video of feed.videos ?? []) {
-        // Feed.videos is a union of several YouTube.js renderer types. Some entries
-        // are not ordinary videos, so inspect the runtime shape instead of assuming
-        // every union member exposes the same properties.
-        const item = video as unknown as Record<string, unknown>;
-        const asRecord = (value: unknown): Record<string, unknown> | null =>
-          value !== null && typeof value === 'object' ? value as Record<string, unknown> : null;
-        const asText = (value: unknown): string => {
-          if (value == null) return '';
-          if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
-          const textValue = asRecord(value)?.text;
-          if (typeof textValue === 'string') return textValue;
-          const toString = asRecord(value)?.toString;
-          return typeof toString === 'function' ? String(toString.call(value)) : '';
-        };
-
-        const videoId = typeof item.video_id === 'string'
-          ? item.video_id
-          : typeof item.id === 'string' ? item.id : '';
-        if (!videoId) continue;
-
-        const author = asRecord(item.author);
-        const duration = asRecord(item.duration);
-        const bestThumbnail = asRecord(item.best_thumbnail);
-        const thumbnails = Array.isArray(item.thumbnails) ? item.thumbnails : [];
-        const firstThumbnail = asRecord(thumbnails[0]);
-        const thumbnail = bestThumbnail?.url ?? firstThumbnail?.url;
-
-        videosById.set(videoId, {
-          videoId,
-          title: asText(item.title),
-          channelTitle: asText(author?.name),
-          published: asText(item.published),
-          viewCount: asText(item.short_view_count ?? item.view_count),
-          duration: asText(duration?.text ?? item.length_text) || null,
-          isLive: Boolean(item.is_live),
-          thumbnail: typeof thumbnail === 'string' ? thumbnail : null,
-          url: `https://www.youtube.com/watch?v=${videoId}`,
-          embedUrl: `https://www.youtube-nocookie.com/embed/${videoId}`,
-        });
-      }
-      if (page === maxPages || !feed.has_continuation) break;
-      feed = await feed.getContinuation();
-    }
-    return ok(c, { count: videosById.size, videos: [...videosById.values()] }, { pagesRequested: maxPages });
-  } catch {
-    // Do not log request bodies, cookies, upstream response details, or authentication material.
-    return fail(c, 503, 'YOUTUBE_FEED_FAILED', 'YouTube did not return the subscriptions feed. The session may be expired, verification may be required, or the staging server IP may be blocked.');
-  }
-});
-
-// Session-backed account endpoints. User IDs always come from the validated session cookie.
 app.get('/api/v1/me', async (c) => {
   const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your profile.');
   return ok(c, { user });
+});
+
+app.get('/api/v1/me/history/sync', async (c) => {
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to restore watch history.');
+  const slug = c.req.query('slug');
+  const episodeNumber = c.req.query('episodeNumber');
+  try {
+    const clearMarker = await c.env.DB.prepare(
+      'SELECT cleared_at AS clearedAt FROM user_watch_history_clear_markers WHERE user_id = ?'
+    ).bind(user.id).first<{ clearedAt: number }>();
+    let result;
+    if (slug && episodeNumber) {
+      const [rows, tombstone] = await Promise.all([
+        c.env.DB.prepare(`
+          SELECT anime_slug AS slug, title, poster_url AS posterUrl,
+                 episode_number AS episodeNumber, episode_title AS episodeTitle,
+                 duration_seconds AS durationSeconds, progress_seconds AS progressSeconds,
+                 updated_at AS updatedAt
+          FROM user_watch_history
+          WHERE user_id = ? AND anime_slug = ? AND episode_number = ?
+          LIMIT 1
+        `).bind(user.id, slug, Number(episodeNumber)).all(),
+        c.env.DB.prepare(`
+          SELECT deleted_at AS deletedAt FROM user_watch_history_tombstones
+          WHERE user_id = ? AND anime_slug = ? AND episode_number = ?
+        `).bind(user.id, slug, Number(episodeNumber)).first<{ deletedAt: number }>(),
+      ]);
+      result = rows;
+      return ok(c, {
+        items: result.results ?? [],
+        deletedAt: Number(tombstone?.deletedAt ?? 0),
+        clearedAt: Number(clearMarker?.clearedAt ?? 0),
+      }, { count: result.results?.length ?? 0 });
+    }
+    result = await c.env.DB.prepare(`
+      SELECT anime_slug AS slug, title, poster_url AS posterUrl,
+             episode_number AS episodeNumber, episode_title AS episodeTitle,
+             duration_seconds AS durationSeconds, progress_seconds AS progressSeconds,
+             updated_at AS updatedAt
+      FROM user_watch_history WHERE user_id = ?
+      ORDER BY updated_at DESC LIMIT 100
+    `).bind(user.id).all();
+    return ok(c, { items: result.results ?? [], clearedAt: Number(clearMarker?.clearedAt ?? 0) }, { count: result.results?.length ?? 0 });
+  } catch (error) {
+    logError(c, 'watch_history_read_failed', error);
+    return fail(c, 503, 'HISTORY_UNAVAILABLE', 'Watch history is temporarily unavailable.');
+  }
 });
 
 app.post('/api/v1/me/history/sync', async (c) => {
@@ -381,13 +549,23 @@ app.post('/api/v1/me/history/sync', async (c) => {
   if (!Array.isArray(input) || input.length > 100 || deleted.length > 100 || input.length + deleted.length > 100) {
     return fail(c, 400, 'VALIDATION_ERROR', 'Watch history updates must contain at most 100 entries.');
   }
+  const now = Date.now();
   const statements: D1PreparedStatement[] = [];
   if (clear) {
+    statements.push(c.env.DB.prepare(`
+      INSERT INTO user_watch_history_tombstones (user_id, anime_slug, episode_number, deleted_at)
+      SELECT user_id, anime_slug, episode_number, ? FROM user_watch_history WHERE user_id = ?
+      ON CONFLICT(user_id, anime_slug, episode_number)
+      DO UPDATE SET deleted_at = MAX(user_watch_history_tombstones.deleted_at, excluded.deleted_at)
+    `).bind(now, user.id));
+    statements.push(c.env.DB.prepare(`
+      INSERT INTO user_watch_history_clear_markers (user_id, cleared_at) VALUES (?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET cleared_at = MAX(user_watch_history_clear_markers.cleared_at, excluded.cleared_at)
+    `).bind(user.id, now));
     statements.push(c.env.DB.prepare('DELETE FROM user_watch_history WHERE user_id = ?').bind(user.id));
   }
   for (const value of input) {
-    if (!value || typeof value !== 'object') continue;
-    if (clear) break;
+    if (!value || typeof value !== 'object' || clear) continue;
     const item = value as Record<string, unknown>;
     const slug = typeof item.slug === 'string' ? item.slug.trim() : '';
     const title = typeof item.title === 'string' ? item.title.trim() : '';
@@ -400,11 +578,15 @@ app.post('/api/v1/me/history/sync', async (c) => {
     const episodeTitle = typeof item.episodeTitle === 'string' ? item.episodeTitle.slice(0, 300) : '';
     const duration = Number(item.durationSeconds);
     const progress = Number(item.progressSeconds);
+    const timestamp = Math.floor(updatedAt);
     statements.push(c.env.DB.prepare(`
       INSERT INTO user_watch_history
         (user_id, anime_slug, episode_number, title, poster_url, episode_title,
          duration_seconds, progress_seconds, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+      WHERE ? > COALESCE((SELECT cleared_at FROM user_watch_history_clear_markers WHERE user_id = ?), -1)
+        AND ? > COALESCE((SELECT deleted_at FROM user_watch_history_tombstones
+                           WHERE user_id = ? AND anime_slug = ? AND episode_number = ?), -1)
       ON CONFLICT(user_id, anime_slug, episode_number) DO UPDATE SET
         title=excluded.title, poster_url=excluded.poster_url,
         episode_title=excluded.episode_title, duration_seconds=excluded.duration_seconds,
@@ -413,7 +595,7 @@ app.post('/api/v1/me/history/sync', async (c) => {
     `).bind(user.id, slug, episodeNumber, title, posterUrl, episodeTitle,
       Number.isFinite(duration) && duration > 0 ? Math.min(86400, Math.floor(duration)) : null,
       Number.isFinite(progress) && progress >= 0 ? Math.min(86400, progress) : 0,
-      Math.floor(updatedAt)));
+      timestamp, timestamp, user.id, timestamp, user.id, slug, episodeNumber));
   }
   if (!clear) {
     for (const value of deleted) {
@@ -421,9 +603,14 @@ app.post('/api/v1/me/history/sync', async (c) => {
       const item = value as Record<string, unknown>;
       const slug = typeof item.slug === 'string' ? item.slug.trim() : '';
       const episodeNumber = Number(item.episodeNumber);
-      if (slug && slug.length <= 128 && Number.isInteger(episodeNumber) && episodeNumber > 0 && episodeNumber <= 100000) {
-        statements.push(c.env.DB.prepare('DELETE FROM user_watch_history WHERE user_id = ? AND anime_slug = ? AND episode_number = ?').bind(user.id, slug, episodeNumber));
-      }
+      if (!slug || slug.length > 128 || !Number.isInteger(episodeNumber) || episodeNumber < 1 || episodeNumber > 100000) continue;
+      statements.push(c.env.DB.prepare(`
+        INSERT INTO user_watch_history_tombstones (user_id, anime_slug, episode_number, deleted_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(user_id, anime_slug, episode_number)
+        DO UPDATE SET deleted_at = MAX(user_watch_history_tombstones.deleted_at, excluded.deleted_at)
+      `).bind(user.id, slug, episodeNumber, now));
+      statements.push(c.env.DB.prepare('DELETE FROM user_watch_history WHERE user_id = ? AND anime_slug = ? AND episode_number = ? AND updated_at <= ?').bind(user.id, slug, episodeNumber, now));
     }
   }
   try {
@@ -440,6 +627,198 @@ app.post('/api/v1/me/history/sync', async (c) => {
   } catch (error) {
     logError(c, 'watch_history_sync_failed', error);
     return fail(c, 503, 'HISTORY_UNAVAILABLE', 'Watch history sync is temporarily unavailable.');
+  }
+});
+
+app.get('/api/v1/me/movies/library', async (c) => {
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your Movies library.');
+  try {
+    const result = await c.env.DB.prepare(`
+      SELECT provider_id AS providerId, external_id AS externalId, status,
+             is_favorite AS isFavorite, rating, added_at AS addedAt, updated_at AS updatedAt
+      FROM user_movie_library_refs WHERE user_id = ?
+      ORDER BY updated_at DESC LIMIT 200
+    `).bind(user.id).all();
+    return ok(c, { items: result.results ?? [] }, { count: result.results?.length ?? 0 });
+  } catch (error) {
+    logError(c, 'movie_library_read_failed', error);
+    return fail(c, 503, 'MOVIE_LIBRARY_UNAVAILABLE', 'Your Movies library is temporarily unavailable.');
+  }
+});
+
+app.post('/api/v1/me/movies/library', async (c) => {
+  const origin = c.req.header('Origin');
+  if (origin && origin !== new URL(c.req.url).origin) {
+    return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
+  }
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync your Movies library.');
+  let body: unknown;
+  try { body = await c.req.json(); } catch { return fail(c, 400, 'VALIDATION_ERROR', 'Provide valid JSON.'); }
+  if (!body || typeof body !== 'object') return fail(c, 400, 'VALIDATION_ERROR', 'Provide a movie library entry.');
+  const value = body as Record<string, unknown>;
+  const providerId = typeof value.providerId === 'string' ? value.providerId.trim().toLowerCase() : '';
+  const externalId = typeof value.externalId === 'string' ? value.externalId.trim() : '';
+  const status = value.status === null || value.status === 'watchlist' || value.status === 'watched' ? value.status : undefined;
+  const isFavorite = value.isFavorite;
+  const rating = value.rating === null || value.rating === undefined ? null : Number(value.rating);
+  if (providerId !== 'tmdb' || !/^\d{1,12}$/.test(externalId) ||
+      status === undefined || typeof isFavorite !== 'boolean' ||
+      (rating !== null && (!Number.isFinite(rating) || rating < 0 || rating > 10))) {
+    return fail(c, 400, 'VALIDATION_ERROR', 'The movie library entry is invalid.');
+  }
+  const now = Date.now();
+  try {
+    if (status === null && !isFavorite && rating === null) {
+      await c.env.DB.prepare(
+        'DELETE FROM user_movie_library_refs WHERE user_id = ? AND provider_id = ? AND external_id = ?'
+      ).bind(user.id, providerId, externalId).run();
+      return ok(c, { removed: true, providerId, externalId });
+    }
+    await c.env.DB.prepare(`
+      INSERT INTO user_movie_library_refs
+        (user_id, provider_id, external_id, status, is_favorite, rating, added_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, provider_id, external_id) DO UPDATE SET
+        status=excluded.status, is_favorite=excluded.is_favorite,
+        rating=excluded.rating, updated_at=excluded.updated_at
+    `).bind(user.id, providerId, externalId, status, isFavorite ? 1 : 0, rating, now, now).run();
+    return ok(c, { saved: true, providerId, externalId, status, isFavorite, rating, updatedAt: now });
+  } catch (error) {
+    logError(c, 'movie_library_write_failed', error);
+    return fail(c, 503, 'MOVIE_LIBRARY_UNAVAILABLE', 'Could not save this movie to your account.');
+  }
+});
+
+app.delete('/api/v1/me/movies/library/:providerId/:externalId', async (c) => {
+  const origin = c.req.header('Origin');
+  if (origin && origin !== new URL(c.req.url).origin) {
+    return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
+  }
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to manage your Movies library.');
+  const providerId = c.req.param('providerId').trim().toLowerCase();
+  const externalId = c.req.param('externalId').trim();
+  if (providerId !== 'tmdb' || !/^\d{1,12}$/.test(externalId)) {
+    return fail(c, 400, 'VALIDATION_ERROR', 'The movie identifier is invalid.');
+  }
+  try {
+    await c.env.DB.prepare(
+      'DELETE FROM user_movie_library_refs WHERE user_id = ? AND provider_id = ? AND external_id = ?'
+    ).bind(user.id, providerId, externalId).run();
+    return ok(c, { removed: true });
+  } catch (error) {
+    logError(c, 'movie_library_delete_failed', error);
+    return fail(c, 503, 'MOVIE_LIBRARY_UNAVAILABLE', 'Could not remove this movie from your account.');
+  }
+});
+
+app.get('/api/v1/me/movies/progress', async (c) => {
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your Movies progress.');
+  const providerId = c.req.query('providerId');
+  const externalId = c.req.query('externalId');
+  if ((providerId && providerId !== 'tmdb') || (externalId && !/^\d{1,12}$/.test(externalId)) || Boolean(providerId) !== Boolean(externalId)) {
+    return fail(c, 400, 'VALIDATION_ERROR', 'Provide both a valid providerId and externalId, or neither.');
+  }
+  try {
+    const query = externalId
+      ? c.env.DB.prepare(`
+          SELECT provider_id AS providerId, external_id AS externalId,
+                 progress_seconds AS currentTime, duration_seconds AS duration,
+                 completed, updated_at AS updatedAt
+          FROM user_movie_watch_progress
+          WHERE user_id = ? AND provider_id = ? AND external_id = ?
+          LIMIT 1
+        `).bind(user.id, 'tmdb', externalId)
+      : c.env.DB.prepare(`
+          SELECT provider_id AS providerId, external_id AS externalId,
+                 progress_seconds AS currentTime, duration_seconds AS duration,
+                 completed, updated_at AS updatedAt
+          FROM user_movie_watch_progress
+          WHERE user_id = ?
+          ORDER BY updated_at DESC
+          LIMIT 100
+        `).bind(user.id);
+    if (externalId) {
+      const item = await query.first();
+      return ok(c, { items: item ? [item] : [] }, { count: item ? 1 : 0 });
+    }
+    const result = await query.all();
+    return ok(c, { items: result.results ?? [] }, { count: result.results?.length ?? 0 });
+  } catch (error) {
+    logError(c, 'movie_progress_read_failed', error);
+    return fail(c, 503, 'MOVIE_PROGRESS_UNAVAILABLE', 'Movie playback progress is temporarily unavailable.');
+  }
+});
+
+app.post('/api/v1/me/movies/progress', async (c) => {
+  const origin = c.req.header('Origin');
+  if (origin && origin !== new URL(c.req.url).origin) {
+    return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
+  }
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync movie playback progress.');
+  const body: unknown = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(c, 400, 'VALIDATION_ERROR', 'Provide movie playback progress.');
+  const value = body as Record<string, unknown>;
+  const providerId = typeof value.providerId === 'string' ? value.providerId.trim().toLowerCase() : '';
+  const externalId = typeof value.externalId === 'string' ? value.externalId.trim() : '';
+  const currentTime = Number(value.currentTime);
+  const duration = Number(value.duration);
+  const completed = value.completed === true;
+  const updatedAt = value.updatedAt === undefined ? Date.now() : Number(value.updatedAt);
+  if (
+    providerId !== 'tmdb' || !/^\d{1,12}$/.test(externalId) ||
+    !Number.isFinite(currentTime) || currentTime < 0 ||
+    !Number.isFinite(duration) || duration <= 0 || duration > 108000 ||
+    currentTime > duration + 30 ||
+    (value.completed !== undefined && typeof value.completed !== 'boolean') ||
+    !Number.isSafeInteger(updatedAt) || updatedAt <= 0 || updatedAt > Date.now() + 30000
+  ) {
+    return fail(c, 400, 'VALIDATION_ERROR', 'The movie playback progress is invalid.');
+  }
+  const position = completed ? duration : Math.min(currentTime, duration);
+  try {
+    await c.env.DB.prepare(`
+      INSERT INTO user_movie_watch_progress
+        (user_id, provider_id, external_id, progress_seconds, duration_seconds, completed, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, provider_id, external_id) DO UPDATE SET
+        progress_seconds=excluded.progress_seconds,
+        duration_seconds=excluded.duration_seconds,
+        completed=excluded.completed,
+        updated_at=excluded.updated_at
+      WHERE excluded.updated_at >= user_movie_watch_progress.updated_at
+    `).bind(user.id, providerId, externalId, position, duration, completed ? 1 : 0, updatedAt).run();
+    return ok(c, { saved: true, providerId, externalId, currentTime: position, duration, completed, updatedAt });
+  } catch (error) {
+    logError(c, 'movie_progress_write_failed', error);
+    return fail(c, 503, 'MOVIE_PROGRESS_UNAVAILABLE', 'Could not save movie playback progress.');
+  }
+});
+
+app.delete('/api/v1/me/movies/progress/:providerId/:externalId', async (c) => {
+  const origin = c.req.header('Origin');
+  if (origin && origin !== new URL(c.req.url).origin) {
+    return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
+  }
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to manage movie playback progress.');
+  const providerId = c.req.param('providerId').trim().toLowerCase();
+  const externalId = c.req.param('externalId').trim();
+  if (providerId !== 'tmdb' || !/^\d{1,12}$/.test(externalId)) {
+    return fail(c, 400, 'VALIDATION_ERROR', 'The movie identifier is invalid.');
+  }
+  try {
+    await c.env.DB.prepare(
+      'DELETE FROM user_movie_watch_progress WHERE user_id = ? AND provider_id = ? AND external_id = ?'
+    ).bind(user.id, providerId, externalId).run();
+    return ok(c, { removed: true, providerId, externalId });
+  } catch (error) {
+    logError(c, 'movie_progress_delete_failed', error);
+    return fail(c, 503, 'MOVIE_PROGRESS_UNAVAILABLE', 'Could not remove movie playback progress.');
   }
 });
 

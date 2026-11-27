@@ -21,6 +21,7 @@ async function permit(db:D1Database,action:string,ip:string,identity:string,limi
  return Number(row?.attempts??limit+1)<=limit;
 }
 const ip=(c:any)=>c.req.header('CF-Connecting-IP')??'unknown';
+const logAuthFailure=(c:any,event:string,error:unknown)=>console.error(JSON.stringify({event,requestId:c.get('requestId'),message:error instanceof Error?error.message:'unknown'}));
 
 export function registerAuthRoutes(app:Hono<any>){
  app.post('/api/v1/auth/register',async(c:any)=>{
@@ -41,7 +42,7 @@ export function registerAuthRoutes(app:Hono<any>){
    const session=await createSession(c.env.DB,uid,{userAgent:c.req.header('User-Agent')??undefined,ipPrefix:ip(c)});
    c.header('Set-Cookie',sessionCookie(session.token,new URL(c.req.url).protocol==='https:'));
    return ok(c,{signedIn:true,message:'Your Kairo account is ready.',expiresAt:session.expiresAt},201);
-  }catch{return fail(c,503,'REGISTRATION_UNAVAILABLE','Could not complete registration. Please try again later.')}
+  }catch(error){logAuthFailure(c,'account_registration_failed',error);return fail(c,503,'REGISTRATION_UNAVAILABLE','Could not complete registration. Please try again later.')}
  });
  app.post('/api/v1/auth/login',async(c:any)=>{
   if(!originOk(c))return fail(c,403,'ORIGIN_FORBIDDEN','This request origin is not allowed.');
@@ -58,7 +59,7 @@ export function registerAuthRoutes(app:Hono<any>){
    c.header('Set-Cookie',sessionCookie(session.token,new URL(c.req.url).protocol==='https:'));
    await c.env.DB.prepare('UPDATE auth_identities SET last_used_at=CURRENT_TIMESTAMP WHERE id=?').bind(row.identityId).run();
    return ok(c,{signedIn:true,expiresAt:session.expiresAt});
-  }catch{return fail(c,503,'AUTH_UNAVAILABLE','Sign-in is temporarily unavailable. Please try again.')}
+  }catch(error){logAuthFailure(c,'account_login_failed',error);return fail(c,503,'AUTH_UNAVAILABLE','Sign-in is temporarily unavailable. Please try again.')}
  });
   registerGoogleAuthRoutes(app);
   registerYouTubeAuthRoutes(app);

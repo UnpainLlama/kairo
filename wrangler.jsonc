@@ -27,12 +27,30 @@
     "LIVE_PROVIDERS": "anilist,hianime,jikan",
     "EPISODE_PROVIDERS": "jikan",
     "HIANIME_BASE_URL": "https://hianimez.to",
-    "HIANIME_PLAYBACK_ALLOWED_HOSTS": ""
+    "HIANIME_PLAYBACK_ALLOWED_HOSTS": "",
+    "ZOKOANIME_EMBED_ENABLED": "false",
+    "MOVIES_TMDB_ENABLED": "false",
+    "MOVIES_TMDB_TERMS_APPROVED": "false",
+    "MOVIES_INGESTION_ENABLED": "false"
   },
 
   "env": {
     // Staging
     "staging": {
+      "observability": {
+        "logs": {
+          "enabled": true,
+          "invocation_logs": true,
+          "head_sampling_rate": 1,
+          "persist": true
+        },
+        "traces": {
+          "enabled": false
+        },
+        "issues": {
+          "enabled": false
+        }
+      },
       "d1_databases": [
         {
           "binding": "DB",
@@ -57,8 +75,12 @@
         "GOOGLE_CLIENT_ID": "805356560035-p3ooq75mvr5cn02s0u98dv7k3vspt49k.apps.googleusercontent.com",
         "HIANIME_BASE_URL": "https://hianime.at",
         "HIANIME_PLAYBACK_ALLOWED_HOSTS": "zokoanime.video,megaplay.buzz,hls.dramahot.top,hls1.drama1.cfd,mysubsplay.com,emeralddrift.world,hianime.at,hls1drama1.cfd,mysubplay.com,emeralddrift.com",
+        "ZOKOANIME_EMBED_ENABLED": "false",
         "LIVE_PROVIDERS": "anilist,hianime,jikan",
-        "METADATA_PROVIDERS": "anilist"
+        "METADATA_PROVIDERS": "anilist",
+        "MOVIES_TMDB_ENABLED": "true",
+        "MOVIES_TMDB_TERMS_APPROVED": "true",
+        "MOVIES_INGESTION_ENABLED": "false"
       }
     },
 
@@ -82,9 +104,13 @@
 
       "vars": {
         "APP_ENV": "production",
+        "ZOKOANIME_EMBED_ENABLED": "false",
         "METADATA_PROVIDERS": "anilist",
         "CATALOG_SOURCE": "live",
-        "LIVE_PROVIDERS": "anilist,jikan"
+        "LIVE_PROVIDERS": "anilist,jikan",
+        "MOVIES_TMDB_ENABLED": "false",
+        "MOVIES_TMDB_TERMS_APPROVED": "false",
+        "MOVIES_INGESTION_ENABLED": "false"
       }
     }
   }

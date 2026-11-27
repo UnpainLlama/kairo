@@ -92,7 +92,7 @@ export type EpisodeRecord = {
   providerEpisodeId?: string;
 };
 
-export type EpisodeServer = { id: string; type: 'sub' | 'dub' | 'raw'; name: string };
+export type EpisodeServer = { id: string; type: 'sub' | 'hsub' | 'dub' | 'raw'; name: string };
 
 export type EpisodePage = { items: EpisodeRecord[]; hasNextPage: boolean; total: number | null };
 

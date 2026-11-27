@@ -1,5 +1,18 @@
 # API contract — `/api/v1`
 
+## Movies provider boundary
+
+The `/api/v1/movies/*` catalogue routes use TMDB for discovery, search, genres and detail
+metadata when the Movies feature is enabled. The returned numeric TMDB movie ID is also the
+identifier used for playback.
+
+Movie playback is not resolved by a Kairo API route. The client embeds
+`https://cinesrc.st/embed/movie/{tmdb_id}` through the official CineSrc iframe integration.
+CineSrc is the **only** Movie playback provider; there is no VidLink route, secondary player,
+or direct-stream extraction fallback. The iframe integration needs no additional Kairo
+Worker secret. See [docs/CINESRC_SETUP.md](CINESRC_SETUP.md).
+
+
 All routes are same-origin behind the Cloudflare Worker unless a deployment architecture explicitly separates the API. Use JSON and UTF-8. Query values must be validated and bounded. In live mode, when the `TMDB_ACCESS_TOKEN` Worker secret is configured, catalogue cards and anime details are enriched with TMDB poster/backdrop URLs and TMDB may fill missing synopsis, rating, genres, release year and total TV episode count. Existing non-empty catalogue metadata takes precedence. Episode rows may receive TMDB still thumbnails, but episode discovery and playback remain separate. The legacy `CATALOG_SOURCE=db` routes do not use this enrichment. Catalogue results remain available if TMDB is unavailable.
 
 ## 1. Response envelope
@@ -107,6 +120,45 @@ Progress request example:
 
 Validate finite non-negative numbers, enforce sensible duration/position bounds, and derive the subject ID from the authenticated context. Never accept `userId` from the request body.
 
+## 3a. Kairo-curated YouTube feed
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/youtube/channels/search?q=...` | Search public YouTube channels using the server-side API key. |
+| GET | `/api/v1/youtube/videos/search?q=...` | Search public YouTube videos by keyword, with sort, duration and page-token filters. |
+| GET | `/api/v1/youtube/channels` | List the user's channels saved in Kairo. |
+| POST | `/api/v1/youtube/channels` | Add a public channel to the user's Kairo feed. |
+| DELETE | `/api/v1/youtube/channels/:channelId` | Remove a channel from the user's Kairo feed. |
+| GET | `/api/v1/youtube/feed` | Fetch recent public uploads from the user's saved Kairo channels. |
+
+- Channel discovery, adding channels, loading the saved-channel feed, and saved-channel management require a valid Kairo session. Public keyword video search does not require a Kairo or YouTube account; guest searches are rate-limited by client IP and share the project's daily search quota. Public YouTube data uses the server-side `YOUTUBE_DATA_API_KEY`; users do not need to connect a YouTube/Google account.
+- Kairo's channel list is stored separately in `youtube_feed_channels`; adding a channel does not subscribe the user to it on YouTube and does not change their YouTube subscriptions.
+- Uses the official YouTube Data API with a Worker secret (`YOUTUBE_DATA_API_KEY`). The key is added only to server-to-server requests and is never returned to the browser or included in application logs. OAuth remains separate and optional for future account-specific features such as importing actual YouTube subscriptions.
+- Kairo does not impose a maximum number of saved channels. Feed requests process up to 20 channels at a time, with up to four uploads per channel, to keep each Worker request within a predictable API-call budget. Each saved channel's uploads-playlist ID is persisted in D1 at add time; legacy saved channels are hydrated on their next feed request. Subsequent requests load older uploads from the next channel batch or the next page of each uploads playlist. Cursor state is stored in D1, scoped to the authenticated user, and expires after one hour.
+- Channel searches are limited to five per user per 15 minutes; video searches are limited to eight per user per 15 minutes. Both share an 80-call rolling 24-hour project search budget, reserving headroom under YouTube's default 100-call daily `search.list` allowance. Video search supports relevance, upload-date, view-count and rating sort orders, duration filters, and page-token pagination. Each result page makes one batched `videos.list` request to enrich durations when the shared data-API budget permits; search results remain available if that optional enrichment fails. Feed page requests are limited to 30 per user per 15 minutes. Each playlist page consumes one shared data-API unit per channel; a one-time uploads-playlist lookup is also charged when an older saved channel has not yet been hydrated. Video metadata lookups share the same 8,000-unit project budget with channel additions, duration enrichment and feed requests. Feed responses use `Cache-Control: no-store`; video cards open the Kairo watch route with the official YouTube player and an external fallback.
+- YouTube's public Data API does not expose a reliable Shorts classification flag or public source-video aspect ratio. Kairo therefore filters videos whose title or description explicitly contains a Shorts hashtag (`#short`, `#shorts`, `#youtubeshorts`); unlabelled Shorts cannot be guaranteed to be detected without relying on unsupported page scraping.
+- Errors include `AUTH_REQUIRED`, `YOUTUBE_API_KEY_MISSING`, `YOUTUBE_API_KEY_INVALID`, `YOUTUBE_QUOTA_EXCEEDED`, `YOUTUBE_FEED_CURSOR_EXPIRED`, `RATE_LIMITED`, and `YOUTUBE_PROVIDER_UNAVAILABLE`.
+- Kairo uses the official YouTube IFrame Player API for in-app playback and retains the official YouTube watch URL as a fallback. It does not proxy video streams.
+
+## 3b. YouTube playback and personal video library
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/youtube/videos/:videoId` | Retrieve public video metadata and the YouTube embed-allowed flag from the official Data API. |
+| GET | `/api/v1/youtube/history` | List the signed-in user's recent YouTube playback history. |
+| POST | `/api/v1/youtube/history` | Save or update playback progress for a video. |
+| DELETE | `/api/v1/youtube/history/:videoId` | Remove one video from the signed-in user's history. |
+| GET | `/api/v1/youtube/watch-later` | List the signed-in user's saved videos. |
+| POST | `/api/v1/youtube/watch-later` | Save a video to Kairo Watch Later. |
+| DELETE | `/api/v1/youtube/watch-later/:videoId` | Remove one video from Kairo Watch Later. |
+
+- Video metadata is public; the API key remains server-side. The endpoint returns a normalized record, whether YouTube allows embedding, and the API-provided Made for Kids flag. The watch page disables Kairo playback-history/progress tracking for videos YouTube marks Made for Kids. It does not return extracted stream URLs.
+- History and Watch Later require a Kairo session and are scoped by the server-derived user ID. Write operations require a same-origin request, validate the video ID and bounded metadata/progress fields, and use per-user/IP write limits. Authenticated library responses are `Cache-Control: no-store`.
+- The browser uses the official YouTube IFrame Player API. Kairo does not proxy video bytes, collect YouTube cookies, or bypass embed restrictions. If a video cannot be embedded, the UI offers the original YouTube watch URL.
+- Playback progress is stored locally for guests and synced to D1 for signed-in Kairo users. This Kairo history is separate from the user's YouTube account history.
+- The additive D1 schema is in `migrations/0011_youtube_media_library.sql`. Apply it to each target environment before deploying this Worker version. No remote migration is run by this source change.
+
+
 ## 4. Playback routes
 
 | Method | Path | Purpose |
@@ -156,3 +208,21 @@ The example is a schema illustration, not a live URL. Return only provider-autho
 - Use `Cache-Control: no-store` on authenticated responses.
 - Use explicit CORS origins only if the API is hosted on a separate origin. Same-origin deployment is preferred.
 - Retry only idempotent reads, with bounded timeouts and backoff.
+
+
+
+## 3c. Unified account media sync
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/me/history/sync?slug=:slug&episodeNumber=:number` | Restore one Anime episode's account-owned playback record before player initialization. Without the query pair, returns the latest account history. |
+| POST | `/api/v1/me/history/sync` | Upsert account-owned Anime progress/history; accepts bounded items, per-episode deletion requests, and an explicit clear operation. |
+| GET | `/api/v1/me/movies/library` | List the signed-in user's Movies provider references and saved-list state. |
+| POST | `/api/v1/me/movies/library` | Add/update a Movies Watchlist, Watched, Favorite or rating state. Send status=null, isFavorite=false and rating=null to remove the record. |
+
+- These routes derive user ownership exclusively from the validated HttpOnly Kairo session cookie. No user ID is accepted from the request body.
+- Movie library rows store provider_id and external_id with the user's status/favorite/rating state. They do not ingest or copy TMDB metadata into the account library.
+- Anime history deletes are recorded in tombstones, and history clear operations update a per-account clear marker. A stale offline client cannot recreate a row with an update timestamp older than the delete/clear marker.
+- Guest Anime, Movies and YouTube state is browser-only and is not sent to these routes. YouTube account history and Watch Later continue to use the routes in section 3b.
+- Account records are common across all three media domains because the same Kairo session resolves to the same user_profiles.id. Domain tables and provider metadata remain separate.
+- The additive schema is migrations/0013_unified_media_sync.sql. It is applied by the normal D1 migration step in the staging or production deployment workflow; PR verification does not modify a remote database.

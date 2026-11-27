@@ -1,24 +1,30 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Clock, Heart, LogIn, LogOut, Search, Settings, Trash2, UserRound, Pause, Play, ArrowUpDown } from 'lucide-react';
 import { EmptyState, LoadingState } from '../components/catalog';
+import { useKairoAccount } from '../lib/AccountProvider';
+import { historyPausedStorageKey, readWatchHistory, watchProgressStorageKey, writeWatchHistory } from '../lib/accountStorage';
 
 type AccountUser = { id: string; displayName: string; email: string | null; emailVerifiedAt?: string | null };
 type WatchEntry = { slug: string; title: string; posterUrl: string | null; episodeNumber: number; episodeTitle: string; progressKey: string; durationSeconds: number | null; updatedAt: number };
-const HISTORY_KEY = 'kairo-watch-history';
-const PAUSED_KEY = 'kairo-history-paused';
-function readHistory(): WatchEntry[] {
-  try { const value = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); return Array.isArray(value) ? value.filter((x) => x && typeof x.slug === 'string' && typeof x.title === 'string') : []; }
-  catch { return []; }
+function readHistory(userId: string | null): WatchEntry[] {
+  return readWatchHistory<WatchEntry>(userId).filter((x) => x && typeof x.slug === 'string' && typeof x.title === 'string');
 }
 function progressOf(entry: WatchEntry): number {
   try { const seconds = Number(localStorage.getItem(entry.progressKey) || 0); return entry.durationSeconds && entry.durationSeconds > 0 ? Math.max(0, Math.min(100, seconds / entry.durationSeconds * 100)) : 0; }
   catch { return 0; }
 }
 function useCurrentUser() {
-  const [user,setUser]=useState<AccountUser|null>(null); const [loaded,setLoaded]=useState(false);
-  useEffect(()=>{let active=true;fetch('/api/v1/me',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(p=>{if(active)setUser(p?.data?.user??null)}).catch(()=>{if(active)setUser(null)}).finally(()=>{if(active)setLoaded(true)});return()=>{active=false}},[]);
-  return {user,loaded};
+  const account = useKairoAccount();
+  const user: AccountUser | null = account.status === 'signed-in' && account.accountId
+    ? { id: account.accountId, displayName: account.displayName ?? 'Account', email: account.email }
+    : null;
+  return {
+    user,
+    loaded: account.status === 'guest' || account.status === 'signed-in',
+    unavailable: account.status === 'unavailable',
+    retry: account.retry,
+  };
 }
 async function signOut() {
   const response=await fetch('/api/v1/auth/logout',{method:'POST',credentials:'same-origin',headers:{Accept:'application/json'}});
@@ -27,8 +33,8 @@ async function signOut() {
   window.dispatchEvent(new Event('kairo:auth-change'));
 }
 
-async function syncWatchHistory(options: { deleted?: Array<{ slug: string; episodeNumber: number }>; clear?: boolean } = {}): Promise<WatchEntry[] | null> {
-  const localItems = readHistory().slice(0, options.deleted?.length ? 99 : 100).map((item) => {
+async function syncWatchHistory(userId: string, options: { deleted?: Array<{ slug: string; episodeNumber: number }>; clear?: boolean } = {}): Promise<WatchEntry[] | null> {
+  const localItems = readHistory(userId).slice(0, options.deleted?.length ? 99 : 100).map((item) => {
     let progressSeconds = 0;
     try { progressSeconds = Number(localStorage.getItem(item.progressKey) || 0); } catch { /* storage may be unavailable */ }
     return { ...item, progressSeconds: Number.isFinite(progressSeconds) ? Math.max(0, progressSeconds) : 0 };
@@ -49,7 +55,7 @@ async function syncWatchHistory(options: { deleted?: Array<{ slug: string; episo
       Number.isInteger(Number(row.episodeNumber))
     ).map((row: any) => {
       const previous = localItems.find((item) => item.slug === row.slug && item.episodeNumber === Number(row.episodeNumber));
-      const progressKey = previous?.progressKey ?? `kairo-progress:${row.slug}:${row.episodeNumber}:sync`;
+      const progressKey = previous?.progressKey ?? watchProgressStorageKey(userId, row.slug, Number(row.episodeNumber), 'sync');
       const seconds = Number(row.progressSeconds);
       try { localStorage.setItem(progressKey, String(Number.isFinite(seconds) ? Math.max(0, seconds) : 0)); } catch { /* storage may be unavailable */ }
       return {
@@ -59,7 +65,7 @@ async function syncWatchHistory(options: { deleted?: Array<{ slug: string; episo
         updatedAt: Number(row.updatedAt) || Date.now(),
       };
     });
-    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(synced)); } catch { /* storage may be unavailable */ }
+    writeWatchHistory(userId, synced);
     window.dispatchEvent(new Event('kairo:history-change'));
     return synced;
   } catch {
@@ -67,15 +73,16 @@ async function syncWatchHistory(options: { deleted?: Array<{ slug: string; episo
   }
 }
 export function ProfilePage() {
-  const {user,loaded}=useCurrentUser(); const navigate=useNavigate();
-  const [history,setHistory]=useState<WatchEntry[]>(()=>readHistory()); const [libraryCount,setLibraryCount]=useState<number|null>(null);
+  const {user,loaded,unavailable,retry}=useCurrentUser(); const navigate=useNavigate();
+  const [history,setHistory]=useState<WatchEntry[]>(()=>readHistory(null)); const [libraryCount,setLibraryCount]=useState<number|null>(null);
   const [error,setError]=useState(''); const [busy,setBusy]=useState(false);
   useEffect(()=>{let active=true;fetch('/api/v1/me/library',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(p=>{if(active)setLibraryCount(Array.isArray(p?.data?.items)?p.data.items.length:0)}).catch(()=>{if(active)setLibraryCount(null)});return()=>{active=false}},[user?.id]);
-  useEffect(()=>{let active=true;if(user?.id)syncWatchHistory().then(items=>{if(active&&items)setHistory(items)});return()=>{active=false}},[user?.id]);
-  useEffect(()=>{const refresh=()=>setHistory(readHistory());window.addEventListener('storage',refresh);window.addEventListener('kairo:history-change',refresh);return()=>{window.removeEventListener('storage',refresh);window.removeEventListener('kairo:history-change',refresh)}},[]);
+  useEffect(()=>{let active=true;setHistory(readHistory(user?.id??null));if(user?.id)syncWatchHistory(user.id).then(items=>{if(active&&items)setHistory(items)});return()=>{active=false}},[user?.id]);
+  useEffect(()=>{const refresh=()=>setHistory(readHistory(user?.id??null));window.addEventListener('storage',refresh);window.addEventListener('kairo:history-change',refresh);return()=>{window.removeEventListener('storage',refresh);window.removeEventListener('kairo:history-change',refresh)}},[user?.id]);
   const watched=history.length; const completed=history.filter(x=>progressOf(x)>=95).length;
   async function logout(){setBusy(true);setError('');try{await signOut();navigate('/login',{replace:true})}catch(e){setError(e instanceof Error?e.message:'Sign out failed.')}finally{setBusy(false)}}
-  if(!loaded)return <LoadingState label="Loading profile"/>;
+  if(!loaded && !unavailable)return <LoadingState label="Loading profile"/>;
+  if(unavailable)return <section className="kc-profile-page"><EmptyState title="Account status unavailable">Reconnect to Kairo to load this profile without mixing it with guest data. <button type="button" className="kc-link" onClick={retry}>Retry</button></EmptyState></section>;
   if(!user)return <section className="kc-profile-page"><div className="kc-profile-hero"><div className="kc-profile-avatar"><UserRound size={34}/></div><div><span className="kc-section-kicker">KAIRO ACCOUNT</span><h1>Your profile</h1><p>Sign in to keep your Kairo account and viewing activity together.</p></div><Link className="kc-btn kc-btn-primary" to="/login"><LogIn size={15}/> Sign in</Link></div><EmptyState title="Your profile starts here">Create an account or sign in to manage your profile. Your local watch history remains available on this device.</EmptyState></section>;
   return <section className="kc-profile-page">
     <div className="kc-profile-hero"><div className="kc-profile-avatar"><UserRound size={34}/></div><div className="kc-profile-heading"><span className="kc-section-kicker">KAIRO ACCOUNT</span><h1>{user.displayName}</h1><p>{user.email??'Email not available'}</p></div><Link className="kc-btn" to="/settings"><Settings size={15}/> Account settings</Link></div>
@@ -93,21 +100,25 @@ export function ProfilePage() {
   </section>;
 }
 export function HistoryPage() {
-  const [items,setItems]=useState<WatchEntry[]>(()=>readHistory()); const [query,setQuery]=useState(''); const [sort,setSort]=useState('recent');
-  const [paused,setPaused]=useState(()=>{try{return localStorage.getItem(PAUSED_KEY)==='true'}catch{return false}});
+  const {user,loaded,unavailable,retry}=useCurrentUser();
+  const userId=user?.id??null;
+  const [items,setItems]=useState<WatchEntry[]>(()=>readHistory(null)); const [query,setQuery]=useState(''); const [sort,setSort]=useState('recent');
+  const [paused,setPaused]=useState(()=>{try{return localStorage.getItem(historyPausedStorageKey(null))==='true'}catch{return false}});
   const [confirmClear,setConfirmClear]=useState(false);
   const filtered=useMemo(()=>items.filter(x=>`${x.title} ${x.episodeTitle}`.toLowerCase().includes(query.toLowerCase())).sort((a,b)=>sort==='title'?a.title.localeCompare(b.title):sort==='progress'?progressOf(b)-progressOf(a):b.updatedAt-a.updatedAt),[items,query,sort]);
-  function refresh(){setItems(readHistory())}
-  function togglePaused(){const next=!paused;setPaused(next);try{localStorage.setItem(PAUSED_KEY,String(next))}catch{}}
-  function clearHistory(){try{localStorage.removeItem(HISTORY_KEY)}catch{}setItems([]);setConfirmClear(false);window.dispatchEvent(new Event('kairo:history-change'));void syncWatchHistory({clear:true})}
-  function removeItem(item:WatchEntry){const next=items.filter(x=>x.slug!==item.slug||x.episodeNumber!==item.episodeNumber);try{localStorage.setItem(HISTORY_KEY,JSON.stringify(next))}catch{}setItems(next);window.dispatchEvent(new Event('kairo:history-change'));void syncWatchHistory({deleted:[{slug:item.slug,episodeNumber:item.episodeNumber}]})}
-  useEffect(()=>{window.addEventListener('storage',refresh);window.addEventListener('kairo:history-change',refresh);return()=>{window.removeEventListener('storage',refresh);window.removeEventListener('kairo:history-change',refresh)}},[]);
-  useEffect(()=>{let active=true;syncWatchHistory().then(items=>{if(active&&items)setItems(items)});return()=>{active=false}},[]);
+  function refresh(){setItems(readHistory(userId))}
+  function togglePaused(){const next=!paused;setPaused(next);try{localStorage.setItem(historyPausedStorageKey(userId),String(next))}catch{}}
+  function clearHistory(){writeWatchHistory(userId,[]);setItems([]);setConfirmClear(false);window.dispatchEvent(new Event('kairo:history-change'));if(userId)void syncWatchHistory(userId,{clear:true})}
+  function removeItem(item:WatchEntry){const next=items.filter(x=>x.slug!==item.slug||x.episodeNumber!==item.episodeNumber);writeWatchHistory(userId,next);setItems(next);window.dispatchEvent(new Event('kairo:history-change'));if(userId)void syncWatchHistory(userId,{deleted:[{slug:item.slug,episodeNumber:item.episodeNumber}]})}
+  useEffect(()=>{window.addEventListener('storage',refresh);window.addEventListener('kairo:history-change',refresh);return()=>{window.removeEventListener('storage',refresh);window.removeEventListener('kairo:history-change',refresh)}},[userId]);
+  useEffect(()=>{if(!loaded)return;setItems(readHistory(userId));try{setPaused(localStorage.getItem(historyPausedStorageKey(userId))==='true')}catch{setPaused(false)}if(userId){let active=true;syncWatchHistory(userId).then(items=>{if(active&&items)setItems(items)});return()=>{active=false}}},[loaded,userId]);
+  if(!loaded && !unavailable)return <LoadingState label="Loading history"/>;
+  if(unavailable)return <section className="kc-history-page"><EmptyState title="Account status unavailable">Your history is locked until Kairo can verify the session, so account data cannot be mixed with guest data. <button type="button" className="kc-link" onClick={retry}>Retry</button></EmptyState></section>;
   return <section className="kc-history-page">
     <header className="kc-page-head"><span className="kc-section-kicker">YOUR ACTIVITY</span><h1>Watch history</h1><p>Pick up where you left off. Sign in to sync history across your devices.</p></header>
     <div className="kc-history-toolbar"><label className="kc-history-search"><Search size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search your history…" aria-label="Search watch history"/></label><label className="kc-history-sort"><ArrowUpDown size={15}/><select value={sort} onChange={e=>setSort(e.target.value)} aria-label="Sort history"><option value="recent">Last watched</option><option value="title">A–Z</option><option value="progress">Progress</option></select></label><button className={`kc-btn ${paused?'kc-btn-primary':''}`} onClick={togglePaused} type="button">{paused?<Play size={14}/>:<Pause size={14}/>} {paused?'Resume history':'Pause history'}</button><button className="kc-btn kc-btn-danger" type="button" onClick={()=>setConfirmClear(true)} disabled={!items.length}><Trash2 size={14}/> Clear</button></div>
     {paused&&<p className="kc-history-paused" role="status">History recording is paused. New episodes won’t be added until you resume.</p>}
-    {confirmClear&&<div className="kc-history-confirm" role="alert"><span>Clear all watch history from this browser?</span><button className="kc-btn kc-btn-danger" onClick={clearHistory}>Clear history</button><button className="kc-btn" onClick={()=>setConfirmClear(false)}>Cancel</button></div>}
+    {confirmClear&&<div className="kc-history-confirm" role="alert"><span>Clear all watch history for this account on this browser and synced account?</span><button className="kc-btn kc-btn-danger" onClick={clearHistory}>Clear history</button><button className="kc-btn" onClick={()=>setConfirmClear(false)}>Cancel</button></div>}
     {filtered.length?<div className="kc-history-list">{filtered.map(item=>{const progress=progressOf(item);return <article className="kc-history-item" key={item.progressKey}><Link to={`/watch/${encodeURIComponent(item.slug)}/${item.episodeNumber}`} className="kc-history-poster">{item.posterUrl?<img src={item.posterUrl} alt="" loading="lazy"/>:<span>{item.title.slice(0,2).toUpperCase()}</span>}<i><span style={{width:`${progress}%`}}/></i></Link><div className="kc-history-copy"><span className="kc-section-kicker">{new Date(item.updatedAt).toLocaleDateString()}</span><Link to={`/watch/${encodeURIComponent(item.slug)}/${item.episodeNumber}`}><h2>{item.title}</h2></Link><p>Episode {item.episodeNumber}{item.episodeTitle?` · ${item.episodeTitle}`:''}</p><small>{progress>=95?'Watched':progress>0?`${Math.round(progress)}% watched`:'Not started'}</small></div><button type="button" className="kc-icon-btn" aria-label={`Remove ${item.title} episode ${item.episodeNumber} from history`} onClick={()=>removeItem(item)}><Trash2 size={16}/></button></article>})}</div>:<EmptyState title={query?'No matching history':'No watch history yet'}>{query?'Try a different anime title.':<>Start watching an episode and it will be saved here automatically. Browse <Link className="kc-link" to="/browse/trending">trending anime</Link> to find something to watch.</>}</EmptyState>}
   </section>;
 }
@@ -119,6 +130,8 @@ export function AccountPage({ title }: { title: string }) {
   const [youtubeLoaded,setYoutubeLoaded]=useState(false);
   const [youtubeBusy,setYoutubeBusy]=useState(false);
   const [youtubeError,setYoutubeError]=useState('');
+  const pendingConnect=new URLSearchParams(location.search).get('connect');
+  const pendingConnectStarted=useRef<string|null>(null);
   useEffect(()=>{
     let active=true;
     fetch('/api/v1/me',{credentials:'same-origin'}).then(r=>r.ok?r.json():null)
@@ -127,6 +140,12 @@ export function AccountPage({ title }: { title: string }) {
       .finally(()=>{if(active)setLoaded(true)});
     return()=>{active=false};
   },[location.key]);
+  useEffect(()=>{
+    if(title!=='Settings'||!user||(pendingConnect!=='google'&&pendingConnect!=='youtube'))return;
+    if(pendingConnectStarted.current===pendingConnect)return;
+    pendingConnectStarted.current=pendingConnect;
+    window.location.assign(pendingConnect==='google'?'/api/v1/auth/google?intent=link':'/api/v1/auth/youtube');
+  },[title,user?.id,pendingConnect]);
   useEffect(()=>{
     let active=true;
     if(title!=='Settings'||!user){setYoutubeLoaded(true);return()=>{active=false};}
@@ -142,7 +161,12 @@ export function AccountPage({ title }: { title: string }) {
   const googleMessages:Record<string,string>={
     connected:'Google has been connected to your Kairo account.',
     already_linked:'That Google account is already connected to a different Kairo account.',
-    another_account_linked:'A different Google account is already connected here.'
+    another_account_linked:'A different Google account is already connected here.',
+    cancelled:'Google sign-in was cancelled. You can try again.',
+    expired:'That Google request expired. Please try again.',
+    token_exchange_failed:'Google could not complete account linking. Please try again.',
+    missing_identity:'Google did not return an account identity. Please try again.',
+    failed:'Google account linking could not be completed. Please try again.'
   };
   const youtubeMessages:Record<string,string>={
     connected:'YouTube is connected. Kairo can now request access to your subscriptions.',
@@ -189,7 +213,7 @@ export function AccountPage({ title }: { title: string }) {
   </>;
 }
 export function AboutPage() {
-  return <><header className="kc-page-head"><h1>About Kairo</h1><p>A personal anime discovery catalogue.</p></header><section className="kc-about-panel" aria-labelledby="artwork-credit-title"><h2 id="artwork-credit-title">Artwork credits</h2><a className="kc-about-tmdb-logo" href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer"><img src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_long_2-9665a76b1ae401a510ec1e0ca40ddcb3b0cfe45f1d51b77a308fea0845885648.svg" alt="The Movie Database (TMDB)" loading="lazy" /></a><p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p><p>TMDB can provide posters, landscape backdrops and supplementary title details such as a synopsis, rating, genres, release year and episode count when catalogue fields are missing. Kairo's title identity, episode lists and playback sources are supplied separately; TMDB may also provide episode still thumbnails.</p><a className="kc-link" href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">Visit The Movie Database</a></section></>;
+  return <><header className="kc-page-head"><h1>About Kairo</h1><p>A personal anime, movies and video discovery catalogue.</p></header><section className="kc-about-panel" aria-labelledby="artwork-credit-title"><h2 id="artwork-credit-title">Artwork credits</h2><a className="kc-about-tmdb-logo" href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer"><img src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_long_2-9665a76b1ae401a510ec1e0ca40ddcb3b0cfe45f1d51b77a308fea0845885648.svg" alt="The Movie Database (TMDB)" loading="lazy" /></a><p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p><p>Kairo uses TMDB for movie discovery and catalogue metadata, and may also use its artwork and supplementary metadata for anime where catalogue fields are missing. Movie playback is provided exclusively by CineSrc using the movie's TMDB identifier; TMDB does not supply playable streams.</p><a className="kc-link" href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">Visit The Movie Database</a><p><a className="kc-link" href="https://cinesrc.st/docs" target="_blank" rel="noopener noreferrer">CineSrc movie player documentation</a></p></section></>;
 }
 export function NotFoundPage() {
   return <><header className="kc-page-head"><h1>Page not found</h1></header><EmptyState title="That page doesn’t exist"><Link className="kc-link" to="/">Go to the home page</Link></EmptyState></>;

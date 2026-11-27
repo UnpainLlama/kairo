@@ -1,4 +1,5 @@
 import { createElement, useEffect, useRef, useState } from 'react';
+import type { PlaybackSaveReason } from '../lib/playbackSync';
 
 type Subtitle = { language: string; label: string; url: string; format: 'vtt' };
 
@@ -11,6 +12,7 @@ type Props = {
   outroStart?: number | null;
   nextUrl?: string | null;
   mediaType?: 'hls' | 'file';
+  onProgress?: (seconds: number, reason: PlaybackSaveReason) => void;
 };
 
 type VideoJsMediaElement = HTMLElement & {
@@ -27,6 +29,7 @@ export default function KairoVideoJsPlayer({
   outroStart,
   nextUrl,
   mediaType = 'hls',
+  onProgress,
 }: Props) {
   const mediaRef = useRef<VideoJsMediaElement | null>(null);
   const [skip, setSkip] = useState<'intro' | 'outro' | null>(null);
@@ -37,6 +40,15 @@ export default function KairoVideoJsPlayer({
     if (!media) return;
 
     const storageKey = `kairo-progress:${progressKey}`;
+    let lastLocalSaveAt = 0;
+    const saveProgress = (reason: PlaybackSaveReason) => {
+      const time = media.currentTime;
+      const duration = media.duration;
+      if (!Number.isFinite(time) || time < 0) return;
+      const position = reason === 'ended' && Number.isFinite(duration) && duration > 0 ? duration : time;
+      try { localStorage.setItem(storageKey, String(position)); } catch { /* storage may be unavailable */ }
+      onProgress?.(position, reason);
+    };
     const restore = () => {
       let saved = 0;
       try { saved = Number(localStorage.getItem(storageKey) || 0); } catch { /* storage may be unavailable */ }
@@ -48,23 +60,49 @@ export default function KairoVideoJsPlayer({
       const time = media.currentTime;
       const duration = media.duration;
       if (!Number.isFinite(time)) return;
-      try { localStorage.setItem(storageKey, String(time)); } catch { /* storage may be unavailable */ }
+      const now = Date.now();
+      // Keep an instant local resume point without writing on every timeupdate.
+      if (now - lastLocalSaveAt >= 1000) {
+        try { localStorage.setItem(storageKey, String(time)); } catch { /* storage may be unavailable */ }
+        lastLocalSaveAt = now;
+      }
+      // The watch page throttles remote writes to one per 15 seconds.
+      onProgress?.(time, 'timeupdate');
       setSkip(introEnd && time > 5 && time < introEnd ? 'intro' : outroStart && time >= outroStart ? 'outro' : null);
       setRemaining(nextUrl && Number.isFinite(duration) && duration - time <= 15 && duration - time > 0
         ? Math.ceil(duration - time)
         : null);
     };
-    const playNext = () => { if (nextUrl) window.location.assign(nextUrl); };
+    const onPlay = () => saveProgress('play');
+    const onPause = () => saveProgress('pause');
+    const onSeeked = () => saveProgress('seeked');
+    const onEnded = () => { saveProgress('ended'); if (nextUrl) window.location.assign(nextUrl); };
+    const onPageHide = () => saveProgress('pagehide');
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') saveProgress('pagehide');
+    };
 
     media.addEventListener('loadedmetadata', restore);
     media.addEventListener('timeupdate', updateProgress);
-    media.addEventListener('ended', playNext);
+    media.addEventListener('play', onPlay);
+    media.addEventListener('pause', onPause);
+    media.addEventListener('seeked', onSeeked);
+    media.addEventListener('ended', onEnded);
+    window.addEventListener('pagehide', onPageHide);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
+      // Also flush when React navigates away without a full page unload.
+      saveProgress('pagehide');
       media.removeEventListener('loadedmetadata', restore);
       media.removeEventListener('timeupdate', updateProgress);
-      media.removeEventListener('ended', playNext);
+      media.removeEventListener('play', onPlay);
+      media.removeEventListener('pause', onPause);
+      media.removeEventListener('seeked', onSeeked);
+      media.removeEventListener('ended', onEnded);
+      window.removeEventListener('pagehide', onPageHide);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [src, progressKey, introEnd, outroStart, nextUrl]);
+  }, [src, progressKey, introEnd, outroStart, nextUrl, onProgress]);
 
   const seekTo = (target: 'intro' | 'outro') => {
     const media = mediaRef.current;

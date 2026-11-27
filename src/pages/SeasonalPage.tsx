@@ -6,8 +6,10 @@ import Select, { type SelectOption } from '../components/Select';
 import { useApi } from '../lib/useApi';
 import { formatLabel, statusLabel, textList, type CatalogCard, type GenreCount, type ItemList } from '../lib/catalog';
 
-const SEASONS = ['winter', 'spring', 'summer', 'fall'] as const;
-type Season = (typeof SEASONS)[number];
+import { ANIME_SEASONS, currentAnimeSeason, type AnimeSeason } from '../lib/season';
+
+const SEASONS = ANIME_SEASONS;
+type Season = AnimeSeason;
 const FORMATS = ['series', 'movie', 'ova', 'ona', 'special'] as const;
 const STATUSES = ['airing', 'finished', 'upcoming', 'hiatus'] as const;
 const SORTS = ['popularity', 'trending', 'rating', 'latest'] as const;
@@ -20,7 +22,7 @@ const isOneOf = <T extends string>(value: string, values: readonly T[]): value i
 /** AniList-inspired seasonal discovery, powered by Kairo's live AniList catalogue endpoint. */
 export default function SeasonalPage() {
   const [params, setParams] = useSearchParams();
-  const current = currentSeason();
+  const current = currentAnimeSeason();
   const rawSeason = (params.get('season') ?? '').toLowerCase();
   const season: Season = isOneOf(rawSeason, SEASONS) ? rawSeason : current.season;
   const rawYear = Number(params.get('year'));
@@ -158,13 +160,4 @@ function SeasonalCard({ item }: { item: CatalogCard }) {
   );
 }
 
-function currentSeason(): { season: Season; year: number } {
-  const now = new Date();
-  const month = now.getUTCMonth();
-  const year = now.getUTCFullYear();
-  if (month === 11) return { season: 'winter', year: year + 1 };
-  if (month <= 1) return { season: 'winter', year };
-  if (month <= 4) return { season: 'spring', year };
-  if (month <= 7) return { season: 'summer', year };
-  return { season: 'fall', year };
-}
+
