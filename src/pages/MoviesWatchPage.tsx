@@ -58,7 +58,7 @@ export default function MoviesWatchPage() {
     completed: boolean,
     reason: 'timeupdate' | 'pause' | 'ended' | 'pagehide',
   ) => {
-    if (accountError || !movie || !Number.isFinite(currentTime) || !Number.isFinite(duration) || duration <= 0) return;
+    if (!accountResolved || accountError || !movie || !Number.isFinite(currentTime) || !Number.isFinite(duration) || duration <= 0) return;
     const now = Date.now();
     if (reason === 'timeupdate' && now - lastLocalSaveAt.current < 5000) return;
     const position = Math.max(0, Math.min(duration, currentTime));
@@ -97,7 +97,7 @@ export default function MoviesWatchPage() {
       lastRemoteSaveAt.current = 0;
       setSyncError('The latest progress could not sync. It remains saved in this browser and will retry.');
     });
-  }, [accountId, accountError, movie]);
+  }, [accountId, accountError, accountResolved, movie]);
 
   // Back returns to wherever the viewer came from, and falls back to the title page for direct links.
   const back = useCallback(() => {
