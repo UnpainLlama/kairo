@@ -70,6 +70,7 @@ function BrowseContent({ category }: { category: string }) {
   }, []);
 
   useEffect(() => {
+    if (invalidGenre || (!config && !genreId)) return;
     const controller = new AbortController();
     if (page === 1) setLoading(true); else setMore(true);
     setError(null);
