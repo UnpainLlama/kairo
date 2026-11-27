@@ -103,7 +103,7 @@ function LibraryContent() {
 
         const [libraryResponse, progressResponse] = await Promise.all([
           fetch('/api/v1/me/movies/library', { credentials: 'same-origin', headers: { Accept: 'application/json' }, cache: 'no-store', signal: controller.signal }),
-          fetch('/api/v1/me/movies/progress', { credentials: 'same-origin', headers: { Accept: 'application/json' }, cache: 'no-store', signal: controller.signal }),
+          fetch('/api/v1/me/movies/progress', { credentials: 'same-origin', headers: { Accept: 'application/json' }, cache: 'no-store', signal: controller.signal }).catch(() => null),
         ]);
         const libraryPayload = await libraryResponse.json().catch(() => null);
         if (!libraryResponse.ok || !libraryPayload?.success || !Array.isArray(libraryPayload?.data?.items)) {
@@ -113,7 +113,7 @@ function LibraryContent() {
         const localProgress = readMovieProgress(accountId);
         let progressRows: RemoteProgress[] = [];
         let partialProgressError = '';
-        if (progressResponse.ok) {
+        if (progressResponse?.ok) {
           const payload = await progressResponse.json().catch(() => null);
           if (payload?.success && Array.isArray(payload?.data?.items)) {
             progressRows = (payload.data.items as RemoteProgress[]).filter(row => row.providerId === 'tmdb' && /^\d{1,12}$/.test(row.externalId));
