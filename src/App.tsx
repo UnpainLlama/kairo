@@ -83,7 +83,7 @@ function RailLink({ to, label, icon: Icon, end, active }: NavItem) {
 export default function App() {
   const { pathname, search } = useLocation();
   const isYouTubeMode = pathname.startsWith('/youtube');
-  const isMoviesMode = pathname === '/movies' || pathname.startsWith('/movies/');
+  const isMoviesMode = pathname === '/' || pathname === '/movies' || pathname.startsWith('/movies/');
   const isMoviesWatchMode = pathname.startsWith('/movies/') && pathname.endsWith('/watch');
   const activeNavItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : navItems;
   const activeMobileItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : mobileNavItems;
@@ -241,7 +241,7 @@ export default function App() {
           <Route path="/login" element={<AuthPage mode="login" />} />
           <Route path="/register" element={<AuthPage mode="register" />} />
           <Route path="/verify-email" element={<AuthPage mode="register" />} />
-          <Route path="/" element={<HomePage />} />
+          <Route path="/" element={<Navigate to="/movies" replace />} />
           <Route path="/youtube" element={<YouTubeFeedPage />} />
           <Route path="/movies" element={<MoviesHomePage />} />
           <Route path="/movies/search" element={<MoviesSearchPage />} />
