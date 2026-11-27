@@ -97,6 +97,7 @@ function BrowseContent({ category }: { category: string }) {
   const genreName = useMemo(() => genres.find(genre => genre.externalId === genreId)?.name, [genres, genreId]);
   const title = genreId ? (genreName ? genreName + ' Movies' : 'Movies') : activeConfig.title;
   const sentinel = useSentinel(() => setPage(current => current + 1), !loading && !more && !error && page < totalPages && items.length > 0, items.length);
+  if (invalidGenre || (!config && !genreId)) return <NotFoundPage />;
 
   return (
     <div className="nf nf-bleed nf-page">
