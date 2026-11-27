@@ -9,7 +9,7 @@ The live routes keep the existing API response shapes so the Anime pages can sha
 | KAIRO page / feature | API request | MAL behavior |
 |---|---|---|
 | Anime home / featured rail | `GET /api/v1/catalog/featured` | MAL's currently-airing ranking |
-| Trending | `GET /api/v1/catalog/browse?season=…&year=…&sort=trending` | Seasonal chart ordered by MAL list-user popularity; MAL does not expose a trending-score feed |
+| Trending | `GET /api/v1/catalog/browse?season=…&year=…&sort=trending` | Global MAL popularity ranking filtered to the selected season/year; MAL does not expose a separate trending-score feed |
 | Seasonal | `GET /api/v1/catalog/browse` | MAL seasonal endpoint; supports season, year, format, status, genre, search and rating/popularity sorting |
 | Discover | `GET /api/v1/catalog/genres` and `/api/v1/catalog/browse?sort=popularity&genre=…` | Genre counts derived from a bounded top-ranking sample; browse results are MAL popularity-ranked |
 | Search | `GET /api/v1/catalog/search?q=…` | Official MAL anime search, followed by KAIRO's bounded filter/sort pass |
@@ -29,7 +29,7 @@ All new live Anime IDs and slugs use the MAL namespace: `m1535` and `death-note-
 5. Provider responses are cached with expiry and are not written to D1. A stale cached response may be served if the provider is unavailable.
 6. MAL's NSFW field is fail-closed: only `nsfw=white` records are included, and RX-rated entries are excluded. Hentai/Erotica genres are omitted.
 
-The `trending` sort is intentionally mapped to MAL popularity within a season. It is not an AniList-style trending score. `latest` means latest start date in the current season, not recently edited MAL entries.
+The `trending` sort uses MAL's global popularity ranking and then filters it to the selected season/year. The `popularity` sort uses MAL's native seasonal chart. Neither is an AniList-style trending score. `latest` means latest start date in the current season, not recently edited MAL entries.
 
 ## Artwork: TMDB only
 
