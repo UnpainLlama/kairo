@@ -4,7 +4,7 @@ import { ArrowLeft, Info, Play, Star } from 'lucide-react';
 import { EmptyState, ErrorState, LoadingState, Pager, Poster, Rail, StatusDot } from '../components/catalog';
 import { useApi } from '../lib/useApi';
 import {
-  dateLabel, durationLabel, episodeCountLabel, episodeNumberLabel, formatLabel, safeImageUrl, seasonLabel, statusLabel, textList,
+  dateLabel, durationLabel, episodeCountLabel, episodeNumberLabel, formatLabel, safeTmdbImageUrl, seasonLabel, statusLabel, textList,
   type AnimeDetails, type CatalogCard, type Episode, type ItemList, type UnifiedMetadata,
 } from '../lib/catalog';
 
@@ -32,7 +32,7 @@ export default function AnimePage() {
   const genres = textList(a.genres);
   const alt = textList(a.altTitles);
   const facts = [formatLabel(a.format), seasonLabel(a.season, a.releaseYear), episodeCountLabel(a.episodeCount)].filter((v): v is string => Boolean(v));
-  const backdrop = safeImageUrl(a.bannerUrl);
+  const backdrop = safeTmdbImageUrl(a.bannerUrl);
   const status = statusLabel(a.status);
 
   return (
@@ -99,7 +99,7 @@ function Episodes({ slug }: { slug: string }) {
           : <>
               <ol className="kc-episodes">
                 {result.data.items.map((ep) => {
-                  const thumb = safeImageUrl(ep.thumbnailUrl);
+                  const thumb = safeTmdbImageUrl(ep.thumbnailUrl);
                   const extra = [durationLabel(ep.durationSeconds), dateLabel(ep.publishedAt)].filter(Boolean).join(' · ');
                   return (
                     <li key={ep.id}>
