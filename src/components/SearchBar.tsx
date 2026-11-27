@@ -110,9 +110,10 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
   }, []);
 
   const searching = canSearch(query);
+  const onResultsPage = (isYouTube && location.pathname === '/youtube/search') || (isMovies && location.pathname === '/movies/search') || (!isYouTube && !isMovies && location.pathname === '/search');
   const current = searching && result?.q === query && result.mode === mediaMode ? result : null;
   const items = current?.status === 'ok' ? current.items : [];
-  const showPanel = open && searching;
+  const showPanel = open && searching && !onResultsPage;
 
   const resultsHref = (term = query): string => {
     const clean = term.trim().slice(0, maxLength);
@@ -204,7 +205,15 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
         />
-        {text && <button type="button" className="kc-top-clear" aria-label="Clear search" onClick={() => { setText(''); setActive(-1); inputRef.current?.focus(); }}><X size={15} aria-hidden="true" /></button>}
+        {text && <button type="button" className="kc-top-clear" aria-label="Clear search" onClick={() => {
+            setText('');
+            setActive(-1);
+            if (onResultsPage) {
+              if (isYouTube) go('/youtube/search');
+              else if (isMovies) go('/movies/search');
+              else go(resultsHref(''));
+            } else inputRef.current?.focus();
+          }}><X size={15} aria-hidden="true" /></button>}
         <button type="button" className="kc-top-go" aria-label="Search" onClick={() => { if (isYouTube) submitYouTubeSearch(query); else if (searching) go(resultsHref()); else inputRef.current?.focus(); }}><Search size={16} aria-hidden="true" /></button>
       </div>
 
