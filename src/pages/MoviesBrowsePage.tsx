@@ -92,7 +92,7 @@ function BrowseContent({ category }: { category: string }) {
       })
       .finally(() => { if (!controller.signal.aborted) { setLoading(false); setMore(false); } });
     return () => controller.abort();
-  }, [activeConfig.kind, genreId, page, retry]);
+  }, [activeConfig.kind, config, genreId, invalidGenre, page, retry]);
 
   const genreName = useMemo(() => genres.find(genre => genre.externalId === genreId)?.name, [genres, genreId]);
   const title = genreId ? (genreName ? genreName + ' Movies' : 'Movies') : activeConfig.title;
