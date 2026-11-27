@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Check, Eye, Play, Plus, ThumbsUp, X } from 'lucide-react';
 import { ApiError, apiGet } from '../lib/api';
-import { movieRating, movieYear, type MovieDetail, type MoviePage, type MovieSummary } from '../lib/movies';
+import { movieHref, movieRating, movieYear, type MovieDetail, type MoviePage, type MovieSummary } from '../lib/movies';
 import { useMyList } from '../lib/useMyList';
 import { useOpenTitle, watchHref } from './MovieCard';
 import '../styles-netflix.css';
@@ -37,6 +37,7 @@ function SimilarCard({ movie, onOpen }: { movie: MovieSummary; onOpen: () => voi
 /** Title details shared by the modal (?mid=) and the full /movies/:id page. */
 export function TitleDetail({ externalId, onClose }: { externalId: string; onClose?: () => void }) {
   const openTitle = useOpenTitle();
+  const navigateTo = useNavigate();
   const list = useMyList();
   const [movie, setMovie] = useState<MovieDetail | null>(null);
   const [similar, setSimilar] = useState<MovieSummary[]>([]);
@@ -136,7 +137,7 @@ export function TitleDetail({ externalId, onClose }: { externalId: string; onClo
         <section className="nf-detail-pad" aria-labelledby="nf-similar">
           <h2 id="nf-similar" className="nf-detail-h2">More Like This</h2>
           <div className="nf-more-grid">
-            {similar.map(item => <SimilarCard key={item.providerId + ':' + item.externalId} movie={item} onOpen={() => openTitle(item, true)} />)}
+            {similar.map(item => <SimilarCard key={item.providerId + ':' + item.externalId} movie={item} onOpen={() => onClose ? openTitle(item, true) : navigateTo(movieHref(item))} />)}
           </div>
         </section>
       )}
