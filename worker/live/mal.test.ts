@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createMalSource, mapMalAnime } from './mal';
+import { MemoryCache } from '../metadata/cache';
+import { enrichEpisodeArtwork } from '../artwork/service';
+import { parseSourceList } from './service';
 
 const NOW = '2026-11-27T00:00:00.000Z';
 const signal = new AbortController().signal;
@@ -14,6 +17,9 @@ const source = (fetchImpl: (url: string, init?: RequestInit) => Promise<Response
   createMalSource(fetchImpl, 'test-client-id', { wait: async () => undefined, now: () => NOW });
 
 describe('MyAnimeList catalogue mapper', () => {
+  it('pins the live catalogue to MAL even when legacy provider names are present', () => {
+    expect(parseSourceList('anilist,hianime,jikan')).toEqual(['mal']);
+  });
   it('normalises title metadata and never uses MAL image fields', () => {
     const mapped = mapMalAnime(anime(42, { main_picture: { large: 'https://mal.example/poster.jpg' } }), NOW);
     expect(mapped).toMatchObject({
@@ -83,5 +89,33 @@ describe('MyAnimeList API v2 source', () => {
     await expect(source(async () => response({}, 404)).byRef({ kind: 'm', id: 1 }, signal)).rejects.toMatchObject({ kind: 'not_found' });
     await expect(source(async () => response({}, 429)).byRef({ kind: 'm', id: 1 }, signal)).rejects.toMatchObject({ kind: 'rate_limited' });
     await expect(source(async () => response({}, 403)).byRef({ kind: 'm', id: 1 }, signal)).rejects.toMatchObject({ kind: 'unavailable' });
+  });
+});
+
+
+describe('TMDB-only Anime imagery', () => {
+  it('replaces an episode provider thumbnail with TMDB artwork when no episode still exists', async () => {
+    const title = {
+      card: {
+        id: 'm42', slug: 'anime-42-m42', title: 'Anime 42', synopsis: '', posterUrl: null, bannerUrl: null,
+        format: 'series' as const, releaseYear: 2026, season: 'fall' as const, status: 'airing' as const,
+        rating: 8.4, episodeCount: 12, genres: ['Action'],
+      },
+      altTitles: ['Anime 42 English'], malId: 42, anilistId: null, url: 'https://myanimelist.net/anime/42', provider: 'mal' as const,
+    };
+    const tmdb = {
+      id: 'tmdb' as const,
+      lookup: async () => ({
+        tmdbId: 1429, mediaType: 'tv' as const,
+        posterUrl: 'https://image.tmdb.org/t/p/w500/poster.jpg',
+        bannerUrl: 'https://image.tmdb.org/t/p/w1280/backdrop.jpg',
+      }),
+      episodeStills: async () => ({}),
+    };
+    const [episode] = await enrichEpisodeArtwork(title, [{
+      episodeNumber: 1, title: 'Episode 1', airedAt: null, synopsis: '', durationSeconds: null,
+      thumbnailUrl: 'https://untrusted-episode-provider.example/episode.jpg',
+    }], tmdb, new MemoryCache());
+    expect(episode?.thumbnailUrl).toBe('https://image.tmdb.org/t/p/w1280/backdrop.jpg');
   });
 });
