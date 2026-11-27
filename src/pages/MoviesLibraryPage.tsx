@@ -155,6 +155,9 @@ function LibraryContent() {
           const progress = progressById.get(identity(movie));
           return progress ? { ...movie, watchProgress: progress } : movie;
         });
+        enriched.forEach(movie => {
+          if (movie.watchProgress) writeMovieProgress(accountId, movie, movie.watchProgress);
+        });
         setMovies(enriched);
         const messages = [
           libraryError,
