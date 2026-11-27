@@ -2939,7 +2939,7 @@ img { display: block; }
 @media (max-width: 860px) {
   .kc-topbar-inner,
   .kc-app.kc-home-view .kc-topbar-inner {
-    width: calc(100% - 76px);
+    width: calc(100% - 116px);
   }
 
   .kc-menu-wrap {
@@ -2951,7 +2951,7 @@ img { display: block; }
 @media (max-width: 420px) {
   .kc-topbar-inner,
   .kc-app.kc-home-view .kc-topbar-inner {
-    width: calc(100% - 70px);
+    width: calc(100% - 116px);
   }
 
   .kc-menu-wrap {
