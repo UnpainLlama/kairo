@@ -355,11 +355,8 @@ export async function getEpisodeServers(deps: Deps, ref: Ref, episodeNumber: num
   }
 }
 
-const FACTORIES: Record<SourceId, (f: FetchLike, baseUrl?: string, clientId?: string) => CatalogSource> = {
-  mal: (f, _baseUrl, clientId) => createMalSource(f, clientId),
-  anilist: () => { throw new Error('AniList is not enabled as a live catalogue provider.'); },
-  jikan: () => { throw new Error('Jikan is not enabled as a live catalogue provider.'); },
-  hianime: () => { throw new Error('HiAnime is not enabled as a live catalogue provider.'); },
+const FACTORIES: Partial<Record<SourceId, (f: FetchLike, clientId?: string) => CatalogSource>> = {
+  mal: (f, clientId) => createMalSource(f, clientId),
 };
 
 /** MAL is the only enabled live anime catalogue. Episode providers are configured independently. */
@@ -371,7 +368,11 @@ export function buildDeps(env: LiveEnv, fetchImpl: FetchLike, onError?: Deps['on
   const playbackHosts = (env.HIANIME_PLAYBACK_ALLOWED_HOSTS ?? '').split(',').map((host) => host.trim().toLowerCase()).filter((host) => /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i.test(host));
   const episodeRegistry = buildEpisodeProviders(env.EPISODE_PROVIDERS, env.HIANIME_BASE_URL, fetchImpl, playbackHosts);
   return {
-    sources: parseSourceList(env.LIVE_PROVIDERS).map((id) => FACTORIES[id](fetchImpl, env.HIANIME_BASE_URL, env.MAL_CLIENT_ID)),
+    sources: parseSourceList(env.LIVE_PROVIDERS).map((id) => {
+      const factory = FACTORIES[id];
+      if (!factory) throw new Error(`Unsupported live anime catalogue provider: ${id}`);
+      return factory(fetchImpl, env.MAL_CLIENT_ID);
+    }),
     episodeProviders: episodeRegistry.providers,
     unknownEpisodeProviders: episodeRegistry.unknown,
     cache: createCache(env),
