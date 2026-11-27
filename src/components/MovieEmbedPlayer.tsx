@@ -26,7 +26,7 @@ export default function MovieEmbedPlayer({ tmdbId, title, onBack, initialTime = 
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const latestProgress = useRef<{ currentTime: number; duration: number } | null>(null);
+  const latestProgress = useRef<{ currentTime: number; duration: number; completed: boolean } | null>(null);
   const onProgressRef = useRef(onProgress);
   useEffect(() => { onProgressRef.current = onProgress; }, [onProgress]);
 
@@ -49,8 +49,8 @@ export default function MovieEmbedPlayer({ tmdbId, title, onBack, initialTime = 
         const duration = typeof data.duration === 'number' && Number.isFinite(data.duration)
           ? data.duration : latestProgress.current?.duration;
         if (current === undefined || current === null || duration === undefined || duration === null || duration <= 0) return;
-        latestProgress.current = { currentTime: Math.max(0, Math.min(duration, current)), duration };
-        const completed = data.type === 'cinesrc:ended' || current >= duration - Math.max(30, duration * 0.02);
+        const completed = data.type === 'cinesrc:ended' || Boolean(latestProgress.current?.completed) || current >= duration - Math.max(30, duration * 0.02);
+        latestProgress.current = { currentTime: Math.max(0, Math.min(duration, current)), duration, completed };
         const reason = data.type === 'cinesrc:pause' ? 'pause' : data.type === 'cinesrc:ended' ? 'ended' : 'timeupdate';
         onProgressRef.current?.(latestProgress.current.currentTime, duration, completed, reason);
       }
@@ -58,7 +58,7 @@ export default function MovieEmbedPlayer({ tmdbId, title, onBack, initialTime = 
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !document.fullscreenElement) onBack(); };
     const onPageHide = () => {
       const progress = latestProgress.current;
-      if (progress) onProgressRef.current?.(progress.currentTime, progress.duration, false, 'pagehide');
+      if (progress) onProgressRef.current?.(progress.currentTime, progress.duration, progress.completed, 'pagehide');
     };
     window.addEventListener('message', onMessage);
     window.addEventListener('keydown', onKey);
