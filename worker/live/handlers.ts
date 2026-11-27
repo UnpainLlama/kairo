@@ -228,7 +228,7 @@ export function createLiveHandlers(fetchImpl: FetchLike, depsOverride?: (req: Li
       try {
         const deps = depsFor(req);
         const out = await svc.getRelated(deps, t.ref, limit);
-        return okBody(req, { items: cards(out.value) }, { basis: out.via === 'anilist' ? 'relations_and_recommendations' : 'recommendations', limit, ...sourceMeta(out), ...artworkMeta(deps) });
+        return okBody(req, { items: cards(out.value) }, { basis: 'recommendations', limit, ...sourceMeta(out), ...artworkMeta(deps) });
       } catch (e) { return providerFailure(req, 'live_related_failed', e); }
     },
 
