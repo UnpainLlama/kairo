@@ -239,6 +239,8 @@ export function createMalSource(
   };
 
   function rankingFor(query: BrowseQuery): { path: string; params: Record<string, string | number | undefined> } {
+    // The Trending page uses MAL's global popularity ranking, then scopes it to the selected season/year.
+    if (query.sort === 'trending') return { path: '/anime/ranking', params: { ranking_type: 'bypopularity' } };
     if (query.season) {
       const seasonYear = query.year ?? new Date(now()).getUTCFullYear();
       return { path: `/anime/season/${seasonYear}/${query.season}`, params: { sort: query.sort === 'rating' ? 'anime_score' : 'anime_num_list_users' } };
