@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
   Bookmark, CalendarDays, ChevronRight, Clapperboard, Compass, Flame, History, ListVideo,
-  Home, LogIn, LogOut, PlayCircle, Search, Settings, Tv, UserRound, Youtube,
+  LogIn, LogOut, PlayCircle, Search, Settings, Tv, UserRound, Youtube,
   type LucideIcon,
 } from 'lucide-react';
 import SearchBar from './components/SearchBar';
@@ -19,6 +19,7 @@ import YouTubeWatchPage from './pages/YouTubeWatchPage';
 import { YouTubeHistoryPage, YouTubeWatchLaterPage } from './pages/YouTubeLibraryPages';
 import SearchPage from './pages/SearchPage';
 import BrowsePage from './pages/BrowsePage';
+import DiscoverPage from './pages/DiscoverPage';
 import AnimePage from './pages/AnimePage';
 import WatchPage from './pages/WatchPage';
 import AuthPage from './pages/AuthPage';
@@ -28,9 +29,8 @@ import { AboutPage, AccountPage, HistoryPage, NotFoundPage, ProfilePage } from '
 type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean; active?: boolean };
 
 const navItems: NavItem[] = [
-  { to: '/', label: 'Home', icon: Home, end: true },
   { to: '/browse/trending', label: 'Trending', icon: Flame },
-  { to: '/browse/anime', label: 'Discover', icon: Compass },
+  { to: '/anime', label: 'Discover', icon: Compass },
   { to: '/search', label: 'Search', icon: Search },
   { to: '/browse/seasonal', label: 'Seasonal', icon: CalendarDays },
   { to: '/history', label: 'History', icon: History },
@@ -46,7 +46,7 @@ const youtubeNavItems: NavItem[] = [
 ];
 
 const moviesNavItems: NavItem[] = [
-  { to: '/movies', label: 'Home', icon: Clapperboard, end: true },
+  { to: '/', label: 'Home', icon: Clapperboard, end: true },
   { to: '/movies/browse/trending', label: 'Trending', icon: Flame },
   { to: '/movies/browse/popular', label: 'Discover', icon: Compass },
   { to: '/movies/search', label: 'Search', icon: Search },
@@ -54,8 +54,7 @@ const moviesNavItems: NavItem[] = [
 ];
 
 const mobileNavItems: NavItem[] = [
-  { to: '/', label: 'Home', icon: Home, end: true },
-  { to: '/browse/anime', label: 'Discover', icon: Compass },
+  { to: '/anime', label: 'Discover', icon: Compass },
   { to: '/search', label: 'Search', icon: Search },
   { to: '/history', label: 'History', icon: History },
   { to: '/profile', label: 'Profile', icon: UserRound },
@@ -141,7 +140,7 @@ export default function App() {
   const closeMenu = () => setMenuOpen(false);
 
   return (
-    <div className={`kc-app${pathname === '/' ? ' kc-home-view' : ''}${isYouTubeMode ? ' yt-app' : ''}${isMoviesMode ? ' mv-app' : ''}${isMoviesWatchMode ? ' mv-watch-app' : ''}`}>
+    <div className={`kc-app${isYouTubeMode ? ' yt-app' : ''}${isMoviesMode ? ' mv-app' : ''}${isMoviesWatchMode ? ' mv-watch-app' : ''}`}>
       <a className="kc-skip" href="#main">Skip to content</a>
 
       <aside className="kc-rail" aria-label="Primary">
@@ -185,7 +184,7 @@ export default function App() {
               <div className="kc-orb-options">
                 <Link
                   ref={(element) => { orbLinksRef.current[0] = element; }}
-                  to="/movies"
+                  to="/"
                   className={`kc-orb-option${isMoviesMode ? ' active' : ''}`}
                   aria-current={isMoviesMode ? 'page' : undefined}
                   onClick={closeMenu}
@@ -197,7 +196,7 @@ export default function App() {
                 </Link>
                 <Link
                   ref={(element) => { orbLinksRef.current[1] = element; }}
-                  to="/"
+                  to="/anime"
                   className={`kc-orb-option${!isMoviesMode && !isYouTubeMode ? ' active' : ''}`}
                   aria-current={!isMoviesMode && !isYouTubeMode ? 'page' : undefined}
                   onClick={closeMenu}
@@ -243,9 +242,10 @@ export default function App() {
           <Route path="/login" element={<AuthPage mode="login" />} />
           <Route path="/register" element={<AuthPage mode="register" />} />
           <Route path="/verify-email" element={<AuthPage mode="register" />} />
-          <Route path="/" element={<Navigate to="/movies" replace />} />
+          <Route path="/" element={<MoviesHomePage />} />
+          <Route path="/anime" element={<DiscoverPage />} />
           <Route path="/youtube" element={<YouTubeFeedPage />} />
-          <Route path="/movies" element={<MoviesHomePage />} />
+          <Route path="/movies" element={<Navigate to="/" replace />} />
           <Route path="/movies/search" element={<MoviesSearchPage />} />
           <Route path="/movies/library" element={<MoviesLibraryPage />} />
           <Route path="/movies/browse/:category" element={<MoviesBrowsePage />} />
@@ -259,8 +259,9 @@ export default function App() {
           <Route path="/youtube/watch-later" element={<YouTubeWatchLaterPage />} />
           <Route path="/youtube/history" element={<YouTubeHistoryPage />} />
           <Route path="/search" element={<SearchPage />} />
-          <Route path="/browse/movies" element={<Navigate to="/movies" replace />} />
-          <Route path="/browse" element={<Navigate to="/browse/anime" replace />} />
+          <Route path="/browse/movies" element={<Navigate to="/" replace />} />
+          <Route path="/browse/anime" element={<Navigate to="/anime" replace />} />
+          <Route path="/browse" element={<Navigate to="/anime" replace />} />
           <Route path="/browse/:category" element={<BrowsePage />} />
           <Route path="/anime/:slug" element={<AnimePage />} />
           <Route path="/watch/:slug/:episodeNumber" element={<WatchPage />} />
