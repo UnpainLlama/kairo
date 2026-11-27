@@ -75,6 +75,9 @@ export function mapMalAnime(raw: unknown, fetchedAt: string): NormalizedMetadata
     ? Math.round(raw.mean * 10) / 10 : null;
   const yearFromDate = yearOrNull(startDate.slice(0, 4));
 
+  const format = mapFormat(raw.media_type);
+  if (format === null) throw new ProviderError('not_found', 'MyAnimeList record is not a supported anime format.');
+
   return {
     provider: 'mal',
     externalId: String(id),
@@ -86,7 +89,7 @@ export function mapMalAnime(raw: unknown, fetchedAt: string): NormalizedMetadata
     titleNative: japanese,
     synonyms: uniqueStrings(synonyms),
     synopsis: plainText(raw.synopsis),
-    format: mapFormat(raw.media_type),
+    format,
     status: mapStatus(raw.status),
     season: normalizeSeason(startSeason.season),
     year: yearOrNull(startSeason.year) ?? yearFromDate,
@@ -126,7 +129,8 @@ function matchesTitle(row: Row, query: string): boolean {
 }
 
 function matchesFilters(row: Row, query: BrowseQuery, now: string): boolean {
-  const meta = mapMalAnime(row.node, now);
+  let meta: NormalizedMetadata;
+  try { meta = mapMalAnime(row.node, now); } catch { return false; }
   if (query.q && !matchesTitle(row, query.q)) return false;
   if (query.genre && !meta.genres.some((genre) => genre.toLowerCase() === query.genre!.toLowerCase())) return false;
   if (query.year !== undefined && meta.year !== query.year) return false;
