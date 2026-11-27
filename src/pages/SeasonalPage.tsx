@@ -71,8 +71,8 @@ export default function SeasonalPage() {
   const formatOptions: SelectOption<Format>[] = [{ value: '', label: 'All formats' }, ...FORMATS.map((value) => ({ value, label: formatLabel(value) ?? value }))];
   const statusOptions: SelectOption<Status>[] = [{ value: '', label: 'All statuses' }, ...STATUSES.map((value) => ({ value, label: statusLabel(value) ?? value }))];
   const sortOptions: SelectOption<Sort>[] = [
-    { value: 'popularity', label: 'Popularity' },
-    { value: 'trending', label: 'Popularity' },
+    { value: 'popularity', label: 'Season popularity' },
+    { value: 'trending', label: 'Overall popularity' },
     { value: 'rating', label: 'Highest rated' },
     { value: 'latest', label: 'Newest first' },
   ];
