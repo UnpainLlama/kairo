@@ -88,31 +88,6 @@ function Billboard({ movie }: { movie: MovieSummary }) {
   );
 }
 
-const FOOTER_LINKS: { label: string; to: string }[] = [
-  { label: 'Trending Now', to: '/movies/browse/trending' },
-  { label: 'Popular Movies', to: '/movies/browse/popular' },
-  { label: 'Top Rated', to: '/movies/browse/top-rated' },
-  { label: 'New Releases', to: '/movies/browse/now-playing' },
-  { label: 'Coming Soon', to: '/movies/browse/upcoming' },
-  { label: 'Search', to: '/movies/search' },
-  { label: 'My List', to: '/movies/library' },
-  { label: 'Settings', to: '/settings' },
-  { label: 'About', to: '/about' },
-];
-
-function MoviesFooter() {
-  return (
-    <footer className="nf-footer">
-      <div className="nf-footer-in">
-        <nav className="nf-footer-links" aria-label="Movies">
-          {FOOTER_LINKS.map(link => <Link key={link.to} to={link.to}>{link.label}</Link>)}
-        </nav>
-        <p className="nf-footer-note">Movie data and images are provided by TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
-      </div>
-    </footer>
-  );
-}
-
 function HomeContent() {
   const [data, setData] = useState<HomeData>(EMPTY);
   const [loading, setLoading] = useState(true);
@@ -206,7 +181,6 @@ function HomeContent() {
           </div>
         )}
       </div>
-      {!loading && <MoviesFooter />}
     </div>
   );
 }
