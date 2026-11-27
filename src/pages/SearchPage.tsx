@@ -39,7 +39,7 @@ export default function SearchPage() {
   const sortOptions: SelectOption<SearchState['sort']>[] = [
     { value: ANY, label: searching ? 'Best match' : 'Most popular' },
     ...(searching ? [{ value: 'popularity' as const, label: 'Most popular' }] : []),
-    { value: 'trending', label: 'Popularity' },
+    { value: 'trending', label: 'Overall popularity' },
     { value: 'latest', label: 'Recently updated' },
     { value: 'rating', label: 'Top rated' },
   ];
