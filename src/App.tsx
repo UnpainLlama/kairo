@@ -232,7 +232,8 @@ export default function App() {
                 )}
               </div>
             </nav>
-          </div>        </div>
+          </div>
+        </div>
       </header>
 
       <main id="main" className="kc-main" tabIndex={-1}>
