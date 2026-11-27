@@ -719,7 +719,7 @@ app.get('/api/v1/me/movies/progress', async (c) => {
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your Movies progress.');
   const providerId = c.req.query('providerId');
   const externalId = c.req.query('externalId');
-  if ((providerId && providerId !== 'tmdb') || (externalId && !/^\\d{1,12}$/.test(externalId)) || Boolean(providerId) !== Boolean(externalId)) {
+  if ((providerId && providerId !== 'tmdb') || (externalId && !/^\d{1,12}$/.test(externalId)) || Boolean(providerId) !== Boolean(externalId)) {
     return fail(c, 400, 'VALIDATION_ERROR', 'Provide both a valid providerId and externalId, or neither.');
   }
   try {
@@ -770,7 +770,7 @@ app.post('/api/v1/me/movies/progress', async (c) => {
   const completed = value.completed === true;
   const updatedAt = value.updatedAt === undefined ? Date.now() : Number(value.updatedAt);
   if (
-    providerId !== 'tmdb' || !/^\\d{1,12}$/.test(externalId) ||
+    providerId !== 'tmdb' || !/^\d{1,12}$/.test(externalId) ||
     !Number.isFinite(currentTime) || currentTime < 0 ||
     !Number.isFinite(duration) || duration <= 0 || duration > 108000 ||
     currentTime > duration + 30 ||
@@ -808,7 +808,7 @@ app.delete('/api/v1/me/movies/progress/:providerId/:externalId', async (c) => {
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to manage movie playback progress.');
   const providerId = c.req.param('providerId').trim().toLowerCase();
   const externalId = c.req.param('externalId').trim();
-  if (providerId !== 'tmdb' || !/^\\d{1,12}$/.test(externalId)) {
+  if (providerId !== 'tmdb' || !/^\d{1,12}$/.test(externalId)) {
     return fail(c, 400, 'VALIDATION_ERROR', 'The movie identifier is invalid.');
   }
   try {
