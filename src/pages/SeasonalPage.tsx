@@ -19,7 +19,7 @@ type Sort = (typeof SORTS)[number];
 const cap = (value: string): string => value.charAt(0).toUpperCase() + value.slice(1);
 const isOneOf = <T extends string>(value: string, values: readonly T[]): value is T => (values as readonly string[]).includes(value);
 
-/** AniList-inspired seasonal discovery, powered by Kairo's live AniList catalogue endpoint. */
+/** Seasonal discovery powered by the official MyAnimeList seasonal anime endpoint. */
 export default function SeasonalPage() {
   const [params, setParams] = useSearchParams();
   const current = currentAnimeSeason();
