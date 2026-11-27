@@ -6,7 +6,6 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import SearchBar from './components/SearchBar';
-import HomePage from './pages/HomePage';
 import YouTubeFeedPage from './pages/YouTubeFeedPage';
 import MoviesHomePage from './pages/MoviesHomePage';
 import MoviesBrowsePage from './pages/MoviesBrowsePage';
