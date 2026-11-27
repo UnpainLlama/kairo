@@ -238,3 +238,7 @@
 .nf-bb-info{gap:0}
 .nf-bb-title button{max-width:100%;text-align:left}
 @media(max-width:700px){.nf-bb-info{align-items:flex-start;padding-bottom:clamp(3.5rem,10vw,5rem)}.nf-bb-title{max-width:12ch}.nf-bb-text{max-width:42ch}}
+
+
+.nf-progress-warning{position:relative;z-index:3;margin:calc(var(--top) + .75rem) 1rem 0 calc(var(--rail) + 1rem);padding:.7rem 1rem;border:1px solid rgba(245,158,11,.35);border-radius:8px;background:rgba(120,75,10,.18);color:#f5d28b;font-size:.85rem}
+@media(max-width:700px){.nf-progress-warning{margin:calc(var(--top) + .5rem) 1rem 0;padding:.65rem .8rem}}
