@@ -125,7 +125,7 @@ export default function MoviesWatchPage() {
 
   return (
     <>
-      {accountError && <p className="nf-progress-warning" role="status">Account sync is unavailable. Playback will continue, but progress will only be saved in this browser’s local cache.</p>}
+      {accountError && <p className="nf-progress-warning" role="status">Account status is unavailable. Playback will continue, but progress syncing is paused until the account can be verified.</p>}
       <MovieEmbedPlayer
         tmdbId={movie.externalId}
         title={movie.title}
