@@ -68,7 +68,7 @@ export default function MovieEmbedPlayer({ tmdbId, title, onBack, initialTime = 
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('pagehide', onPageHide);
       const progress = latestProgress.current;
-      if (progress) onProgressRef.current?.(progress.currentTime, progress.duration, false, 'pagehide');
+      if (progress) onProgressRef.current?.(progress.currentTime, progress.duration, progress.completed, 'pagehide');
     };
   }, [onBack]);
 
