@@ -102,12 +102,20 @@ function LibraryContent() {
         }
 
         const [libraryResponse, progressResponse] = await Promise.all([
-          fetch('/api/v1/me/movies/library', { credentials: 'same-origin', headers: { Accept: 'application/json' }, cache: 'no-store', signal: controller.signal }),
+          fetch('/api/v1/me/movies/library', { credentials: 'same-origin', headers: { Accept: 'application/json' }, cache: 'no-store', signal: controller.signal }).catch(() => null),
           fetch('/api/v1/me/movies/progress', { credentials: 'same-origin', headers: { Accept: 'application/json' }, cache: 'no-store', signal: controller.signal }).catch(() => null),
         ]);
-        const libraryPayload = await libraryResponse.json().catch(() => null);
-        if (!libraryResponse.ok || !libraryPayload?.success || !Array.isArray(libraryPayload?.data?.items)) {
-          throw new Error(libraryPayload?.error?.message ?? 'Could not load your Movies list.');
+        let libraryRefs: RemoteEntry[] = [];
+        let libraryError = '';
+        if (libraryResponse?.ok) {
+          const libraryPayload = await libraryResponse.json().catch(() => null);
+          if (libraryPayload?.success && Array.isArray(libraryPayload?.data?.items)) {
+            libraryRefs = libraryPayload.data.items as RemoteEntry[];
+          } else {
+            libraryError = libraryPayload?.error?.message ?? 'Your saved Movies list could not be refreshed.';
+          }
+        } else {
+          libraryError = 'Your saved Movies list could not be reached. Playback history is still shown when available.';
         }
 
         const localProgress = readMovieProgress(accountId);
@@ -137,7 +145,7 @@ function LibraryContent() {
           }
         });
         const refs = [
-          ...(libraryPayload.data.items as RemoteEntry[]),
+          ...libraryRefs,
           ...progressRows,
           ...localProgress,
         ];
@@ -149,6 +157,7 @@ function LibraryContent() {
         });
         setMovies(enriched);
         const messages = [
+          libraryError,
           result.missing > 0 ? result.missing + ' saved or watched title(s) could not be loaded right now.' : '',
           partialProgressError,
         ].filter(Boolean);
@@ -229,7 +238,7 @@ function LibraryContent() {
       {loadError && <p className="nf-detail-note" role="alert">{loadError}</p>}
 
       {resolved && !error && !loading && visible.length > 0 && <MovieGrid items={visible} onRemove={movie => void removeMovie(movie)} />}
-      {resolved && !error && !loading && visible.length === 0 && (
+      {resolved && !error && !loading && !loadError && visible.length === 0 && (
         <div className="nf-message">
           <h2>{saved.length === 0 ? "You haven't added or watched any titles yet." : 'Nothing here yet.'}</h2>
           <p>{saved.length === 0 ? 'Add titles to My List or start watching a movie to keep your progress here.' : 'Pick another filter, or browse more titles.'}</p>
