@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAccountScope } from '../hooks/useAccountScope';
 import { apiGet } from '../lib/api';
-import { readMovieLibrary } from '../lib/movieLibraryStorage';
-import { readMovieProgress, writeMovieProgress } from '../lib/movieProgressStorage';
+import { readMovieLibrary, removeMovieFromLibrary } from '../lib/movieLibraryStorage';
+import { readMovieProgress, removeMovieProgress, writeMovieProgress } from '../lib/movieProgressStorage';
 import type { MovieDetail, MovieProgressEntry, MovieSummary, MovieWatchProgress } from '../lib/movies';
 import { MyListProvider, useMyList } from '../lib/useMyList';
 import { GridSkeleton, MovieGrid } from '../components/MovieCard';
@@ -163,6 +163,37 @@ function LibraryContent() {
     return () => controller.abort();
   }, [accountId, resolved, error]);
 
+  const removeMovie = async (movie: MovieSummary) => {
+    setLoadError('');
+    try {
+      if (accountId) {
+        const [libraryResponse, progressResponse] = await Promise.all([
+          fetch('/api/v1/me/movies/library/tmdb/' + encodeURIComponent(movie.externalId), {
+            method: 'DELETE', credentials: 'same-origin', headers: { Accept: 'application/json' },
+          }),
+          fetch('/api/v1/me/movies/progress/tmdb/' + encodeURIComponent(movie.externalId), {
+            method: 'DELETE', credentials: 'same-origin', headers: { Accept: 'application/json' },
+          }),
+        ]);
+        const [libraryPayload, progressPayload] = await Promise.all([
+          libraryResponse.json().catch(() => null),
+          progressResponse.json().catch(() => null),
+        ]);
+        if (!libraryResponse.ok || !libraryPayload?.success) {
+          throw new Error(libraryPayload?.error?.message ?? 'Could not remove this movie from your list.');
+        }
+        if (!progressResponse.ok || !progressPayload?.success) {
+          throw new Error(progressPayload?.error?.message ?? 'Could not remove this movie’s playback progress.');
+        }
+      }
+      removeMovieFromLibrary(accountId, movie.providerId, movie.externalId);
+      removeMovieProgress(accountId, movie.providerId, movie.externalId);
+      setMovies(current => current.filter(item => identity(item) !== identity(movie)));
+    } catch (caught) {
+      setLoadError(caught instanceof Error ? caught.message : 'Could not remove this movie.');
+    }
+  };
+
   const saved = useMemo(() => movies.filter(movie => {
     const state = list.get(movie);
     return state.status !== null || state.isFavorite || Boolean(movie.watchProgress);
@@ -197,7 +228,7 @@ function LibraryContent() {
       {list.error && <p className="nf-detail-note" role="alert">{list.error} <button type="button" onClick={list.retry}>Retry</button></p>}
       {loadError && <p className="nf-detail-note" role="alert">{loadError}</p>}
 
-      {resolved && !error && !loading && visible.length > 0 && <MovieGrid items={visible} onRemove={movie => void list.update(movie, { status: null, isFavorite: false })} />}
+      {resolved && !error && !loading && visible.length > 0 && <MovieGrid items={visible} onRemove={movie => void removeMovie(movie)} />}
       {resolved && !error && !loading && visible.length === 0 && (
         <div className="nf-message">
           <h2>{saved.length === 0 ? "You haven't added or watched any titles yet." : 'Nothing here yet.'}</h2>
