@@ -3,12 +3,13 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Clock, Heart, LogIn, LogOut, Search, Settings, Trash2, UserRound, Pause, Play, ArrowUpDown } from 'lucide-react';
 import { EmptyState, LoadingState } from '../components/catalog';
 import { useKairoAccount } from '../lib/AccountProvider';
+import { safeTmdbImageUrl } from '../lib/catalog';
 import { historyPausedStorageKey, readWatchHistory, watchProgressStorageKey, writeWatchHistory } from '../lib/accountStorage';
 
 type AccountUser = { id: string; displayName: string; email: string | null; emailVerifiedAt?: string | null };
 type WatchEntry = { slug: string; title: string; posterUrl: string | null; episodeNumber: number; episodeTitle: string; progressKey: string; durationSeconds: number | null; updatedAt: number };
 function readHistory(userId: string | null): WatchEntry[] {
-  return readWatchHistory<WatchEntry>(userId).filter((x) => x && typeof x.slug === 'string' && typeof x.title === 'string');
+  return readWatchHistory<WatchEntry>(userId).filter((x) => x && typeof x.slug === 'string' && typeof x.title === 'string').map((x) => ({ ...x, posterUrl: safeTmdbImageUrl(x.posterUrl) }));
 }
 function progressOf(entry: WatchEntry): number {
   try { const seconds = Number(localStorage.getItem(entry.progressKey) || 0); return entry.durationSeconds && entry.durationSeconds > 0 ? Math.max(0, Math.min(100, seconds / entry.durationSeconds * 100)) : 0; }
@@ -93,7 +94,7 @@ export function ProfilePage() {
     </div>
     <div className="kc-profile-content">
       <div className="kc-profile-section-head"><div><span className="kc-section-kicker">YOUR ACTIVITY</span><h2>Continue watching</h2></div><Link className="kc-more" to="/history">View history <ArrowUpDown size={14}/></Link></div>
-      {history.length? <div className="kc-profile-history">{history.slice(0,4).map(item=><Link key={item.progressKey} to={`/watch/${encodeURIComponent(item.slug)}/${item.episodeNumber}`} className="kc-profile-history-item"><span className="kc-history-art">{item.posterUrl?<img src={item.posterUrl} alt="" loading="lazy"/>:<UserRound size={20}/>}</span><span><b>{item.title}</b><small>Episode {item.episodeNumber}{item.episodeTitle? ` · ${item.episodeTitle}`:''}</small><i><span style={{width:`${progressOf(item)}%`}}/></i></span></Link>)}</div>:<EmptyState title="Nothing watched yet">Start an episode and it will appear here.</EmptyState>}
+      {history.length? <div className="kc-profile-history">{history.slice(0,4).map(item=><Link key={item.progressKey} to={`/watch/${encodeURIComponent(item.slug)}/${item.episodeNumber}`} className="kc-profile-history-item"><span className="kc-history-art">{safeTmdbImageUrl(item.posterUrl)?<img src={safeTmdbImageUrl(item.posterUrl)!} alt="" loading="lazy"/>:<UserRound size={20}/>}</span><span><b>{item.title}</b><small>Episode {item.episodeNumber}{item.episodeTitle? ` · ${item.episodeTitle}`:''}</small><i><span style={{width:`${progressOf(item)}%`}}/></i></span></Link>)}</div>:<EmptyState title="Nothing watched yet">Start an episode and it will appear here.</EmptyState>}
     </div>
     {error&&<p className="kc-auth-error" role="alert">{error}</p>}
     <div className="kc-profile-actions"><Link className="kc-btn" to="/settings"><Settings size={15}/> Settings</Link><button className="kc-btn kc-btn-danger" type="button" onClick={()=>void logout()} disabled={busy}><LogOut size={15}/>{busy?'Signing out…':'Sign out'}</button></div>
