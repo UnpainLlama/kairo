@@ -7,7 +7,7 @@ import TrendingPage from './TrendingPage';
 import SeasonalPage from './SeasonalPage';
 import { NotFoundPage } from './StaticPages';
 
-// Plain list pages. Trending and Discover (/browse/anime) have their own layouts.
+// Plain list pages. Trending and Discover (/anime) have their own layouts.
 const LISTS: Record<string, { title: string; blurb: string; endpoint: string }> = {
   latest: { title: 'Recently updated', blurb: 'Currently airing, newest first.', endpoint: '/catalog/latest' },
 };
@@ -17,7 +17,7 @@ export default function BrowsePage() {
   // The old /browse/movies page queried Anime's "format=movie" catalogue.
   // Keep a component-level fallback as well as the explicit App route so this
   // legacy URL can never silently show Anime records as the TMDB Movies catalogue.
-  if (category === 'movies') return <Navigate to="/movies" replace />;
+  if (category === 'movies') return <Navigate to="/" replace />;
   if (category === 'trending') return <TrendingPage />;
   if (category === 'seasonal') return <SeasonalPage />;
   if (category === 'anime') return <DiscoverPage />;
