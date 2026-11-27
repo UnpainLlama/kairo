@@ -12,11 +12,12 @@ import '../styles-netflix.css';
 export default function MoviesWatchPage() {
   const { externalId = '' } = useParams();
   const navigate = useNavigate();
-  const { accountId, resolved: accountResolved, error: accountError } = useAccountScope();
+  const { accountId, resolved: accountResolved, error: accountError, retry: retryAccount } = useAccountScope();
   const [movie, setMovie] = useState<MovieDetail | null>(null);
   const [initialTime, setInitialTime] = useState(0);
   const [error, setError] = useState<ApiError | null>(null);
   const [loading, setLoading] = useState(true);
+  const [syncError, setSyncError] = useState('');
   const lastLocalSaveAt = useRef(0);
   const lastRemoteSaveAt = useRef(0);
 
@@ -25,6 +26,7 @@ export default function MoviesWatchPage() {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
+    setSyncError('');
     setMovie(null);
     setInitialTime(0);
     lastLocalSaveAt.current = 0;
@@ -89,9 +91,11 @@ export default function MoviesWatchPage() {
     }).then(async response => {
       const payload = await response.json().catch(() => null);
       if (!response.ok || !payload?.success) throw new Error(payload?.error?.message ?? 'Could not sync movie progress.');
+      setSyncError('');
     }).catch(() => {
       // Keep the local timestamped position. A later pause or playback update retries the sync.
       lastRemoteSaveAt.current = 0;
+      setSyncError('The latest progress could not sync. It remains saved in this browser and will retry.');
     });
   }, [accountId, accountError, movie]);
 
@@ -125,7 +129,8 @@ export default function MoviesWatchPage() {
 
   return (
     <>
-      {accountError && <p className="nf-progress-warning" role="status">Account status is unavailable. Playback will continue, but progress syncing is paused until the account can be verified.</p>}
+      {accountError && <p className="nf-progress-warning" role="status">Account status is unavailable. Playback will continue, but progress syncing is paused until the account can be verified. <button type="button" onClick={retryAccount}>Retry</button></p>}
+      {syncError && <p className="nf-progress-warning" role="status">{syncError}</p>}
       <MovieEmbedPlayer
         tmdbId={movie.externalId}
         title={movie.title}
