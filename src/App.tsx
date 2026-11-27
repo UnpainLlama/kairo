@@ -86,7 +86,10 @@ export default function App() {
   const isMoviesMode = pathname === '/movies' || pathname.startsWith('/movies/');
   const isMoviesWatchMode = pathname.startsWith('/movies/') && pathname.endsWith('/watch');
   const activeNavItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : navItems;
-  const activeMobileItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : mobileNavItems;
+  const activeMobileItems = [
+    ...(isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : mobileNavItems),
+    { to: '/settings', label: 'Settings', icon: Settings },
+  ];
   const [menuOpen, setMenuOpen] = useState(false);
   const account = useKairoAccount();
   const currentUser = account.status === 'signed-in' ? { displayName: account.displayName ?? 'Account', email: account.email } : null;
