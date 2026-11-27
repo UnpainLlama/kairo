@@ -57,7 +57,7 @@ function progressOf(row: RemoteProgress): MovieWatchProgress {
   return {
     currentTime: row.completed ? row.duration : row.currentTime,
     duration: row.duration,
-    completed: row.completed,
+    completed: row.completed === true || Number(row.completed) === 1,
     updatedAt: row.updatedAt,
   };
 }
