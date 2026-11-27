@@ -29,7 +29,7 @@
 .nf-billboard{position:relative;display:flex;align-items:flex-end;height:clamp(420px,50vw,80vh);background:#141414}
 .nf-bb-art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 22%}
 .nf-bb-fade{position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,0,0,.78),rgba(0,0,0,.4) 38%,transparent 68%),linear-gradient(0deg,#141414 0,rgba(20,20,20,.92) 8%,rgba(20,20,20,.6) 18%,rgba(20,20,20,.25) 30%,transparent 44%),linear-gradient(180deg,rgba(0,0,0,.6),transparent 20%)}
-.nf-bb-info{position:relative;width:min(42vw,36rem);padding:0 0 9vw var(--nf-l)}
+.nf-bb-info{position:relative;display:flex;flex-direction:column;align-items:flex-start;width:min(50vw,42rem);max-width:42rem;padding:0 0 clamp(4.5rem,9vh,7.5rem) var(--nf-l)}
 .nf-bb-tag{display:flex;align-items:center;gap:.7em;margin:0 0 .45em;font-size:clamp(.6rem,.85vw,.85rem);font-weight:700;letter-spacing:.38em;color:#e5e5e5}
 .nf-bb-tag i{display:block;width:.5em;height:1.2em;border-radius:1px;background:#fff}
 .nf-bb-title{margin:0 0 .4em;font-family:"Bebas Neue",Impact,"Arial Narrow",sans-serif;font-size:clamp(2.8rem,7vw,6.8rem);font-weight:400;line-height:.88;letter-spacing:.02em;text-transform:uppercase;text-shadow:2px 4px 8px rgba(0,0,0,.55)}
