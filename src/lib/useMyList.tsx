@@ -66,7 +66,7 @@ export function MyListProvider({ children }: { children: ReactNode }) {
         setSaved(map);
         setReady(true);
       })
-      .catch(caught => { if (active) { setError(caught instanceof Error ? caught.message : 'Could not load your list.'); setReady(true); } });
+      .catch(caught => { if (active) { setError(caught instanceof Error ? caught.message : 'Could not load your list.'); setReady(false); } });
     return () => { active = false; };
   }, [accountId, resolved, accountError, reload]);
 
@@ -104,7 +104,7 @@ export function MyListProvider({ children }: { children: ReactNode }) {
   }, [accountId, accountError, busy, ready, resolved, saved]);
 
   const value = useMemo<MyListApi>(() => ({
-    ready: ready && !accountError, locked: accountError, busy, error,
+    ready: ready && !accountError && !error, locked: accountError || Boolean(error), busy, error,
     retry: () => { retry(); setReload(n => n + 1); },
     get, update,
   }), [accountError, busy, error, get, ready, retry, update]);
