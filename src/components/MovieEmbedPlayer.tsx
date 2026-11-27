@@ -58,7 +58,8 @@ export default function MovieEmbedPlayer({ tmdbId, title, onBack, initialTime = 
     };
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !document.fullscreenElement) onBack(); };
     const flushProgress = () => {
-      flushProgress();
+      const progress = latestProgress.current;
+      if (progress) onProgressRef.current?.(progress.currentTime, progress.duration, progress.completed, 'pagehide');
     };
     const onVisibilityChange = () => {
       if (document.visibilityState === 'hidden') flushProgress();
@@ -72,8 +73,7 @@ export default function MovieEmbedPlayer({ tmdbId, title, onBack, initialTime = 
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('pagehide', flushProgress);
       document.removeEventListener('visibilitychange', onVisibilityChange);
-      const progress = latestProgress.current;
-      if (progress) onProgressRef.current?.(progress.currentTime, progress.duration, progress.completed, 'pagehide');
+      flushProgress();
     };
   }, [onBack]);
 
