@@ -56,7 +56,7 @@ export default function MoviesWatchPage() {
     completed: boolean,
     reason: 'timeupdate' | 'pause' | 'ended' | 'pagehide',
   ) => {
-    if (!movie || !Number.isFinite(currentTime) || !Number.isFinite(duration) || duration <= 0) return;
+    if (accountError || !movie || !Number.isFinite(currentTime) || !Number.isFinite(duration) || duration <= 0) return;
     const now = Date.now();
     if (reason === 'timeupdate' && now - lastLocalSaveAt.current < 5000) return;
     const position = Math.max(0, Math.min(duration, currentTime));
@@ -93,7 +93,7 @@ export default function MoviesWatchPage() {
       // Keep the local timestamped position. A later pause or playback update retries the sync.
       lastRemoteSaveAt.current = 0;
     });
-  }, [accountId, movie]);
+  }, [accountId, accountError, movie]);
 
   // Back returns to wherever the viewer came from, and falls back to the title page for direct links.
   const back = () => {
