@@ -167,7 +167,7 @@ export default function App() {
               aria-controls="kc-navigation-menu"
               onClick={() => setMenuOpen((open) => !open)}
             >
-              {menuOpen ? <X size={21} strokeWidth={1.8} aria-hidden="true" /> : <Menu size={21} strokeWidth={1.8} aria-hidden="true" />}
+              <span className="kc-menu-letter" aria-hidden="true">O</span>
             </button>
             <nav
               className={`kc-orb-panel${menuOpen ? ' open' : ''}`}
