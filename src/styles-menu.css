@@ -1,48 +1,67 @@
-/* Minimal grayscale O switcher, matching the compact dropdown reference. */
+/* Minimal typographic O switcher, aligned to the search field. */
+.kc-topbar-inner {
+  align-items: center;
+  gap: 7px;
+}
+
+.kc-topbar-inner .kc-search-wrap {
+  align-self: center;
+}
+
 .kc-menu-wrap {
-  width: 40px;
+  width: 27px;
+  align-self: center;
 }
 
 .kc-menu-wrap .kc-menu-trigger {
-  position: relative;
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 27px;
+  height: 36px;
   padding: 0;
-  border: 1px solid #777;
-  border-radius: 50%;
-  background: #111;
-  color: #dedede;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #c9c9c9;
   box-shadow: none;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  transition: border-color .16s ease, background .16s ease, transform .16s ease;
+  transition: color .14s ease, transform .14s ease;
 }
 
-.kc-menu-wrap .kc-menu-trigger::before {
+.kc-menu-wrap .kc-menu-trigger::before,
+.kc-menu-wrap .kc-menu-trigger svg {
+  display: none;
   content: none;
 }
 
-.kc-menu-wrap .kc-menu-trigger svg {
-  display: none;
+.kc-menu-letter {
+  display: block;
+  color: inherit;
+  font-family: 'Kumbh Sans', Arial, sans-serif;
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -.055em;
+  transform: translateY(-1px);
 }
 
 .kc-menu-wrap .kc-menu-trigger:hover,
 .kc-menu-wrap .kc-menu-trigger.active {
-  border-color: #d0d0d0;
-  background: #181818;
+  border: 0;
+  background: transparent;
   color: #fff;
   box-shadow: none;
 }
 
 .kc-menu-wrap.open .kc-menu-trigger {
-  transform: scale(.96);
+  transform: scale(.94);
 }
 
 .kc-menu-wrap .kc-menu-trigger:focus-visible {
-  outline: 1px solid #aaa;
-  outline-offset: 4px;
+  outline: 1px solid #999;
+  outline-offset: 1px;
+  border-radius: 3px;
 }
 
 .kc-orb-panel {

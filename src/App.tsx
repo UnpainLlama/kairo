@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
   Bookmark, CalendarDays, ChevronRight, Clapperboard, Compass, Flame, History, ListVideo,
-  Home, LogIn, LogOut, Menu, PlayCircle, Search, Settings, Tv, UserRound, X, Youtube,
+  Home, LogIn, LogOut, PlayCircle, Search, Settings, Tv, UserRound, Youtube,
   type LucideIcon,
 } from 'lucide-react';
 import SearchBar from './components/SearchBar';
@@ -167,7 +167,7 @@ export default function App() {
               aria-controls="kc-navigation-menu"
               onClick={() => setMenuOpen((open) => !open)}
             >
-              {menuOpen ? <X size={21} strokeWidth={1.8} aria-hidden="true" /> : <Menu size={21} strokeWidth={1.8} aria-hidden="true" />}
+              <span className="kc-menu-letter" aria-hidden="true">O</span>
             </button>
             <nav
               className={`kc-orb-panel${menuOpen ? ' open' : ''}`}
