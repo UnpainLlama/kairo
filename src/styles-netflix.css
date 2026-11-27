@@ -230,3 +230,11 @@
 .nf-footer-links a:hover{text-decoration:underline}
 .nf-footer-note{max-width:44rem;line-height:1.5}
 @media(max-width:700px){.nf-footer-links{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+
+/* Progress and hero alignment refinements */
+.nf-card-progress{position:absolute;z-index:2;left:0;right:0;bottom:0;height:4px;background:rgba(255,255,255,.22)}
+.nf-card-progress i{display:block;height:100%;background:#e50914}
+.nf-bb-info{gap:0}
+.nf-bb-title button{max-width:100%;text-align:left}
+@media(max-width:700px){.nf-bb-info{align-items:flex-start;padding-bottom:clamp(3.5rem,10vw,5rem)}.nf-bb-title{max-width:12ch}.nf-bb-text{max-width:42ch}}
