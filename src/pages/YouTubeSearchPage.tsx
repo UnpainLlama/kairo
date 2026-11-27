@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import YouTubeVideoCard, { type YouTubeCardVideo } from '../components/YouTubeVideoCard';
-import { ArrowUpRight, Check, Plus, Search, Youtube } from 'lucide-react';
+import { ArrowUpRight, Search, Youtube } from 'lucide-react';
 
 type SearchMode = 'videos' | 'channels';
-type ChannelResult = { channelId: string; title: string; description: string; thumbnailUrl: string | null; url: string; isAdded: boolean };
+type ChannelResult = { channelId: string; title: string; description: string; thumbnailUrl: string | null; url: string };
 type VideoResult = {
   videoId: string;
   title: string;
@@ -35,8 +35,6 @@ export default function YouTubeSearchPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState<SearchError | null>(null);
-  const [adding, setAdding] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   const searchFor = useCallback(async (term: string, selectedMode: SearchMode, selectedOrder: string, selectedDuration: string, pageToken?: string, append = false) => {
     const currentRequest = ++requestId.current;
@@ -49,7 +47,6 @@ export default function YouTubeSearchPage() {
       setTotalResults(null);
     }
     setError(null);
-    setNotice(null);
     setSearched(true);
     try {
       let endpoint: string;
@@ -127,27 +124,6 @@ export default function YouTubeSearchPage() {
     navigate('/youtube/search?' + params.toString());
   };
 
-  const addChannel = async (channel: ChannelResult) => {
-    setAdding(channel.channelId);
-    setNotice(null);
-    try {
-      const response = await fetch('/api/v1/youtube/channels', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channelId: channel.channelId }),
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok || !payload?.success) throw new Error(payload?.error?.message ?? 'Could not add this channel.');
-      setChannels(items => items.map(item => item.channelId === channel.channelId ? { ...item, isAdded: true } : item));
-      setNotice(channel.title + ' was added to your feed.');
-    } catch (caught) {
-      setNotice(caught instanceof Error ? caught.message : 'Could not add this channel.');
-    } finally {
-      setAdding(null);
-    }
-  };
-
   const loadMore = () => {
     if (!nextPageToken || loadingMore || loading) return;
     void searchFor(query, 'videos', order, duration, nextPageToken, true);
@@ -162,7 +138,7 @@ export default function YouTubeSearchPage() {
         <div>
           <span className="yt-eyebrow">YOUTUBE SEARCH</span>
           <h1>{query ? `Results for “${query}”` : 'Search YouTube'}</h1>
-          <p>{query ? 'Videos and channels matching your search.' : 'Search for a video, topic or creator from the bar above.'}</p>
+          <p>{query ? 'Search videos and explore creators from the wider YouTube catalogue.' : 'Search for a video, topic or creator from the bar above.'}</p>
         </div>
       </header>
 
@@ -193,10 +169,9 @@ export default function YouTubeSearchPage() {
       )}
 
       {error && <div className="yt-notice" role="alert"><div><b>{error.message}</b>
-        {needsLogin && <p><Link to="/login">Sign in</Link> to search and save channels.</p>}
+        {needsLogin && <p><Link to="/login">Sign in</Link> to search channels.</p>}
         {!needsLogin && <p>Check your connection and try again.</p>}
       </div></div>}
-      {notice && <div className="yt-notice" role="status">{notice}</div>}
 
       {loading && <div className="yt-loading" role="status">Searching YouTube {mode}…</div>}
 
@@ -230,9 +205,9 @@ export default function YouTubeSearchPage() {
                 {channel.thumbnailUrl ? <img src={channel.thumbnailUrl} alt="" loading="lazy" /> : <Youtube size={26} />}
               </a>
               <div className="yt-result-copy"><h3><a href={channel.url} target="_blank" rel="noopener noreferrer">{channel.title} <ArrowUpRight size={13} /></a></h3><p>{channel.description || 'YouTube channel'}</p></div>
-              <button type="button" className={'yt-button ' + (channel.isAdded ? 'yt-button-added' : 'yt-button-primary')} disabled={channel.isAdded || adding === channel.channelId} onClick={() => void addChannel(channel)}>
-                {channel.isAdded ? <><Check size={15} /> Added</> : adding === channel.channelId ? 'Adding…' : <><Plus size={15} /> Add to feed</>}
-              </button>
+              <a className="yt-button yt-button-quiet yt-open-channel" href={channel.url} target="_blank" rel="noopener noreferrer">
+                Open channel <ArrowUpRight size={14} />
+              </a>
             </article>
           ))}
         </div>
