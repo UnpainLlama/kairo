@@ -145,7 +145,7 @@ function seasonFor(date: Date): { year: number; season: 'winter' | 'spring' | 's
   const month = date.getUTCMonth();
   return {
     year: date.getUTCFullYear(),
-    season: month <= 1 ? 'winter' : month <= 4 ? 'spring' : month <= 7 ? 'summer' : month <= 10 ? 'fall' : 'winter',
+    season: month <= 2 ? 'winter' : month <= 5 ? 'spring' : month <= 8 ? 'summer' : 'fall',
   };
 }
 
