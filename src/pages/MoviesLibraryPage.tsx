@@ -194,6 +194,7 @@ function LibraryContent() {
         </div>
       )}
       {(!resolved && !error) || (loading && !error) ? <GridSkeleton count={12} /> : null}
+      {list.error && <p className="nf-detail-note" role="alert">{list.error} <button type="button" onClick={list.retry}>Retry</button></p>}
       {loadError && <p className="nf-detail-note" role="alert">{loadError}</p>}
 
       {resolved && !error && !loading && visible.length > 0 && <MovieGrid items={visible} onRemove={movie => void list.update(movie, { status: null, isFavorite: false })} />}
