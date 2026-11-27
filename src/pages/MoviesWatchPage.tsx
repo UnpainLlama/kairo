@@ -96,10 +96,10 @@ export default function MoviesWatchPage() {
   }, [accountId, accountError, movie]);
 
   // Back returns to wherever the viewer came from, and falls back to the title page for direct links.
-  const back = () => {
+  const back = useCallback(() => {
     const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
     if (idx > 0) navigate(-1); else navigate('/movies/' + encodeURIComponent(externalId), { replace: true });
-  };
+  }, [externalId, navigate]);
 
   if (loading) return <div className="nf nf-player"><span className="nf-spinner" role="status" aria-label="Loading" /></div>;
 
