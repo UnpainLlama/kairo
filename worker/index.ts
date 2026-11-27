@@ -714,6 +714,114 @@ app.delete('/api/v1/me/movies/library/:providerId/:externalId', async (c) => {
   }
 });
 
+app.get('/api/v1/me/movies/progress', async (c) => {
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your Movies progress.');
+  const providerId = c.req.query('providerId');
+  const externalId = c.req.query('externalId');
+  if ((providerId && providerId !== 'tmdb') || (externalId && !/^\\d{1,12}$/.test(externalId)) || Boolean(providerId) !== Boolean(externalId)) {
+    return fail(c, 400, 'VALIDATION_ERROR', 'Provide both a valid providerId and externalId, or neither.');
+  }
+  try {
+    const query = externalId
+      ? c.env.DB.prepare(`
+          SELECT provider_id AS providerId, external_id AS externalId,
+                 progress_seconds AS currentTime, duration_seconds AS duration,
+                 completed, updated_at AS updatedAt
+          FROM user_movie_watch_progress
+          WHERE user_id = ? AND provider_id = ? AND external_id = ?
+          LIMIT 1
+        `).bind(user.id, 'tmdb', externalId)
+      : c.env.DB.prepare(`
+          SELECT provider_id AS providerId, external_id AS externalId,
+                 progress_seconds AS currentTime, duration_seconds AS duration,
+                 completed, updated_at AS updatedAt
+          FROM user_movie_watch_progress
+          WHERE user_id = ?
+          ORDER BY updated_at DESC
+          LIMIT 100
+        `).bind(user.id);
+    if (externalId) {
+      const item = await query.first();
+      return ok(c, { items: item ? [item] : [] }, { count: item ? 1 : 0 });
+    }
+    const result = await query.all();
+    return ok(c, { items: result.results ?? [] }, { count: result.results?.length ?? 0 });
+  } catch (error) {
+    logError(c, 'movie_progress_read_failed', error);
+    return fail(c, 503, 'MOVIE_PROGRESS_UNAVAILABLE', 'Movie playback progress is temporarily unavailable.');
+  }
+});
+
+app.post('/api/v1/me/movies/progress', async (c) => {
+  const origin = c.req.header('Origin');
+  if (origin && origin !== new URL(c.req.url).origin) {
+    return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
+  }
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to sync movie playback progress.');
+  const body: unknown = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(c, 400, 'VALIDATION_ERROR', 'Provide movie playback progress.');
+  const value = body as Record<string, unknown>;
+  const providerId = typeof value.providerId === 'string' ? value.providerId.trim().toLowerCase() : '';
+  const externalId = typeof value.externalId === 'string' ? value.externalId.trim() : '';
+  const currentTime = Number(value.currentTime);
+  const duration = Number(value.duration);
+  const completed = value.completed === true;
+  const updatedAt = value.updatedAt === undefined ? Date.now() : Number(value.updatedAt);
+  if (
+    providerId !== 'tmdb' || !/^\\d{1,12}$/.test(externalId) ||
+    !Number.isFinite(currentTime) || currentTime < 0 ||
+    !Number.isFinite(duration) || duration <= 0 || duration > 108000 ||
+    currentTime > duration + 30 ||
+    (value.completed !== undefined && typeof value.completed !== 'boolean') ||
+    !Number.isSafeInteger(updatedAt) || updatedAt <= 0 || updatedAt > Date.now() + 30000
+  ) {
+    return fail(c, 400, 'VALIDATION_ERROR', 'The movie playback progress is invalid.');
+  }
+  const position = completed ? duration : Math.min(currentTime, duration);
+  try {
+    await c.env.DB.prepare(`
+      INSERT INTO user_movie_watch_progress
+        (user_id, provider_id, external_id, progress_seconds, duration_seconds, completed, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, provider_id, external_id) DO UPDATE SET
+        progress_seconds=excluded.progress_seconds,
+        duration_seconds=excluded.duration_seconds,
+        completed=excluded.completed,
+        updated_at=excluded.updated_at
+      WHERE excluded.updated_at >= user_movie_watch_progress.updated_at
+    `).bind(user.id, providerId, externalId, position, duration, completed ? 1 : 0, updatedAt).run();
+    return ok(c, { saved: true, providerId, externalId, currentTime: position, duration, completed, updatedAt });
+  } catch (error) {
+    logError(c, 'movie_progress_write_failed', error);
+    return fail(c, 503, 'MOVIE_PROGRESS_UNAVAILABLE', 'Could not save movie playback progress.');
+  }
+});
+
+app.delete('/api/v1/me/movies/progress/:providerId/:externalId', async (c) => {
+  const origin = c.req.header('Origin');
+  if (origin && origin !== new URL(c.req.url).origin) {
+    return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
+  }
+  const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
+  if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to manage movie playback progress.');
+  const providerId = c.req.param('providerId').trim().toLowerCase();
+  const externalId = c.req.param('externalId').trim();
+  if (providerId !== 'tmdb' || !/^\\d{1,12}$/.test(externalId)) {
+    return fail(c, 400, 'VALIDATION_ERROR', 'The movie identifier is invalid.');
+  }
+  try {
+    await c.env.DB.prepare(
+      'DELETE FROM user_movie_watch_progress WHERE user_id = ? AND provider_id = ? AND external_id = ?'
+    ).bind(user.id, providerId, externalId).run();
+    return ok(c, { removed: true, providerId, externalId });
+  } catch (error) {
+    logError(c, 'movie_progress_delete_failed', error);
+    return fail(c, 503, 'MOVIE_PROGRESS_UNAVAILABLE', 'Could not remove movie playback progress.');
+  }
+});
+
 app.get('/api/v1/me/library', async (c) => {
   const user = await findSessionUser(c.env.DB, c.req.header('Cookie') ?? null);
   if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to access your library.');
