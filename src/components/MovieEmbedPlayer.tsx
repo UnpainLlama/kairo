@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { CINESRC_ORIGIN, cinesrcMovieEmbedUrl } from '../lib/moviePlayback';
+import { PLAYER_IFRAME_SANDBOX } from '../lib/playerSandbox';
 import '../styles-netflix.css';
 
 type Props = {
@@ -56,17 +57,21 @@ export default function MovieEmbedPlayer({ tmdbId, title, onBack, initialTime = 
       }
     };
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !document.fullscreenElement) onBack(); };
-    const onPageHide = () => {
-      const progress = latestProgress.current;
-      if (progress) onProgressRef.current?.(progress.currentTime, progress.duration, progress.completed, 'pagehide');
+    const flushProgress = () => {
+      flushProgress();
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') flushProgress();
     };
     window.addEventListener('message', onMessage);
     window.addEventListener('keydown', onKey);
-    window.addEventListener('pagehide', onPageHide);
+    window.addEventListener('pagehide', flushProgress);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       window.removeEventListener('message', onMessage);
       window.removeEventListener('keydown', onKey);
-      window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('pagehide', flushProgress);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       const progress = latestProgress.current;
       if (progress) onProgressRef.current?.(progress.currentTime, progress.duration, progress.completed, 'pagehide');
     };
@@ -93,6 +98,7 @@ export default function MovieEmbedPlayer({ tmdbId, title, onBack, initialTime = 
         className="nf-player-frame"
         src={embedUrl}
         title={title}
+        sandbox={PLAYER_IFRAME_SANDBOX}
         allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
         allowFullScreen
         referrerPolicy="origin"
