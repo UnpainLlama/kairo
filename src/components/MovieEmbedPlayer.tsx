@@ -8,6 +8,8 @@ type Props = {
   tmdbId: string;
   title: string;
   onBack: () => void;
+  initialTime?: number;
+  onProgress?: (currentTime: number, duration: number, completed: boolean, reason: 'timeupdate' | 'pause' | 'ended' | 'pagehide') => void;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -19,29 +21,55 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * CineSrc draws its own controls and back button (back=close). Messages are accepted only from the
  * CineSrc origin and this exact iframe.
  */
-export default function MovieEmbedPlayer({ tmdbId, title, onBack }: Props) {
+export default function MovieEmbedPlayer({ tmdbId, title, onBack, initialTime = 0, onProgress }: Props) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const frameRef = useRef<HTMLIFrameElement>(null);
+  const latestProgress = useRef<{ currentTime: number; duration: number } | null>(null);
+  const onProgressRef = useRef(onProgress);
+  useEffect(() => { onProgressRef.current = onProgress; }, [onProgress]);
 
   const embedUrl = useMemo(() => {
-    try { return cinesrcMovieEmbedUrl(tmdbId); } catch { return null; }
-  }, [tmdbId]);
+    try { return cinesrcMovieEmbedUrl(tmdbId, initialTime); } catch { return null; }
+  }, [tmdbId, initialTime]);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent<unknown>) => {
       if (event.origin !== CINESRC_ORIGIN) return;
       if (event.source !== frameRef.current?.contentWindow) return;
       if (!isRecord(event.data) || typeof event.data.type !== 'string') return;
-      if (event.data.type === 'cinesrc:close') onBack();
-      else if (event.data.type === 'cinesrc:ready') { setLoaded(true); setFailed(false); }
-      else if (event.data.type === 'cinesrc:error') setFailed(true);
+      const data = event.data;
+      if (data.type === 'cinesrc:close') onBack();
+      else if (data.type === 'cinesrc:ready') { setLoaded(true); setFailed(false); }
+      else if (data.type === 'cinesrc:error') setFailed(true);
+      else if (data.type === 'cinesrc:timeupdate' || data.type === 'cinesrc:pause' || data.type === 'cinesrc:ended') {
+        const current = typeof data.currentTime === 'number' && Number.isFinite(data.currentTime)
+          ? data.currentTime : latestProgress.current?.currentTime;
+        const duration = typeof data.duration === 'number' && Number.isFinite(data.duration)
+          ? data.duration : latestProgress.current?.duration;
+        if (current === undefined || current === null || duration === undefined || duration === null || duration <= 0) return;
+        latestProgress.current = { currentTime: Math.max(0, Math.min(duration, current)), duration };
+        const completed = data.type === 'cinesrc:ended' || current >= duration - Math.max(30, duration * 0.02);
+        const reason = data.type === 'cinesrc:pause' ? 'pause' : data.type === 'cinesrc:ended' ? 'ended' : 'timeupdate';
+        onProgressRef.current?.(latestProgress.current.currentTime, duration, completed, reason);
+      }
     };
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !document.fullscreenElement) onBack(); };
+    const onPageHide = () => {
+      const progress = latestProgress.current;
+      if (progress) onProgressRef.current?.(progress.currentTime, progress.duration, false, 'pagehide');
+    };
     window.addEventListener('message', onMessage);
     window.addEventListener('keydown', onKey);
-    return () => { window.removeEventListener('message', onMessage); window.removeEventListener('keydown', onKey); };
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      window.removeEventListener('message', onMessage);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('pagehide', onPageHide);
+      const progress = latestProgress.current;
+      if (progress) onProgressRef.current?.(progress.currentTime, progress.duration, false, 'pagehide');
+    };
   }, [onBack]);
 
   const backButton = (
