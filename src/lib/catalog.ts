@@ -72,6 +72,14 @@ export function dateLabel(iso: string | null): string | null {
 /** Only http(s) image URLs are ever used as an <img src>. */
 export const safeImageUrl = (url: string | null): string | null => (url && /^https?:\/\//i.test(url) ? url : null);
 
+/** Anime artwork is sourced only from TMDB; reject stale provider URLs from local history or cached records. */
+export const safeTmdbImageUrl = (url: string | null): string | null => {
+  const safe = safeImageUrl(url);
+  if (!safe) return null;
+  try { return new URL(safe).hostname === 'image.tmdb.org' ? safe : null; }
+  catch { return null; }
+};
+
 export type SourceRef = { providerId: string; displayName: string; text: string; url: string; license: string | null };
 export type ProviderOutcome = { provider: string; state: 'ok' | 'cached' | 'not_found' | 'skipped' | 'failed'; reason?: string };
 /** GET /anime/:id/metadata: the unified, multi-provider record. Only the fields the UI uses are typed. */
