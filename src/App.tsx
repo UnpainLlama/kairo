@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Bell, Bookmark, CalendarDays, ChevronRight, Clapperboard, Compass, Flame, History, ListVideo,
-  Home, LogIn, LogOut, Menu, PlayCircle, Search, Settings, Tv, UserRound, Youtube,
+  Bookmark, CalendarDays, ChevronRight, Clapperboard, Compass, Flame, History, ListVideo,
+  Home, LogIn, LogOut, Menu, PlayCircle, Search, Settings, Tv, UserRound, X, Youtube,
   type LucideIcon,
 } from 'lucide-react';
 import SearchBar from './components/SearchBar';
@@ -36,17 +36,6 @@ const navItems: NavItem[] = [
   { to: '/browse/seasonal', label: 'Seasonal', icon: CalendarDays },
   { to: '/history', label: 'History', icon: History },
   { to: '/profile', label: 'Profile', icon: UserRound },
-];
-
-const menuItems: NavItem[] = [
-  { to: '/', label: 'Home', icon: Home, end: true },
-  { to: '/browse/trending', label: 'Trending', icon: Flame },
-  { to: '/browse/anime', label: 'Anime', icon: Tv },
-  { to: '/movies', label: 'Movies', icon: Clapperboard },
-  { to: '/browse/anime', label: 'Discover', icon: Compass },
-  { to: '/search', label: 'Search', icon: Search },
-  { to: '/browse/seasonal', label: 'Seasonal', icon: CalendarDays },
-  { to: '/history', label: 'History', icon: History },
 ];
 
 const youtubeNavItems: NavItem[] = [
@@ -91,23 +80,12 @@ function RailLink({ to, label, icon: Icon, end, active }: NavItem) {
   );
 }
 
-function MenuLink({ to, label, icon: Icon, end, onNavigate }: NavItem & { onNavigate: () => void }) {
-  return (
-    <NavLink to={to} end={end} className={({ isActive }) => `kc-menu-tile${isActive ? ' active' : ''}`} onClick={onNavigate}>
-      <Icon size={17} strokeWidth={1.8} aria-hidden="true" />
-      <span>{label}</span>
-      <ChevronRight size={13} className="kc-menu-chevron" aria-hidden="true" />
-    </NavLink>
-  );
-}
-
 export default function App() {
   const { pathname, search } = useLocation();
   const isYouTubeMode = pathname.startsWith('/youtube');
   const isMoviesMode = pathname === '/movies' || pathname.startsWith('/movies/');
   const isMoviesWatchMode = pathname.startsWith('/movies/') && pathname.endsWith('/watch');
   const activeNavItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : navItems;
-  const activeMenuItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : menuItems;
   const activeMobileItems = isYouTubeMode ? youtubeNavItems : isMoviesMode ? moviesNavItems : mobileNavItems;
   const [menuOpen, setMenuOpen] = useState(false);
   const account = useKairoAccount();
@@ -115,8 +93,13 @@ export default function App() {
   const [authBusy, setAuthBusy] = useState(false);
   const navigate = useNavigate();
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
+  const orbLinksRef = useRef<Array<HTMLAnchorElement | null>>([]);
 
-  useEffect(() => { window.scrollTo({ top: 0, left: 0, behavior: 'auto' }); }, [pathname, search]);
+  useEffect(() => {
+    setMenuOpen(false);
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [pathname, search]);
 
   const logout = async () => {
     setAuthBusy(true);
@@ -126,21 +109,34 @@ export default function App() {
 
   useEffect(() => {
     if (!menuOpen) return;
-    const onPointerDown = (event: globalThis.MouseEvent) => {
+    const onPointerDown = (event: globalThis.PointerEvent) => {
       if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMenuOpen(false);
+      if (event.key === 'Escape') {
+        setMenuOpen(false);
+        menuTriggerRef.current?.focus();
+        return;
+      }
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+      const focusedIndex = orbLinksRef.current.indexOf(document.activeElement as HTMLAnchorElement);
+      const count = orbLinksRef.current.length;
+      if (!count) return;
+      event.preventDefault();
+      const nextIndex = focusedIndex < 0
+        ? (event.key === 'ArrowDown' ? 0 : count - 1)
+        : (focusedIndex + (event.key === 'ArrowDown' ? 1 : count - 1)) % count;
+      orbLinksRef.current[nextIndex]?.focus();
     };
-    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('keydown', onKeyDown);
     return () => {
-      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('keydown', onKeyDown);
     };
   }, [menuOpen]);
 
-  const closeMenu = (_event?: MouseEvent<HTMLAnchorElement>) => setMenuOpen(false);
+  const closeMenu = () => setMenuOpen(false);
 
   return (
     <div className={`kc-app${pathname === '/' ? ' kc-home-view' : ''}${isYouTubeMode ? ' yt-app' : ''}${isMoviesMode ? ' mv-app' : ''}${isMoviesWatchMode ? ' mv-watch-app' : ''}`}>
@@ -160,61 +156,82 @@ export default function App() {
       <header className="kc-topbar">
         <div className="kc-topbar-inner">
           <SearchBar mode={isYouTubeMode ? 'youtube' : isMoviesMode ? 'movies' : 'anime'} />
-          <div className="kc-menu-wrap" ref={menuRef}>
+          <div className={`kc-menu-wrap${menuOpen ? ' open' : ''}`} ref={menuRef}>
             <button
+              ref={menuTriggerRef}
               type="button"
               className={`kc-menu-trigger${menuOpen ? ' active' : ''}`}
-              aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+              aria-label={menuOpen ? 'Close section switcher' : 'Open section switcher'}
+              aria-haspopup="true"
               aria-expanded={menuOpen}
               aria-controls="kc-navigation-menu"
               onClick={() => setMenuOpen((open) => !open)}
             >
-              <Menu size={19} aria-hidden="true" />
+              {menuOpen ? <X size={21} strokeWidth={1.8} aria-hidden="true" /> : <Menu size={21} strokeWidth={1.8} aria-hidden="true" />}
             </button>
-            {menuOpen && (
-              <section className="kc-menu-popover" id="kc-navigation-menu" aria-label="Kairo navigation menu">
-                <Link to={currentUser ? "/profile" : "/login"} className="kc-menu-profile" onClick={closeMenu}>
-                  <span className="kc-menu-avatar"><UserRound size={19} aria-hidden="true" /></span>
-                  <span><b>{currentUser?.displayName ?? 'Profile'}</b><small>{currentUser?.email ?? 'Guest account'}</small></span>
-                  <ChevronRight size={15} aria-hidden="true" />
+            <nav
+              className={`kc-orb-panel${menuOpen ? ' open' : ''}`}
+              id="kc-navigation-menu"
+              aria-label="Choose a Kairo section"
+              aria-hidden={!menuOpen}
+              inert={!menuOpen}
+            >
+              <div className="kc-orb-heading">
+                <small>SWITCH YOUR SPACE</small>
+                <strong>One Kairo. Three worlds.</strong>
+              </div>
+              <div className="kc-orb-options">
+                <Link
+                  ref={(element) => { orbLinksRef.current[0] = element; }}
+                  to="/movies"
+                  className={`kc-orb-option${isMoviesMode ? ' active' : ''}`}
+                  aria-current={isMoviesMode ? 'page' : undefined}
+                  onClick={closeMenu}
+                >
+                  <span className="kc-orb-number">01</span>
+                  <span className="kc-orb-icon"><Clapperboard size={20} strokeWidth={1.8} aria-hidden="true" /></span>
+                  <span className="kc-orb-copy"><b>Movies</b><small>Films and collections</small></span>
+                  <ChevronRight size={17} className="kc-orb-arrow" aria-hidden="true" />
                 </Link>
-                <div className="kc-menu-section-label">{isYouTubeMode ? 'Video' : isMoviesMode ? 'Movies' : 'Media'}</div>
-                <div className="kc-menu-grid">
-                  {activeMenuItems.slice(0, isYouTubeMode || isMoviesMode ? 5 : 4).map((item) => <MenuLink key={item.label} {...item} onNavigate={closeMenu} />)}
-                  {isMoviesMode ? <>
-                    <MenuLink to="/browse/anime" label="Anime" icon={Tv} onNavigate={closeMenu} />
-                    <MenuLink to="/youtube" label="YouTube" icon={Youtube} onNavigate={closeMenu} />
-                  </> : (
-                    <>
-                      {isYouTubeMode && <MenuLink to="/movies" label="Movies" icon={Clapperboard} onNavigate={closeMenu} />}
-                      <NavLink to={isYouTubeMode ? '/' : '/youtube'} className={({ isActive }) => `kc-menu-tile${isActive ? ' active' : ''}`} onClick={closeMenu}>
-                      {isYouTubeMode
-                        ? <Tv size={17} strokeWidth={1.8} aria-hidden="true" />
-                        : <Youtube size={17} strokeWidth={1.8} aria-hidden="true" />}
-                      <span>{isYouTubeMode ? 'Anime' : 'YouTube'}</span>
-                      <ChevronRight size={13} className="kc-menu-chevron" aria-hidden="true" />
-                      </NavLink>
-                    </>
-                  )}
-                </div>
-                {!isYouTubeMode && !isMoviesMode && <>
-                  <div className="kc-menu-section-label">Navigate</div>
-                  <div className="kc-menu-grid">
-                    {menuItems.slice(4).map((item) => <MenuLink key={item.label} {...item} onNavigate={closeMenu} />)}
-                    <button type="button" className="kc-menu-tile kc-menu-disabled" disabled title="Schedule is not available yet">
-                      <CalendarDays size={17} strokeWidth={1.8} aria-hidden="true" /><span>Schedule</span><small>Soon</small>
-                    </button>
-                  </div>
-                  <button type="button" className="kc-menu-announcement" disabled title="Announcements are coming soon">
-                    <Bell size={15} aria-hidden="true" /><span>Announcements</span><small>Soon</small>
+                <Link
+                  ref={(element) => { orbLinksRef.current[1] = element; }}
+                  to="/"
+                  className={`kc-orb-option${!isMoviesMode && !isYouTubeMode ? ' active' : ''}`}
+                  aria-current={!isMoviesMode && !isYouTubeMode ? 'page' : undefined}
+                  onClick={closeMenu}
+                >
+                  <span className="kc-orb-number">02</span>
+                  <span className="kc-orb-icon"><Tv size={20} strokeWidth={1.8} aria-hidden="true" /></span>
+                  <span className="kc-orb-copy"><b>Anime</b><small>Series and discovery</small></span>
+                  <ChevronRight size={17} className="kc-orb-arrow" aria-hidden="true" />
+                </Link>
+                <Link
+                  ref={(element) => { orbLinksRef.current[2] = element; }}
+                  to="/youtube"
+                  className={`kc-orb-option${isYouTubeMode ? ' active' : ''}`}
+                  aria-current={isYouTubeMode ? 'page' : undefined}
+                  onClick={closeMenu}
+                >
+                  <span className="kc-orb-number">03</span>
+                  <span className="kc-orb-icon"><Youtube size={20} strokeWidth={1.8} aria-hidden="true" /></span>
+                  <span className="kc-orb-copy"><b>YouTube</b><small>Videos and channels</small></span>
+                  <ChevronRight size={17} className="kc-orb-arrow" aria-hidden="true" />
+                </Link>
+              </div>
+              <div className="kc-orb-footer">
+                <Link to={currentUser ? '/profile' : '/login'} onClick={closeMenu}>
+                  <UserRound size={15} aria-hidden="true" /><span>{currentUser ? 'Account' : 'Log in'}</span>
+                </Link>
+                <Link to="/settings" onClick={closeMenu}>
+                  <Settings size={15} aria-hidden="true" /><span>Settings</span>
+                </Link>
+                {currentUser && (
+                  <button type="button" onClick={() => void logout()} disabled={authBusy}>
+                    <LogOut size={15} aria-hidden="true" /><span>{authBusy ? 'Signing out…' : 'Sign out'}</span>
                   </button>
-                </>}
-                <div className="kc-menu-footer">
-                  <Link to="/settings" onClick={closeMenu}><Settings size={15} aria-hidden="true" />Settings</Link>
-                  {currentUser ? <button type="button" onClick={() => void logout()} disabled={authBusy}><LogOut size={15} aria-hidden="true" />{authBusy ? 'Signing out…' : 'Sign out'}</button> : <Link to="/login" onClick={closeMenu}><LogIn size={15} aria-hidden="true" />Login</Link>}
-                </div>
-              </section>
-            )}
+                )}
+              </div>
+            </nav>
           </div>
         </div>
       </header>
