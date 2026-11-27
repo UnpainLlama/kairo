@@ -2634,3 +2634,49 @@ img { display: block; }
   .mv-watch-loading span { animation: none; }
   .mv-watch-page .mv-player-start-icon { transition: none; }
 }
+
+
+
+/* Consistent Lucide treatment across Anime, Movies and YouTube. */
+.kc-app svg.lucide { stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Home billboard copy shares one left edge and a controlled reading measure. */
+.kc-app.kc-home-view .kc-hero-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: min(760px, 100%);
+  text-align: left;
+}
+.kc-app.kc-home-view .kc-hero-copy h1 {
+  max-width: 16ch;
+  margin-bottom: 16px;
+  text-align: left;
+  text-wrap: balance;
+}
+.kc-app.kc-home-view .kc-hero .kc-pills {
+  max-width: 58ch;
+  justify-content: flex-start;
+}
+.kc-app.kc-home-view .kc-hero-synopsis {
+  max-width: 58ch;
+  margin-top: 16px;
+  text-align: left;
+}
+.kc-app.kc-home-view .kc-hero .kc-actions {
+  align-items: center;
+  justify-content: flex-start;
+  margin-top: 22px;
+}
+@media (max-width: 860px) {
+  .kc-app.kc-home-view .kc-hero-copy {
+    width: 100%;
+    align-items: flex-start;
+    text-align: left;
+  }
+  .kc-app.kc-home-view .kc-hero-copy h1,
+  .kc-app.kc-home-view .kc-hero-synopsis {
+    max-width: 58ch;
+    text-align: left;
+  }
+}
