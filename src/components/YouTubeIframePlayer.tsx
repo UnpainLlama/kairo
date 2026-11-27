@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { PLAYER_IFRAME_SANDBOX } from '../lib/playerSandbox';
 
 type PlayerStateEvent = { data: number; target: YouTubePlayer };
 type YouTubePlayer = {
@@ -130,6 +131,19 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
       return true;
     };
 
+    const host = hostRef.current;
+    if (!host) return;
+    const sandboxFrames = () => {
+      host.querySelectorAll('iframe').forEach((frame) => {
+        if (frame.getAttribute('sandbox') !== PLAYER_IFRAME_SANDBOX) {
+          frame.setAttribute('sandbox', PLAYER_IFRAME_SANDBOX);
+        }
+      });
+    };
+    const frameObserver = new MutationObserver(sandboxFrames);
+    frameObserver.observe(host, { childList: true, subtree: true });
+    sandboxFrames();
+
     void loadYouTubeIframeApi().then((api) => {
       if (cancelled || !hostRef.current) return;
       const player = new api.Player(hostRef.current, {
@@ -204,7 +218,11 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
     });
 
     const pageHide = () => report('pagehide');
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') report('pagehide');
+    };
     window.addEventListener('pagehide', pageHide);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       cancelled = true;
       stopTimer();
@@ -214,6 +232,8 @@ export default function YouTubeIframePlayer({ videoId, title, startSeconds = 0, 
       }
       report('pagehide');
       window.removeEventListener('pagehide', pageHide);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      frameObserver.disconnect();
       playerRef.current?.destroy();
       playerRef.current = null;
     };
