@@ -51,7 +51,6 @@ function BrowseContent({ category }: { category: string }) {
   const genreId = genreRaw && /^\d{1,8}$/.test(genreRaw) ? genreRaw : null;
   const invalidGenre = genreRaw !== null && genreId === null;
   const config = CATEGORIES[category];
-  if (invalidGenre || (!config && !genreId)) return <NotFoundPage />;
   const activeConfig = config ?? { title: 'Popular Movies', kind: 'popular' };
   const [items, setItems] = useState<MovieSummary[]>([]);
   const [genres, setGenres] = useState<MovieGenre[]>([]);
