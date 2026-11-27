@@ -154,11 +154,10 @@ function HomeContent() {
       setProgressLoading(false);
       return () => controller.abort();
     }
-    loadMovieProgress(accountId, controller.signal, 24)
+    loadMovieProgress(accountId, controller.signal, 24, true)
       .then(entries => {
         if (controller.signal.aborted) return;
         setContinueWatching(entries
-          .filter(entry => !entry.watchProgress.completed && entry.watchProgress.currentTime >= 5)
           .map(entry => ({ ...entry, watchProgress: entry.watchProgress })));
       })
       .catch(caught => {
