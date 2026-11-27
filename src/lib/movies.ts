@@ -1,4 +1,13 @@
+export type MovieWatchProgress = {
+  currentTime: number;
+  duration: number;
+  updatedAt: number;
+  completed: boolean;
+};
+
 export type MovieSummary = {
+  /** Client-side playback state; never part of TMDB catalogue responses. */
+  watchProgress?: MovieWatchProgress;
   providerId: string;
   externalId: string;
   title: string;
