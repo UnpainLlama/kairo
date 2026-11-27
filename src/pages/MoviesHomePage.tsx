@@ -118,7 +118,7 @@ function HomeContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
   const [refresh, setRefresh] = useState(0);
-  const { accountId, resolved: accountResolved, error: accountError } = useAccountScope();
+  const { accountId, resolved: accountResolved, error: accountError, retry: retryAccount } = useAccountScope();
   const [continueWatching, setContinueWatching] = useState<MovieSummary[]>([]);
   const [progressLoading, setProgressLoading] = useState(true);
   const [progressError, setProgressError] = useState('');
@@ -186,7 +186,7 @@ function HomeContent() {
       <div className="nf-rows">
         {progressLoading && <RowSkeleton title="Continue Watching" />}
         {!progressLoading && continueWatching.length > 0 && <MovieRail title="Continue Watching" items={continueWatching} to="/movies/library" />}
-        {progressError && <p className="nf-detail-note" role="status">{progressError} <button type="button" onClick={() => setProgressRetry(value => value + 1)}>Retry</button></p>}
+        {progressError && <p className="nf-detail-note" role="status">{progressError} <button type="button" onClick={() => accountError ? retryAccount() : setProgressRetry(value => value + 1)}>Retry</button></p>}
         {loading && ['Top 10 Movies This Week', 'Popular Movies', 'Top Rated'].map(label => <RowSkeleton key={label} title={label} />)}
         {!loading && (
           <>
