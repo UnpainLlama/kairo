@@ -3,17 +3,25 @@ import { Link } from 'react-router-dom';
 import { useAccountScope } from '../hooks/useAccountScope';
 import { apiGet } from '../lib/api';
 import { readMovieLibrary } from '../lib/movieLibraryStorage';
-import type { MovieDetail, MovieSummary } from '../lib/movies';
+import { readMovieProgress, writeMovieProgress } from '../lib/movieProgressStorage';
+import type { MovieDetail, MovieProgressEntry, MovieSummary, MovieWatchProgress } from '../lib/movies';
 import { MyListProvider, useMyList } from '../lib/useMyList';
 import { GridSkeleton, MovieGrid } from '../components/MovieCard';
 import { TitleModal } from '../components/TitleDetail';
 import '../styles-netflix.css';
 
-type Filter = 'all' | 'watchlist' | 'watched' | 'liked';
+type Filter = 'all' | 'continue' | 'watchlist' | 'watched' | 'liked';
 type RemoteEntry = { providerId: string; externalId: string };
+type RemoteProgress = RemoteEntry & {
+  currentTime: number;
+  duration: number;
+  completed: boolean | number;
+  updatedAt: number;
+};
 
 const FILTERS: { id: Filter; label: string }[] = [
   { id: 'all', label: 'All' },
+  { id: 'continue', label: 'Continue Watching' },
   { id: 'watchlist', label: 'My List' },
   { id: 'watched', label: 'Watched' },
   { id: 'liked', label: 'Liked' },
@@ -28,12 +36,35 @@ function summaryOf(movie: MovieDetail): MovieSummary {
   };
 }
 
-async function loadRemoteMovies(items: RemoteEntry[], signal: AbortSignal): Promise<{ movies: MovieSummary[]; missing: number }> {
-  const refs = items.filter(item => item.providerId === 'tmdb' && /^\d{1,12}$/.test(item.externalId)).slice(0, 100);
+function progressOf(row: RemoteProgress): MovieWatchProgress | null {
+  const currentTime = Number(row.currentTime);
+  const duration = Number(row.duration);
+  const updatedAt = Number(row.updatedAt);
+  if (!Number.isFinite(currentTime) || currentTime < 0 || !Number.isFinite(duration) || duration <= 0 || !Number.isFinite(updatedAt)) return null;
+  const completed = row.completed === true || Number(row.completed) === 1;
+  return { currentTime: completed ? duration : Math.min(currentTime, duration), duration, completed, updatedAt };
+}
+
+function identity(entry: RemoteEntry): string {
+  return entry.providerId + ':' + entry.externalId;
+}
+
+async function loadRemoteMovies(items: RemoteEntry[], signal: AbortSignal, cached: MovieProgressEntry[]): Promise<{ movies: MovieSummary[]; missing: number }> {
+  const unique = new Map<string, RemoteEntry>();
+  items.filter(item => item.providerId === 'tmdb' && /^\d{1,12}$/.test(item.externalId)).forEach(item => unique.set(identity(item), item));
+  const refs = [...unique.values()].slice(0, 100);
+  const cachedById = new Map(cached.map(item => [identity(item), item]));
   const movies: MovieSummary[] = [];
   for (let offset = 0; offset < refs.length; offset += 8) {
-    const loaded = await Promise.all(refs.slice(offset, offset + 8).map(ref =>
-      apiGet<MovieDetail>('/movies/' + encodeURIComponent(ref.externalId), signal).then(summaryOf).catch(() => null)));
+    const loaded = await Promise.all(refs.slice(offset, offset + 8).map(async ref => {
+      const saved = cachedById.get(identity(ref));
+      if (saved) return saved;
+      try {
+        return summaryOf(await apiGet<MovieDetail>('/movies/' + encodeURIComponent(ref.externalId), signal));
+      } catch {
+        return null;
+      }
+    }));
     movies.push(...loaded.filter((movie): movie is MovieSummary => movie !== null));
     if (signal.aborted) break;
   }
@@ -54,33 +85,98 @@ function LibraryContent() {
     setMovies([]);
     setLoading(true);
     setLoadError('');
-    if (!accountId) {
-      setMovies(readMovieLibrary(null));
-      setLoading(false);
-      return () => controller.abort();
-    }
-    fetch('/api/v1/me/movies/library', { credentials: 'same-origin', headers: { Accept: 'application/json' }, cache: 'no-store' })
-      .then(async response => {
-        const payload = await response.json().catch(() => null);
-        if (!response.ok || !payload?.success || !Array.isArray(payload?.data?.items)) throw new Error(payload?.error?.message ?? 'Could not load your list.');
-        return loadRemoteMovies(payload.data.items as RemoteEntry[], controller.signal);
-      })
-      .then(result => {
+
+    const load = async () => {
+      try {
+        if (!accountId) {
+          const saved = readMovieLibrary(null);
+          const progress = readMovieProgress(null);
+          const merged = new Map<string, MovieSummary>();
+          saved.forEach(movie => merged.set(identity(movie), movie));
+          progress.forEach(entry => {
+            const previous = merged.get(identity(entry));
+            merged.set(identity(entry), { ...(previous ?? entry), watchProgress: entry.watchProgress });
+          });
+          if (!controller.signal.aborted) setMovies([...merged.values()]);
+          return;
+        }
+
+        const [libraryResponse, progressResponse] = await Promise.all([
+          fetch('/api/v1/me/movies/library', { credentials: 'same-origin', headers: { Accept: 'application/json' }, cache: 'no-store', signal: controller.signal }),
+          fetch('/api/v1/me/movies/progress', { credentials: 'same-origin', headers: { Accept: 'application/json' }, cache: 'no-store', signal: controller.signal }),
+        ]);
+        const libraryPayload = await libraryResponse.json().catch(() => null);
+        if (!libraryResponse.ok || !libraryPayload?.success || !Array.isArray(libraryPayload?.data?.items)) {
+          throw new Error(libraryPayload?.error?.message ?? 'Could not load your Movies list.');
+        }
+
+        const localProgress = readMovieProgress(accountId);
+        let progressRows: RemoteProgress[] = [];
+        let partialProgressError = '';
+        if (progressResponse.ok) {
+          const payload = await progressResponse.json().catch(() => null);
+          if (payload?.success && Array.isArray(payload?.data?.items)) {
+            progressRows = (payload.data.items as RemoteProgress[]).filter(row => row.providerId === 'tmdb' && /^\d{1,12}$/.test(row.externalId));
+          } else {
+            partialProgressError = 'Playback progress could not be refreshed. Showing locally cached progress.';
+          }
+        } else {
+          partialProgressError = 'Playback progress could not be refreshed. Showing locally cached progress.';
+        }
+
+        const progressById = new Map(localProgress.map(entry => [identity(entry), entry]));
+        progressRows.forEach(row => {
+          const id = identity(row);
+          const progress = progressOf(row);
+          if (!progress) return;
+          const previous = progressById.get(id);
+          if (!previous || previous.watchProgress.updatedAt <= progress.updatedAt) {
+            const cached = previous;
+            if (cached) {
+              const updated = { ...cached, watchProgress: progress };
+              progressById.set(id, updated);
+              writeMovieProgress(accountId, cached, progress);
+            }
+          }
+        });
+        const refs = [
+          ...(libraryPayload.data.items as RemoteEntry[]),
+          ...progressRows,
+          ...localProgress,
+        ];
+        const result = await loadRemoteMovies(refs, controller.signal, [...progressById.values()]);
         if (controller.signal.aborted) return;
-        setMovies(result.movies);
-        if (result.missing > 0) setLoadError(result.missing + ' saved title(s) could not be loaded right now. They are still saved to your account.');
-      })
-      .catch(caught => { if (!controller.signal.aborted) setLoadError(caught instanceof Error ? caught.message : 'Could not load your list.'); })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+        const enriched = result.movies.map(movie => {
+          const progress = progressById.get(identity(movie));
+          return progress ? { ...movie, watchProgress: progress.watchProgress } : movie;
+        });
+        setMovies(enriched);
+        const messages = [
+          result.missing > 0 ? result.missing + ' saved or watched title(s) could not be loaded right now.' : '',
+          partialProgressError,
+        ].filter(Boolean);
+        if (messages.length) setLoadError(messages.join(' '));
+      } catch (caught) {
+        if (!controller.signal.aborted) setLoadError(caught instanceof Error ? caught.message : 'Could not load your Movies list.');
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    };
+    void load();
     return () => controller.abort();
   }, [accountId, resolved, error]);
 
-  const saved = useMemo(() => movies.filter(movie => { const state = list.get(movie); return state.status !== null || state.isFavorite; }), [movies, list]);
+  const saved = useMemo(() => movies.filter(movie => {
+    const state = list.get(movie);
+    return state.status !== null || state.isFavorite || Boolean(movie.watchProgress);
+  }), [movies, list]);
   const visible = useMemo(() => saved.filter(movie => {
     const state = list.get(movie);
+    const progress = movie.watchProgress;
     if (filter === 'watchlist') return state.status === 'watchlist';
-    if (filter === 'watched') return state.status === 'watched';
+    if (filter === 'watched') return state.status === 'watched' || progress?.completed === true;
     if (filter === 'liked') return state.isFavorite;
+    if (filter === 'continue') return Boolean(progress && !progress.completed && progress.currentTime >= 5);
     return true;
   }), [saved, filter, list]);
 
@@ -106,8 +202,8 @@ function LibraryContent() {
       {resolved && !error && !loading && visible.length > 0 && <MovieGrid items={visible} onRemove={movie => void list.update(movie, { status: null, isFavorite: false })} />}
       {resolved && !error && !loading && visible.length === 0 && (
         <div className="nf-message">
-          <h2>{saved.length === 0 ? "You haven't added any titles to your list yet." : 'Nothing here yet.'}</h2>
-          <p>{saved.length === 0 ? 'Add titles with the + button and they will show up here.' : 'Pick another tab, or save more titles.'}</p>
+          <h2>{saved.length === 0 ? "You haven't added or watched any titles yet." : 'Nothing here yet.'}</h2>
+          <p>{saved.length === 0 ? 'Add titles to My List or start watching a movie to keep your progress here.' : 'Pick another filter, or browse more titles.'}</p>
           <Link to="/movies" className="nf-btn play">Browse titles</Link>
         </div>
       )}
