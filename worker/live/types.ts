@@ -3,7 +3,7 @@ import type { Attribution } from '../metadata/types';
 import type { Ref } from './ids';
 import type { SortKey } from '../lib/validation';
 
-export type SourceId = 'anilist' | 'jikan' | 'hianime';
+export type SourceId = 'mal' | 'anilist' | 'jikan' | 'hianime';
 export type ListKind = 'featured' | 'trending' | 'latest';
 
 export type Card = {
@@ -64,8 +64,10 @@ export type LiveEnv = {
   APP_ENV?: string;
   /** "live" (default) serves the configured live providers; "db" keeps the original D1 routes. */
   CATALOG_SOURCE?: string;
-  /** Catalogue-provider priority, comma-separated. */
+  /** Kept for compatibility; live anime catalogue is pinned to official MyAnimeList API v2. */
   LIVE_PROVIDERS?: string;
+  /** MyAnimeList API v2 Client ID; configure as a Cloudflare Worker secret. */
+  MAL_CLIENT_ID?: string;
   /** Independent episode-provider priority. Default "jikan". */
   EPISODE_PROVIDERS?: string;
   /** HiAnime mirror base URL; must be one of the adapter's fixed HTTPS allowlist. */
