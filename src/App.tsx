@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Bookmark, CalendarDays, ChevronRight, Clapperboard, Compass, Flame, History, ListVideo,
+  Bookmark, CalendarDays, ChevronRight, Clapperboard, Compass, Flame, History, Users,
   LogIn, LogOut, PlayCircle, Search, Settings, Tv, UserRound, Youtube,
   type LucideIcon,
 } from 'lucide-react';
@@ -40,7 +40,7 @@ const navItems: NavItem[] = [
 const youtubeNavItems: NavItem[] = [
   { to: '/youtube', label: 'Home', icon: PlayCircle, end: true },
   { to: '/youtube/search', label: 'Search', icon: Search },
-  { to: '/youtube/channels', label: 'Channels', icon: ListVideo },
+  { to: '/youtube/channels', label: 'Creators', icon: Users },
   { to: '/youtube/watch-later', label: 'Watch Later', icon: Bookmark },
   { to: '/youtube/history', label: 'History', icon: History },
 ];

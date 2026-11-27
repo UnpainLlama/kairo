@@ -2974,3 +2974,87 @@ img { display: block; }
     transition: none !important;
   }
 }
+
+
+
+/* YouTube discovery redesign — the shared Kairo header, search field and section menu
+   remain the only top navigation. This surface deliberately has no second brand bar. */
+.yt-home-redesign { width: min(100%, 1680px); }
+.yt-home-redesign .yt-home-heading { align-items: center; margin-bottom: 17px; }
+.yt-home-redesign .yt-home-title-block h1 { color: var(--text); font-size: clamp(29px, 3vw, 39px); font-weight: 820; letter-spacing: -1.2px; }
+.yt-home-redesign .yt-home-title-block p { max-width: 650px; margin-top: 6px; color: var(--muted); font-size: 13px; line-height: 1.55; }
+.yt-home-redesign .yt-eyebrow { margin-bottom: 7px; }
+.yt-home-filter-chips { position: sticky; top: 62px; z-index: 25; display: flex; align-items: center; gap: 8px; overflow-x: auto; margin: 0 -8px 22px; padding: 9px 8px; background: color-mix(in srgb, var(--bg) 94%, transparent); scrollbar-width: none; }
+.yt-home-filter-chips::-webkit-scrollbar { display: none; }
+.yt-home-filter-chips button, .yt-home-filter-chips a { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; min-height: 34px; padding: 0 13px; border: 1px solid transparent; border-radius: 8px; background: var(--surface-2); color: var(--text); font-size: 12px; font-weight: 650; white-space: nowrap; transition: background .15s, color .15s; }
+.yt-home-filter-chips button:hover, .yt-home-filter-chips a:hover { background: var(--surface-3); }
+.yt-home-filter-chips button.active { background: var(--text); color: var(--bg); }
+.yt-filter-divider { flex: 0 0 1px; width: 1px; height: 21px; margin: 0 3px; background: var(--line-2); }
+.yt-visited-creators { margin: 0 0 25px; padding: 15px 0 3px; border-top: 1px solid var(--line); }
+.yt-visited-creators .yt-section-heading { margin-bottom: 12px; }
+.yt-visited-creator-strip { display: flex; align-items: flex-start; gap: 20px; overflow-x: auto; padding: 3px 2px 13px; scrollbar-width: thin; }
+.yt-visited-creator { display: grid; flex: 0 0 78px; justify-items: center; gap: 8px; min-width: 0; color: var(--muted); text-align: center; }
+.yt-visited-creator > span { display: grid; width: 58px; height: 58px; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: var(--surface-2); color: var(--text); font-size: 20px; font-weight: 800; transition: border-color .15s, transform .15s; }
+.yt-visited-creator:hover > span { transform: translateY(-2px); border-color: var(--accent); }
+.yt-visited-creator small { width: 100%; overflow: hidden; font-size: 10px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.yt-recommendations-section { margin-top: 23px; }
+.yt-recommendations-section .yt-home-section-heading { margin-bottom: 17px; }
+.yt-feed-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 30px 18px; }
+.yt-recommendation-card { min-width: 0; }
+.yt-recommendation-reason { display: block; overflow: hidden; margin: 0 0 8px 2px; color: var(--muted); font-size: 10px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.yt-recommendation-card .yt-video-thumb { border-radius: 11px; }
+.yt-start-here { display: flex; align-items: center; gap: 13px; margin: 0 0 21px; padding: 15px 17px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); color: var(--muted); }
+.yt-start-here > svg { flex: none; color: var(--accent); }
+.yt-start-here > div { flex: 1; min-width: 0; }
+.yt-start-here b { color: var(--text); font-size: 12px; }
+.yt-start-here p { margin-top: 3px; font-size: 11px; line-height: 1.5; }
+.yt-shorts-section { margin: 7px 0 29px; }
+.yt-shorts-section .yt-section-heading { margin-bottom: 15px; }
+.yt-shorts-strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 13px; }
+.yt-short-card { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.yt-short-card > img, .yt-short-placeholder { display: grid; width: 100%; aspect-ratio: 9 / 12; place-items: center; object-fit: cover; background: var(--surface-2); color: var(--muted); }
+.yt-short-copy { display: grid; gap: 5px; padding: 9px 10px 11px; }
+.yt-short-copy b { display: -webkit-box; overflow: hidden; color: var(--text); font-size: 11px; font-weight: 750; line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.yt-short-copy small { overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.yt-short-card:hover { border-color: var(--line-2); transform: translateY(-2px); }
+.yt-refresh-spin { animation: yt-refresh-turn .8s linear infinite; }
+@keyframes yt-refresh-turn { to { transform: rotate(360deg); } }
+
+.yt-creators-page { max-width: 1420px; }
+.yt-creator-summary { display: flex; align-items: center; gap: 9px; margin: -8px 0 19px; color: var(--muted); font-size: 12px; }
+.yt-creator-summary svg { color: var(--accent); }
+.yt-creator-summary b { color: var(--text); }
+.yt-creator-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(285px, 1fr)); gap: 13px; }
+.yt-creator-card { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 12px; align-items: start; padding: 16px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); }
+.yt-creator-avatar { display: grid; width: 54px; height: 54px; place-items: center; border: 1px solid var(--line-2); border-radius: 50%; background: var(--surface-2); color: var(--text); font-size: 20px; font-weight: 800; }
+.yt-creator-copy { min-width: 0; }
+.yt-creator-copy h2 { overflow: hidden; color: var(--text); font-size: 13px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.yt-creator-copy p { margin-top: 4px; color: var(--muted); font-size: 11px; }
+.yt-creator-copy small { display: flex; align-items: center; gap: 5px; margin-top: 7px; color: var(--dim); font-size: 10px; }
+.yt-creator-latest { display: block; overflow: hidden; margin-top: 7px; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.yt-creator-open { display: inline-flex; grid-column: 2; align-items: center; gap: 5px; width: fit-content; margin-top: 4px; color: var(--muted); font-size: 11px; font-weight: 750; }
+.yt-creator-open:hover { color: var(--accent); }
+.yt-open-channel { grid-column: auto; }
+@media (max-width: 1250px) {
+  .yt-feed-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .yt-shorts-strip { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+@media (max-width: 960px) {
+  .yt-feed-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 25px 14px; }
+  .yt-shorts-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .yt-home-filter-chips { top: 54px; }
+}
+@media (max-width: 720px) {
+  .yt-home-redesign .yt-home-heading { align-items: flex-start; flex-direction: column; }
+  .yt-heading-actions { width: 100%; }
+  .yt-start-here { align-items: flex-start; flex-wrap: wrap; }
+  .yt-start-here > div { flex-basis: calc(100% - 40px); }
+  .yt-start-here .yt-button { margin-left: 31px; }
+}
+@media (max-width: 560px) {
+  .yt-feed-grid { grid-template-columns: 1fr; gap: 23px; }
+  .yt-home-filter-chips { margin-inline: -4px; }
+  .yt-shorts-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .yt-shorts-strip .yt-short-card:nth-child(n+5) { display: none; }
+  .yt-creator-grid { grid-template-columns: 1fr; }
+}
