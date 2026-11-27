@@ -58,7 +58,7 @@ const youtubeNavItems: NavItem[] = [
 ];
 
 const moviesNavItems: NavItem[] = [
-  { to: '/movies', label: 'Home', icon: Film, end: true },
+  { to: '/movies', label: 'Home', icon: Clapperboard, end: true },
   { to: '/movies/browse/trending', label: 'Trending', icon: Flame },
   { to: '/movies/browse/popular', label: 'Discover', icon: Compass },
   { to: '/movies/search', label: 'Search', icon: Search },
