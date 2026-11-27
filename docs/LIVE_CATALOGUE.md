@@ -41,7 +41,7 @@ The `trending` sort is intentionally mapped to MAL popularity within a season. I
 
 ## Configuration
 
-`wrangler.jsonc` sets `LIVE_PROVIDERS=mal` in development, staging and production configuration. The live catalogue is pinned to MAL; old provider names in the compatibility variable do not activate them.
+Development and staging Wrangler vars set `LIVE_PROVIDERS=mal`. The production Wrangler block is intentionally unchanged pending the owner's separate production approval. The Worker catalogue factory is pinned to MAL in live mode; old provider names in the compatibility variable do not activate them. Do not deploy production until its MAL Client ID secret and API agreement review are complete.
 
 Required secrets:
 
