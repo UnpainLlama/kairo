@@ -30,7 +30,9 @@ interface Bindings {
   YOUTUBE_DATA_API_KEY?: string;
   /** Explicit development/staging-only toggle for the unofficial YouTube.js experiment. */
   YOUTUBE_JS_EXPERIMENT_ENABLED?: string;
-  /** Server-side URL for the separate experimental YouTube.js gateway. */
+  /** Private Cloudflare Service Binding to the experimental YouTube.js gateway (staging only). */
+  YOUTUBE_JS_GATEWAY?: { fetch(request: Request): Promise<Response> };
+  /** Local-development URL for the separate experimental YouTube.js gateway. */
   YOUTUBE_JS_GATEWAY_URL?: string;
   /** Shared server-only bearer token for the experimental gateway. */
   YOUTUBE_JS_GATEWAY_TOKEN?: string;
