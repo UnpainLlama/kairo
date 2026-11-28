@@ -106,6 +106,14 @@ jobs:
             kill "$(cat "$RUNNER_TEMP/youtubejs-gateway.pid")" 2>/dev/null || true
           fi
 
+      - name: Upload live search comparison report
+        if: always() && hashFiles('services/youtubejs-gateway/youtubejs-live-smoke-report.json') != ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: youtubejs-live-search-report
+          path: services/youtubejs-gateway/youtubejs-live-smoke-report.json
+          retention-days: 14
+
       - name: Upload gateway logs on failure
         if: failure()
         uses: actions/upload-artifact@v6
