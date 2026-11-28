@@ -115,6 +115,37 @@ describe('experimental YouTube.js proxy', () => {
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 
+  it('uses the private Cloudflare Service Binding in staging', async () => {
+    const serviceFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      data: { videos: [{
+        videoId: 'abcdefghijk',
+        title: 'Astronomy basics',
+        thumbnailUrl: 'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg',
+        channelTitle: 'Science channel',
+      }] },
+    }), { status: 200 }));
+    const externalFetch = vi.fn();
+    vi.stubGlobal('fetch', externalFetch);
+    const { handler, context } = makeHarness({
+      env: { YOUTUBE_JS_GATEWAY: { fetch: serviceFetch }, YOUTUBE_JS_GATEWAY_URL: undefined },
+    });
+
+    const response = await handler(context);
+    const payload = await response.json() as any;
+    expect(response.status).toBe(200);
+    expect(payload.data.videos).toHaveLength(1);
+    expect(payload.meta).toMatchObject({ provider: 'youtube.js', experimental: true });
+    expect(serviceFetch).toHaveBeenCalledOnce();
+    expect(externalFetch).not.toHaveBeenCalled();
+
+    const [upstreamRequest] = serviceFetch.mock.calls[0] as [Request];
+    expect(new URL(upstreamRequest.url).hostname).toBe('kairo-youtubejs-gateway.internal');
+    expect(new URL(upstreamRequest.url).pathname).toBe('/api/search');
+    expect(new URL(upstreamRequest.url).searchParams.get('q')).toBe('astronomy');
+    expect(upstreamRequest.headers.get('Authorization')).toBe('Bearer ' + 'a'.repeat(32));
+  });
+
   it('rejects non-YouTube thumbnails returned by the gateway', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       success: true,
