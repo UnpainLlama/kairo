@@ -30,7 +30,9 @@ async function requestJson(url, headers, label) {
       const response = await fetch(url, { headers, signal: controller.signal });
       const payload = await response.json().catch(() => null);
       if (response.ok) return payload;
-      lastError = new Error(`${label} returned HTTP ${response.status} (attempt ${attempt}/3).`);
+      const errorCode = typeof payload?.error?.code === 'string' ? payload.error.code : 'UNKNOWN_ERROR';
+      const errorMessage = typeof payload?.error?.message === 'string' ? payload.error.message : '';
+      lastError = new Error(`${label} returned HTTP ${response.status} [${errorCode}]${errorMessage ? ': ' + errorMessage : ''} (attempt ${attempt}/3).`);
       if (response.status !== 429 && response.status < 500) break;
     } catch (error) {
       lastError = error;
