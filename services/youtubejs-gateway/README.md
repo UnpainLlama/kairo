@@ -19,16 +19,18 @@ Node.js 22 and npm are required.
 ```bash
 cd services/youtubejs-gateway
 npm install
+npm run typecheck
 npx wrangler dev --config wrangler.jsonc
 ```
 
 Set a local secret in a git-ignored `.dev.vars` file:
 
 ```text
+APP_ENV=development
 GATEWAY_SECRET=replace-with-a-long-random-value
 ```
 
-Set `APP_ENV=development` in local vars (already configured in the checked-in Wrangler file).
+Local `.dev.vars` sets `APP_ENV=development`; the checked-in Wrangler default is deliberately disabled so an accidental non-staging deploy cannot serve searches.
 
 ## Staging setup
 
