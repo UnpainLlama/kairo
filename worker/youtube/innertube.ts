@@ -2,6 +2,7 @@ type InnerTubeBindings = {
   DB: D1Database;
   APP_ENV?: string;
   YOUTUBE_JS_EXPERIMENT_ENABLED?: string;
+  YOUTUBE_JS_GATEWAY?: { fetch(request: Request): Promise<Response> };
   YOUTUBE_JS_GATEWAY_URL?: string;
   YOUTUBE_JS_GATEWAY_TOKEN?: string;
 };
@@ -140,7 +141,11 @@ export function registerYouTubeInnerTubeRoutes(app: any): void {
     }
 
     const token = c.env.YOUTUBE_JS_GATEWAY_TOKEN?.trim();
-    const target = gatewayUrl(c);
+    // Staging uses a private Cloudflare Service Binding; local development uses localhost HTTP.
+    const serviceBinding = environment === 'staging' ? c.env.YOUTUBE_JS_GATEWAY : undefined;
+    const target = serviceBinding
+      ? new URL('https://kairo-youtubejs-gateway.internal')
+      : gatewayUrl(c);
     if (!token || token.length < 24 || !target) {
       return fail(c, 503, 'YOUTUBE_JS_GATEWAY_NOT_CONFIGURED', 'Experimental YouTube discovery is not configured.');
     }
@@ -160,14 +165,17 @@ export function registerYouTubeInnerTubeRoutes(app: any): void {
     const timeout = setTimeout(() => controller.abort(), 9000);
     try {
       // Do not forward the browser's Kairo session cookie or any client-provided headers.
-      const response = await fetch(target.toString(), {
+      const requestInit: RequestInit = {
         method: 'GET',
         headers: {
           Accept: 'application/json',
           Authorization: 'Bearer ' + token,
         },
         signal: controller.signal,
-      });
+      };
+      const response = serviceBinding
+        ? await serviceBinding.fetch(new Request(target.toString(), requestInit))
+        : await fetch(target.toString(), requestInit);
       const payload = await response.json().catch(() => null) as {
         success?: unknown;
         data?: { videos?: unknown };
