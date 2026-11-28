@@ -57,6 +57,15 @@ describe('experimental YouTube.js proxy', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('fails closed when the deployment environment is missing', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const { handler, context } = makeHarness({ env: { APP_ENV: undefined } });
+    const response = await handler(context);
+    expect(response.status).toBe(404);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('validates search input before reaching the gateway', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
