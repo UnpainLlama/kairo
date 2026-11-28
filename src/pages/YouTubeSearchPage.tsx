@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowUpRight, Filter, Search, X, Youtube } from 'lucide-react';
+import { ArrowUpRight, Filter, X, Youtube } from 'lucide-react';
 import YouTubeVideoCard, { type YouTubeCardVideo } from '../components/YouTubeVideoCard';
 import { useAccountScope } from '../hooks/useAccountScope';
 import { readGuestYouTubeHistory } from '../lib/youtubeLocalLibrary';
@@ -83,7 +83,6 @@ export default function YouTubeSearchPage() {
   const [channels, setChannels] = useState<ChannelResult[]>([]);
   const [watchedIds, setWatchedIds] = useState<Set<string>>(new Set());
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
-  const [totalResults, setTotalResults] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [searched, setSearched] = useState(false);
@@ -110,7 +109,6 @@ export default function YouTubeSearchPage() {
       setVideos([]);
       setChannels([]);
       setNextPageToken(null);
-      setTotalResults(null);
     }
     setError(null);
     setSearched(true);
@@ -145,7 +143,6 @@ export default function YouTubeSearchPage() {
           return [...current, ...pageVideos.filter(video => !seen.has(video.videoId))];
         });
         setNextPageToken(payload.data?.nextPageToken ?? null);
-        setTotalResults(typeof payload.data?.totalResults === 'number' ? payload.data.totalResults : null);
       }
     } catch (caught) {
       if (currentRequest !== requestId.current) return;
