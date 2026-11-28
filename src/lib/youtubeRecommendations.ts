@@ -36,6 +36,7 @@ export type RecommendationImpressions = Record<string, number>;
 
 export type RecommendationTuning = {
   shares: { subscriptions: number; similar: number; new: number; throwback: number; rewatch: number };
+  strictness: { similar: number; new: number; throwback: number };
   freshness: number;
   channelGap: number;
   newChannelCap: number;
@@ -59,6 +60,7 @@ export type RecommendedVideo = YouTubeCardVideo & {
 
 export const DEFAULT_RECOMMENDATION_TUNING: RecommendationTuning = {
   shares: { subscriptions: 29, similar: 29, new: 24, throwback: 14, rewatch: 4 },
+  strictness: { similar: 50, new: 50, throwback: 50 },
   freshness: 50,
   channelGap: 5,
   newChannelCap: 2,
@@ -314,13 +316,14 @@ export function buildRecommendationFeed(input: {
 
     if (oldCount > 0 && recentCount === 0) {
       const score = 0.45 * (oldCount / Math.max(1, allChannels.get(channel) ?? 1)) + 0.35 * olderFit + 0.2 * fresh;
-      add(video, 'throwback', score, 'You used to watch ' + video.channelTitle);
+      const floor = 0.7 + 0.6 * tuning.strictness.throwback / 100;
+      if (score >= 0.12 * floor) add(video, 'throwback', score, 'You used to watch ' + video.channelTitle);
       continue;
     }
 
     if (knownCount === 0) {
       const score = recentFit + 0.05 * fresh;
-      if (score >= 0.3) {
+      if (score >= 0.3 * (0.7 + 0.6 * tuning.strictness.new / 100)) {
         const reason = candidate.seedTitle
           ? 'New channel for you · Because you watched ' + candidate.seedTitle.slice(0, 48)
           : 'New channel for you';
@@ -330,7 +333,7 @@ export function buildRecommendationFeed(input: {
     }
 
     const score = recentFit + 0.08 * channelFit + 0.04 * fresh;
-    if (score >= 0.15) {
+    if (score >= 0.15 * (0.7 + 0.6 * tuning.strictness.similar / 100)) {
       const reason = candidate.seedTitle
         ? 'Because you watched ' + candidate.seedTitle.slice(0, 55)
         : 'More from ' + video.channelTitle;
