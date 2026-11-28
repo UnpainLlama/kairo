@@ -89,7 +89,7 @@ function YouTubeLibrary({ kind }: { kind: LibraryKind }) {
           <h1>{title}</h1>
           <p>{kind === 'history' ? 'Pick up where you left off.' : 'Videos you have saved to watch later.'}</p>
         </div>
-        <Link to="/youtube" className="yt-button yt-button-quiet">YouTube Home <ArrowUpRight size={14} /></Link>
+        <Link to={kind === 'history' ? '/youtube/watch-later' : '/youtube/history'} className="yt-button yt-button-quiet">{kind === 'history' ? 'Watch Later' : 'History'} <ArrowUpRight size={14} /></Link>
       </header>
       {!resolved && !accountError && <div className="yt-loading" role="status">Checking your Kairo account…</div>}
       {accountError && <div className="yt-notice" role="alert">Could not verify your Kairo account. Your local library is locked to avoid mixing guest and account data. Reload after reconnecting.</div>}
