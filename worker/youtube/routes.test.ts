@@ -154,11 +154,14 @@ describe('YouTube viewing activity', () => {
     expect(historyWrite?.values).toEqual([
       'account-1', 'abcdefghijk', 'Example video', 'Example description',
       'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg', 'UC1234567890',
-      'Example channel', '2026-11-01T12:00:00.000Z', 120, expect.any(Number),
+      'Example channel', '2026-11-01T12:00:00.000Z', 120,
+      expect.any(Number), expect.any(Number), expect.any(Number),
     ]);
     const conflictUpdate = historyWrite?.sql.split('DO UPDATE SET')[1] ?? '';
     expect(conflictUpdate).not.toMatch(/progress_seconds|completed/);
-    expect(historyWrite?.sql).toContain('VALUES (?,?,?,?,?,?,?,?,?,0,0,?)');
+    expect(conflictUpdate).toContain('view_count=youtube_watch_history.view_count+1');
+    expect(conflictUpdate).toContain('last_viewed_at=excluded.last_viewed_at');
+    expect(historyWrite?.sql).toContain('VALUES (?,?,?,?,?,?,?,?,?,0,0,?,1,?,?)');
   });
 
   it('rejects cross-origin viewing events before touching account history', async () => {
