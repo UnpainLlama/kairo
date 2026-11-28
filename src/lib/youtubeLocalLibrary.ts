@@ -74,8 +74,15 @@ export function recordGuestYouTubeView(video: Omit<YouTubeLocalVideo, 'updatedAt
 
 export function saveGuestYouTubeProgress(video: Omit<YouTubeLocalVideo, 'updatedAt' | 'savedAt'>): void {
   const current = readList(HISTORY_KEY);
+  const previous = current.find((item) => item.videoId === video.videoId);
   const now = Date.now();
-  const next: YouTubeLocalVideo = { ...video, updatedAt: now };
+  const next: YouTubeLocalVideo = {
+    ...video,
+    viewCount: video.viewCount ?? previous?.viewCount,
+    firstViewedAt: video.firstViewedAt ?? previous?.firstViewedAt,
+    lastViewedAt: video.lastViewedAt ?? previous?.lastViewedAt,
+    updatedAt: now,
+  };
   writeList(HISTORY_KEY, [next, ...current.filter((item) => item.videoId !== video.videoId)]);
 }
 
