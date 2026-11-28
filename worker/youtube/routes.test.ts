@@ -133,6 +133,7 @@ function makeViewContext(statements: CapturedStatement[], origin = 'https://kair
 
 describe('YouTube viewing activity', () => {
   beforeEach(() => {
+    vi.mocked(findSessionUser).mockClear();
     vi.mocked(findSessionUser).mockResolvedValue({ id: 'account-1' } as any);
   });
 
