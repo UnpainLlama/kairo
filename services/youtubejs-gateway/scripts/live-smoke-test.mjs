@@ -1,15 +1,13 @@
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, writeFileSync } from 'node:fs';
 
-const gatewayUrl = (process.env.GATEWAY_URL || 'http://127.0.0.1:8787').replace(/\/+$/, '');
+const gatewayUrl = (process.env.GATEWAY_URL || 'http://127.0.0.1:8787').replace(/\\/+$/, '');
 const gatewaySecret = process.env.GATEWAY_SECRET;
-const kairoBaseUrl = process.env.KAIRO_BASE_URL?.replace(/\/+$/, '');
+const kairoBaseUrl = process.env.KAIRO_BASE_URL?.replace(/\\/+$/, '');
 const queries = ['astronomy', 'lofi music', 'typescript tutorial'];
 const videoIdPattern = /^[A-Za-z0-9_-]{11}$/;
 const allowedHosts = ['i.ytimg.com', 'ytimg.com', 'ggpht.com'];
 
-if (!gatewaySecret) {
-  throw new Error('GATEWAY_SECRET is required.');
-}
+if (!gatewaySecret) throw new Error('GATEWAY_SECRET is required.');
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -68,26 +66,68 @@ for (const query of queries) {
   console.log(`PASS gateway search "${query}": ${videos.length} videos; first result: ${videos[0].title}`);
 }
 
+const comparisons = [];
 if (kairoBaseUrl) {
   const proxyUrl = new URL(kairoBaseUrl + '/api/v1/youtube/innertube/search');
   proxyUrl.searchParams.set('q', 'astronomy');
   proxyUrl.searchParams.set('limit', '10');
-  const payload = await requestJson(proxyUrl, { Accept: 'application/json' }, 'Kairo staging proxy');
-  assert(payload?.success === true, 'Kairo proxy did not return success.');
-  assert(payload?.meta?.provider === 'youtube.js', 'Kairo proxy did not identify youtube.js as its provider.');
-  assert(Array.isArray(payload?.data?.videos) && payload.data.videos.length > 0, 'Kairo proxy returned no videos.');
-  reports.push({ query: 'Kairo proxy: astronomy', count: payload.data.videos.length });
-  console.log(`PASS Kairo proxy: ${payload.data.videos.length} videos returned from youtube.js`);
+  const experimental = await requestJson(proxyUrl, { Accept: 'application/json' }, 'Kairo YouTube.js proxy');
+  assert(experimental?.success === true, 'Kairo proxy did not return success.');
+  assert(experimental?.meta?.provider === 'youtube.js', 'Kairo proxy did not identify youtube.js as its provider.');
+  const experimentalVideos = experimental?.data?.videos;
+  assert(Array.isArray(experimentalVideos) && experimentalVideos.length > 0, 'Kairo proxy returned no videos.');
+  reports.push({ query: 'Kairo proxy: astronomy', count: experimentalVideos.length });
+  console.log(`PASS Kairo proxy: ${experimentalVideos.length} videos returned from youtube.js`);
+
+  // One official Data API search is used as a reference point; this consumes normal Data API quota.
+  try {
+    const officialUrl = new URL(kairoBaseUrl + '/api/v1/youtube/videos/search');
+    officialUrl.searchParams.set('q', 'astronomy');
+    officialUrl.searchParams.set('order', 'relevance');
+    officialUrl.searchParams.set('duration', 'any');
+    const official = await requestJson(officialUrl, { Accept: 'application/json' }, 'Official YouTube Data API reference search');
+    const officialVideos = official?.data?.videos;
+    assert(official?.success === true && Array.isArray(officialVideos), 'Official API reference search returned an unexpected payload.');
+    const officialIds = new Set(officialVideos.map((video) => video.videoId).filter((id) => typeof id === 'string'));
+    const experimentalIds = new Set(experimentalVideos.map((video) => video.videoId));
+    const overlap = [...experimentalIds].filter((id) => officialIds.has(id)).length;
+    comparisons.push({
+      query: 'astronomy',
+      youtubeJsCount: experimentalVideos.length,
+      officialCount: officialVideos.length,
+      overlap,
+      youtubeJsTop: experimentalVideos.slice(0, 5).map((video) => video.title),
+      officialTop: officialVideos.slice(0, 5).map((video) => video.title),
+    });
+    console.log(`REFERENCE comparison astronomy: YouTube.js ${experimentalVideos.length}, official API ${officialVideos.length}, shared IDs ${overlap}`);
+  } catch (error) {
+    comparisons.push({ query: 'astronomy', warning: error instanceof Error ? error.message : String(error) });
+    console.log('WARNING official Data API comparison unavailable: ' + (error instanceof Error ? error.message : String(error)));
+  }
 }
+
+const report = { generatedAt: new Date().toISOString(), reports, comparisons };
+writeFileSync('youtubejs-live-smoke-report.json', JSON.stringify(report, null, 2) + '\\n');
 
 const summary = [
   '### YouTube.js live search smoke test',
   '',
   ...reports.map((item) => `- PASS — ${item.query}: ${item.count} videos${item.firstTitle ? ` (first: ${item.firstTitle})` : ''}`),
   '',
+  ...comparisons.map((item) => item.warning
+    ? `- WARNING — Official API comparison unavailable: ${item.warning}`
+    : `- Reference comparison — astronomy: YouTube.js ${item.youtubeJsCount}, official API ${item.officialCount}, shared video IDs ${item.overlap}`),
+  '',
+  ...comparisons.filter((item) => item.youtubeJsTop).flatMap((item) => [
+    '**YouTube.js top five:**',
+    ...item.youtubeJsTop.map((title, index) => `${index + 1}. ${title}`),
+    '**Official Data API top five:**',
+    ...item.officialTop.map((title, index) => `${index + 1}. ${title}`),
+    '',
+  ]),
   'Validated video IDs, titles, canonical watch URLs, duplicate IDs, and allowed thumbnail hosts.',
   '',
-].join('\n');
+].join('\\n');
 
 if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
 console.log('All YouTube.js live smoke tests passed.');
