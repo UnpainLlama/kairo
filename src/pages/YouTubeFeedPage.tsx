@@ -3,7 +3,15 @@ import { Link } from 'react-router-dom';
 import YouTubeVideoCard, { type YouTubeCardVideo } from '../components/YouTubeVideoCard';
 import { useAccountScope } from '../hooks/useAccountScope';
 import { readGuestYouTubeHistory, type YouTubeLocalVideo } from '../lib/youtubeLocalLibrary';
-import { buildRecommendationFeed, type RecommendationCandidate, type RecommendedVideo } from '../lib/youtubeRecommendations';
+import {
+  buildRecommendationFeed,
+  DEFAULT_RECOMMENDATION_TUNING,
+  type RecommendationCandidate,
+  type RecommendationFeedback,
+  type RecommendationTopic,
+  type RecommendationTuning,
+  type RecommendedVideo,
+} from '../lib/youtubeRecommendations';
 
 type HistoryVideo = YouTubeLocalVideo & { updatedAt: number };
 type DiscoverySeed = { query: string; channelId: string | null; channelTitle: string; reason: string };
@@ -102,37 +110,109 @@ export default function YouTubeFeedPage() {
 
     try {
       if (accountError) throw new Error('Kairo could not verify your account. Reconnect and reload to use your personal recommendations.');
-      const recentHistory = await readWatchHistory(accountId);
+      let recentHistory: HistoryVideo[];
+      let candidates: RecommendationCandidate[] = [];
+      let topics: RecommendationTopic[] = [];
+      let feedback: RecommendationFeedback = {};
+      let impressions: Record<string, number> = {};
+      let tuning: RecommendationTuning = DEFAULT_RECOMMENDATION_TUNING;
+
+      if (accountId) {
+        const response = await fetch('/api/v1/youtube/recommendations', {
+          credentials: 'same-origin',
+          cache: 'no-store',
+          headers: { Accept: 'application/json' },
+          signal,
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.success) {
+          throw new Error(payload?.error?.message ?? 'Your recommendations could not be loaded.');
+        }
+        const data = payload.data ?? {};
+        recentHistory = Array.isArray(data.history) ? data.history as HistoryVideo[] : [];
+        candidates = (Array.isArray(data.candidates) ? data.candidates : []).map((item: Record<string, unknown>) => ({
+          video: {
+            videoId: String(item.videoId ?? ''),
+            title: String(item.title ?? ''),
+            description: String(item.description ?? ''),
+            thumbnailUrl: typeof item.thumbnailUrl === 'string' ? item.thumbnailUrl : null,
+            channelId: typeof item.channelId === 'string' ? item.channelId : undefined,
+            channelTitle: String(item.channelTitle ?? 'YouTube'),
+            publishedAt: typeof item.publishedAt === 'string' ? item.publishedAt : null,
+            durationSeconds: typeof item.durationSeconds === 'number' ? item.durationSeconds : null,
+          },
+          seedTitle: typeof item.seedTitle === 'string' ? item.seedTitle : null,
+        }));
+        topics = (Array.isArray(data.topics) ? data.topics : []).map((item: Record<string, unknown>) => ({
+          id: String(item.id ?? ''),
+          text: String(item.topic ?? ''),
+          kind: item.kind === 'block' ? 'block' : 'interest',
+          share: typeof item.share === 'number' ? item.share : 0,
+          expiresAt: typeof item.expiresAt === 'number' ? item.expiresAt : null,
+        }));
+        const feedbackRows = Array.isArray(data.feedback) ? data.feedback as Array<{ targetType: string; targetId: string; action: string }> : [];
+        feedback = {
+          notInterestedVideoIds: feedbackRows.filter(item => item.targetType === 'video' && item.action === 'not_interested').map(item => item.targetId),
+          blockedChannelIds: feedbackRows.filter(item => item.action === 'dont_recommend_channel').map(item => item.targetId),
+          dismissedChannelIds: feedbackRows.filter(item => item.action === 'dismiss_channel').map(item => item.targetId),
+        };
+        impressions = Object.fromEntries(
+          (Array.isArray(data.impressions) ? data.impressions : [])
+            .filter((item: Record<string, unknown>) => typeof item.videoId === 'string')
+            .map((item: Record<string, unknown>) => [String(item.videoId), Number(item.impressionCount) || 0]),
+        );
+        const saved = data.settings?.tuning;
+        if (saved && typeof saved === 'object') {
+          tuning = {
+            ...DEFAULT_RECOMMENDATION_TUNING,
+            ...(saved as Partial<RecommendationTuning>),
+            shares: {
+              ...DEFAULT_RECOMMENDATION_TUNING.shares,
+              ...((saved as Partial<RecommendationTuning>).shares ?? {}),
+            },
+          };
+        }
+      } else {
+        recentHistory = await readWatchHistory(null);
+        const seeds = buildDiscoverySeeds(recentHistory);
+        if (seeds.length > 0) {
+          const settled = await Promise.allSettled(seeds.map(async (seed) => ({
+            seed,
+            videos: await searchSeed(seed),
+          })));
+          if (signal.aborted) return;
+          const successful = settled
+            .filter((result): result is PromiseFulfilledResult<{ seed: DiscoverySeed; videos: YouTubeCardVideo[] }> => result.status === 'fulfilled')
+            .map(result => result.value);
+          if (successful.length === 0) {
+            const failed = settled.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+            throw new Error(failed?.reason instanceof Error ? failed.reason.message : 'No recommendations could be loaded. Please try again.');
+          }
+          candidates = successful.flatMap(({ seed, videos }) =>
+            videos.map(video => ({ video, seedTitle: seed.query })),
+          );
+        }
+      }
       if (signal.aborted) return;
       setHistory(recentHistory);
-      const seeds = buildDiscoverySeeds(recentHistory);
-      if (seeds.length === 0) {
-        setVideos([]);
-        return;
-      }
-      const settled = await Promise.allSettled(seeds.map(async (seed) => ({
-        seed,
-        videos: await searchSeed(seed),
-      })));
-      if (signal.aborted) return;
-
-      const successful = settled
-        .filter((result): result is PromiseFulfilledResult<{ seed: DiscoverySeed; videos: YouTubeCardVideo[] }> => result.status === 'fulfilled')
-        .map(result => result.value);
-      if (successful.length === 0) {
-        const failed = settled.find((result): result is PromiseRejectedResult => result.status === 'rejected');
-        throw new Error(failed?.reason instanceof Error ? failed.reason.message : 'No recommendations could be loaded. Please try again.');
-      }
-
-      const candidates: RecommendationCandidate[] = successful.flatMap(({ seed, videos }) =>
-        videos.map(video => ({ video, seedTitle: seed.query })),
-      );
       const mixed = buildRecommendationFeed({
         history: recentHistory,
         candidates,
+        topics,
+        feedback,
+        impressions,
+        tuning,
         seed: refreshKey + 1,
         limit: 60,
       });
+      if (accountId && mixed.length > 0) {
+        void fetch('/api/v1/youtube/recommendations/impressions', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoIds: mixed.map(video => video.videoId) }),
+        }).catch(() => undefined);
+      }
       setVideos(mixed);
       if (mixed.length === 0 && recentHistory.length > 0) {
         setError({ message: 'We could not find fresh videos from those topics yet. Try Search to explore more creators.' });
