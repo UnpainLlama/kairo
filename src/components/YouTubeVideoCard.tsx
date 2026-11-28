@@ -22,6 +22,8 @@ type YouTubeVideoCardProps = {
   channelAvatarUrl?: string | null;
   compact?: boolean;
   layout?: 'grid' | 'list';
+  onNotInterested?: (video: YouTubeCardVideo) => void;
+  onBlockChannel?: (video: YouTubeCardVideo) => void;
 };
 
 function formatDuration(seconds: number): string {
@@ -48,7 +50,7 @@ function publishedLabel(value: string | null): string {
   return Math.floor(seconds / 31536000) + 'y ago';
 }
 
-export default function YouTubeVideoCard({ video, relatedVideos = [], channelAvatarUrl, compact = false, layout = 'grid' }: YouTubeVideoCardProps) {
+export default function YouTubeVideoCard({ video, relatedVideos = [], channelAvatarUrl, compact = false, layout = 'grid', onNotInterested, onBlockChannel }: YouTubeVideoCardProps) {
   const related = relatedVideos.filter(item => item.videoId !== video.videoId);
   const navigationState = { youtubeRelatedVideos: related, youtubeCurrentVideo: video };
   const isList = layout === 'list';
@@ -77,6 +79,12 @@ export default function YouTubeVideoCard({ video, relatedVideos = [], channelAva
           <h3><Link to={'/youtube/watch/' + video.videoId} state={navigationState}>{video.title}</Link></h3>
           <p>{isList ? (video.channelTitle || 'YouTube') + ' · ' + publishedLabel(video.publishedAt) : (video.channelTitle || 'YouTube')}</p>
           {video.recommendationReason && <small className="yt-recommendation-reason">{video.recommendationReason}</small>}
+          {(onNotInterested || onBlockChannel) && (
+            <div className="yt-recommendation-actions">
+              {onNotInterested && <button type="button" onClick={() => onNotInterested(video)}>Not interested</button>}
+              {onBlockChannel && video.channelId && <button type="button" onClick={() => onBlockChannel(video)}>Don’t recommend this channel</button>}
+            </div>
+          )}
           {isList && video.description
             ? <small className="yt-video-description-preview">{video.description}</small>
             : !isList && <small>{publishedLabel(video.publishedAt)}</small>}
