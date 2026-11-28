@@ -3429,3 +3429,12 @@ img { display: block; }
 /* The reference library views use only a short title and a compact switch link. */
 .yt-app .yt-library-page > .yt-page-heading p { display: none; }
 .yt-app .yt-library-page > .yt-page-heading { margin-bottom: 18px; }
+
+
+.yt-recommendation-reason {
+  display: block;
+  margin-top: 3px;
+  color: var(--yt-muted, #9ca3af);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
