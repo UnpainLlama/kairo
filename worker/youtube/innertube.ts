@@ -184,10 +184,10 @@ export function registerYouTubeInnerTubeRoutes(app: any): void {
         if (upstreamCode === 'UPSTREAM_UNAVAILABLE') {
           return fail(c, 503, 'YOUTUBE_JS_PROVIDER_UNAVAILABLE', 'YouTube discovery is temporarily unavailable.');
         }
-        return fail(c, 503, 'YOUTUBE_JS_UPSTREAM_UNAVAILABLE', 'Experimental YouTube discovery is temporarily unavailable.');
+        return fail(c, 503, 'YOUTUBE_JS_GATEWAY_HTTP_ERROR', 'The experimental discovery gateway returned an unexpected response.');
       }
       if (!payload?.success) {
-        return fail(c, 503, 'YOUTUBE_JS_UPSTREAM_UNAVAILABLE', 'Experimental YouTube discovery is temporarily unavailable.');
+        return fail(c, 503, 'YOUTUBE_JS_GATEWAY_INVALID_RESPONSE', 'The experimental discovery gateway returned an invalid response.');
       }
       const videos = normalizeVideos(payload.data?.videos);
       return c.json({
@@ -195,8 +195,11 @@ export function registerYouTubeInnerTubeRoutes(app: any): void {
         data: { videos },
         meta: { provider: 'youtube.js', experimental: true },
       });
-    } catch {
-      return fail(c, 503, 'YOUTUBE_JS_UPSTREAM_UNAVAILABLE', 'Experimental YouTube discovery is temporarily unavailable.');
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        return fail(c, 504, 'YOUTUBE_JS_GATEWAY_TIMEOUT', 'The experimental discovery gateway took too long to respond.');
+      }
+      return fail(c, 503, 'YOUTUBE_JS_GATEWAY_CONNECTION_FAILED', 'Kairo could not reach the experimental discovery gateway.');
     } finally {
       clearTimeout(timeout);
     }
