@@ -48,14 +48,14 @@ The watch page requests the signed-in account's current episode history before m
 Signed-in Watchlist, Watched and Favorite actions write to the account library API. The account table stores only the approved catalogue namespace and external movie identifier plus the user's own list state. Live TMDB display metadata is retrieved through the Movies catalogue API; CineSrc is the sole playback provider and is separate from library persistence. Adding a title to a list does not trigger catalogue ingestion or copy a provider payload into the user library.
 
 ### YouTube
-Signed-in watch history and Watch Later continue to use the authenticated YouTube media endpoints. Signed-out history and Watch Later use dedicated guest-only browser keys. Local progress is timestamped; if a signed-in browser has a newer unsynced copy when the video is opened again, Kairo retries that write rather than replacing it with an older server position. Made-for-Kids tracking remains disabled.
+Opening a valid, embeddable Kairo YouTube watch page records a viewing event. Guests store the video metadata and viewed timestamp in a dedicated browser-only history key; signed-in viewers write the event to the account's `youtube_watch_history` row. Reopening a video refreshes its viewed timestamp without resetting any previously stored progress. Made-for-Kids and explicitly non-embeddable videos are not recorded. The YouTube iframe remains a standalone embed; Kairo does not read playback position or player state.
 
 ## Important limitations
 
 This is account-backed cross-device sync, not a fully offline-first replication engine:
 
 - Anime progress retries on subsequent playback events and direct-entry restore; there is not yet a general background outbox for every media operation.
-- YouTube retries a newer local playback position when the same video is opened again, but does not yet have a durable general-purpose write queue for all YouTube mutations.
+- YouTube view events are written directly to guest browser storage or account D1; there is not yet a durable offline write queue for failed account view-event requests.
 - Movies account list edits require a successful API write. The list is not advertised as editable offline.
 - Guest-to-account migration is not automatic and is not part of this initial sync implementation.
 - Browser-local caches can be cleared independently of the Kairo account's D1 records. Clearing site data does not delete server-side account data.
