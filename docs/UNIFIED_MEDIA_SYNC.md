@@ -56,6 +56,8 @@ This is account-backed cross-device sync, not a fully offline-first replication 
 
 - Anime progress retries on subsequent playback events and direct-entry restore; there is not yet a general background outbox for every media operation.
 - YouTube view events are written directly to guest browser storage or account D1; there is not yet a durable offline write queue for failed account view-event requests.
+- Guest recommendation candidates, tuning, topics, feedback and impression counts are stored locally. The candidate pool is refreshed no more frequently than every six hours, with a one-hour retry after an empty or failed gather; this avoids issuing new searches every time a guest opens Home.
+- Guest recommendation candidates, tuning, topics, feedback and impression counts are stored locally. The candidate pool is refreshed no more frequently than every six hours, with a one-hour retry after an empty or failed gather; this avoids issuing new searches every time a guest opens Home.
 - Movies account list edits require a successful API write. The list is not advertised as editable offline.
 - Guest-to-account migration is not automatic and is not part of this initial sync implementation.
 - Browser-local caches can be cleared independently of the Kairo account's D1 records. Clearing site data does not delete server-side account data.

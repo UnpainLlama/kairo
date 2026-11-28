@@ -1,4 +1,5 @@
 import { readBrowserJson, writeBrowserJson, dispatchBrowserChange } from './browserPersistence';
+import type { YouTubeCardVideo } from '../components/YouTubeVideoCard';
 
 export type YouTubeLocalVideo = {
   videoId: string;
@@ -57,6 +58,12 @@ export type GuestRecommendationTopic = {
   expiresAt: number | null;
 };
 
+export type GuestRecommendationCandidate = {
+  video: YouTubeCardVideo;
+  seedTitle?: string | null;
+  source?: 'search' | 'channel_uploads';
+};
+
 export type GuestRecommendationState = {
   active: string;
   tuning: Record<string, unknown>;
@@ -67,6 +74,8 @@ export type GuestRecommendationState = {
     dismissedChannelIds: string[];
   };
   impressions: Record<string, number>;
+  candidateCache: GuestRecommendationCandidate[];
+  nextGatherAt: number;
 };
 
 const RECOMMENDATION_KEY = 'kairo.youtube.recommendations.v1';
@@ -81,7 +90,25 @@ const EMPTY_RECOMMENDATION_STATE: GuestRecommendationState = {
     dismissedChannelIds: [],
   },
   impressions: {},
+  candidateCache: [],
+  nextGatherAt: 0,
 };
+
+function isGuestRecommendationCandidate(value: unknown): value is GuestRecommendationCandidate {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  if (!item.video || typeof item.video !== 'object' || Array.isArray(item.video)) return false;
+  const video = item.video as Record<string, unknown>;
+  return typeof video.videoId === 'string' && /^[A-Za-z0-9_-]{11}$/.test(video.videoId)
+    && typeof video.title === 'string' && typeof video.channelTitle === 'string'
+    && (video.description === undefined || typeof video.description === 'string')
+    && (video.thumbnailUrl === null || typeof video.thumbnailUrl === 'string')
+    && (video.channelId === undefined || typeof video.channelId === 'string')
+    && (video.publishedAt === null || typeof video.publishedAt === 'string')
+    && (video.durationSeconds === undefined || video.durationSeconds === null || (typeof video.durationSeconds === 'number' && Number.isFinite(video.durationSeconds)))
+    && (item.seedTitle === undefined || item.seedTitle === null || typeof item.seedTitle === 'string')
+    && (item.source === undefined || item.source === 'search' || item.source === 'channel_uploads');
+}
 
 export function readGuestRecommendationState(): GuestRecommendationState {
   if (typeof localStorage === 'undefined') return EMPTY_RECOMMENDATION_STATE;
@@ -109,6 +136,12 @@ export function readGuestRecommendationState(): GuestRecommendationState {
         dismissedChannelIds: Array.isArray(feedback.dismissedChannelIds) ? feedback.dismissedChannelIds.filter((id): id is string => typeof id === 'string') : [],
       },
       impressions,
+      candidateCache: Array.isArray(value.candidateCache)
+        ? value.candidateCache.filter(isGuestRecommendationCandidate).slice(0, 150)
+        : [],
+      nextGatherAt: typeof value.nextGatherAt === 'number' && Number.isFinite(value.nextGatherAt) && value.nextGatherAt >= 0
+        ? value.nextGatherAt
+        : 0,
     };
   } catch {
     return EMPTY_RECOMMENDATION_STATE;
@@ -126,6 +159,8 @@ export function saveGuestRecommendationState(
     tuning: patch.tuning ?? current.tuning,
     topics: patch.topics ?? current.topics,
     impressions: patch.impressions ?? current.impressions,
+    candidateCache: patch.candidateCache ?? current.candidateCache,
+    nextGatherAt: patch.nextGatherAt ?? current.nextGatherAt,
   };
   try {
     localStorage.setItem(RECOMMENDATION_KEY, JSON.stringify(next));
@@ -133,6 +168,16 @@ export function saveGuestRecommendationState(
     // Private browsing or a full storage quota should not interrupt browsing.
   }
   return next;
+}
+
+export function saveGuestRecommendationCache(
+  candidates: GuestRecommendationCandidate[],
+  nextGatherAt: number,
+): void {
+  saveGuestRecommendationState({
+    candidateCache: candidates.slice(0, 150),
+    nextGatherAt: Number.isFinite(nextGatherAt) && nextGatherAt > 0 ? nextGatherAt : Date.now() + 60 * 60 * 1000,
+  });
 }
 
 export function readGuestYouTubeHistory(): YouTubeLocalVideo[] {

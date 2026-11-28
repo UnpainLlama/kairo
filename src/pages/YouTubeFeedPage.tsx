@@ -5,6 +5,7 @@ import { useAccountScope } from '../hooks/useAccountScope';
 import {
   readGuestRecommendationState,
   readGuestYouTubeHistory,
+  saveGuestRecommendationCache,
   saveGuestRecommendationState,
   type YouTubeLocalVideo,
 } from '../lib/youtubeLocalLibrary';
@@ -22,6 +23,7 @@ type HistoryVideo = YouTubeLocalVideo & { updatedAt: number };
 type DiscoverySeed = { query: string; channelId: string | null; channelTitle: string; reason: string };
 type DiscoveryVideo = RecommendedVideo;
 type FeedError = { message: string };
+type FeedMixRow = { key: string; label: string; requested: number; actual: number; count: number };
 
 function isShort(video: Pick<YouTubeCardVideo, 'title' | 'description'>): boolean {
   return /(?:^|\s)#(?:youtube)?shorts?\b/i.test((video.title || '') + ' ' + (video.description || ''));
@@ -106,12 +108,14 @@ export default function YouTubeFeedPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<FeedError | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [mixSummary, setMixSummary] = useState<FeedMixRow[]>([]);
 
   const load = useCallback(async (signal: AbortSignal) => {
     if (!resolved && !accountError) return;
     setLoading(true);
     setError(null);
     setVideos([]);
+    setMixSummary([]);
 
     try {
       if (accountError) throw new Error('Kairo could not verify your account. Reconnect and reload to use your personal recommendations.');
@@ -198,23 +202,34 @@ export default function YouTubeFeedPage() {
             ...((guestState.tuning as Partial<RecommendationTuning>).shares ?? {}),
           },
         };
-        const seeds = buildDiscoverySeeds(recentHistory);
-        if (seeds.length > 0) {
-          const settled = await Promise.allSettled(seeds.map(async (seed) => ({
-            seed,
-            videos: await searchSeed(seed),
-          })));
-          if (signal.aborted) return;
-          const successful = settled
-            .filter((result): result is PromiseFulfilledResult<{ seed: DiscoverySeed; videos: YouTubeCardVideo[] }> => result.status === 'fulfilled')
-            .map(result => result.value);
-          if (successful.length === 0) {
-            const failed = settled.find((result): result is PromiseRejectedResult => result.status === 'rejected');
-            throw new Error(failed?.reason instanceof Error ? failed.reason.message : 'No recommendations could be loaded. Please try again.');
+        candidates = guestState.candidateCache;
+        if (guestState.nextGatherAt <= Date.now()) {
+          const seeds = buildDiscoverySeeds(recentHistory);
+          if (seeds.length > 0) {
+            const settled = await Promise.allSettled(seeds.map(async (seed) => ({
+              seed,
+              videos: await searchSeed(seed),
+            })));
+            if (signal.aborted) return;
+            const successful = settled
+              .filter((result): result is PromiseFulfilledResult<{ seed: DiscoverySeed; videos: YouTubeCardVideo[] }> => result.status === 'fulfilled')
+              .map(result => result.value);
+            if (successful.length > 0) {
+              candidates = successful.flatMap(({ seed, videos }) =>
+                videos.map(video => ({ video, seedTitle: seed.query, source: 'search' as const })),
+              );
+              saveGuestRecommendationCache(candidates, Date.now() + (candidates.length > 0 ? 6 : 1) * 60 * 60 * 1000);
+            } else {
+              // Keep the last usable pool if search is temporarily unavailable; retry after one hour.
+              saveGuestRecommendationCache(candidates, Date.now() + 60 * 60 * 1000);
+              if (candidates.length === 0) {
+                const failed = settled.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+                throw new Error(failed?.reason instanceof Error ? failed.reason.message : 'No recommendations could be loaded. Please try again.');
+              }
+            }
+          } else {
+            saveGuestRecommendationCache(candidates, Date.now() + 60 * 60 * 1000);
           }
-          candidates = successful.flatMap(({ seed, videos }) =>
-            videos.map(video => ({ video, seedTitle: seed.query })),
-          );
         }
       }
       if (signal.aborted) return;
@@ -226,7 +241,7 @@ export default function YouTubeFeedPage() {
         feedback,
         impressions,
         tuning,
-        seed: refreshKey + 1,
+        seed: refreshKey + Date.now(),
         limit: 60,
       });
       if (mixed.length > 0) {
@@ -243,6 +258,21 @@ export default function YouTubeFeedPage() {
           saveGuestRecommendationState({ impressions: nextImpressions });
         }
       }
+      const interestShare = Math.min(35, topics.filter(topic => topic.kind === 'interest').reduce((sum, topic) => sum + (topic.share ?? 0), 0));
+      const regularShareTotal = Object.values(tuning.shares).reduce((sum, value) => sum + Math.max(0, value), 0) || 1;
+      const regularTarget = (value: number) => Math.round(Math.max(0, value) / regularShareTotal * (100 - interestShare));
+      const bucketRows: Array<{ key: string; label: string; requested: number }> = [
+        { key: 'subscriptions', label: 'Recent channel uploads', requested: regularTarget(tuning.shares.subscriptions) },
+        { key: 'similar', label: 'Similar videos', requested: regularTarget(tuning.shares.similar) },
+        { key: 'new', label: 'New channels', requested: regularTarget(tuning.shares.new) },
+        { key: 'throwback', label: 'Throwbacks', requested: regularTarget(tuning.shares.throwback) },
+        { key: 'rewatch', label: 'Rewatches', requested: regularTarget(tuning.shares.rewatch) },
+        { key: 'interest', label: 'Your interests', requested: interestShare },
+      ];
+      setMixSummary(bucketRows.map(row => {
+        const count = mixed.filter(video => video.recommendationBucket === row.key).length;
+        return { ...row, count, actual: mixed.length ? Math.round(count / mixed.length * 100) : 0 };
+      }));
       setVideos(mixed);
       if (mixed.length === 0 && recentHistory.length > 0) {
         setError({ message: 'We could not find fresh videos from those topics yet. Try Search to explore more creators.' });
@@ -299,9 +329,40 @@ export default function YouTubeFeedPage() {
 
   const shorts = useMemo(() => videos.filter(isShort).slice(0, 5), [videos]);
   const regularVideos = useMemo(() => videos.filter(video => !isShort(video)), [videos]);
+  const suggestedChannels = useMemo(() => {
+    const channels = new Map<string, DiscoveryVideo[]>();
+    for (const video of videos) {
+      if (video.recommendationBucket !== 'new' || !video.channelId) continue;
+      const current = channels.get(video.channelId) ?? [];
+      current.push(video);
+      channels.set(video.channelId, current);
+    }
+    return [...channels.entries()].map(([channelId, channelVideos]) => ({
+      channelId,
+      channelTitle: channelVideos[0].channelTitle,
+      sample: channelVideos[0],
+      videoCount: channelVideos.length,
+    })).slice(0, 6);
+  }, [videos]);
+  const firstRowVideos = regularVideos.slice(0, 8);
+  const remainingVideos = regularVideos.slice(8);
 
   return (
     <section className="yt-page yt-home-page yt-home-redesign">
+      {!loading && (
+        <div className="yt-feed-toolbar" aria-label="Recommendation controls">
+          <Link to="/youtube/recommendations" className="yt-feed-algorithm-link">Algorithm</Link>
+          <button type="button" onClick={() => setRefreshKey(value => value + 1)}>Refresh feed</button>
+        </div>
+      )}
+      {!loading && !error && mixSummary.some(row => row.count > 0) && (
+        <div className="yt-feed-mix" aria-label="Actual recommendation mix">
+          <span className="yt-feed-mix-title">Feed mix</span>
+          {mixSummary.filter(row => row.count > 0).map(row => (
+            <span key={row.key}><b>{row.actual}%</b> {row.label} <small>target {row.requested}%</small></span>
+          ))}
+        </div>
+      )}
       {error && (
         <div className="yt-notice" role="alert">
           <div>
@@ -340,10 +401,50 @@ export default function YouTubeFeedPage() {
         </section>
       )}
 
-      {!loading && !error && regularVideos.length > 0 && (
+      {!loading && !error && firstRowVideos.length > 0 && (
         <section className="yt-feed-section">
           <div className="yt-video-grid yt-feed-grid">
-            {regularVideos.map(video => (
+            {firstRowVideos.map(video => (
+              <YouTubeVideoCard
+                key={video.videoId}
+                video={video}
+                relatedVideos={videos}
+                onNotInterested={item => void applyFeedback(item, 'not_interested')}
+                onBlockChannel={item => void applyFeedback(item, 'dont_recommend_channel')}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {!loading && !error && suggestedChannels.length > 0 && (
+        <section className="yt-channel-suggestions" aria-label="Channels you might like">
+          <div className="yt-section-heading"><h2>Channels you might like</h2></div>
+          <div className="yt-channel-suggestions-row">
+            {suggestedChannels.map(channel => (
+              <Link
+                key={channel.channelId}
+                to={'/youtube/watch/' + channel.sample.videoId}
+                state={{ youtubeRelatedVideos: videos, youtubeCurrentVideo: channel.sample }}
+                className="yt-channel-suggestion"
+              >
+                <span className="yt-channel-suggestion-avatar">
+                  {channel.sample.channelAvatarUrl
+                    ? <img src={channel.sample.channelAvatarUrl} alt="" loading="lazy" />
+                    : (channel.channelTitle.trim().slice(0, 1).toUpperCase() || 'Y')}
+                </span>
+                <b>{channel.channelTitle}</b>
+                <small>{channel.videoCount} recommended {channel.videoCount === 1 ? 'video' : 'videos'}</small>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {!loading && !error && remainingVideos.length > 0 && (
+        <section className="yt-feed-section">
+          <div className="yt-video-grid yt-feed-grid">
+            {remainingVideos.map(video => (
               <YouTubeVideoCard
                 key={video.videoId}
                 video={video}
