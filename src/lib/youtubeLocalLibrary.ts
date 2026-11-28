@@ -50,6 +50,19 @@ export function readGuestYouTubeWatchLater(): YouTubeLocalVideo[] {
   return readList(WATCH_LATER_KEY).sort((a, b) => (b.savedAt ?? b.updatedAt) - (a.savedAt ?? a.updatedAt));
 }
 
+export function recordGuestYouTubeView(video: Omit<YouTubeLocalVideo, 'updatedAt' | 'savedAt' | 'progressSeconds' | 'completed'>): void {
+  const current = readList(HISTORY_KEY);
+  const previous = current.find((item) => item.videoId === video.videoId);
+  const now = Date.now();
+  const next: YouTubeLocalVideo = {
+    ...video,
+    progressSeconds: previous?.progressSeconds ?? 0,
+    completed: previous?.completed ?? false,
+    updatedAt: now,
+  };
+  writeList(HISTORY_KEY, [next, ...current.filter((item) => item.videoId !== video.videoId)]);
+}
+
 export function saveGuestYouTubeProgress(video: Omit<YouTubeLocalVideo, 'updatedAt' | 'savedAt'>): void {
   const current = readList(HISTORY_KEY);
   const now = Date.now();
