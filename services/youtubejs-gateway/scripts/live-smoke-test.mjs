@@ -1,8 +1,8 @@
 import { appendFileSync, writeFileSync } from 'node:fs';
 
-const gatewayUrl = (process.env.GATEWAY_URL || 'http://127.0.0.1:8787').replace(/\\/+$/, '');
+const gatewayUrl = (process.env.GATEWAY_URL || 'http://127.0.0.1:8787').replace(/\/+$/, '');
 const gatewaySecret = process.env.GATEWAY_SECRET;
-const kairoBaseUrl = process.env.KAIRO_BASE_URL?.replace(/\\/+$/, '');
+const kairoBaseUrl = process.env.KAIRO_BASE_URL?.replace(/\/+$/, '');
 const queries = ['astronomy', 'lofi music', 'typescript tutorial'];
 const videoIdPattern = /^[A-Za-z0-9_-]{11}$/;
 const allowedHosts = ['i.ytimg.com', 'ytimg.com', 'ggpht.com'];
@@ -107,7 +107,7 @@ if (kairoBaseUrl) {
 }
 
 const report = { generatedAt: new Date().toISOString(), reports, comparisons };
-writeFileSync('youtubejs-live-smoke-report.json', JSON.stringify(report, null, 2) + '\\n');
+writeFileSync('youtubejs-live-smoke-report.json', JSON.stringify(report, null, 2) + '\n');
 
 const summary = [
   '### YouTube.js live search smoke test',
@@ -127,7 +127,7 @@ const summary = [
   ]),
   'Validated video IDs, titles, canonical watch URLs, duplicate IDs, and allowed thumbnail hosts.',
   '',
-].join('\\n');
+].join('\n');
 
 if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
 console.log('All YouTube.js live smoke tests passed.');
