@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowUpRight, RefreshCw, Sparkles, Youtube } from 'lucide-react';
 import YouTubeVideoCard, { type YouTubeCardVideo } from '../components/YouTubeVideoCard';
 import { useAccountScope } from '../hooks/useAccountScope';
 import { readGuestYouTubeHistory, type YouTubeLocalVideo } from '../lib/youtubeLocalLibrary';
@@ -8,7 +7,6 @@ import { readGuestYouTubeHistory, type YouTubeLocalVideo } from '../lib/youtubeL
 type HistoryVideo = YouTubeLocalVideo & { updatedAt: number };
 type DiscoverySeed = { query: string; channelId: string | null; channelTitle: string; reason: string };
 type DiscoveryVideo = YouTubeCardVideo & { recommendationReason: string };
-type SearchFilter = 'all' | 'shorts' | 'videos' | 'recent';
 type FeedError = { message: string };
 
 function isShort(video: Pick<YouTubeCardVideo, 'title' | 'description'>): boolean {
