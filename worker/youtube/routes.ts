@@ -278,6 +278,32 @@ export function registerYouTubeMediaRoutes(app: any): void {
     }
   });
 
+  app.post('/api/v1/youtube/history/view', async (c: YouTubeContext) => {
+    noStore(c);
+    if (!originAllowed(c)) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');
+    const user = await signedInUser(c);
+    if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to save your YouTube viewing activity.');
+    if (!await permitRequest(c, 'history-view', user.id, 180)) return fail(c, 429, 'RATE_LIMITED', 'Too many YouTube viewing events. Please try again shortly.');
+    const parsed = parseVideoPayload(await parseJsonBody(c));
+    if (!parsed) return fail(c, 400, 'VALIDATION_ERROR', 'The YouTube video details are invalid.');
+    const updatedAt = Date.now();
+    try {
+      await c.env.DB.prepare(
+        'INSERT INTO youtube_watch_history ' +
+        '(user_id,video_id,title,description,thumbnail_url,channel_id,channel_title,published_at,duration_seconds,progress_seconds,completed,updated_at) ' +
+        'VALUES (?,?,?,?,?,?,?,?,?,0,0,?) ' +
+        'ON CONFLICT(user_id,video_id) DO UPDATE SET title=excluded.title,description=excluded.description,' +
+        'thumbnail_url=excluded.thumbnail_url,channel_id=excluded.channel_id,channel_title=excluded.channel_title,' +
+        'published_at=excluded.published_at,duration_seconds=excluded.duration_seconds,updated_at=excluded.updated_at ' +
+        'WHERE excluded.updated_at>=youtube_watch_history.updated_at'
+      ).bind(user.id, parsed.videoId, parsed.title, parsed.description, parsed.thumbnailUrl, parsed.channelId,
+        parsed.channelTitle, parsed.publishedAt, parsed.durationSeconds, updatedAt).run();
+      return c.json({ success: true, data: { viewed: true, updatedAt: updatedAt } });
+    } catch {
+      return fail(c, 503, 'YOUTUBE_HISTORY_UNAVAILABLE', 'Could not save your YouTube viewing activity.');
+    }
+  });
+
   app.post('/api/v1/youtube/history', async (c: YouTubeContext) => {
     noStore(c);
     if (!originAllowed(c)) return fail(c, 403, 'ORIGIN_FORBIDDEN', 'This request origin is not allowed.');

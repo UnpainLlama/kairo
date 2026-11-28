@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   addGuestYouTubeWatchLater, readGuestYouTubeHistory, readGuestYouTubeWatchLater,
-  removeGuestYouTubeHistory, removeGuestYouTubeWatchLater, saveGuestYouTubeProgress,
+  recordGuestYouTubeView, removeGuestYouTubeHistory, removeGuestYouTubeWatchLater, saveGuestYouTubeProgress,
 } from './youtubeLocalLibrary';
 
 class MemoryStorage {
@@ -36,6 +36,25 @@ describe('guest YouTube browser library', () => {
     saveGuestYouTubeProgress({ ...video, progressSeconds: 80, completed: false });
     expect(readGuestYouTubeHistory()).toHaveLength(1);
     expect(readGuestYouTubeHistory()[0].progressSeconds).toBe(80);
+  });
+
+  it('records a guest video view and keeps any existing progress intact', () => {
+    recordGuestYouTubeView(video);
+    expect(readGuestYouTubeHistory()).toHaveLength(1);
+    expect(readGuestYouTubeHistory()[0]).toMatchObject({
+      videoId: video.videoId,
+      progressSeconds: 0,
+      completed: false,
+    });
+
+    saveGuestYouTubeProgress({ ...video, progressSeconds: 42, completed: false });
+    recordGuestYouTubeView({ ...video, title: 'Updated title' });
+    expect(readGuestYouTubeHistory()).toHaveLength(1);
+    expect(readGuestYouTubeHistory()[0]).toMatchObject({
+      title: 'Updated title',
+      progressSeconds: 42,
+      completed: false,
+    });
   });
 
   it('stores and removes Watch Later independently from history', () => {

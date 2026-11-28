@@ -120,8 +120,8 @@ This plan describes the full provider roadmap. The current `youtube` branch incl
 
 ## Implementation note — Kairo-native watch view
 
-The YouTube channel-feed cards now open a Kairo watch page at `/youtube/watch/:videoId`. It requests public metadata from the official Data API, checks the embed-allowed flag, and plays through the official YouTube IFrame Player API. The anime watch-page layout is reused as the visual foundation.
+YouTube cards open a Kairo watch page at `/youtube/watch/:videoId`. It requests public metadata from the official Data API, checks the embed-allowed flag, and renders a standalone privacy-enhanced YouTube iframe. Kairo does not inspect player state or collect playback position.
 
-The Kairo watch view adds account-scoped playback history and a separate Watch Later list using `youtube_watch_history` and `youtube_watch_later`. Guest playback keeps local resume progress only. Signed-in playback syncs progress to D1. These features do not read, modify or claim to synchronize the viewer's YouTube account history.
+Opening a valid, embeddable watch page records a view event for recommendations. Guests store the video metadata and timestamp in browser-only history; signed-in viewers write it to their account's `youtube_watch_history` row. Reopening a video updates its viewed timestamp without resetting existing progress fields. Made-for-Kids and explicitly non-embeddable videos are not recorded. Watch Later remains separate and uses `youtube_watch_later`. These features do not read or modify the viewer's YouTube account history.
 
 The additive schema is `migrations/0011_youtube_media_library.sql`. Apply it only after reviewing the migration for the intended environment. Public discovery beyond the current saved-channel feed and authorized YouTube subscription import remain separate roadmap work.
