@@ -132,6 +132,34 @@ describe('experimental YouTube.js proxy', () => {
     expect(payload.data.videos[0].thumbnailUrl).toBe(null);
   });
 
+  it('reports a gateway authentication failure distinctly without exposing upstream details', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: false,
+      error: { code: 'UNAUTHORIZED', message: 'Unauthorized.' },
+    }), { status: 401 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { handler, context } = makeHarness();
+    const response = await handler(context);
+    const payload = await response.json() as any;
+    expect(response.status).toBe(502);
+    expect(payload.error.code).toBe('YOUTUBE_JS_GATEWAY_AUTH_FAILED');
+    expect(payload.error.message).not.toContain('Unauthorized.');
+  });
+
+  it('preserves the safe provider-unavailable code from the gateway', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: false,
+      error: { code: 'UPSTREAM_UNAVAILABLE', message: 'Internal upstream detail.' },
+    }), { status: 503 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { handler, context } = makeHarness();
+    const response = await handler(context);
+    const payload = await response.json() as any;
+    expect(response.status).toBe(503);
+    expect(payload.error.code).toBe('YOUTUBE_JS_PROVIDER_UNAVAILABLE');
+    expect(payload.error.message).not.toContain('Internal upstream detail.');
+  });
+
   it('fails closed if the D1 rate limiter is unavailable', async () => {
     const { handler, context } = makeHarness();
     context.env.DB.prepare = () => ({ bind: () => ({ first: async () => { throw new Error('database unavailable'); } }) }) as any;
