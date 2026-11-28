@@ -3,7 +3,7 @@ import { appendFileSync, writeFileSync } from 'node:fs';
 const gatewayUrl = (process.env.GATEWAY_URL || 'http://127.0.0.1:8787').replace(/\/+$/, '');
 const gatewaySecret = process.env.GATEWAY_SECRET;
 const kairoBaseUrl = process.env.KAIRO_BASE_URL?.replace(/\/+$/, '');
-const queries = ['astronomy', 'lofi music', 'typescript tutorial'];
+const queries = (process.env.SMOKE_QUERIES?.split('|').map((query) => query.trim()).filter(Boolean)) ?? ['astronomy', 'lofi music', 'typescript tutorial'];
 const videoIdPattern = /^[A-Za-z0-9_-]{11}$/;
 const allowedHosts = ['i.ytimg.com', 'ytimg.com', 'ggpht.com'];
 
@@ -37,7 +37,7 @@ async function requestJson(url, headers, label) {
     } finally {
       clearTimeout(timeout);
     }
-    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 1500));
+    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 5000));
   }
   throw lastError ?? new Error(`${label} failed without a response.`);
 }
