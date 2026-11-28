@@ -3424,3 +3424,8 @@ img { display: block; }
   .yt-app .yt-filter-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .yt-app .yt-shorts-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+
+/* The reference library views use only a short title and a compact switch link. */
+.yt-app .yt-library-page > .yt-page-heading p { display: none; }
+.yt-app .yt-library-page > .yt-page-heading { margin-bottom: 18px; }
