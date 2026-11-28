@@ -43,6 +43,21 @@ async function requestJson(url, headers, label) {
 }
 
 const reports = [];
+
+const unauthenticated = await fetch(gatewayUrl + '/api/search?q=astronomy&limit=5');
+const unauthenticatedPayload = await unauthenticated.json().catch(() => null);
+assert(unauthenticated.status === 401 && unauthenticatedPayload?.error?.code === 'UNAUTHORIZED',
+  'Gateway search must reject requests without the bearer secret.');
+
+const invalidQueryUrl = new URL(gatewayUrl + '/api/search');
+invalidQueryUrl.searchParams.set('q', 'x');
+const invalidQuery = await fetch(invalidQueryUrl, {
+  headers: { Authorization: 'Bearer ' + gatewaySecret },
+});
+const invalidQueryPayload = await invalidQuery.json().catch(() => null);
+assert(invalidQuery.status === 400 && invalidQueryPayload?.error?.code === 'VALIDATION_ERROR',
+  'Gateway search must reject invalid queries.');
+console.log('PASS gateway access controls: missing bearer token and invalid query rejected');
 for (const query of queries) {
   const url = new URL(gatewayUrl + '/api/search');
   url.searchParams.set('q', query);
@@ -80,6 +95,7 @@ if (kairoBaseUrl) {
   console.log(`PASS Kairo proxy: ${experimentalVideos.length} videos returned from youtube.js`);
 
   // One official Data API search is used as a reference point; this consumes normal Data API quota.
+  if (process.env.SKIP_OFFICIAL_COMPARISON !== 'true') {
   try {
     const officialUrl = new URL(kairoBaseUrl + '/api/v1/youtube/videos/search');
     officialUrl.searchParams.set('q', 'astronomy');
@@ -103,6 +119,7 @@ if (kairoBaseUrl) {
   } catch (error) {
     comparisons.push({ query: 'astronomy', warning: error instanceof Error ? error.message : String(error) });
     console.log('WARNING official Data API comparison unavailable: ' + (error instanceof Error ? error.message : String(error)));
+  }
   }
 }
 
