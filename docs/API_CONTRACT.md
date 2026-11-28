@@ -138,24 +138,26 @@ Validate finite non-negative numbers, enforce sensible duration/position bounds,
 - Channel searches are limited to five per user per 15 minutes; video searches are limited to eight per user per 15 minutes. Both share an 80-call rolling 24-hour project search budget, reserving headroom under YouTube's default 100-call daily `search.list` allowance. Video search supports relevance, upload-date, view-count and rating sort orders, duration filters, and page-token pagination. Each result page makes one batched `videos.list` request to enrich durations when the shared data-API budget permits; search results remain available if that optional enrichment fails. Feed page requests are limited to 30 per user per 15 minutes. Each playlist page consumes one shared data-API unit per channel; a one-time uploads-playlist lookup is also charged when an older saved channel has not yet been hydrated. Video metadata lookups share the same 8,000-unit project budget with channel additions, duration enrichment and feed requests. Feed responses use `Cache-Control: no-store`; video cards open the Kairo watch route with the official YouTube player and an external fallback.
 - YouTube's public Data API does not expose a reliable Shorts classification flag or public source-video aspect ratio. Kairo therefore filters videos whose title or description explicitly contains a Shorts hashtag (`#short`, `#shorts`, `#youtubeshorts`); unlabelled Shorts cannot be guaranteed to be detected without relying on unsupported page scraping.
 - Errors include `AUTH_REQUIRED`, `YOUTUBE_API_KEY_MISSING`, `YOUTUBE_API_KEY_INVALID`, `YOUTUBE_QUOTA_EXCEEDED`, `YOUTUBE_FEED_CURSOR_EXPIRED`, `RATE_LIMITED`, and `YOUTUBE_PROVIDER_UNAVAILABLE`.
-- Kairo uses the official YouTube IFrame Player API for in-app playback and retains the official YouTube watch URL as a fallback. It does not proxy video streams.
+- Kairo uses a privacy-enhanced YouTube iframe for in-app playback and retains the official YouTube watch URL as a fallback. The iframe is a standalone embed: Kairo does not inspect playback state, read player time, proxy video streams, or automate player controls.
 
 ## 3b. YouTube playback and personal video library
 
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/v1/youtube/videos/:videoId` | Retrieve public video metadata and the YouTube embed-allowed flag from the official Data API. |
-| GET | `/api/v1/youtube/history` | List the signed-in user's recent YouTube playback history. |
-| POST | `/api/v1/youtube/history` | Save or update playback progress for a video. |
+| GET | `/api/v1/youtube/history` | List the signed-in user's recent YouTube viewing history. |
+| POST | `/api/v1/youtube/history/view` | Record that a valid video watch page was opened; preserves any stored progress. |
+| POST | `/api/v1/youtube/history` | Save or update explicit playback progress for a video. |
 | DELETE | `/api/v1/youtube/history/:videoId` | Remove one video from the signed-in user's history. |
 | GET | `/api/v1/youtube/watch-later` | List the signed-in user's saved videos. |
 | POST | `/api/v1/youtube/watch-later` | Save a video to Kairo Watch Later. |
 | DELETE | `/api/v1/youtube/watch-later/:videoId` | Remove one video from Kairo Watch Later. |
 
-- Video metadata is public; the API key remains server-side. The endpoint returns a normalized record, whether YouTube allows embedding, and the API-provided Made for Kids flag. The watch page disables Kairo playback-history/progress tracking for videos YouTube marks Made for Kids. It does not return extracted stream URLs.
-- History and Watch Later require a Kairo session and are scoped by the server-derived user ID. Write operations require a same-origin request, validate the video ID and bounded metadata/progress fields, and use per-user/IP write limits. Authenticated library responses are `Cache-Control: no-store`.
-- The browser uses the official YouTube IFrame Player API. Kairo does not proxy video bytes, collect YouTube cookies, or bypass embed restrictions. If a video cannot be embedded, the UI offers the original YouTube watch URL.
-- Playback progress is stored locally for guests and synced to D1 for signed-in Kairo users. This Kairo history is separate from the user's YouTube account history.
+- Video metadata is public; the API key remains server-side. The endpoint returns a normalized record, whether YouTube allows embedding, and the API-provided Made for Kids flag. Kairo does not record viewing events for videos marked Made for Kids or videos explicitly disallowed from embedding. The endpoint does not return extracted stream URLs.
+- The watch page records a page-view event after valid video metadata loads. Guests store the event in browser-only history; signed-in Kairo users store it in `youtube_watch_history` under the server-derived account ID. The event records metadata and a timestamp, not proof of playback or watch duration. Reopening a video updates its viewed timestamp without resetting any existing progress fields.
+- The `/history/view` write requires a same-origin request, validates bounded video metadata, is rate-limited per account/IP, and uses `Cache-Control: no-store`. The existing `/history` POST remains available for explicit progress writes.
+- The browser embeds YouTube in a standalone privacy-enhanced iframe. Kairo does not access player state, read the playhead, collect YouTube cookies, proxy video bytes, or bypass embed restrictions. If a video cannot be embedded, the UI offers the original YouTube watch URL.
+- Kairo's viewing history is separate from the viewer's YouTube account history. Guest entries stay on that browser; account entries sync through D1.
 - The additive D1 schema is in `migrations/0011_youtube_media_library.sql`. Apply it to each target environment before deploying this Worker version. No remote migration is run by this source change.
 
 
