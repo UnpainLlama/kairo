@@ -5,6 +5,7 @@ import { useAccountScope } from '../hooks/useAccountScope';
 import {
   readGuestRecommendationState,
   readGuestYouTubeHistory,
+  saveGuestRecommendationCache,
   saveGuestRecommendationState,
   type YouTubeLocalVideo,
 } from '../lib/youtubeLocalLibrary';
@@ -198,23 +199,34 @@ export default function YouTubeFeedPage() {
             ...((guestState.tuning as Partial<RecommendationTuning>).shares ?? {}),
           },
         };
-        const seeds = buildDiscoverySeeds(recentHistory);
-        if (seeds.length > 0) {
-          const settled = await Promise.allSettled(seeds.map(async (seed) => ({
-            seed,
-            videos: await searchSeed(seed),
-          })));
-          if (signal.aborted) return;
-          const successful = settled
-            .filter((result): result is PromiseFulfilledResult<{ seed: DiscoverySeed; videos: YouTubeCardVideo[] }> => result.status === 'fulfilled')
-            .map(result => result.value);
-          if (successful.length === 0) {
-            const failed = settled.find((result): result is PromiseRejectedResult => result.status === 'rejected');
-            throw new Error(failed?.reason instanceof Error ? failed.reason.message : 'No recommendations could be loaded. Please try again.');
+        candidates = guestState.candidateCache;
+        if (guestState.nextGatherAt <= Date.now()) {
+          const seeds = buildDiscoverySeeds(recentHistory);
+          if (seeds.length > 0) {
+            const settled = await Promise.allSettled(seeds.map(async (seed) => ({
+              seed,
+              videos: await searchSeed(seed),
+            })));
+            if (signal.aborted) return;
+            const successful = settled
+              .filter((result): result is PromiseFulfilledResult<{ seed: DiscoverySeed; videos: YouTubeCardVideo[] }> => result.status === 'fulfilled')
+              .map(result => result.value);
+            if (successful.length > 0) {
+              candidates = successful.flatMap(({ seed, videos }) =>
+                videos.map(video => ({ video, seedTitle: seed.query, source: 'search' as const })),
+              );
+              saveGuestRecommendationCache(candidates, Date.now() + (candidates.length > 0 ? 6 : 1) * 60 * 60 * 1000);
+            } else {
+              // Keep the last usable pool if search is temporarily unavailable; retry after one hour.
+              saveGuestRecommendationCache(candidates, Date.now() + 60 * 60 * 1000);
+              if (candidates.length === 0) {
+                const failed = settled.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+                throw new Error(failed?.reason instanceof Error ? failed.reason.message : 'No recommendations could be loaded. Please try again.');
+              }
+            }
+          } else {
+            saveGuestRecommendationCache(candidates, Date.now() + 60 * 60 * 1000);
           }
-          candidates = successful.flatMap(({ seed, videos }) =>
-            videos.map(video => ({ video, seedTitle: seed.query })),
-          );
         }
       }
       if (signal.aborted) return;
@@ -302,6 +314,12 @@ export default function YouTubeFeedPage() {
 
   return (
     <section className="yt-page yt-home-page yt-home-redesign">
+      {!loading && (
+        <div className="yt-feed-toolbar" aria-label="Recommendation controls">
+          <Link to="/youtube/recommendations" className="yt-feed-algorithm-link">Algorithm</Link>
+          <button type="button" onClick={() => setRefreshKey(value => value + 1)}>Refresh feed</button>
+        </div>
+      )}
       {error && (
         <div className="yt-notice" role="alert">
           <div>
