@@ -45,7 +45,9 @@ describe('guest YouTube browser library', () => {
       videoId: video.videoId,
       progressSeconds: 0,
       completed: false,
+      viewCount: 1,
     });
+    const firstViewedAt = readGuestYouTubeHistory()[0].firstViewedAt;
 
     saveGuestYouTubeProgress({ ...video, progressSeconds: 42, completed: false });
     recordGuestYouTubeView({ ...video, title: 'Updated title' });
@@ -54,6 +56,8 @@ describe('guest YouTube browser library', () => {
       title: 'Updated title',
       progressSeconds: 42,
       completed: false,
+      viewCount: 2,
+      firstViewedAt,
     });
   });
 
