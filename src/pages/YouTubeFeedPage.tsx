@@ -147,6 +147,7 @@ export default function YouTubeFeedPage() {
             durationSeconds: typeof item.durationSeconds === 'number' ? item.durationSeconds : null,
           },
           seedTitle: typeof item.seedTitle === 'string' ? item.seedTitle : null,
+          source: item.source === 'channel_uploads' ? 'channel_uploads' : 'search',
         }));
         topics = (Array.isArray(data.topics) ? data.topics : []).map((item: Record<string, unknown>) => ({
           id: String(item.id ?? ''),
