@@ -1,0 +1,254 @@
+name: YouTube.js verification and staging
+
+on:
+  push:
+    branches: [youtube.js]
+    paths:
+      - 'services/youtubejs-gateway/**'
+      - 'worker/youtube/innertube.ts'
+      - 'worker/youtube/innertube.test.ts'
+      - 'worker/index.ts'
+      - 'wrangler.jsonc'
+      - 'src/pages/YouTubeFeedPage.tsx'
+      - '.github/workflows/youtubejs-gateway.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'services/youtubejs-gateway/**'
+      - 'worker/youtube/innertube.ts'
+      - 'worker/youtube/innertube.test.ts'
+      - 'worker/index.ts'
+      - 'wrangler.jsonc'
+      - 'src/pages/YouTubeFeedPage.tsx'
+      - '.github/workflows/youtubejs-gateway.yml'
+  workflow_dispatch:
+    inputs:
+      deploy_staging:
+        description: Deploy the verified youtube.js branch to Cloudflare staging
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: youtubejs-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Unit, build and live YouTube search tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Kairo dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Test experimental Kairo proxy
+        run: npm test -- worker/youtube/innertube.test.ts
+
+      - name: Typecheck Kairo
+        run: npm run typecheck
+
+      - name: Install YouTube.js gateway dependencies
+        working-directory: services/youtubejs-gateway
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck YouTube.js gateway
+        working-directory: services/youtubejs-gateway
+        run: npm run typecheck
+
+      - name: Build staging gateway without deploying
+        working-directory: services/youtubejs-gateway
+        run: npx wrangler deploy --dry-run --config wrangler.jsonc --env staging
+
+      - name: Start isolated local gateway
+        working-directory: services/youtubejs-gateway
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret="$(openssl rand -hex 32)"
+          echo "::add-mask::$secret"
+          printf 'APP_ENV=development\nGATEWAY_SECRET=%s\n' "$secret" > .dev.vars
+          echo "GATEWAY_SECRET=$secret" >> "$GITHUB_ENV"
+          nohup npx wrangler dev --config wrangler.jsonc --ip 127.0.0.1 --port 8787 --log-level error > "$RUNNER_TEMP/youtubejs-gateway.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/youtubejs-gateway.pid"
+          for attempt in $(seq 1 45); do
+            if curl --silent --show-error --fail http://127.0.0.1:8787/health; then
+              echo
+              exit 0
+            fi
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/youtubejs-gateway.log"
+          exit 1
+
+      - name: Prepare local Kairo D1 and bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'APP_ENV=development\nYOUTUBE_JS_EXPERIMENT_ENABLED=true\nYOUTUBE_JS_GATEWAY_URL=http://127.0.0.1:8787\nYOUTUBE_JS_GATEWAY_TOKEN=%s\n' "$GATEWAY_SECRET" > .dev.vars
+          npm run db:migrate:local
+
+      - name: Start local Kairo web and Worker runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          nohup npm run dev -- --port 5173 --strictPort > "$RUNNER_TEMP/kairo-dev.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/kairo-dev.pid"
+          for attempt in $(seq 1 45); do
+            if curl --silent --show-error --fail http://127.0.0.1:5173/ -o /dev/null; then
+              echo "Kairo dev server is ready."
+              exit 0
+            fi
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/kairo-dev.log"
+          exit 1
+
+      - name: Run end-to-end YouTube.js and Kairo proxy smoke tests
+        working-directory: services/youtubejs-gateway
+        env:
+          GATEWAY_URL: http://127.0.0.1:8787
+          KAIRO_BASE_URL: http://127.0.0.1:5173
+          SKIP_OFFICIAL_COMPARISON: 'true'
+        run: node scripts/live-smoke-test.mjs
+
+      - name: Stop local Kairo dev server
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/kairo-dev.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/kairo-dev.pid")" 2>/dev/null || true
+          fi
+
+      - name: Stop local gateway
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/youtubejs-gateway.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/youtubejs-gateway.pid")" 2>/dev/null || true
+          fi
+
+      - name: Upload live search comparison report
+        if: always() && hashFiles('services/youtubejs-gateway/youtubejs-live-smoke-report.json') != ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: youtubejs-live-search-report
+          path: services/youtubejs-gateway/youtubejs-live-smoke-report.json
+          retention-days: 14
+
+      - name: Upload gateway logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: youtubejs-gateway-logs
+          path: ${{ runner.temp }}/youtubejs-gateway.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  deploy-staging:
+    name: Deploy gateway and Kairo to staging
+    needs: verify
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/youtube.js') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/youtube.js' && inputs.deploy_staging)
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Check Cloudflare deployment secrets
+        id: cloudflare
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          missing=""
+          [ -n "$CLOUDFLARE_API_TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          if [ -n "$missing" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Staging deployment skipped. The staging GitHub environment is missing:$missing"
+            echo "### YouTube.js staging deployment skipped" >> "$GITHUB_STEP_SUMMARY"
+            echo "Missing staging environment secrets:$missing" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate one-time staging gateway secret
+        if: steps.cloudflare.outputs.ready == 'true'
+        shell: bash
+        run: |
+          secret="$(openssl rand -hex 32)"
+          echo "::add-mask::$secret"
+          echo "YOUTUBE_JS_GATEWAY_SECRET=$secret" >> "$GITHUB_ENV"
+          echo "GATEWAY_SECRET=$secret" >> "$GITHUB_ENV"
+
+      - name: Install gateway dependencies
+        if: steps.cloudflare.outputs.ready == 'true'
+        working-directory: services/youtubejs-gateway
+        run: npm install --no-audit --no-fund
+
+      - name: Deploy YouTube.js gateway to Cloudflare staging
+        if: steps.cloudflare.outputs.ready == 'true'
+        working-directory: services/youtubejs-gateway
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          printf '%s' "$YOUTUBE_JS_GATEWAY_SECRET" | npx wrangler secret put GATEWAY_SECRET --config wrangler.jsonc --env staging
+          npx wrangler deploy --config wrangler.jsonc --env staging
+
+      - name: Install Kairo dependencies
+        if: steps.cloudflare.outputs.ready == 'true'
+        run: npm ci --no-audit --no-fund
+
+      - name: Configure Kairo staging gateway secrets
+        if: steps.cloudflare.outputs.ready == 'true'
+        working-directory: .
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          KAIRO_STAGING_BASE_URL: https://kairo-anime-platform-staging.unpainllama.workers.dev
+        run: |
+          gateway_url="$(node --input-type=module -e "const host = new URL(process.env.KAIRO_STAGING_BASE_URL).hostname; const prefix = 'kairo-anime-platform-staging.'; if (!host.startsWith(prefix)) throw new Error('Unexpected Kairo staging workers.dev hostname'); console.log('https://kairo-youtubejs-gateway-staging.' + host.slice(prefix.length))")"
+          printf '%s' "$YOUTUBE_JS_GATEWAY_SECRET" | npx wrangler secret put YOUTUBE_JS_GATEWAY_TOKEN --env staging
+          echo "GATEWAY_URL=$gateway_url" >> "$GITHUB_ENV"
+
+      - name: Deploy Kairo Worker to staging
+        if: steps.cloudflare.outputs.ready == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npm run deploy:staging
+
+      - name: Verify deployed staging gateway and Kairo proxy
+        if: steps.cloudflare.outputs.ready == 'true'
+        working-directory: services/youtubejs-gateway
+        env:
+          KAIRO_BASE_URL: https://kairo-anime-platform-staging.unpainllama.workers.dev
+          SMOKE_QUERIES: astronomy
+          SKIP_GATEWAY_SEARCH: 'true'
+        run: |
+          curl --silent --show-error --fail "$GATEWAY_URL/health"
+          echo
+          node scripts/live-smoke-test.mjs

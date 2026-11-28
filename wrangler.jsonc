@@ -37,6 +37,12 @@
   "env": {
     // Staging
     "staging": {
+      "services": [
+        {
+          "binding": "YOUTUBE_JS_GATEWAY",
+          "service": "kairo-youtubejs-gateway-staging"
+        }
+      ],
       "observability": {
         "logs": {
           "enabled": true,
@@ -69,6 +75,7 @@
 
       "vars": {
         "APP_ENV": "staging",
+        "YOUTUBE_JS_EXPERIMENT_ENABLED": "true",
         "APP_BASE_URL": "https://kairo-anime-platform-staging.unpainllama.workers.dev",
         "CATALOG_SOURCE": "live",
         "EPISODE_PROVIDERS": "hianime,jikan",
