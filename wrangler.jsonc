@@ -37,6 +37,12 @@
   "env": {
     // Staging
     "staging": {
+      "services": [
+        {
+          "binding": "YOUTUBE_JS_GATEWAY",
+          "service": "kairo-youtubejs-gateway-staging"
+        }
+      ],
       "observability": {
         "logs": {
           "enabled": true,
