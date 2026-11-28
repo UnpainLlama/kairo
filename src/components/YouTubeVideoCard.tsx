@@ -37,13 +37,13 @@ function publishedLabel(value: string | null): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'YouTube';
   const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
-  if (seconds < 60) return 'Just now';
-  if (seconds < 3600) return Math.floor(seconds / 60) + ' minutes ago';
-  if (seconds < 86400) return Math.floor(seconds / 3600) + ' hours ago';
-  if (seconds < 604800) return Math.floor(seconds / 86400) + ' days ago';
-  if (seconds < 2592000) return Math.floor(seconds / 604800) + ' weeks ago';
-  if (seconds < 31536000) return Math.floor(seconds / 2592000) + ' months ago';
-  return Math.floor(seconds / 31536000) + ' years ago';
+  if (seconds < 60) return 'now';
+  if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+  if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
+  if (seconds < 604800) return Math.floor(seconds / 86400) + 'd ago';
+  if (seconds < 2592000) return Math.floor(seconds / 604800) + 'w ago';
+  if (seconds < 31536000) return Math.floor(seconds / 2592000) + 'mo ago';
+  return Math.floor(seconds / 31536000) + 'y ago';
 }
 
 export default function YouTubeVideoCard({ video, relatedVideos = [], channelAvatarUrl, compact = false, layout = 'grid' }: YouTubeVideoCardProps) {
