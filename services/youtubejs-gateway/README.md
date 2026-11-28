@@ -72,12 +72,8 @@ The `YouTube.js verification and staging` workflow runs on pushes to the `youtub
 
 After all verification steps pass, pushes to `youtube.js` also deploy the gateway and Kairo Worker to **staging only**. The workflow never deploys a production environment. It then checks the deployed gateway and Kairo proxy and makes one official Data API search for `astronomy` as a reference comparison. That reference request consumes normal YouTube Data API quota; it is deliberately limited to one query per staging deployment. The report records top-five titles and shared video IDs, but human review is still needed to judge relevance.
 
-For the staging deployment job, configure these repository-level GitHub Actions secrets:
+The deployment job is attached to the existing GitHub Actions environment named `staging`, matching Kairo's normal deploy workflow. It uses the environment secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. It generates a fresh random gateway bearer secret at deploy time and writes that secret directly to the two staging Workers; the shared token is masked in Actions logs and is not stored in GitHub or source control.
 
-- `CLOUDFLARE_API_TOKEN` — token permitted to deploy Workers and manage Worker secrets for this account.
-- `CLOUDFLARE_ACCOUNT_ID` — the Cloudflare account ID.
-- `YOUTUBE_JS_GATEWAY_SECRET` — a long random shared secret used by the gateway and Kairo staging proxy.
-
-When any of these secrets is missing, the workflow reports that staging deployment was skipped instead of attempting a partial deploy. The workflow derives the gateway workers.dev URL from the configured Kairo staging hostname. Do not add these values to source files or commit local `.dev.vars` files.
+When either Cloudflare environment secret is missing, the workflow reports that staging deployment was skipped instead of attempting a partial deploy. The workflow derives the gateway workers.dev URL from the configured Kairo staging hostname. Do not add credentials to source files or commit local `.dev.vars` files.
 
 A manual `workflow_dispatch` is also available on this branch. Its `deploy_staging` input must be enabled to request a staging deployment; the same verification and secrets checks still apply.
