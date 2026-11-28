@@ -59,3 +59,25 @@ The Kairo proxy refuses this provider outside development and staging even when 
 The gateway uses the package's `youtubei.js/cf-worker` entrypoint and an in-memory cache adapter. Cloudflare's Cache API does not accept the arbitrary cache keys used by the library's default universal cache adapter. The process-local cache is intentionally ephemeral; the library session is generated locally per request.
 
 The package version is pinned exactly in `package.json`. Run `npm install` in this service directory to generate/update its local lockfile before deploying from a clean checkout.
+
+## GitHub Actions verification and staging deployment
+
+The `YouTube.js verification and staging` workflow runs on pushes to the `youtube.js` branch and on pull requests targeting `main`. It:
+
+1. Runs the Kairo proxy tests and typecheck.
+2. Typechecks and dry-runs the isolated gateway build.
+3. Starts a local gateway in the GitHub runner and makes live anonymous YouTube.js searches for astronomy, lofi music, and TypeScript tutorials.
+4. Validates returned video IDs, titles, canonical watch URLs, duplicate IDs, and thumbnail hosts.
+5. Uploads a JSON smoke-test report and includes the result summary in the Actions run.
+
+After all verification steps pass, pushes to `youtube.js` also deploy the gateway and Kairo Worker to **staging only**. The workflow never deploys a production environment. It then checks the deployed gateway and Kairo proxy and makes one official Data API search for `astronomy` as a reference comparison. That reference request consumes normal YouTube Data API quota; it is deliberately limited to one query per staging deployment. The report records top-five titles and shared video IDs, but human review is still needed to judge relevance.
+
+For the staging deployment job, configure these repository-level GitHub Actions secrets:
+
+- `CLOUDFLARE_API_TOKEN` — token permitted to deploy Workers and manage Worker secrets for this account.
+- `CLOUDFLARE_ACCOUNT_ID` — the Cloudflare account ID.
+- `YOUTUBE_JS_GATEWAY_SECRET` — a long random shared secret used by the gateway and Kairo staging proxy.
+
+When any of these secrets is missing, the workflow reports that staging deployment was skipped instead of attempting a partial deploy. The workflow derives the gateway workers.dev URL from the configured Kairo staging hostname. Do not add these values to source files or commit local `.dev.vars` files.
+
+A manual `workflow_dispatch` is also available on this branch. Its `deploy_staging` input must be enabled to request a staging deployment; the same verification and secrets checks still apply.
