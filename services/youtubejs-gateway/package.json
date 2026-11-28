@@ -5,12 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev --config wrangler.jsonc",
-    "deploy:staging": "wrangler deploy --config wrangler.jsonc --env staging"
+    "deploy:staging": "wrangler deploy --config wrangler.jsonc --env staging",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "youtubei.js": "18.3.0"
   },
   "devDependencies": {
-    "wrangler": "^4.68.0"
+    "wrangler": "^4.68.0",
+    "@cloudflare/workers-types": "^5.20261016.1",
+    "typescript": "^5.9.3"
   }
 }
