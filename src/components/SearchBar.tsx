@@ -199,7 +199,7 @@ export default function SearchBar({ mode = 'anime' }: { mode?: 'anime' | 'youtub
           autoComplete="off"
           spellCheck={false}
           maxLength={maxLength}
-          placeholder={`Search ${mediaLabel}...`}
+          placeholder={isYouTube ? 'Search' : `Search ${mediaLabel}...`}
           value={text}
           onChange={event => { setText(event.target.value); setActive(-1); setOpen(true); }}
           onFocus={() => setOpen(true)}
