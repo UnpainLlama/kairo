@@ -60,27 +60,31 @@ const invalidQueryPayload = await invalidQuery.json().catch(() => null);
 assert(invalidQuery.status === 400 && invalidQueryPayload?.error?.code === 'VALIDATION_ERROR',
   'Gateway search must reject invalid queries.');
 console.log('PASS gateway access controls: missing bearer token and invalid query rejected');
-for (const query of queries) {
-  const url = new URL(gatewayUrl + '/api/search');
-  url.searchParams.set('q', query);
-  url.searchParams.set('limit', '10');
-  const payload = await requestJson(url, { Accept: 'application/json', Authorization: 'Bearer ' + gatewaySecret }, 'Gateway search');
-  assert(payload?.success === true, `Gateway search failed for "${query}".`);
-  assert(payload?.meta?.provider === 'youtube.js', `Unexpected provider for "${query}".`);
-  const videos = payload?.data?.videos;
-  assert(Array.isArray(videos) && videos.length > 0, `No videos returned for "${query}".`);
-
-  const seen = new Set();
-  for (const video of videos) {
-    assert(video && videoIdPattern.test(video.videoId), `Invalid video ID returned for "${query}".`);
-    assert(typeof video.title === 'string' && video.title.trim().length > 0, `Missing video title for "${query}".`);
-    assert(video.url === 'https://www.youtube.com/watch?v=' + video.videoId, `Invalid watch URL for "${query}".`);
-    assert(!seen.has(video.videoId), `Duplicate video ID returned for "${query}".`);
-    seen.add(video.videoId);
-    validateThumbnail(video.thumbnailUrl, query);
+if (process.env.SKIP_GATEWAY_SEARCH !== 'true') {
+  for (const query of queries) {
+    const url = new URL(gatewayUrl + '/api/search');
+    url.searchParams.set('q', query);
+    url.searchParams.set('limit', '10');
+    const payload = await requestJson(url, { Accept: 'application/json', Authorization: 'Bearer ' + gatewaySecret }, 'Gateway search');
+    assert(payload?.success === true, `Gateway search failed for "${query}".`);
+    assert(payload?.meta?.provider === 'youtube.js', `Unexpected provider for "${query}".`);
+    const videos = payload?.data?.videos;
+    assert(Array.isArray(videos) && videos.length > 0, `No videos returned for "${query}".`);
+  
+    const seen = new Set();
+    for (const video of videos) {
+      assert(video && videoIdPattern.test(video.videoId), `Invalid video ID returned for "${query}".`);
+      assert(typeof video.title === 'string' && video.title.trim().length > 0, `Missing video title for "${query}".`);
+      assert(video.url === 'https://www.youtube.com/watch?v=' + video.videoId, `Invalid watch URL for "${query}".`);
+      assert(!seen.has(video.videoId), `Duplicate video ID returned for "${query}".`);
+      seen.add(video.videoId);
+      validateThumbnail(video.thumbnailUrl, query);
+    }
+    reports.push({ query, count: videos.length, firstTitle: videos[0].title });
+    console.log(`PASS gateway search "${query}": ${videos.length} videos; first result: ${videos[0].title}`);
   }
-  reports.push({ query, count: videos.length, firstTitle: videos[0].title });
-  console.log(`PASS gateway search "${query}": ${videos.length} videos; first result: ${videos[0].title}`);
+} else {
+  console.log('Skip separate gateway searches; exercise gateway through the Kairo proxy below.');
 }
 
 const comparisons = [];
