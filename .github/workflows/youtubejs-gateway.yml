@@ -232,7 +232,7 @@ jobs:
           gateway_url="$(node --input-type=module -e "const host = new URL(process.env.KAIRO_STAGING_BASE_URL).hostname; const prefix = 'kairo-anime-platform-staging.'; if (!host.startsWith(prefix)) throw new Error('Unexpected Kairo staging workers.dev hostname'); console.log('https://kairo-youtubejs-gateway-staging.' + host.slice(prefix.length))")"
           printf '%s' "$YOUTUBE_JS_GATEWAY_SECRET" | npx wrangler secret put YOUTUBE_JS_GATEWAY_TOKEN --env staging
           printf '%s' "$gateway_url" | npx wrangler secret put YOUTUBE_JS_GATEWAY_URL --env staging
-          echo "YOUTUBE_JS_GATEWAY_URL=$gateway_url" >> "$GITHUB_ENV"
+          echo "GATEWAY_URL=$gateway_url" >> "$GITHUB_ENV"
 
       - name: Deploy Kairo Worker to staging
         if: steps.cloudflare.outputs.ready == 'true'
@@ -245,7 +245,6 @@ jobs:
         if: steps.cloudflare.outputs.ready == 'true'
         working-directory: services/youtubejs-gateway
         env:
-          GATEWAY_URL: ${{ env.YOUTUBE_JS_GATEWAY_URL }}
           KAIRO_BASE_URL: https://kairo-anime-platform-staging.unpainllama.workers.dev
         run: |
           curl --silent --show-error --fail "$GATEWAY_URL/health"
