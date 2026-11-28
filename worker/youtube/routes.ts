@@ -547,140 +547,6 @@ function safeRecommendationTuning(value: unknown): Record<string, unknown> | nul
 }
 
 
-type StoredRecommendationCandidate = {
-  videoId: string;
-  title: string;
-  description: string;
-  thumbnailUrl: string | null;
-  channelId: string;
-  channelTitle: string;
-  publishedAt: string | null;
-  durationSeconds: number | null;
-  source: string;
-  seedVideoId: string | null;
-  seedTitle: string | null;
-  seedChannelId: string | null;
-  seedChannelTitle: string | null;
-  sourceRank: number;
-  discoveredAt: number;
-  expiresAt: number;
-};
-
-async function gatherUserRecommendations(c: YouTubeContext, userId: string, history: any[], now: number): Promise<void> {
-  const state = await c.env.DB.prepare(
-    'SELECT last_gathered_at AS lastGatheredAt,next_gather_at AS nextGatherAt ' +
-    'FROM youtube_discovery_state WHERE user_id=?'
-  ).bind(userId).first<{ lastGatheredAt: number; nextGatherAt: number }>();
-  if (state && Number(state.nextGatherAt) > now) return;
-
-  const seeds: any[] = [];
-  const seenChannels = new Set<string>();
-  for (const item of history) {
-    const channelId = typeof item.channelId === 'string' ? item.channelId : '';
-    const title = cleanText(item.title, 100);
-    if (title.length < 5 || (channelId && seenChannels.has(channelId))) continue;
-    if (channelId) seenChannels.add(channelId);
-    seeds.push(item);
-    if (seeds.length >= 4) break;
-  }
-  if (seeds.length === 0) {
-    await c.env.DB.prepare(
-      'INSERT INTO youtube_discovery_state (user_id,active_at,last_gathered_at,next_gather_at,gather_cursor,updated_at) ' +
-      'VALUES (?,?,0,?,0,?) ON CONFLICT(user_id) DO UPDATE SET active_at=excluded.active_at,' +
-      'next_gather_at=excluded.next_gather_at,updated_at=excluded.updated_at'
-    ).bind(userId, now, now + 21600000, now).run();
-    return;
-  }
-
-  let gathered = 0;
-  for (const seed of seeds) {
-    const query = cleanText(seed.title, 100);
-    try {
-      const result = await youtubeApiSearchVideos(c, query, {
-        order: 'relevance', duration: 'any', uploadDate: 'any', eventType: 'any', pageToken: null,
-      });
-      for (let index = 0; index < result.videos.length; index += 1) {
-        const video = result.videos[index];
-        if (!video.channelId || video.madeForKids || video.embeddable === false) continue;
-        await c.env.DB.prepare(
-          'INSERT INTO youtube_recommendation_candidates ' +
-          '(user_id,video_id,title,description,thumbnail_url,channel_id,channel_title,published_at,duration_seconds,' +
-          'source,seed_video_id,seed_title,seed_channel_id,seed_channel_title,source_rank,discovered_at,expires_at) ' +
-          'VALUES (?,?,?,?,?,?,?,?,?,' + "'search'" + ',?,?,?,?,?,?,?) ' +
-          'ON CONFLICT(user_id,video_id) DO UPDATE SET title=excluded.title,description=excluded.description,' +
-          'thumbnail_url=excluded.thumbnail_url,channel_id=excluded.channel_id,channel_title=excluded.channel_title,' +
-          'published_at=excluded.published_at,duration_seconds=excluded.duration_seconds,source=excluded.source,' +
-          'seed_video_id=excluded.seed_video_id,seed_title=excluded.seed_title,seed_channel_id=excluded.seed_channel_id,' +
-          'seed_channel_title=excluded.seed_channel_title,source_rank=MIN(youtube_recommendation_candidates.source_rank,excluded.source_rank),' +
-          'discovered_at=MAX(youtube_recommendation_candidates.discovered_at,excluded.discovered_at),' +
-          'expires_at=MAX(youtube_recommendation_candidates.expires_at,excluded.expires_at)'
-        ).bind(
-          userId, video.videoId, video.title, video.description, video.thumbnailUrl, video.channelId, video.channelTitle,
-          video.publishedAt, video.durationSeconds, seed.videoId, seed.title, seed.channelId, seed.channelTitle,
-          index, now, now + 21 * 86400000,
-        ).run();
-        gathered += 1;
-      }
-    } catch {
-      // Keep usable candidates from other seeds when one YouTube search fails.
-    }
-  }
-
-  const nextGatherAt = now + (gathered > 0 ? 21600000 : 3600000);
-  await c.env.DB.prepare(
-    'INSERT INTO youtube_discovery_state (user_id,active_at,last_gathered_at,next_gather_at,gather_cursor,updated_at) ' +
-    'VALUES (?,?,?,?,0,?) ON CONFLICT(user_id) DO UPDATE SET active_at=excluded.active_at,' +
-    'last_gathered_at=CASE WHEN excluded.last_gathered_at>0 THEN excluded.last_gathered_at ELSE youtube_discovery_state.last_gathered_at END,' +
-    'next_gather_at=excluded.next_gather_at,updated_at=excluded.updated_at'
-  ).bind(userId, now, gathered > 0 ? now : 0, nextGatherAt, now).run();
-}
-
-function safeRecommendationTuning(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const input = value as Record<string, unknown>;
-  const output: Record<string, unknown> = {};
-  const integerFields: Record<string, [number, number]> = {
-    freshness: [0, 100], popularity: [-100, 100], channelGap: [1, 12], newChannelCap: [1, 6],
-    shuffle: [0, 100], minWatchedPct: [0, 90], minMinutes: [0, 600], maxMinutes: [0, 600],
-  };
-  for (const [key, [min, max]] of Object.entries(integerFields)) {
-    if (input[key] === undefined) continue;
-    const number = Number(input[key]);
-    if (!Number.isInteger(number) || number < min || number > max) return null;
-    output[key] = number;
-  }
-  const enums: Record<string, number[]> = {
-    wornAfter: [0, 3, 6, 12], recentDays: [14, 30, 60, 90],
-    throwbackYears: [0, 1, 3], rewatchAfterDays: [30, 60, 180, 365],
-    maxAgeDays: [0, 7, 30, 90, 365, 1095],
-  };
-  for (const [key, allowed] of Object.entries(enums)) {
-    if (input[key] === undefined) continue;
-    const number = Number(input[key]);
-    if (!allowed.includes(number)) return null;
-    output[key] = number;
-  }
-  for (const key of ['hidePastLive']) {
-    if (input[key] !== undefined) {
-      if (typeof input[key] !== 'boolean') return null;
-      output[key] = input[key];
-    }
-  }
-  if (input.shares !== undefined) {
-    if (!input.shares || typeof input.shares !== 'object' || Array.isArray(input.shares)) return null;
-    const shares = input.shares as Record<string, unknown>;
-    const clean: Record<string, number> = {};
-    for (const key of ['subscriptions', 'similar', 'new', 'throwback', 'rewatch']) {
-      const number = Number(shares[key]);
-      if (!Number.isInteger(number) || number < 0 || number > 100) return null;
-      clean[key] = number;
-    }
-    if (Object.values(clean).every(number => number === 0)) return null;
-    output.shares = clean;
-  }
-  return output;
-}
-
 export function registerYouTubeMediaRoutes(app: any): void {
   app.get('/api/v1/youtube/videos/search', async (c: YouTubeContext) => {
     noStore(c);
@@ -941,7 +807,9 @@ export function registerYouTubeMediaRoutes(app: any): void {
     const user = await signedInUser(c);
     if (!user) return fail(c, 401, 'AUTH_REQUIRED', 'Sign in to save recommendation impressions.');
     const raw = await parseJsonBody(c) as any;
-    const ids = Array.isArray(raw?.videoIds) ? [...new Set(raw.videoIds.filter(isYouTubeVideoId))].slice(0, 60) : [];
+    const ids: string[] = Array.isArray(raw?.videoIds)
+      ? Array.from(new Set<string>(raw.videoIds.filter((value: unknown): value is string => isYouTubeVideoId(value)))).slice(0, 60)
+      : [];
     if (ids.length === 0) return fail(c, 400, 'VALIDATION_ERROR', 'At least one recommended video ID is required.');
     const now = Date.now();
     try {
