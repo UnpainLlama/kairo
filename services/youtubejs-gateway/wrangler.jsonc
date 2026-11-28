@@ -1,0 +1,18 @@
+{
+  "$schema": "https://unpkg.com/wrangler@4.68.0/config-schema.json",
+  "name": "kairo-youtubejs-gateway",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-28",
+  "workers_dev": true,
+  "vars": {
+    "APP_ENV": "development"
+  },
+  "env": {
+    "staging": {
+      "name": "kairo-youtubejs-gateway-staging",
+      "vars": {
+        "APP_ENV": "staging"
+      }
+    }
+  }
+}
