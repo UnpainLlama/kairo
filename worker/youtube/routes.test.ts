@@ -78,6 +78,7 @@ function makeHistoryViewHandler() {
     post: (path: string, handler: (context: any) => Promise<Response>) => {
       handlers.set('POST ' + path, handler);
     },
+    put: () => undefined,
     delete: () => undefined,
   };
   registerYouTubeMediaRoutes(app);
@@ -184,6 +185,7 @@ function makeSearchHandler() {
   const app = {
     get: (path: string, handler: (context: any) => Promise<Response>) => { handlers.set('GET ' + path, handler); },
     post: () => undefined,
+    put: () => undefined,
     delete: () => undefined,
   };
   registerYouTubeMediaRoutes(app);
