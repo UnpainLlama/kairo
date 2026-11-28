@@ -5,6 +5,7 @@ import { boundedInt, parseId, parsePagination, parseSearchParams } from './lib/v
 import { clearSessionCookie, findSessionUser, revokeSession } from './auth/session';
 import { registerAuthRoutes } from './auth/routes';
 import { registerYouTubeMediaRoutes } from './youtube/routes';
+import { registerYouTubeInnerTubeRoutes } from './youtube/innertube';
 import { GENRES_SQL, buildListQuery, buildRelatedQuery, buildSearchQuery } from './repositories/catalog';
 import { BASE_RECORD_SQL, INSERT_PROVIDER_ID_SQL, PROVIDER_IDS_SQL } from './repositories/providerIds';
 import { buildRegistry, createCache, resolveUnified, sharedBreaker, toBaseRecord, type BaseRow } from './metadata/service';
@@ -27,6 +28,12 @@ interface Bindings {
   YOUTUBE_TOKEN_ENCRYPTION_KEY?: string;
   /** Server-only Google API key for public YouTube Data API reads. */
   YOUTUBE_DATA_API_KEY?: string;
+  /** Explicit development/staging-only toggle for the unofficial YouTube.js experiment. */
+  YOUTUBE_JS_EXPERIMENT_ENABLED?: string;
+  /** Server-side URL for the separate experimental YouTube.js gateway. */
+  YOUTUBE_JS_GATEWAY_URL?: string;
+  /** Shared server-only bearer token for the experimental gateway. */
+  YOUTUBE_JS_GATEWAY_TOKEN?: string;
   AUTH_EMAIL_FROM?: string;
   ALLOWED_ORIGIN?: string;
   /** Comma-separated metadata provider ids to enable, e.g. "anilist". Empty = none. */
@@ -96,6 +103,7 @@ function fail(c: Context<{ Bindings: Bindings; Variables: Variables }>, status: 
 
 registerAuthRoutes(app);
 registerYouTubeMediaRoutes(app);
+registerYouTubeInnerTubeRoutes(app);
 
 function moviesProviderEnabled(c: AppContext): boolean {
   return c.env.MOVIES_TMDB_ENABLED === 'true' && c.env.MOVIES_TMDB_TERMS_APPROVED === 'true';
