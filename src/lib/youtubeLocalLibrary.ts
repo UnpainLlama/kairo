@@ -84,9 +84,9 @@ const EMPTY_RECOMMENDATION_STATE: GuestRecommendationState = {
 };
 
 export function readGuestRecommendationState(): GuestRecommendationState {
-  if (typeof window === 'undefined') return EMPTY_RECOMMENDATION_STATE;
+  if (typeof localStorage === 'undefined') return EMPTY_RECOMMENDATION_STATE;
   try {
-    const raw = window.localStorage.getItem(RECOMMENDATION_KEY);
+    const raw = localStorage.getItem(RECOMMENDATION_KEY);
     if (!raw) return EMPTY_RECOMMENDATION_STATE;
     const value = JSON.parse(raw) as Partial<GuestRecommendationState>;
     const feedback = value.feedback ?? EMPTY_RECOMMENDATION_STATE.feedback;
@@ -128,7 +128,7 @@ export function saveGuestRecommendationState(
     impressions: patch.impressions ?? current.impressions,
   };
   try {
-    window.localStorage.setItem(RECOMMENDATION_KEY, JSON.stringify(next));
+    localStorage.setItem(RECOMMENDATION_KEY, JSON.stringify(next));
   } catch {
     // Private browsing or a full storage quota should not interrupt browsing.
   }
