@@ -577,7 +577,7 @@ async function gatherUserRecommendations(c: YouTubeContext, userId: string, hist
         ).bind(
           userId, video.videoId, video.title, video.description, video.thumbnailUrl, video.channelId,
           channelTitle || video.channelTitle, video.publishedAt, video.durationSeconds,
-          channelTitle, channelId, channelRank++, now, now + 21 * 86400000,
+          channelTitle, channelId, channelTitle, channelRank++, now, now + 21 * 86400000,
         ).run();
         gathered += 1;
       }
