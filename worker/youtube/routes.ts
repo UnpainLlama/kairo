@@ -11,6 +11,7 @@ type YouTubeContext = {
   };
   json(body: unknown, status?: number): Response;
   header(name: string, value: string): void;
+  executionCtx?: { waitUntil(promise: Promise<unknown>): void };
 };
 
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
@@ -742,7 +743,15 @@ export function registerYouTubeMediaRoutes(app: any): void {
       ).bind(user.id, now, now).run();
       void activity;
 
-      await gatherUserRecommendations(c, user.id, history, now);
+      const gather = gatherUserRecommendations(c, user.id, history, now).catch(() => undefined);
+      const existingCandidates = await c.env.DB.prepare(
+        'SELECT COUNT(*) AS count FROM youtube_recommendation_candidates WHERE user_id=? AND expires_at>?'
+      ).bind(user.id, now).first<{ count: number }>();
+      if (!existingCandidates || Number(existingCandidates.count) === 0 || !c.executionCtx?.waitUntil) {
+        await gather;
+      } else {
+        c.executionCtx.waitUntil(gather);
+      }
       const [candidateRows, feedbackRows, topicRows, impressionRows, settingRow] = await Promise.all([
         c.env.DB.prepare(
           'SELECT video_id AS videoId,title,description,thumbnail_url AS thumbnailUrl,channel_id AS channelId,' +
