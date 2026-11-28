@@ -170,7 +170,7 @@ describe('experimental YouTube.js proxy', () => {
     const response = await handler(context);
     const payload = await response.json() as any;
     expect(response.status).toBe(503);
-    expect(payload.error.code).toBe('YOUTUBE_JS_GATEWAY_HTTP_ERROR');
+    expect(payload.error.code).toBe('YOUTUBE_JS_GATEWAY_HTTP_404');
   });
 
   it('classifies Worker-to-Worker connection failures', async () => {
