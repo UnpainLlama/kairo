@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   addGuestYouTubeWatchLater, readGuestRecommendationState, readGuestYouTubeHistory, readGuestYouTubeWatchLater,
-  recordGuestYouTubeView, removeGuestYouTubeHistory, removeGuestYouTubeWatchLater, saveGuestRecommendationState, saveGuestYouTubeProgress,
+  recordGuestYouTubeView, removeGuestYouTubeHistory, removeGuestYouTubeWatchLater, saveGuestRecommendationCache, saveGuestRecommendationState, saveGuestYouTubeProgress,
 } from './youtubeLocalLibrary';
 
 class MemoryStorage {
@@ -88,6 +88,31 @@ describe('guest YouTube browser library', () => {
       topics: [{ id: 'topic-1', topic: 'animation', kind: 'interest', share: 12 }],
       feedback: { notInterestedVideoIds: ['abcdefghijk'] },
       impressions: { abcdefghijk: 3 },
+    });
+  });
+
+  it('caches guest recommendation candidates and a six-hour gather deadline', () => {
+    const candidate = {
+      video: {
+        videoId: 'candidate001',
+        title: 'A related video',
+        description: 'A related topic',
+        thumbnailUrl: null,
+        channelId: 'UC1234567890',
+        channelTitle: 'Another channel',
+        publishedAt: '2026-11-27T00:00:00.000Z',
+        durationSeconds: 300,
+      },
+      seedTitle: 'Example video',
+      source: 'search' as const,
+    };
+    const nextGatherAt = Date.now() + 6 * 60 * 60 * 1000;
+
+    saveGuestRecommendationCache([candidate], nextGatherAt);
+
+    expect(readGuestRecommendationState()).toMatchObject({
+      candidateCache: [candidate],
+      nextGatherAt,
     });
   });
 
