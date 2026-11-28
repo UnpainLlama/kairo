@@ -23,6 +23,7 @@ type HistoryVideo = YouTubeLocalVideo & { updatedAt: number };
 type DiscoverySeed = { query: string; channelId: string | null; channelTitle: string; reason: string };
 type DiscoveryVideo = RecommendedVideo;
 type FeedError = { message: string };
+type FeedMixRow = { key: string; label: string; requested: number; actual: number; count: number };
 
 function isShort(video: Pick<YouTubeCardVideo, 'title' | 'description'>): boolean {
   return /(?:^|\s)#(?:youtube)?shorts?\b/i.test((video.title || '') + ' ' + (video.description || ''));
@@ -107,12 +108,14 @@ export default function YouTubeFeedPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<FeedError | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [mixSummary, setMixSummary] = useState<FeedMixRow[]>([]);
 
   const load = useCallback(async (signal: AbortSignal) => {
     if (!resolved && !accountError) return;
     setLoading(true);
     setError(null);
     setVideos([]);
+    setMixSummary([]);
 
     try {
       if (accountError) throw new Error('Kairo could not verify your account. Reconnect and reload to use your personal recommendations.');
@@ -255,6 +258,18 @@ export default function YouTubeFeedPage() {
           saveGuestRecommendationState({ impressions: nextImpressions });
         }
       }
+      const bucketRows: Array<{ key: string; label: string; requested: number }> = [
+        { key: 'subscriptions', label: 'Recent channel uploads', requested: tuning.shares.subscriptions },
+        { key: 'similar', label: 'Similar videos', requested: tuning.shares.similar },
+        { key: 'new', label: 'New channels', requested: tuning.shares.new },
+        { key: 'throwback', label: 'Throwbacks', requested: tuning.shares.throwback },
+        { key: 'rewatch', label: 'Rewatches', requested: tuning.shares.rewatch },
+        { key: 'interest', label: 'Your interests', requested: Math.min(35, topics.filter(topic => topic.kind === 'interest').reduce((sum, topic) => sum + (topic.share ?? 0), 0)) },
+      ];
+      setMixSummary(bucketRows.map(row => {
+        const count = mixed.filter(video => video.recommendationBucket === row.key).length;
+        return { ...row, count, actual: mixed.length ? Math.round(count / mixed.length * 100) : 0 };
+      }));
       setVideos(mixed);
       if (mixed.length === 0 && recentHistory.length > 0) {
         setError({ message: 'We could not find fresh videos from those topics yet. Try Search to explore more creators.' });
@@ -335,6 +350,14 @@ export default function YouTubeFeedPage() {
         <div className="yt-feed-toolbar" aria-label="Recommendation controls">
           <Link to="/youtube/recommendations" className="yt-feed-algorithm-link">Algorithm</Link>
           <button type="button" onClick={() => setRefreshKey(value => value + 1)}>Refresh feed</button>
+        </div>
+      )}
+      {!loading && !error && mixSummary.some(row => row.count > 0) && (
+        <div className="yt-feed-mix" aria-label="Actual recommendation mix">
+          <span className="yt-feed-mix-title">Feed mix</span>
+          {mixSummary.filter(row => row.count > 0).map(row => (
+            <span key={row.key}><b>{row.actual}%</b> {row.label} <small>target {row.requested}%</small></span>
+          ))}
         </div>
       )}
       {error && (
