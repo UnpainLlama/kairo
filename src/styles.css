@@ -3554,3 +3554,23 @@ img { display: block; }
   .yt-recommendation-control { grid-template-columns: 1fr auto; }
   .yt-recommendation-topic-form > input { flex-basis: 100%; }
 }
+
+.yt-recommendation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 7px;
+}
+.yt-recommendation-actions button {
+  padding: 4px 7px;
+  border: 1px solid var(--yt-border, rgba(255,255,255,.1));
+  border-radius: 6px;
+  background: transparent;
+  color: var(--yt-muted, #9ca3af);
+  font-size: .68rem;
+  cursor: pointer;
+}
+.yt-recommendation-actions button:hover {
+  color: inherit;
+  border-color: var(--yt-muted, #9ca3af);
+}
