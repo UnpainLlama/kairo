@@ -173,7 +173,6 @@ export default function YouTubeSearchPage() {
       setVideos([]);
       setChannels([]);
       setNextPageToken(null);
-      setTotalResults(null);
       setError(null);
       setSearched(false);
       setLoading(false);
