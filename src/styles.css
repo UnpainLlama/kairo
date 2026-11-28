@@ -3603,3 +3603,68 @@ img { display: block; }
   color: inherit;
   border-color: var(--yt-muted, #9ca3af);
 }
+
+.yt-channel-suggestions {
+  margin: 26px 0 30px;
+}
+.yt-channel-suggestions .yt-section-heading {
+  margin-bottom: 13px;
+}
+.yt-channel-suggestions-row {
+  display: grid;
+  grid-auto-columns: minmax(150px, 190px);
+  grid-auto-flow: column;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 2px 1px 9px;
+  scrollbar-width: thin;
+}
+.yt-channel-suggestion {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 15px 10px;
+  border: 1px solid var(--yt-border, rgba(255,255,255,.1));
+  border-radius: 12px;
+  background: var(--yt-panel, #171717);
+  color: inherit;
+  text-align: center;
+  text-decoration: none;
+}
+.yt-channel-suggestion:hover {
+  border-color: var(--yt-muted, #9ca3af);
+  background: var(--yt-panel-raised, #202020);
+}
+.yt-channel-suggestion-avatar {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+  background: rgba(255,255,255,.08);
+  color: var(--yt-muted, #9ca3af);
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+.yt-channel-suggestion-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.yt-channel-suggestion b {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: .82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.yt-channel-suggestion small {
+  color: var(--yt-muted, #9ca3af);
+  font-size: .7rem;
+}
+@media (max-width: 600px) {
+  .yt-channel-suggestions-row { grid-auto-columns: 145px; gap: 9px; }
+}
