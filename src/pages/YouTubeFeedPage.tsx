@@ -232,6 +232,35 @@ export default function YouTubeFeedPage() {
     return () => controller.abort();
   }, [load]);
 
+  const applyFeedback = useCallback(async (
+    video: YouTubeCardVideo,
+    action: 'not_interested' | 'dont_recommend_channel',
+  ) => {
+    try {
+      if (accountId) {
+        const targetType = action === 'not_interested' ? 'video' : 'channel';
+        const targetId = action === 'not_interested' ? video.videoId : (video.channelId ?? '');
+        const response = await fetch('/api/v1/youtube/recommendations/feedback', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targetType, targetId, action }),
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.success) {
+          throw new Error(payload?.error?.message ?? 'Recommendation feedback could not be saved.');
+        }
+      }
+      setVideos(current => current.filter(item =>
+        action === 'not_interested'
+          ? item.videoId !== video.videoId
+          : item.channelId !== video.channelId,
+      ));
+    } catch (caught) {
+      setError({ message: caught instanceof Error ? caught.message : 'Recommendation feedback could not be saved.' });
+    }
+  }, [accountId]);
+
   const shorts = useMemo(() => videos.filter(isShort).slice(0, 5), [videos]);
   const regularVideos = useMemo(() => videos.filter(video => !isShort(video)), [videos]);
 
@@ -279,7 +308,13 @@ export default function YouTubeFeedPage() {
         <section className="yt-feed-section">
           <div className="yt-video-grid yt-feed-grid">
             {regularVideos.map(video => (
-              <YouTubeVideoCard key={video.videoId} video={video} relatedVideos={videos} />
+              <YouTubeVideoCard
+                key={video.videoId}
+                video={video}
+                relatedVideos={videos}
+                onNotInterested={item => void applyFeedback(item, 'not_interested')}
+                onBlockChannel={item => void applyFeedback(item, 'dont_recommend_channel')}
+              />
             ))}
           </div>
         </section>
