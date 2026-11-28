@@ -269,7 +269,8 @@ export function registerYouTubeMediaRoutes(app: any): void {
       const result = await c.env.DB.prepare(
         'SELECT video_id AS videoId,title,description,thumbnail_url AS thumbnailUrl,channel_id AS channelId,' +
         'channel_title AS channelTitle,published_at AS publishedAt,duration_seconds AS durationSeconds,' +
-        'progress_seconds AS progressSeconds,completed,updated_at AS updatedAt ' +
+        'progress_seconds AS progressSeconds,completed,view_count AS viewCount,' +
+        'first_viewed_at AS firstViewedAt,last_viewed_at AS lastViewedAt,updated_at AS updatedAt ' +
         'FROM youtube_watch_history WHERE user_id=? ORDER BY updated_at DESC LIMIT 100'
       ).bind(user.id).all();
       return c.json({ success: true, data: { items: result.results ?? [] } });
@@ -290,14 +291,15 @@ export function registerYouTubeMediaRoutes(app: any): void {
     try {
       await c.env.DB.prepare(
         'INSERT INTO youtube_watch_history ' +
-        '(user_id,video_id,title,description,thumbnail_url,channel_id,channel_title,published_at,duration_seconds,progress_seconds,completed,updated_at) ' +
-        'VALUES (?,?,?,?,?,?,?,?,?,0,0,?) ' +
+        '(user_id,video_id,title,description,thumbnail_url,channel_id,channel_title,published_at,duration_seconds,progress_seconds,completed,updated_at,view_count,first_viewed_at,last_viewed_at) ' +
+        'VALUES (?,?,?,?,?,?,?,?,?,0,0,?,1,?,?) ' +
         'ON CONFLICT(user_id,video_id) DO UPDATE SET title=excluded.title,description=excluded.description,' +
         'thumbnail_url=excluded.thumbnail_url,channel_id=excluded.channel_id,channel_title=excluded.channel_title,' +
-        'published_at=excluded.published_at,duration_seconds=excluded.duration_seconds,updated_at=excluded.updated_at ' +
+        'published_at=excluded.published_at,duration_seconds=excluded.duration_seconds,updated_at=excluded.updated_at,' +
+        'view_count=youtube_watch_history.view_count+1,last_viewed_at=excluded.last_viewed_at ' +
         'WHERE excluded.updated_at>=youtube_watch_history.updated_at'
       ).bind(user.id, parsed.videoId, parsed.title, parsed.description, parsed.thumbnailUrl, parsed.channelId,
-        parsed.channelTitle, parsed.publishedAt, parsed.durationSeconds, updatedAt).run();
+        parsed.channelTitle, parsed.publishedAt, parsed.durationSeconds, updatedAt, updatedAt, updatedAt).run();
       return c.json({ success: true, data: { viewed: true, updatedAt: updatedAt } });
     } catch {
       return fail(c, 503, 'YOUTUBE_HISTORY_UNAVAILABLE', 'Could not save your YouTube viewing activity.');
