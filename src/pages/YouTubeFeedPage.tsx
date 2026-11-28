@@ -3,10 +3,11 @@ import { Link } from 'react-router-dom';
 import YouTubeVideoCard, { type YouTubeCardVideo } from '../components/YouTubeVideoCard';
 import { useAccountScope } from '../hooks/useAccountScope';
 import { readGuestYouTubeHistory, type YouTubeLocalVideo } from '../lib/youtubeLocalLibrary';
+import { buildRecommendationFeed, type RecommendationCandidate, type RecommendedVideo } from '../lib/youtubeRecommendations';
 
 type HistoryVideo = YouTubeLocalVideo & { updatedAt: number };
 type DiscoverySeed = { query: string; channelId: string | null; channelTitle: string; reason: string };
-type DiscoveryVideo = YouTubeCardVideo & { recommendationReason: string };
+type DiscoveryVideo = RecommendedVideo;
 type FeedError = { message: string };
 
 function isShort(video: Pick<YouTubeCardVideo, 'title' | 'description'>): boolean {
@@ -56,48 +57,6 @@ function buildDiscoverySeeds(history: HistoryVideo[]): DiscoverySeed[] {
   }
 
   return seeds;
-}
-
-function mixResults(buckets: Array<{ seed: DiscoverySeed; videos: YouTubeCardVideo[] }>, watchedIds: Set<string>): DiscoveryVideo[] {
-  const positions = buckets.map(() => 0);
-  const channelCounts = new Map<string, number>();
-  const seenVideos = new Set<string>(watchedIds);
-  const mixed: DiscoveryVideo[] = [];
-  let hasMore = true;
-
-  while (hasMore && mixed.length < 24) {
-    hasMore = false;
-    for (let bucketIndex = 0; bucketIndex < buckets.length && mixed.length < 24; bucketIndex += 1) {
-      const bucket = buckets[bucketIndex];
-      const list = bucket.videos;
-      let candidate: YouTubeCardVideo | undefined;
-
-      while (positions[bucketIndex] < list.length) {
-        const next = list[positions[bucketIndex]];
-        positions[bucketIndex] += 1;
-        if (seenVideos.has(next.videoId)) continue;
-        const channelKey = next.channelId || next.channelTitle || 'unknown';
-        if ((channelCounts.get(channelKey) ?? 0) >= 2) continue;
-        candidate = next;
-        break;
-      }
-
-      if (candidate) {
-        hasMore = true;
-        seenVideos.add(candidate.videoId);
-        const channelKey = candidate.channelId || candidate.channelTitle || 'unknown';
-        channelCounts.set(channelKey, (channelCounts.get(channelKey) ?? 0) + 1);
-        mixed.push({
-          ...candidate,
-          recommendationReason: bucket.seed.reason,
-        });
-      } else if (positions[bucketIndex] < list.length) {
-        hasMore = true;
-      }
-    }
-  }
-
-  return mixed;
 }
 
 async function readWatchHistory(accountId: string | null): Promise<HistoryVideo[]> {
@@ -165,8 +124,15 @@ export default function YouTubeFeedPage() {
         throw new Error(failed?.reason instanceof Error ? failed.reason.message : 'No recommendations could be loaded. Please try again.');
       }
 
-      const watchedIds = new Set(recentHistory.map(item => item.videoId));
-      const mixed = mixResults(successful, watchedIds);
+      const candidates: RecommendationCandidate[] = successful.flatMap(({ seed, videos }) =>
+        videos.map(video => ({ video, seedTitle: seed.query })),
+      );
+      const mixed = buildRecommendationFeed({
+        history: recentHistory,
+        candidates,
+        seed: refreshKey + 1,
+        limit: 60,
+      });
       setVideos(mixed);
       if (mixed.length === 0 && recentHistory.length > 0) {
         setError({ message: 'We could not find fresh videos from those topics yet. Try Search to explore more creators.' });
