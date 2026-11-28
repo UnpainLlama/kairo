@@ -258,13 +258,16 @@ export default function YouTubeFeedPage() {
           saveGuestRecommendationState({ impressions: nextImpressions });
         }
       }
+      const interestShare = Math.min(35, topics.filter(topic => topic.kind === 'interest').reduce((sum, topic) => sum + (topic.share ?? 0), 0));
+      const regularShareTotal = Object.values(tuning.shares).reduce((sum, value) => sum + Math.max(0, value), 0) || 1;
+      const regularTarget = (value: number) => Math.round(Math.max(0, value) / regularShareTotal * (100 - interestShare));
       const bucketRows: Array<{ key: string; label: string; requested: number }> = [
-        { key: 'subscriptions', label: 'Recent channel uploads', requested: tuning.shares.subscriptions },
-        { key: 'similar', label: 'Similar videos', requested: tuning.shares.similar },
-        { key: 'new', label: 'New channels', requested: tuning.shares.new },
-        { key: 'throwback', label: 'Throwbacks', requested: tuning.shares.throwback },
-        { key: 'rewatch', label: 'Rewatches', requested: tuning.shares.rewatch },
-        { key: 'interest', label: 'Your interests', requested: Math.min(35, topics.filter(topic => topic.kind === 'interest').reduce((sum, topic) => sum + (topic.share ?? 0), 0)) },
+        { key: 'subscriptions', label: 'Recent channel uploads', requested: regularTarget(tuning.shares.subscriptions) },
+        { key: 'similar', label: 'Similar videos', requested: regularTarget(tuning.shares.similar) },
+        { key: 'new', label: 'New channels', requested: regularTarget(tuning.shares.new) },
+        { key: 'throwback', label: 'Throwbacks', requested: regularTarget(tuning.shares.throwback) },
+        { key: 'rewatch', label: 'Rewatches', requested: regularTarget(tuning.shares.rewatch) },
+        { key: 'interest', label: 'Your interests', requested: interestShare },
       ];
       setMixSummary(bucketRows.map(row => {
         const count = mixed.filter(video => video.recommendationBucket === row.key).length;
