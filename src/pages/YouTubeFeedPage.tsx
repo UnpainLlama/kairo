@@ -89,6 +89,23 @@ async function readWatchHistory(accountId: string | null): Promise<HistoryVideo[
 }
 
 async function searchSeed(seed: DiscoverySeed): Promise<YouTubeCardVideo[]> {
+  // The unofficial InnerTube provider is opt-in and staging/development-only.
+  // It receives no Kairo session cookie; the official Data API remains the fallback.
+  try {
+    const experimentalParams = new URLSearchParams({ q: seed.query, limit: '24' });
+    const experimentalResponse = await fetch('/api/v1/youtube/innertube/search?' + experimentalParams.toString(), {
+      credentials: 'omit',
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+    });
+    const experimentalPayload = await experimentalResponse.json().catch(() => null);
+    if (experimentalResponse.ok && experimentalPayload?.success && Array.isArray(experimentalPayload.data?.videos)) {
+      return experimentalPayload.data.videos as YouTubeCardVideo[];
+    }
+  } catch {
+    // The experiment must never block the existing, supported discovery provider.
+  }
+
   const params = new URLSearchParams({ q: seed.query, order: 'relevance', duration: 'any' });
   const response = await fetch('/api/v1/youtube/videos/search?' + params.toString(), {
     credentials: 'same-origin',
