@@ -230,22 +230,11 @@ export default function YouTubeSearchPage() {
 
   const needsLogin = error?.code === 'AUTH_REQUIRED';
   const relatedVideos: YouTubeCardVideo[] = visibleVideos;
+  const shortShelfVideos = options.filter === 'all' ? visibleVideos.filter(isShort).slice(0, 5) : [];
+  const listVideos = options.filter === 'all' ? visibleVideos.filter(video => !isShort(video)) : visibleVideos;
 
   return (
     <section className="yt-page yt-search-page">
-      <header className="yt-page-heading yt-search-heading">
-        <div>
-          <span className="yt-eyebrow">YOUTUBE DISCOVERY</span>
-          <h1>{query ? 'Results for “' + query + '”' : 'Search videos and creators'}</h1>
-          <p>{query ? 'Explore videos, Shorts and channels matching your search.' : 'Search for a video, topic or creator from the Kairo search bar above.'}</p>
-        </div>
-      </header>
-
-      <div className="yt-search-modes" role="tablist" aria-label="Search type">
-        <button type="button" role="tab" aria-selected={mode === 'videos'} className={mode === 'videos' ? 'active' : ''} onClick={() => openSearch(query, 'videos')}>Videos</button>
-        <button type="button" role="tab" aria-selected={mode === 'channels'} className={mode === 'channels' ? 'active' : ''} onClick={() => openSearch(query, 'channels')}>Channels</button>
-      </div>
-
       {mode === 'videos' && (
         <>
           <div className="yt-search-filter-toolbar">
@@ -299,7 +288,6 @@ export default function YouTubeSearchPage() {
                   <fieldset>
                     <legend>Features</legend>
                     <button type="button" className={draftOptions.filter === 'live' ? 'selected' : ''} onClick={() => setDraftOptions(current => ({ ...current, filter: 'live' }))}>Live</button>
-                    <p>Only currently live broadcasts are included.</p>
                   </fieldset>
                   <fieldset>
                     <legend>Prioritize</legend>
@@ -307,7 +295,7 @@ export default function YouTubeSearchPage() {
                     <button type="button" className={draftOptions.order === 'viewCount' ? 'selected' : ''} onClick={() => setDraftOptions(current => ({ ...current, order: 'viewCount' }))}>Popularity</button>
                   </fieldset>
                 </div>
-                <footer><button type="button" className="yt-button yt-button-quiet" onClick={() => setDraftOptions(DEFAULT_OPTIONS)}>Reset</button><button type="button" className="yt-button yt-button-primary" onClick={applyFilters}>Apply filters</button></footer>
+                <footer><button type="button" className="yt-button yt-button-primary" onClick={applyFilters}>Apply</button></footer>
               </section>
             </div>
           )}
@@ -315,24 +303,39 @@ export default function YouTubeSearchPage() {
       )}
 
       {error && <div className="yt-notice" role="alert"><div><b>{error.message}</b>{needsLogin && <p><Link to="/login">Sign in</Link> to search channels.</p>}</div></div>}
-      {loading && <div className="yt-loading" role="status">Searching YouTube {mode}…</div>}
+      {loading && <div className="yt-loading" role="status" aria-label={'Searching ' + mode} />}
 
       {!loading && searched && !error && mode === 'videos' && visibleVideos.length === 0 && (
-        <div className="yt-empty"><Search size={26} /><h3>No videos found</h3><p>Try a broader search or adjust the filters.</p></div>
+        <div className="yt-empty"><h3>No results</h3></div>
       )}
       {!loading && searched && !error && mode === 'channels' && channels.length === 0 && (
-        <div className="yt-empty"><Search size={26} /><h3>No channels found</h3><p>Try a different creator name or topic.</p></div>
+        <div className="yt-empty"><h3>No channels found</h3></div>
       )}
 
       {!loading && visibleVideos.length > 0 && mode === 'videos' && (
         <div className="yt-results yt-video-search-results">
-          <div className="yt-section-heading"><div><h2>Video results</h2><p>{totalResults !== null ? totalResults.toLocaleString() + ' results' : visibleVideos.length + ' videos loaded'}</p></div></div>
           <div className="yt-search-video-list">
-            {visibleVideos.map(video => (
+            {listVideos.slice(0, 1).map(video => (
+              <YouTubeVideoCard key={video.videoId} video={video} relatedVideos={relatedVideos} layout="list" />
+            ))}
+            {shortShelfVideos.length > 0 && (
+              <section className="yt-shorts-section" aria-label="Shorts">
+                <div className="yt-section-heading"><h2>Shorts</h2></div>
+                <div className="yt-shorts-strip">
+                  {shortShelfVideos.map(video => (
+                    <Link key={video.videoId} to={'/youtube/watch/' + video.videoId} className="yt-short-card" state={{ youtubeRelatedVideos: visibleVideos, youtubeCurrentVideo: video }}>
+                      {video.thumbnailUrl ? <img src={video.thumbnailUrl} alt="" loading="lazy" /> : <span className="yt-short-placeholder" />}
+                      <span className="yt-short-copy"><b>{video.title}</b><small>{video.channelTitle}</small></span>
+                    </Link>
+                  ))}
+                </div>
+              </section>
+            )}
+            {listVideos.slice(1).map(video => (
               <YouTubeVideoCard key={video.videoId} video={video} relatedVideos={relatedVideos} layout="list" />
             ))}
           </div>
-          {nextPageToken && <div className="yt-scroll-sentinel"><button type="button" className="yt-button yt-button-quiet" onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Loading more…' : 'Load more videos'}</button></div>}
+          {nextPageToken && <div className="yt-scroll-sentinel"><button type="button" className="yt-button yt-button-quiet" onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Load more'}</button></div>}
         </div>
       )}
 
