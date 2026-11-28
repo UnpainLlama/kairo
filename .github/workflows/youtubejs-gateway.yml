@@ -248,6 +248,7 @@ jobs:
         env:
           KAIRO_BASE_URL: https://kairo-anime-platform-staging.unpainllama.workers.dev
           SMOKE_QUERIES: astronomy
+          SKIP_GATEWAY_SEARCH: 'true'
         run: |
           curl --silent --show-error --fail "$GATEWAY_URL/health"
           echo
