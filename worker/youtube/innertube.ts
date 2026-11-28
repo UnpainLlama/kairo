@@ -123,7 +123,7 @@ function gatewayUrl(c: InnerTubeContext): URL | null {
 export function registerYouTubeInnerTubeRoutes(app: any): void {
   app.get('/api/v1/youtube/innertube/search', async (c: InnerTubeContext) => {
     noStore(c);
-    const environment = c.env.APP_ENV ?? 'development';
+    const environment = c.env.APP_ENV;
     if ((environment !== 'development' && environment !== 'staging')
       || c.env.YOUTUBE_JS_EXPERIMENT_ENABLED !== 'true') {
       return fail(c, 404, 'YOUTUBE_JS_EXPERIMENT_DISABLED', 'This discovery provider is not enabled.');
