@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Bookmark, CalendarDays, ChevronRight, Clapperboard, Compass, Flame, History, Users,
+  Bookmark, CalendarDays, ChevronRight, Clapperboard, Compass, Flame, History, Home, Users,
   LogIn, LogOut, PlayCircle, Search, Settings, Tv, UserRound, Youtube,
   type LucideIcon,
 } from 'lucide-react';
@@ -26,7 +26,7 @@ import AuthPage from './pages/AuthPage';
 import { useKairoAccount } from './lib/AccountProvider';
 import { AboutPage, AccountPage, HistoryPage, NotFoundPage, ProfilePage } from './pages/StaticPages';
 
-type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean; active?: boolean };
+type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean; active?: boolean; showLabel?: boolean };
 
 const navItems: NavItem[] = [
   { to: '/browse/trending', label: 'Trending', icon: Flame },
@@ -38,11 +38,10 @@ const navItems: NavItem[] = [
 ];
 
 const youtubeNavItems: NavItem[] = [
-  { to: '/youtube', label: 'Home', icon: PlayCircle, end: true },
-  { to: '/youtube/search', label: 'Search', icon: Search },
+  { to: '/youtube', label: 'Home', icon: Home, end: true },
+  { to: '/youtube/search?q=shorts&filter=shorts', label: 'Shorts', icon: PlayCircle },
   { to: '/youtube/channels', label: 'Creators', icon: Users },
-  { to: '/youtube/watch-later', label: 'Watch Later', icon: Bookmark },
-  { to: '/youtube/history', label: 'History', icon: History },
+  { to: '/youtube/history', label: 'You', icon: UserRound },
 ];
 
 const moviesNavItems: NavItem[] = [
@@ -69,11 +68,13 @@ function YouTubeWatchRedirect() {
   return <Navigate to={destination} replace />;
 }
 
-function RailLink({ to, label, icon: Icon, end, active }: NavItem) {
+function RailLink({ to, label, icon: Icon, end, active, showLabel }: NavItem) {
   return (
     <NavLink to={to} end={end} aria-label={label} className={({ isActive }) => `kc-rail-link${(active ?? isActive) ? ' active' : ''}`}>
       <Icon size={20} strokeWidth={1.8} aria-hidden="true" />
-      <span className="kc-rail-tooltip" aria-hidden="true">{label}</span>
+      {showLabel
+        ? <span className="kc-rail-label" aria-hidden="true">{label}</span>
+        : <span className="kc-rail-tooltip" aria-hidden="true">{label}</span>}
     </NavLink>
   );
 }
@@ -146,7 +147,7 @@ export default function App() {
       <aside className="kc-rail" aria-label="Primary">
         <Link to="/" className="kc-brand" aria-label="Kairo home"><img src="/kairo-k.svg" alt="" width="22" height="26" /></Link>
         <nav className="kc-rail-links" aria-label="Main navigation">
-          {activeNavItems.map((item) => <RailLink key={item.label} {...item} />)}
+          {activeNavItems.map((item) => <RailLink key={item.label} {...item} showLabel={isYouTubeMode} />)}
         </nav>
         <div className="kc-rail-bottom">
           <RailLink to="/settings" label="Settings" icon={Settings} />
