@@ -531,6 +531,17 @@ function safeRecommendationTuning(value: unknown): Record<string, unknown> | nul
       output[key] = input[key];
     }
   }
+  if (input.strictness !== undefined) {
+    if (!input.strictness || typeof input.strictness !== 'object' || Array.isArray(input.strictness)) return null;
+    const strictness = input.strictness as Record<string, unknown>;
+    const clean: Record<string, number> = {};
+    for (const key of ['similar', 'new', 'throwback']) {
+      const number = Number(strictness[key]);
+      if (!Number.isInteger(number) || number < 0 || number > 100) return null;
+      clean[key] = number;
+    }
+    output.strictness = clean;
+  }
   if (input.shares !== undefined) {
     if (!input.shares || typeof input.shares !== 'object' || Array.isArray(input.shares)) return null;
     const shares = input.shares as Record<string, unknown>;
