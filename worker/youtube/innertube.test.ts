@@ -160,6 +160,39 @@ describe('experimental YouTube.js proxy', () => {
     expect(payload.error.message).not.toContain('Internal upstream detail.');
   });
 
+  it('classifies gateway HTTP errors separately from provider failures', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'Not found.' },
+    }), { status: 404 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { handler, context } = makeHarness();
+    const response = await handler(context);
+    const payload = await response.json() as any;
+    expect(response.status).toBe(503);
+    expect(payload.error.code).toBe('YOUTUBE_JS_GATEWAY_HTTP_ERROR');
+  });
+
+  it('classifies Worker-to-Worker connection failures', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('network unavailable'));
+    vi.stubGlobal('fetch', fetchMock);
+    const { handler, context } = makeHarness();
+    const response = await handler(context);
+    const payload = await response.json() as any;
+    expect(response.status).toBe(503);
+    expect(payload.error.code).toBe('YOUTUBE_JS_GATEWAY_CONNECTION_FAILED');
+  });
+
+  it('classifies gateway request timeouts', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new DOMException('Request aborted', 'AbortError'));
+    vi.stubGlobal('fetch', fetchMock);
+    const { handler, context } = makeHarness();
+    const response = await handler(context);
+    const payload = await response.json() as any;
+    expect(response.status).toBe(504);
+    expect(payload.error.code).toBe('YOUTUBE_JS_GATEWAY_TIMEOUT');
+  });
+
   it('fails closed if the D1 rate limiter is unavailable', async () => {
     const { handler, context } = makeHarness();
     context.env.DB.prepare = () => ({ bind: () => ({ first: async () => { throw new Error('database unavailable'); } }) }) as any;
