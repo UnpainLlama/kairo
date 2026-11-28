@@ -12,6 +12,8 @@ export type YouTubeCardVideo = {
   channelAvatarUrl?: string | null;
   publishedAt: string | null;
   durationSeconds?: number | null;
+  recommendationReason?: string;
+  recommendationBucket?: string;
 };
 
 type YouTubeVideoCardProps = {
@@ -74,6 +76,7 @@ export default function YouTubeVideoCard({ video, relatedVideos = [], channelAva
         <div className="yt-video-copy">
           <h3><Link to={'/youtube/watch/' + video.videoId} state={navigationState}>{video.title}</Link></h3>
           <p>{isList ? (video.channelTitle || 'YouTube') + ' · ' + publishedLabel(video.publishedAt) : (video.channelTitle || 'YouTube')}</p>
+          {video.recommendationReason && <small className="yt-recommendation-reason">{video.recommendationReason}</small>}
           {isList && video.description
             ? <small className="yt-video-description-preview">{video.description}</small>
             : !isList && <small>{publishedLabel(video.publishedAt)}</small>}
