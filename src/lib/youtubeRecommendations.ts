@@ -19,7 +19,11 @@ export type RecommendationWatch = {
   lastViewedAt?: number;
 };
 
-export type RecommendationCandidate = { video: YouTubeCardVideo; seedTitle?: string | null };
+export type RecommendationCandidate = {
+  video: YouTubeCardVideo;
+  seedTitle?: string | null;
+  source?: 'search' | 'channel_uploads';
+};
 export type RecommendationTopic = {
   id: string;
   text: string;
@@ -308,7 +312,7 @@ export function buildRecommendationFeed(input: {
 
     const published = video.publishedAt ? Date.parse(video.publishedAt) : NaN;
     const recentlyUploaded = Number.isFinite(published) && now - published <= 21 * 86400000;
-    if (recentCount > 0 && recentlyUploaded) {
+    if ((recentCount > 0 || candidate.source === 'channel_uploads') && recentlyUploaded) {
       add(video, 'subscriptions', 0.55 * fresh + 0.25 * Math.min(1, recentCount / 3) + 0.2 * recentFit,
         'New from ' + video.channelTitle + ', which you watch');
       continue;
