@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import YouTubeVideoCard, { type YouTubeCardVideo } from '../components/YouTubeVideoCard';
 import { ArrowLeft, Bookmark, ExternalLink, Youtube } from 'lucide-react';
 import YouTubeIframePlayer from '../components/YouTubeIframePlayer';
+import { useAccountScope } from '../hooks/useAccountScope';
+import { recordGuestYouTubeView } from '../lib/youtubeLocalLibrary';
 
 type VideoDetails = {
   videoId: string;
@@ -46,6 +48,8 @@ export default function YouTubeWatchPage() {
   const { videoId = '' } = useParams();
   const location = useLocation();
   const relatedVideos = relatedFromState(location.state, videoId);
+  const { accountId, resolved, error: accountError } = useAccountScope();
+  const recordedVideoId = useRef<string | null>(null);
   const [video, setVideo] = useState<VideoDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -83,6 +87,39 @@ export default function YouTubeWatchPage() {
     void load();
     return () => { active = false; };
   }, [videoId]);
+
+  // A page-view event seeds Kairo recommendations without inspecting the iframe.
+  // The embedded YouTube player remains a standalone provider-controlled embed.
+  useEffect(() => {
+    if (!video || !resolved || accountError || video.madeForKids || video.embeddable === false) return;
+    if (recordedVideoId.current === video.videoId) return;
+    recordedVideoId.current = video.videoId;
+
+    const historyEntry = {
+      videoId: video.videoId,
+      title: video.title,
+      description: video.description,
+      thumbnailUrl: video.thumbnailUrl,
+      channelId: video.channelId,
+      channelTitle: video.channelTitle,
+      publishedAt: video.publishedAt,
+      durationSeconds: video.durationSeconds,
+    };
+
+    if (!accountId) {
+      recordGuestYouTubeView(historyEntry);
+      return;
+    }
+
+    void fetch('/api/v1/youtube/history/view', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(historyEntry),
+    }).catch(() => {
+      // A history write must never interrupt the embedded video.
+    });
+  }, [accountError, accountId, resolved, video]);
 
   if (loading) return <div className="yt-watch-state" role="status">Loading video…</div>;
   if (error && !video) return <section className="yt-watch-state" role="alert"><h1>Video unavailable</h1><p>{error}</p><Link to="/youtube">Back to YouTube Home</Link></section>;
