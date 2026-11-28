@@ -34,13 +34,13 @@ const PRESETS: Array<{
     id: 'familiar',
     name: 'Familiar',
     description: 'Stay close to channels and topics you already know.',
-    tuning: { shares: { subscriptions: 35, similar: 45, new: 8, throwback: 7, rewatch: 5 }, newChannelCap: 1, shuffle: 30 },
+    tuning: { shares: { subscriptions: 35, similar: 45, new: 8, throwback: 7, rewatch: 5 }, strictness: { similar: 60, new: 75, throwback: 60 }, newChannelCap: 1, shuffle: 30 },
   },
   {
     id: 'explorer',
     name: 'Explorer',
     description: 'Give more room to creators you have not visited before.',
-    tuning: { shares: { subscriptions: 15, similar: 20, new: 50, throwback: 12, rewatch: 3 }, newChannelCap: 3, shuffle: 80 },
+    tuning: { shares: { subscriptions: 15, similar: 20, new: 50, throwback: 12, rewatch: 3 }, strictness: { similar: 40, new: 30, throwback: 45 }, newChannelCap: 3, shuffle: 80 },
   },
   {
     id: 'nostalgia',
@@ -56,6 +56,7 @@ function mergeTuning(value: unknown): RecommendationTuning {
     ...DEFAULT_RECOMMENDATION_TUNING,
     ...raw,
     shares: { ...DEFAULT_RECOMMENDATION_TUNING.shares, ...(raw.shares ?? {}) },
+    strictness: { ...DEFAULT_RECOMMENDATION_TUNING.strictness, ...(raw.strictness ?? {}) },
   };
 }
 
@@ -290,6 +291,29 @@ export default function YouTubeRecommendationsPage() {
               <span>Shuffle variety</span><b>{tuning.shuffle}</b>
               <input type="range" min="0" max="100" value={tuning.shuffle} onChange={event => change('shuffle', Number(event.target.value))} />
             </label>
+
+            <h3>Relevance strictness</h3>
+            <p>Higher settings require closer matches before a candidate enters each category.</p>
+            {([
+              ['similar', 'Similar videos'],
+              ['new', 'New channels'],
+              ['throwback', 'Throwbacks'],
+            ] as Array<[keyof RecommendationTuning['strictness'], string]>).map(([key, label]) => (
+              <label className="yt-recommendation-control" key={key}>
+                <span>{label}</span><b>{tuning.strictness[key]}</b>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={tuning.strictness[key]}
+                  onChange={event => {
+                    const value = Number(event.target.value);
+                    setActive('custom');
+                    setTuning(current => ({ ...current, strictness: { ...current.strictness, [key]: value } }));
+                  }}
+                />
+              </label>
+            ))}
           </section>
 
           <section className="yt-recommendation-panel">
