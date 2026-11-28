@@ -78,6 +78,7 @@ jobs:
         run: |
           set -euo pipefail
           secret="$(openssl rand -hex 32)"
+          echo "::add-mask::$secret"
           printf 'APP_ENV=development\nGATEWAY_SECRET=%s\n' "$secret" > .dev.vars
           echo "GATEWAY_SECRET=$secret" >> "$GITHUB_ENV"
           nohup npx wrangler dev --config wrangler.jsonc --ip 127.0.0.1 --port 8787 --log-level error > "$RUNNER_TEMP/youtubejs-gateway.log" 2>&1 &
@@ -92,11 +93,44 @@ jobs:
           cat "$RUNNER_TEMP/youtubejs-gateway.log"
           exit 1
 
-      - name: Run live YouTube.js search smoke tests
+      - name: Prepare local Kairo D1 and bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'APP_ENV=development\nYOUTUBE_JS_EXPERIMENT_ENABLED=true\nYOUTUBE_JS_GATEWAY_URL=http://127.0.0.1:8787\nYOUTUBE_JS_GATEWAY_TOKEN=%s\n' "$GATEWAY_SECRET" > .dev.vars
+          npm run db:migrate:local
+
+      - name: Start local Kairo web and Worker runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          nohup npm run dev -- --port 5173 --strictPort > "$RUNNER_TEMP/kairo-dev.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/kairo-dev.pid"
+          for attempt in $(seq 1 45); do
+            if curl --silent --show-error --fail http://127.0.0.1:5173/ -o /dev/null; then
+              echo "Kairo dev server is ready."
+              exit 0
+            fi
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/kairo-dev.log"
+          exit 1
+
+      - name: Run end-to-end YouTube.js and Kairo proxy smoke tests
         working-directory: services/youtubejs-gateway
         env:
           GATEWAY_URL: http://127.0.0.1:8787
+          KAIRO_BASE_URL: http://127.0.0.1:5173
+          SKIP_OFFICIAL_COMPARISON: 'true'
         run: node scripts/live-smoke-test.mjs
+
+      - name: Stop local Kairo dev server
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/kairo-dev.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/kairo-dev.pid")" 2>/dev/null || true
+          fi
 
       - name: Stop local gateway
         if: always()
