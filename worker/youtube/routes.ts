@@ -986,6 +986,10 @@ export function registerYouTubeMediaRoutes(app: any): void {
         'WHERE excluded.updated_at>=youtube_watch_history.updated_at'
       ).bind(user.id, parsed.videoId, parsed.title, parsed.description, parsed.thumbnailUrl, parsed.channelId,
         parsed.channelTitle, parsed.publishedAt, parsed.durationSeconds, updatedAt, updatedAt, updatedAt).run();
+      await c.env.DB.prepare(
+        'INSERT INTO youtube_recommendation_impressions (user_id,video_id,impression_count,last_shown_at,last_viewed_at) ' +
+        'VALUES (?,?,0,NULL,?) ON CONFLICT(user_id,video_id) DO UPDATE SET last_viewed_at=excluded.last_viewed_at'
+      ).bind(user.id, parsed.videoId, updatedAt).run();
       return c.json({ success: true, data: { viewed: true, updatedAt: updatedAt } });
     } catch {
       return fail(c, 503, 'YOUTUBE_HISTORY_UNAVAILABLE', 'Could not save your YouTube viewing activity.');
