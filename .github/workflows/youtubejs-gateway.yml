@@ -247,6 +247,7 @@ jobs:
         working-directory: services/youtubejs-gateway
         env:
           KAIRO_BASE_URL: https://kairo-anime-platform-staging.unpainllama.workers.dev
+          SMOKE_QUERIES: astronomy
         run: |
           curl --silent --show-error --fail "$GATEWAY_URL/health"
           echo
