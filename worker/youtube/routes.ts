@@ -412,6 +412,68 @@ async function youtubeApiSearchChannels(c: YouTubeContext, query: string): Promi
 }
 
 
+async function youtubeApiChannelUploads(c: YouTubeContext, channelId: string): Promise<YouTubeVideoRecord[]> {
+  const apiKey = c.env.YOUTUBE_DATA_API_KEY?.trim();
+  if (!apiKey || !CHANNEL_ID.test(channelId)) return [];
+  if (!await bumpRateBucket(c, 'data-api-daily', DAILY_API_LIMIT, DAILY_WINDOW_MS, 1)) return [];
+
+  const channelUrl = new URL('https://www.googleapis.com/youtube/v3/channels');
+  channelUrl.search = new URLSearchParams({ part: 'contentDetails', id: channelId, key: apiKey }).toString();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(channelUrl.toString(), { headers: { Accept: 'application/json' }, signal: controller.signal });
+    if (!response.ok) return [];
+    const payload = await response.json().catch(() => ({})) as any;
+    const uploadsPlaylist = payload?.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+    if (typeof uploadsPlaylist !== 'string' || !uploadsPlaylist) return [];
+
+    if (!await bumpRateBucket(c, 'data-api-daily', DAILY_API_LIMIT, DAILY_WINDOW_MS, 1)) return [];
+    const playlistUrl = new URL('https://www.googleapis.com/youtube/v3/playlistItems');
+    playlistUrl.search = new URLSearchParams({
+      part: 'snippet',
+      playlistId: uploadsPlaylist,
+      maxResults: '10',
+      key: apiKey,
+    }).toString();
+    const playlistController = new AbortController();
+    const playlistTimeout = setTimeout(() => playlistController.abort(), 8000);
+    try {
+      const playlistResponse = await fetch(playlistUrl.toString(), {
+        headers: { Accept: 'application/json' },
+        signal: playlistController.signal,
+      });
+      if (!playlistResponse.ok) return [];
+      const playlistPayload = await playlistResponse.json().catch(() => ({})) as any;
+      return (Array.isArray(playlistPayload?.items) ? playlistPayload.items : []).flatMap((item: any) => {
+        const snippet = item?.snippet ?? {};
+        const videoId = snippet?.resourceId?.videoId;
+        if (typeof videoId !== 'string' || !VIDEO_ID.test(videoId)) return [];
+        return [{
+          videoId,
+          title: cleanText(snippet.title, 300, 'Untitled video'),
+          description: cleanText(snippet.description, 5000),
+          thumbnailUrl: searchThumbnail(snippet),
+          channelId,
+          channelTitle: cleanText(snippet.videoOwnerChannelTitle ?? snippet.channelTitle, 180, 'YouTube'),
+          channelAvatarUrl: null,
+          publishedAt: typeof snippet.publishedAt === 'string' && !Number.isNaN(Date.parse(snippet.publishedAt))
+            ? new Date(snippet.publishedAt).toISOString()
+            : null,
+          durationSeconds: null,
+          embeddable: null,
+          madeForKids: false,
+          url: 'https://www.youtube.com/watch?v=' + videoId,
+        }];
+      });
+    } finally {
+      clearTimeout(playlistTimeout);
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 type StoredRecommendationCandidate = {
   videoId: string;
   title: string;
@@ -448,13 +510,17 @@ async function gatherUserRecommendations(c: YouTubeContext, userId: string, hist
     seeds.push(item);
     if (seeds.length >= 4) break;
   }
-  if (seeds.length === 0) {
-    await c.env.DB.prepare(
-      'INSERT INTO youtube_discovery_state (user_id,active_at,last_gathered_at,next_gather_at,gather_cursor,updated_at) ' +
-      'VALUES (?,?,0,?,0,?) ON CONFLICT(user_id) DO UPDATE SET active_at=excluded.active_at,' +
-      'next_gather_at=excluded.next_gather_at,updated_at=excluded.updated_at'
-    ).bind(userId, now, now + 21600000, now).run();
-    return;
+  const savedChannels = await c.env.DB.prepare(
+    'SELECT channel_id AS channelId,channel_title AS channelTitle FROM youtube_feed_channels WHERE user_id=? ORDER BY added_at DESC LIMIT 20'
+  ).bind(userId).all<{ channelId: string; channelTitle: string }>();
+  const channelIndex = new Map<string, string>();
+  for (const item of history) {
+    if (typeof item.channelId === 'string' && CHANNEL_ID.test(item.channelId)) {
+      channelIndex.set(item.channelId, cleanText(item.channelTitle, 180, 'YouTube'));
+    }
+  }
+  for (const item of savedChannels.results ?? []) {
+    if (CHANNEL_ID.test(item.channelId)) channelIndex.set(item.channelId, cleanText(item.channelTitle, 180, 'YouTube'));
   }
 
   let gathered = 0;
@@ -488,6 +554,35 @@ async function gatherUserRecommendations(c: YouTubeContext, userId: string, hist
       }
     } catch {
       // Keep usable candidates from other seeds when one YouTube search fails.
+    }
+  }
+
+  let channelRank = 0;
+  for (const [channelId, channelTitle] of [...channelIndex.entries()].slice(0, 8)) {
+    try {
+      const uploads = await youtubeApiChannelUploads(c, channelId);
+      for (const video of uploads) {
+        if (!video.title || !video.videoId) continue;
+        await c.env.DB.prepare(
+          'INSERT INTO youtube_recommendation_candidates ' +
+          '(user_id,video_id,title,description,thumbnail_url,channel_id,channel_title,published_at,duration_seconds,' +
+          'source,seed_video_id,seed_title,seed_channel_id,seed_channel_title,source_rank,discovered_at,expires_at) ' +
+          'VALUES (?,?,?,?,?,?,?,?,?,\'channel_uploads\',NULL,?,?,?, ?,?,?) ' +
+          'ON CONFLICT(user_id,video_id) DO UPDATE SET title=excluded.title,description=excluded.description,' +
+          'thumbnail_url=excluded.thumbnail_url,channel_id=excluded.channel_id,channel_title=excluded.channel_title,' +
+          'published_at=excluded.published_at,duration_seconds=excluded.duration_seconds,' +
+          'source=excluded.source,source_rank=MIN(youtube_recommendation_candidates.source_rank,excluded.source_rank),' +
+          'discovered_at=MAX(youtube_recommendation_candidates.discovered_at,excluded.discovered_at),' +
+          'expires_at=MAX(youtube_recommendation_candidates.expires_at,excluded.expires_at)'
+        ).bind(
+          userId, video.videoId, video.title, video.description, video.thumbnailUrl, video.channelId,
+          channelTitle || video.channelTitle, video.publishedAt, video.durationSeconds,
+          channelTitle, channelId, channelRank++, now, now + 21 * 86400000,
+        ).run();
+        gathered += 1;
+      }
+    } catch {
+      // One unavailable creator's uploads must not block other recommendations.
     }
   }
 
