@@ -1,0 +1,16 @@
+{
+  "name": "kairo-youtubejs-gateway",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --config wrangler.jsonc",
+    "deploy:staging": "wrangler deploy --config wrangler.jsonc --env staging"
+  },
+  "dependencies": {
+    "youtubei.js": "18.3.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.68.0"
+  }
+}
