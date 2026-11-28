@@ -78,6 +78,7 @@ function makeHistoryViewHandler() {
     post: (path: string, handler: (context: any) => Promise<Response>) => {
       handlers.set('POST ' + path, handler);
     },
+    put: () => undefined,
     delete: () => undefined,
   };
   registerYouTubeMediaRoutes(app);
@@ -154,11 +155,14 @@ describe('YouTube viewing activity', () => {
     expect(historyWrite?.values).toEqual([
       'account-1', 'abcdefghijk', 'Example video', 'Example description',
       'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg', 'UC1234567890',
-      'Example channel', '2026-11-01T12:00:00.000Z', 120, expect.any(Number),
+      'Example channel', '2026-11-01T12:00:00.000Z', 120,
+      expect.any(Number), expect.any(Number), expect.any(Number),
     ]);
     const conflictUpdate = historyWrite?.sql.split('DO UPDATE SET')[1] ?? '';
     expect(conflictUpdate).not.toMatch(/progress_seconds|completed/);
-    expect(historyWrite?.sql).toContain('VALUES (?,?,?,?,?,?,?,?,?,0,0,?)');
+    expect(conflictUpdate).toContain('view_count=youtube_watch_history.view_count+1');
+    expect(conflictUpdate).toContain('last_viewed_at=excluded.last_viewed_at');
+    expect(historyWrite?.sql).toContain('VALUES (?,?,?,?,?,?,?,?,?,0,0,?,1,?,?)');
   });
 
   it('rejects cross-origin viewing events before touching account history', async () => {
@@ -172,5 +176,117 @@ describe('YouTube viewing activity', () => {
     expect(payload.error.code).toBe('ORIGIN_FORBIDDEN');
     expect(statements).toEqual([]);
     expect(findSessionUser).not.toHaveBeenCalled();
+  });
+});
+
+
+function makeSearchHandler() {
+  const handlers = new Map<string, (context: any) => Promise<Response>>();
+  const app = {
+    get: (path: string, handler: (context: any) => Promise<Response>) => { handlers.set('GET ' + path, handler); },
+    post: () => undefined,
+    put: () => undefined,
+    delete: () => undefined,
+  };
+  registerYouTubeMediaRoutes(app);
+  return handlers;
+}
+
+function makeSearchContext(url: string, statements: CapturedStatement[] = []) {
+  const DB = {
+    prepare(sql: string) {
+      return {
+        bind(...values: unknown[]) {
+          statements.push({ sql, values });
+          return {
+            first: async () => ({ attempts: 1 }),
+            run: async () => ({ success: true }),
+            all: async () => ({ results: [] }),
+          };
+        },
+      };
+    },
+  };
+  return {
+    env: { DB, YOUTUBE_DATA_API_KEY: 'test-key' },
+    req: {
+      url,
+      header: (name: string) => name.toLowerCase() === 'cf-connecting-ip' ? '192.0.2.10' : undefined,
+      param: () => '',
+      json: async () => ({}),
+    },
+    json: (value: unknown, status = 200) => new Response(JSON.stringify(value), { status }),
+    header: () => undefined,
+  };
+}
+
+describe('YouTube discovery search routes', () => {
+  it('registers video and channel search routes used by the Kairo feed and search page', () => {
+    const handlers = makeSearchHandler();
+    expect(handlers.has('GET /api/v1/youtube/videos/search')).toBe(true);
+    expect(handlers.has('GET /api/v1/youtube/channels/search')).toBe(true);
+  });
+
+  it('searches videos and enriches results with duration metadata', async () => {
+    const handlers = makeSearchHandler();
+    const handler = handlers.get('GET /api/v1/youtube/videos/search');
+    if (!handler) throw new Error('YouTube video search route was not registered');
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.includes('/search?')) {
+        return new Response(JSON.stringify({
+          items: [{
+            id: { videoId: 'abcdefghijk' },
+            snippet: {
+              title: 'Example result',
+              description: 'Example description',
+              channelId: 'UC1234567890',
+              channelTitle: 'Example channel',
+              publishedAt: '2026-11-01T12:00:00.000Z',
+              thumbnails: { high: { url: 'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg' } },
+            },
+          }],
+          nextPageToken: 'next-page',
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        items: [{
+          id: 'abcdefghijk',
+          contentDetails: { duration: 'PT2M3S' },
+          status: { embeddable: true, madeForKids: false },
+        }],
+      }), { status: 200 });
+    }));
+    try {
+      const response = await handler(makeSearchContext('https://kairo.example/api/v1/youtube/videos/search?q=example&order=date'));
+      const payload = await response.json() as any;
+      expect(response.status).toBe(200);
+      expect(payload.data.videos[0]).toMatchObject({
+        videoId: 'abcdefghijk',
+        title: 'Example result',
+        channelId: 'UC1234567890',
+        channelTitle: 'Example channel',
+        durationSeconds: 123,
+        embeddable: true,
+      });
+      expect(payload.data.nextPageToken).toBe('next-page');
+      expect(calls).toHaveLength(2);
+      expect(calls[0]).toContain('order=date');
+      expect(calls[1]).toContain('contentDetails%2Cstatus');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('rejects empty search terms before using the YouTube API', async () => {
+    const handlers = makeSearchHandler();
+    const handler = handlers.get('GET /api/v1/youtube/videos/search');
+    if (!handler) throw new Error('YouTube video search route was not registered');
+    const response = await handler(makeSearchContext('https://kairo.example/api/v1/youtube/videos/search?q=x'));
+    const payload = await response.json() as any;
+    expect(response.status).toBe(400);
+    expect(payload.error.code).toBe('VALIDATION_ERROR');
   });
 });

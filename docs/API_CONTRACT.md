@@ -213,6 +213,29 @@ The example is a schema illustration, not a live URL. Return only provider-autho
 
 
 
+
+## 3d. YouTube recommendation feed
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/youtube/videos/search?q=:query` | Search YouTube videos using server-side Data API access. Supports order, duration, upload-date, live-event and page-token filters. |
+| GET | `/api/v1/youtube/channels/search?q=:query` | Search YouTube channels. |
+| GET | `/api/v1/youtube/recommendations` | Return the signed-in user's history, gathered candidate pool, feedback, topics, impressions and saved tuning. Refreshes due candidates. |
+| GET | `/api/v1/youtube/recommendations/settings` | Read the user's recommendation preset and tuning. |
+| PUT | `/api/v1/youtube/recommendations/settings` | Save a validated preset and tuning selection. |
+| GET | `/api/v1/youtube/recommendations/topics` | List interest and blocked-topic rules. |
+| POST | `/api/v1/youtube/recommendations/topics` | Add a word-matched interest or blocked topic. |
+| DELETE | `/api/v1/youtube/recommendations/topics/:topicId` | Remove one topic rule. |
+| POST | `/api/v1/youtube/recommendations/feedback` | Save not-interested, don't-recommend-channel or dismiss-channel feedback. |
+| DELETE | `/api/v1/youtube/recommendations/feedback/:targetType/:targetId/:action` | Remove one feedback rule. |
+| POST | `/api/v1/youtube/recommendations/impressions` | Record videos included in a signed-in feed response. |
+
+- Recommendations use five core buckets: recent uploads from known channels, similar videos, new channels, throwbacks and rewatches. User interest topics add a separate optional bucket. The Balanced preset defaults to 29/29/24/14/4 percent, a five-position channel gap and up to two new-channel videos per channel.
+- Search candidates are gathered from recent watch-title queries and recent uploads from Kairo-saved channels and channels found in watch history. Candidate rows are scoped to the account and expire after 21 days. A due refresh is started in the request background when an existing pool is available; the first candidate pool is gathered before the feed response.
+- The feed uses lexical title/description similarity and channel history, not embeddings. Guests use browser-only history, preferences, topics, feedback and impression counts. Signed-in users use D1 records scoped to the server-derived session account.
+- Watch-page opens are the available activity signal. They do not prove playback, do not provide watch duration or completion, and cannot expose YouTube's private Up next list. The standalone privacy-enhanced iframe remains unchanged.
+- The recommendation schema is additive in `migrations/0012_youtube_recommendations.sql`. Apply it to each target D1 environment before deploying this Worker version.
+
 ## 3c. Unified account media sync
 
 | Method | Path | Purpose |

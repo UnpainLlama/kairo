@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import SearchBar from './components/SearchBar';
 import YouTubeFeedPage from './pages/YouTubeFeedPage';
+import YouTubeRecommendationsPage from './pages/YouTubeRecommendationsPage';
 import MoviesHomePage from './pages/MoviesHomePage';
 import MoviesBrowsePage from './pages/MoviesBrowsePage';
 import MoviesSearchPage from './pages/MoviesSearchPage';
@@ -41,6 +42,7 @@ const youtubeNavItems: NavItem[] = [
   { to: '/youtube', label: 'Home', icon: Home, end: true },
   { to: '/youtube/search?q=shorts&filter=shorts', label: 'Shorts', icon: PlayCircle },
   { to: '/youtube/channels', label: 'Creators', icon: Users },
+  { to: '/youtube/recommendations', label: 'Tune', icon: Settings },
   { to: '/youtube/history', label: 'You', icon: UserRound },
 ];
 
@@ -254,6 +256,7 @@ export default function App() {
           <Route path="/movies/:externalId" element={<MoviesDetailPage />} />
           <Route path="/youtube/search" element={<YouTubeSearchPage />} />
           <Route path="/youtube/channels" element={<YouTubeChannelsPage />} />
+          <Route path="/youtube/recommendations" element={<YouTubeRecommendationsPage />} />
           <Route path="/youtube/watch" element={<YouTubeWatchRedirect />} />
           <Route path="/watch" element={<YouTubeWatchRedirect />} />
           <Route path="/youtube/watch/:videoId" element={<YouTubeWatchPage />} />

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  addGuestYouTubeWatchLater, readGuestYouTubeHistory, readGuestYouTubeWatchLater,
-  recordGuestYouTubeView, removeGuestYouTubeHistory, removeGuestYouTubeWatchLater, saveGuestYouTubeProgress,
+  addGuestYouTubeWatchLater, readGuestRecommendationState, readGuestYouTubeHistory, readGuestYouTubeWatchLater,
+  recordGuestYouTubeView, removeGuestYouTubeHistory, removeGuestYouTubeWatchLater, saveGuestRecommendationState, saveGuestYouTubeProgress,
 } from './youtubeLocalLibrary';
 
 class MemoryStorage {
@@ -45,7 +45,9 @@ describe('guest YouTube browser library', () => {
       videoId: video.videoId,
       progressSeconds: 0,
       completed: false,
+      viewCount: 1,
     });
+    const firstViewedAt = readGuestYouTubeHistory()[0].firstViewedAt;
 
     saveGuestYouTubeProgress({ ...video, progressSeconds: 42, completed: false });
     recordGuestYouTubeView({ ...video, title: 'Updated title' });
@@ -54,6 +56,8 @@ describe('guest YouTube browser library', () => {
       title: 'Updated title',
       progressSeconds: 42,
       completed: false,
+      viewCount: 2,
+      firstViewedAt,
     });
   });
 
@@ -67,6 +71,24 @@ describe('guest YouTube browser library', () => {
     expect(readGuestYouTubeHistory()).toHaveLength(1);
     removeGuestYouTubeHistory(video.videoId);
     expect(readGuestYouTubeHistory()).toEqual([]);
+  });
+
+  it('persists guest recommendation tuning, topics, feedback and impressions', () => {
+    saveGuestRecommendationState({
+      active: 'explorer',
+      tuning: { freshness: 75 },
+      topics: [{ id: 'topic-1', topic: 'animation', kind: 'interest', share: 12, expiresAt: null }],
+      feedback: { notInterestedVideoIds: ['abcdefghijk'], blockedChannelIds: [], dismissedChannelIds: [] },
+      impressions: { abcdefghijk: 3 },
+    });
+
+    expect(readGuestRecommendationState()).toMatchObject({
+      active: 'explorer',
+      tuning: { freshness: 75 },
+      topics: [{ id: 'topic-1', topic: 'animation', kind: 'interest', share: 12 }],
+      feedback: { notInterestedVideoIds: ['abcdefghijk'] },
+      impressions: { abcdefghijk: 3 },
+    });
   });
 
   it('ignores malformed stored entries', () => {
