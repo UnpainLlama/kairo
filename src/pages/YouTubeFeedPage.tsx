@@ -238,7 +238,7 @@ export default function YouTubeFeedPage() {
         feedback,
         impressions,
         tuning,
-        seed: refreshKey + 1,
+        seed: refreshKey + Date.now(),
         limit: 60,
       });
       if (mixed.length > 0) {
@@ -311,6 +311,23 @@ export default function YouTubeFeedPage() {
 
   const shorts = useMemo(() => videos.filter(isShort).slice(0, 5), [videos]);
   const regularVideos = useMemo(() => videos.filter(video => !isShort(video)), [videos]);
+  const suggestedChannels = useMemo(() => {
+    const channels = new Map<string, DiscoveryVideo[]>();
+    for (const video of videos) {
+      if (video.recommendationBucket !== 'new' || !video.channelId) continue;
+      const current = channels.get(video.channelId) ?? [];
+      current.push(video);
+      channels.set(video.channelId, current);
+    }
+    return [...channels.entries()].map(([channelId, channelVideos]) => ({
+      channelId,
+      channelTitle: channelVideos[0].channelTitle,
+      sample: channelVideos[0],
+      videoCount: channelVideos.length,
+    })).slice(0, 6);
+  }, [videos]);
+  const firstRowVideos = regularVideos.slice(0, 8);
+  const remainingVideos = regularVideos.slice(8);
 
   return (
     <section className="yt-page yt-home-page yt-home-redesign">
@@ -358,10 +375,50 @@ export default function YouTubeFeedPage() {
         </section>
       )}
 
-      {!loading && !error && regularVideos.length > 0 && (
+      {!loading && !error && firstRowVideos.length > 0 && (
         <section className="yt-feed-section">
           <div className="yt-video-grid yt-feed-grid">
-            {regularVideos.map(video => (
+            {firstRowVideos.map(video => (
+              <YouTubeVideoCard
+                key={video.videoId}
+                video={video}
+                relatedVideos={videos}
+                onNotInterested={item => void applyFeedback(item, 'not_interested')}
+                onBlockChannel={item => void applyFeedback(item, 'dont_recommend_channel')}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {!loading && !error && suggestedChannels.length > 0 && (
+        <section className="yt-channel-suggestions" aria-label="Channels you might like">
+          <div className="yt-section-heading"><h2>Channels you might like</h2></div>
+          <div className="yt-channel-suggestions-row">
+            {suggestedChannels.map(channel => (
+              <Link
+                key={channel.channelId}
+                to={'/youtube/watch/' + channel.sample.videoId}
+                state={{ youtubeRelatedVideos: videos, youtubeCurrentVideo: channel.sample }}
+                className="yt-channel-suggestion"
+              >
+                <span className="yt-channel-suggestion-avatar">
+                  {channel.sample.channelAvatarUrl
+                    ? <img src={channel.sample.channelAvatarUrl} alt="" loading="lazy" />
+                    : (channel.channelTitle.trim().slice(0, 1).toUpperCase() || 'Y')}
+                </span>
+                <b>{channel.channelTitle}</b>
+                <small>{channel.videoCount} recommended {channel.videoCount === 1 ? 'video' : 'videos'}</small>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {!loading && !error && remainingVideos.length > 0 && (
+        <section className="yt-feed-section">
+          <div className="yt-video-grid yt-feed-grid">
+            {remainingVideos.map(video => (
               <YouTubeVideoCard
                 key={video.videoId}
                 video={video}
