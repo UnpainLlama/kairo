@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAccountScope } from '../hooks/useAccountScope';
+import { readGuestRecommendationState, saveGuestRecommendationState } from '../lib/youtubeLocalLibrary';
 import {
   DEFAULT_RECOMMENDATION_TUNING,
   type RecommendationTuning,
@@ -85,8 +86,10 @@ export default function YouTubeRecommendationsPage() {
     setError('');
     try {
       if (!accountId) {
-        setError('Sign in to save recommendation settings and topics.');
-        setTopics([]);
+        const guest = readGuestRecommendationState();
+        setActive(PRESETS.some(item => item.id === guest.active) ? guest.active as PresetId : 'custom');
+        setTuning(mergeTuning(guest.tuning));
+        setTopics(guest.topics);
         return;
       }
       const [settingsResponse, topicsResponse] = await Promise.all([
@@ -141,13 +144,17 @@ export default function YouTubeRecommendationsPage() {
     setError('');
     setNotice('');
     try {
-      const response = await fetch('/api/v1/youtube/recommendations/settings', {
-        method: 'PUT',
-        credentials: 'same-origin',
-        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ active, tuning }),
-      });
-      await readJson(response);
+      if (!accountId) {
+        saveGuestRecommendationState({ active, tuning: tuning as unknown as Record<string, unknown> });
+      } else {
+        const response = await fetch('/api/v1/youtube/recommendations/settings', {
+          method: 'PUT',
+          credentials: 'same-origin',
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ active, tuning }),
+        });
+        await readJson(response);
+      }
       setNotice('Recommendation settings saved.');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Recommendation settings could not be saved.');
@@ -162,14 +169,28 @@ export default function YouTubeRecommendationsPage() {
     setError('');
     setNotice('');
     try {
-      const response = await fetch('/api/v1/youtube/recommendations/topics', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic, kind: topicKind, share: topicKind === 'interest' ? topicShare : 0, matchMode: 'words' }),
-      });
-      const data = await readJson(response);
-      setTopics(current => [data.topic, ...current]);
+      if (!accountId) {
+        const guest = readGuestRecommendationState();
+        const item: Topic = {
+          id: crypto.randomUUID(),
+          topic,
+          kind: topicKind,
+          share: topicKind === 'interest' ? topicShare : 0,
+          expiresAt: null,
+        };
+        const nextTopics = [item, ...guest.topics];
+        saveGuestRecommendationState({ topics: nextTopics });
+        setTopics(nextTopics);
+      } else {
+        const response = await fetch('/api/v1/youtube/recommendations/topics', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic, kind: topicKind, share: topicKind === 'interest' ? topicShare : 0, matchMode: 'words' }),
+        });
+        const data = await readJson(response);
+        setTopics(current => [data.topic, ...current]);
+      }
       setTopicText('');
       setNotice('Topic added.');
     } catch (caught) {
@@ -179,13 +200,20 @@ export default function YouTubeRecommendationsPage() {
 
   const removeTopic = async (id: string) => {
     try {
-      const response = await fetch('/api/v1/youtube/recommendations/topics/' + encodeURIComponent(id), {
-        method: 'DELETE',
-        credentials: 'same-origin',
-        headers: { Accept: 'application/json' },
-      });
-      await readJson(response);
-      setTopics(current => current.filter(topic => topic.id !== id));
+      if (!accountId) {
+        const guest = readGuestRecommendationState();
+        const nextTopics = guest.topics.filter(topic => topic.id !== id);
+        saveGuestRecommendationState({ topics: nextTopics });
+        setTopics(nextTopics);
+      } else {
+        const response = await fetch('/api/v1/youtube/recommendations/topics/' + encodeURIComponent(id), {
+          method: 'DELETE',
+          credentials: 'same-origin',
+          headers: { Accept: 'application/json' },
+        });
+        await readJson(response);
+        setTopics(current => current.filter(topic => topic.id !== id));
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Topic could not be removed.');
     }
@@ -206,7 +234,7 @@ export default function YouTubeRecommendationsPage() {
       {notice && <div className="yt-notice" role="status">{notice}</div>}
       {loading && <div className="yt-loading" role="status">Loading recommendation settings…</div>}
 
-      {!loading && accountId && (
+      {!loading && (
         <>
           <section className="yt-recommendation-panel">
             <h2>Feed preset</h2>
