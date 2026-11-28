@@ -201,6 +201,7 @@ jobs:
           secret="$(openssl rand -hex 32)"
           echo "::add-mask::$secret"
           echo "YOUTUBE_JS_GATEWAY_SECRET=$secret" >> "$GITHUB_ENV"
+          echo "GATEWAY_SECRET=$secret" >> "$GITHUB_ENV"
 
       - name: Install gateway dependencies
         if: steps.cloudflare.outputs.ready == 'true'
