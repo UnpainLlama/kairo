@@ -3668,3 +3668,31 @@ img { display: block; }
 @media (max-width: 600px) {
   .yt-channel-suggestions-row { grid-auto-columns: 145px; gap: 9px; }
 }
+
+.yt-feed-mix {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px 15px;
+  margin: -6px 0 18px;
+  color: var(--yt-muted, #9ca3af);
+  font-size: .72rem;
+}
+.yt-feed-mix-title {
+  color: inherit;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.yt-feed-mix > span:not(.yt-feed-mix-title) {
+  white-space: nowrap;
+}
+.yt-feed-mix b {
+  color: var(--yt-text, #f5f5f5);
+  font-variant-numeric: tabular-nums;
+}
+.yt-feed-mix small {
+  margin-left: 3px;
+  color: var(--yt-muted, #858585);
+  font-size: .65rem;
+}
