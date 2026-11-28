@@ -184,7 +184,7 @@ export function registerYouTubeInnerTubeRoutes(app: any): void {
         if (upstreamCode === 'UPSTREAM_UNAVAILABLE') {
           return fail(c, 503, 'YOUTUBE_JS_PROVIDER_UNAVAILABLE', 'YouTube discovery is temporarily unavailable.');
         }
-        return fail(c, 503, 'YOUTUBE_JS_GATEWAY_HTTP_ERROR', 'The experimental discovery gateway returned an unexpected response.');
+        return fail(c, 503, 'YOUTUBE_JS_GATEWAY_HTTP_' + response.status, 'The experimental discovery gateway returned an unexpected response.');
       }
       if (!payload?.success) {
         return fail(c, 503, 'YOUTUBE_JS_GATEWAY_INVALID_RESPONSE', 'The experimental discovery gateway returned an invalid response.');
