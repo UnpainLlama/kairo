@@ -168,10 +168,24 @@ export function registerYouTubeInnerTubeRoutes(app: any): void {
         },
         signal: controller.signal,
       });
+      const payload = await response.json().catch(() => null) as {
+        success?: unknown;
+        data?: { videos?: unknown };
+        error?: { code?: unknown };
+      } | null;
+      const upstreamCode = typeof payload?.error?.code === 'string' ? payload.error.code : null;
       if (!response.ok) {
+        if (response.status === 401 || upstreamCode === 'UNAUTHORIZED') {
+          return fail(c, 502, 'YOUTUBE_JS_GATEWAY_AUTH_FAILED', 'Experimental YouTube discovery could not authenticate with its gateway.');
+        }
+        if (upstreamCode === 'GATEWAY_NOT_CONFIGURED') {
+          return fail(c, 503, 'YOUTUBE_JS_GATEWAY_NOT_CONFIGURED', 'Experimental YouTube discovery is not configured.');
+        }
+        if (upstreamCode === 'UPSTREAM_UNAVAILABLE') {
+          return fail(c, 503, 'YOUTUBE_JS_PROVIDER_UNAVAILABLE', 'YouTube discovery is temporarily unavailable.');
+        }
         return fail(c, 503, 'YOUTUBE_JS_UPSTREAM_UNAVAILABLE', 'Experimental YouTube discovery is temporarily unavailable.');
       }
-      const payload = await response.json().catch(() => null) as { success?: unknown; data?: { videos?: unknown } } | null;
       if (!payload?.success) {
         return fail(c, 503, 'YOUTUBE_JS_UPSTREAM_UNAVAILABLE', 'Experimental YouTube discovery is temporarily unavailable.');
       }
