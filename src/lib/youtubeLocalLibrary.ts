@@ -11,6 +11,9 @@ export type YouTubeLocalVideo = {
   durationSeconds: number | null;
   progressSeconds?: number;
   completed?: boolean;
+  viewCount?: number;
+  firstViewedAt?: number;
+  lastViewedAt?: number;
   updatedAt: number;
   savedAt?: number;
 };
@@ -28,7 +31,10 @@ function isLocalVideo(value: unknown): value is YouTubeLocalVideo {
     && typeof item.channelTitle === 'string'
     && (item.publishedAt === null || typeof item.publishedAt === 'string')
     && (item.durationSeconds === null || typeof item.durationSeconds === 'number')
-    && typeof item.updatedAt === 'number' && Number.isFinite(item.updatedAt);
+    && typeof item.updatedAt === 'number' && Number.isFinite(item.updatedAt)
+    && (item.viewCount === undefined || (typeof item.viewCount === 'number' && Number.isFinite(item.viewCount) && item.viewCount >= 0))
+    && (item.firstViewedAt === undefined || (typeof item.firstViewedAt === 'number' && Number.isFinite(item.firstViewedAt)))
+    && (item.lastViewedAt === undefined || (typeof item.lastViewedAt === 'number' && Number.isFinite(item.lastViewedAt)));
 }
 
 function readList(key: string): YouTubeLocalVideo[] {
@@ -58,6 +64,9 @@ export function recordGuestYouTubeView(video: Omit<YouTubeLocalVideo, 'updatedAt
     ...video,
     progressSeconds: previous?.progressSeconds ?? 0,
     completed: previous?.completed ?? false,
+    viewCount: (previous?.viewCount ?? 0) + 1,
+    firstViewedAt: previous?.firstViewedAt ?? now,
+    lastViewedAt: now,
     updatedAt: now,
   };
   writeList(HISTORY_KEY, [next, ...current.filter((item) => item.videoId !== video.videoId)]);
