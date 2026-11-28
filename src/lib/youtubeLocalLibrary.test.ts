@@ -94,7 +94,7 @@ describe('guest YouTube browser library', () => {
   it('caches guest recommendation candidates and a six-hour gather deadline', () => {
     const candidate = {
       video: {
-        videoId: 'candidate001',
+        videoId: 'candidate01',
         title: 'A related video',
         description: 'A related topic',
         thumbnailUrl: null,
