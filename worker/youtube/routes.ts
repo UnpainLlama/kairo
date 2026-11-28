@@ -244,7 +244,211 @@ async function parseJsonBody(c: YouTubeContext): Promise<unknown | null> {
   }
 }
 
+
+function youtubePublishedAfter(filter: string): string | null {
+  const days: Record<string, number> = { today: 1, week: 7, month: 30, year: 365 };
+  const value = days[filter];
+  return value ? new Date(Date.now() - value * 86400000).toISOString() : null;
+}
+
+function searchThumbnail(snippet: any): string | null {
+  const thumbs = snippet?.thumbnails ?? {};
+  return safeYouTubeThumbnailUrl(
+    thumbs.maxres?.url ?? thumbs.standard?.url ?? thumbs.high?.url ?? thumbs.medium?.url ?? thumbs.default?.url
+  );
+}
+
+async function youtubeApiVideoDetails(c: YouTubeContext, ids: string[]): Promise<Map<string, { duration: number | null; embeddable: boolean | null; madeForKids: boolean }>> {
+  const result = new Map<string, { duration: number | null; embeddable: boolean | null; madeForKids: boolean }>();
+  if (ids.length === 0) return result;
+  const apiKey = c.env.YOUTUBE_DATA_API_KEY?.trim();
+  if (!apiKey) throw new Error('YOUTUBE_API_KEY_MISSING');
+  if (!await bumpRateBucket(c, 'data-api-daily', DAILY_API_LIMIT, DAILY_WINDOW_MS, 1)) {
+    throw new Error('YOUTUBE_QUOTA_BUDGET_REACHED');
+  }
+  const url = new URL('https://www.googleapis.com/youtube/v3/videos');
+  url.search = new URLSearchParams({ part: 'contentDetails,status', id: ids.join(','), key: apiKey }).toString();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(url.toString(), { headers: { Accept: 'application/json' }, signal: controller.signal });
+    const payload = await response.json().catch(() => ({})) as any;
+    if (!response.ok) {
+      const reason = payload?.error?.errors?.[0]?.reason;
+      if (reason === 'quotaExceeded' || reason === 'dailyLimitExceeded') throw new Error('YOUTUBE_QUOTA_EXCEEDED');
+      if (reason === 'keyInvalid' || reason === 'accessNotConfigured' || reason === 'ipRefererBlocked') throw new Error('YOUTUBE_API_KEY_INVALID');
+      throw new Error('YOUTUBE_PROVIDER_UNAVAILABLE');
+    }
+    for (const item of Array.isArray(payload?.items) ? payload.items : []) {
+      if (typeof item?.id !== 'string') continue;
+      result.set(item.id, {
+        duration: parseYouTubeDuration(item.contentDetails?.duration),
+        embeddable: isYouTubeVideoEmbeddable(item.status),
+        madeForKids: isYouTubeVideoMarkedMadeForKids(item.status),
+      });
+    }
+    return result;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function youtubeApiSearchVideos(
+  c: YouTubeContext,
+  query: string,
+  options: { order: string; duration: string; uploadDate: string; eventType: string; pageToken: string | null }
+): Promise<{ videos: YouTubeVideoRecord[]; nextPageToken: string | null }> {
+  const apiKey = c.env.YOUTUBE_DATA_API_KEY?.trim();
+  if (!apiKey) throw new Error('YOUTUBE_API_KEY_MISSING');
+  if (!await bumpRateBucket(c, 'data-api-daily', DAILY_API_LIMIT, DAILY_WINDOW_MS, 100)) {
+    throw new Error('YOUTUBE_QUOTA_BUDGET_REACHED');
+  }
+  const url = new URL('https://www.googleapis.com/youtube/v3/search');
+  const params = new URLSearchParams({
+    part: 'snippet',
+    type: 'video',
+    q: query,
+    maxResults: '24',
+    order: options.order,
+    key: apiKey,
+  });
+  if (options.duration !== 'any') params.set('videoDuration', options.duration);
+  const publishedAfter = youtubePublishedAfter(options.uploadDate);
+  if (publishedAfter) params.set('publishedAfter', publishedAfter);
+  if (options.eventType === 'live') params.set('eventType', 'live');
+  if (options.pageToken) params.set('pageToken', options.pageToken);
+  url.search = params.toString();
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    const response = await fetch(url.toString(), { headers: { Accept: 'application/json' }, signal: controller.signal });
+    const payload = await response.json().catch(() => ({})) as any;
+    if (!response.ok) {
+      const reason = payload?.error?.errors?.[0]?.reason;
+      if (reason === 'quotaExceeded' || reason === 'dailyLimitExceeded') throw new Error('YOUTUBE_QUOTA_EXCEEDED');
+      if (reason === 'keyInvalid' || reason === 'accessNotConfigured' || reason === 'ipRefererBlocked') throw new Error('YOUTUBE_API_KEY_INVALID');
+      throw new Error('YOUTUBE_PROVIDER_UNAVAILABLE');
+    }
+
+    const items = (Array.isArray(payload?.items) ? payload.items : []).filter((item: any) =>
+      typeof item?.id?.videoId === 'string' && VIDEO_ID.test(item.id.videoId)
+    );
+    const ids = items.map((item: any) => item.id.videoId as string);
+    let details = new Map<string, { duration: number | null; embeddable: boolean | null; madeForKids: boolean }>();
+    try {
+      details = await youtubeApiVideoDetails(c, ids);
+    } catch {
+      // Search results remain usable when the optional duration/status lookup fails.
+    }
+
+    const videos: YouTubeVideoRecord[] = items.map((item: any) => {
+      const snippet = item.snippet ?? {};
+      const videoId = item.id.videoId as string;
+      const detail = details.get(videoId);
+      return {
+        videoId,
+        title: cleanText(snippet.title, 300, 'Untitled video'),
+        description: cleanText(snippet.description, 5000),
+        thumbnailUrl: searchThumbnail(snippet),
+        channelId: cleanText(snippet.channelId, 64),
+        channelTitle: cleanText(snippet.channelTitle, 180, 'YouTube'),
+        channelAvatarUrl: null,
+        publishedAt: typeof snippet.publishedAt === 'string' && !Number.isNaN(Date.parse(snippet.publishedAt))
+          ? new Date(snippet.publishedAt).toISOString()
+          : null,
+        durationSeconds: detail?.duration ?? null,
+        embeddable: detail?.embeddable ?? null,
+        madeForKids: detail?.madeForKids ?? false,
+        url: 'https://www.youtube.com/watch?v=' + videoId,
+      };
+    });
+    return {
+      videos,
+      nextPageToken: typeof payload?.nextPageToken === 'string' ? payload.nextPageToken.slice(0, 1024) : null,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function youtubeApiSearchChannels(c: YouTubeContext, query: string): Promise<Array<{
+  channelId: string; title: string; description: string; thumbnailUrl: string | null; url: string;
+}>> {
+  const apiKey = c.env.YOUTUBE_DATA_API_KEY?.trim();
+  if (!apiKey) throw new Error('YOUTUBE_API_KEY_MISSING');
+  if (!await bumpRateBucket(c, 'data-api-daily', DAILY_API_LIMIT, DAILY_WINDOW_MS, 100)) {
+    throw new Error('YOUTUBE_QUOTA_BUDGET_REACHED');
+  }
+  const url = new URL('https://www.googleapis.com/youtube/v3/search');
+  url.search = new URLSearchParams({ part: 'snippet', type: 'channel', q: query, maxResults: '24', key: apiKey }).toString();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    const response = await fetch(url.toString(), { headers: { Accept: 'application/json' }, signal: controller.signal });
+    const payload = await response.json().catch(() => ({})) as any;
+    if (!response.ok) {
+      const reason = payload?.error?.errors?.[0]?.reason;
+      if (reason === 'quotaExceeded' || reason === 'dailyLimitExceeded') throw new Error('YOUTUBE_QUOTA_EXCEEDED');
+      if (reason === 'keyInvalid' || reason === 'accessNotConfigured' || reason === 'ipRefererBlocked') throw new Error('YOUTUBE_API_KEY_INVALID');
+      throw new Error('YOUTUBE_PROVIDER_UNAVAILABLE');
+    }
+    return (Array.isArray(payload?.items) ? payload.items : []).flatMap((item: any) => {
+      const channelId = typeof item?.id?.channelId === 'string' ? item.id.channelId : '';
+      if (!CHANNEL_ID.test(channelId)) return [];
+      const snippet = item.snippet ?? {};
+      return [{
+        channelId,
+        title: cleanText(snippet.title, 180, 'YouTube channel'),
+        description: cleanText(snippet.description, 1000),
+        thumbnailUrl: searchThumbnail(snippet),
+        url: 'https://www.youtube.com/channel/' + channelId,
+      }];
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export function registerYouTubeMediaRoutes(app: any): void {
+  app.get('/api/v1/youtube/videos/search', async (c: YouTubeContext) => {
+    noStore(c);
+    const params = new URL(c.req.url).searchParams;
+    const query = cleanText(params.get('q'), 100);
+    if (query.length < 2) return fail(c, 400, 'VALIDATION_ERROR', 'Enter at least two characters to search YouTube.');
+    if (!await permitRequest(c, 'video-search', 'public', 30)) {
+      return fail(c, 429, 'RATE_LIMITED', 'Too many YouTube searches. Please try again shortly.');
+    }
+    const order = ['relevance', 'date', 'viewCount'].includes(params.get('order') ?? '') ? params.get('order')! : 'relevance';
+    const duration = ['short', 'medium', 'long'].includes(params.get('duration') ?? '') ? params.get('duration')! : 'any';
+    const uploadDate = ['today', 'week', 'month', 'year'].includes(params.get('uploadDate') ?? '') ? params.get('uploadDate')! : 'any';
+    const eventType = params.get('eventType') === 'live' ? 'live' : 'any';
+    const pageTokenRaw = params.get('pageToken');
+    const pageToken = pageTokenRaw && pageTokenRaw.length <= 1024 && /^[A-Za-z0-9._=-]+$/.test(pageTokenRaw) ? pageTokenRaw : null;
+    if (pageTokenRaw && !pageToken) return fail(c, 400, 'VALIDATION_ERROR', 'That YouTube search page is invalid.');
+    try {
+      const data = await youtubeApiSearchVideos(c, query, { order, duration, uploadDate, eventType, pageToken });
+      return c.json({ success: true, data });
+    } catch (error) {
+      return providerError(c, error);
+    }
+  });
+
+  app.get('/api/v1/youtube/channels/search', async (c: YouTubeContext) => {
+    noStore(c);
+    const query = cleanText(new URL(c.req.url).searchParams.get('q'), 100);
+    if (query.length < 2) return fail(c, 400, 'VALIDATION_ERROR', 'Enter at least two characters to search YouTube channels.');
+    if (!await permitRequest(c, 'channel-search', 'public', 20)) {
+      return fail(c, 429, 'RATE_LIMITED', 'Too many channel searches. Please try again shortly.');
+    }
+    try {
+      const channels = await youtubeApiSearchChannels(c, query);
+      return c.json({ success: true, data: { channels } });
+    } catch (error) {
+      return providerError(c, error);
+    }
+  });
+
   // Public metadata is fetched through the official Data API. No API key or media URL reaches the browser.
   app.get('/api/v1/youtube/videos/:videoId', async (c: YouTubeContext) => {
     const videoId = c.req.param('videoId');
