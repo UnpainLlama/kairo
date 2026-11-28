@@ -78,7 +78,7 @@ describe('guest YouTube browser library', () => {
       active: 'explorer',
       tuning: { freshness: 75 },
       topics: [{ id: 'topic-1', topic: 'animation', kind: 'interest', share: 12, expiresAt: null }],
-      feedback: { notInterestedVideoIds: ['abcdefghijk'] },
+      feedback: { notInterestedVideoIds: ['abcdefghijk'], blockedChannelIds: [], dismissedChannelIds: [] },
       impressions: { abcdefghijk: 3 },
     });
 
