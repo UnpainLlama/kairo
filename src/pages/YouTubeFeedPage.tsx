@@ -134,15 +134,12 @@ export default function YouTubeFeedPage() {
   const [history, setHistory] = useState<HistoryVideo[]>([]);
   const [videos, setVideos] = useState<DiscoveryVideo[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<FeedError | null>(null);
-  const [filter, setFilter] = useState<SearchFilter>('all');
   const [refreshKey, setRefreshKey] = useState(0);
 
   const load = useCallback(async (signal: AbortSignal) => {
     if (!resolved && !accountError) return;
     setLoading(true);
-    setRefreshing(refreshKey > 0);
     setError(null);
     setVideos([]);
 
@@ -181,10 +178,7 @@ export default function YouTubeFeedPage() {
         setError({ message: caught instanceof Error ? caught.message : 'Could not load your recommendations.' });
       }
     } finally {
-      if (!signal.aborted) {
-        setLoading(false);
-        setRefreshing(false);
-      }
+      if (!signal.aborted) setLoading(false);
     }
   }, [accountId, accountError, refreshKey, resolved]);
 
@@ -194,90 +188,19 @@ export default function YouTubeFeedPage() {
     return () => controller.abort();
   }, [load]);
 
-  const visibleVideos = useMemo(() => {
-    if (filter === 'shorts') return videos.filter(isShort);
-    if (filter === 'videos') return videos.filter(video => !isShort(video));
-    if (filter === 'recent') {
-      return [...videos].sort((a, b) => Date.parse(b.publishedAt ?? '') - Date.parse(a.publishedAt ?? ''));
-    }
-    return videos;
-  }, [filter, videos]);
-
-  const shorts = useMemo(() => videos.filter(isShort).slice(0, 8), [videos]);
-  const recentCreators = useMemo(() => {
-    const seen = new Set<string>();
-    return history.filter(item => {
-      if (!item.channelId || seen.has(item.channelId)) return false;
-      seen.add(item.channelId);
-      return true;
-    }).slice(0, 6);
-  }, [history]);
-
-  const filters: Array<{ id: SearchFilter; label: string }> = [
-    { id: 'all', label: 'All' },
-    { id: 'shorts', label: 'Shorts' },
-    { id: 'videos', label: 'Videos' },
-    { id: 'recent', label: 'Recently uploaded' },
-  ];
+  const shorts = useMemo(() => videos.filter(isShort).slice(0, 5), [videos]);
+  const regularVideos = useMemo(() => videos.filter(video => !isShort(video)), [videos]);
 
   return (
     <section className="yt-page yt-home-page yt-home-redesign">
-      <header className="yt-page-heading yt-home-heading">
-        <div className="yt-home-title-block">
-          <span className="yt-eyebrow">A MIX BUILT AROUND WHAT YOU WATCH</span>
-          <h1>For you</h1>
-          <p>
-            {history.length > 0
-              ? 'Discover videos and new creators inspired by your recent watches.'
-              : 'Watch a few videos and Kairo will start finding channels and topics with a similar feel.'}
-          </p>
-        </div>
-        <div className="yt-heading-actions">
-          <Link to="/youtube/search" className="yt-button yt-button-primary">Explore videos <ArrowUpRight size={15} /></Link>
-          <button className="yt-button yt-button-quiet" type="button" onClick={() => setRefreshKey(value => value + 1)} disabled={loading || refreshing}>
-            <RefreshCw size={15} className={refreshing ? 'yt-refresh-spin' : ''} /> Refresh
-          </button>
-        </div>
-      </header>
-
-      <nav className="yt-home-chips yt-home-filter-chips" aria-label="Filter recommendations">
-        {filters.map(item => (
-          <button
-            key={item.id}
-            type="button"
-            className={filter === item.id ? 'active' : ''}
-            aria-pressed={filter === item.id}
-            onClick={() => setFilter(item.id)}
-          >
-            {item.label}
-          </button>
-        ))}
-        <span className="yt-filter-divider" aria-hidden="true" />
-        <Link to="/youtube/search?q=music">Music</Link>
-        <Link to="/youtube/search?q=gaming">Gaming</Link>
-        <Link to="/youtube/search?q=podcasts">Podcasts</Link>
-        <Link to="/youtube/search?q=technology">Technology</Link>
-        <Link to="/youtube/search?q=science">Science</Link>
-      </nav>
-
-      {recentCreators.length > 0 && (
-        <section className="yt-visited-creators" aria-label="Recently watched creators">
-          <div className="yt-section-heading">
-            <div><h2>Creators you’ve visited</h2><p>Your recent watches help shape the mix</p></div>
-            <Link to="/youtube/channels">View all <ArrowUpRight size={14} /></Link>
+      {error && (
+        <div className="yt-notice" role="alert">
+          <div>
+            <b>{error.message}</b>
+            <p><button type="button" className="yt-inline-action" onClick={() => setRefreshKey(value => value + 1)}>Try again</button></p>
           </div>
-          <div className="yt-visited-creator-strip">
-            {recentCreators.map(creator => (
-              <a key={creator.channelId} href={'https://www.youtube.com/channel/' + encodeURIComponent(creator.channelId)} target="_blank" rel="noopener noreferrer" className="yt-visited-creator">
-                <span>{creator.channelTitle.trim().slice(0, 1).toUpperCase() || 'Y'}</span>
-                <small>{creator.channelTitle}</small>
-              </a>
-            ))}
-          </div>
-        </section>
+        </div>
       )}
-
-      {error && <div className="yt-notice" role="alert"><div><b>{error.message}</b><p><button type="button" className="yt-inline-action" onClick={() => setRefreshKey(value => value + 1)}>Try again</button></p></div></div>}
 
       {loading && (
         <div className="yt-video-grid yt-feed-grid yt-skeleton-grid" role="status" aria-label="Loading recommendations">
@@ -285,16 +208,22 @@ export default function YouTubeFeedPage() {
         </div>
       )}
 
-      {!loading && shorts.length > 0 && filter === 'all' && (
-        <section className="yt-shorts-section" aria-label="Shorts inspired by your watch history">
-          <div className="yt-section-heading">
-            <div><h2>Shorts</h2><p>Quick videos from topics you’ve watched</p></div>
-            <Link to="/youtube/search?q=shorts">Explore Shorts <ArrowUpRight size={14} /></Link>
+      {!loading && !error && history.length === 0 && (
+        <div className="yt-first-visit-empty">
+          <div className="yt-first-visit-panel">
+            <h2>Try searching to get started</h2>
+            <p>Start watching videos to help us build a feed of videos you'll love.</p>
           </div>
+        </div>
+      )}
+
+      {!loading && !error && history.length > 0 && shorts.length > 0 && (
+        <section className="yt-shorts-section" aria-label="Shorts">
+          <div className="yt-section-heading"><h2>Shorts</h2></div>
           <div className="yt-shorts-strip">
             {shorts.map(video => (
               <Link key={video.videoId} to={'/youtube/watch/' + video.videoId} className="yt-short-card" state={{ youtubeRelatedVideos: videos, youtubeCurrentVideo: video }}>
-                {video.thumbnailUrl ? <img src={video.thumbnailUrl} alt="" loading="lazy" /> : <span className="yt-short-placeholder"><Youtube size={24} /></span>}
+                {video.thumbnailUrl ? <img src={video.thumbnailUrl} alt="" loading="lazy" /> : <span className="yt-short-placeholder" />}
                 <span className="yt-short-copy"><b>{video.title}</b><small>{video.channelTitle}</small></span>
               </Link>
             ))}
@@ -302,45 +231,15 @@ export default function YouTubeFeedPage() {
         </section>
       )}
 
-      <section className="yt-feed-section yt-recommendations-section">
-        <div className="yt-section-heading yt-home-section-heading">
-          <div><h2>{filter === 'shorts' ? 'Shorts' : filter === 'videos' ? 'Videos for you' : filter === 'recent' ? 'Recently uploaded' : 'Picked for you'}</h2>
-            <p>{history.length > 0 ? 'A balanced mix from creators and subjects related to your watch history' : 'Popular picks to get your recommendations started'}</p>
-          </div>
-          <span>{visibleVideos.length.toLocaleString()} videos</span>
-        </div>
-
-        {!loading && !error && history.length === 0 && (
-          <div className="yt-first-visit-empty">
-            <div className="yt-first-visit-panel">
-              <span className="yt-first-visit-icon"><Sparkles size={22} /></span>
-              <h2>Try searching to get started</h2>
-              <p>Start watching videos to help Kairo build a feed of videos and creators you’ll love.</p>
-              <Link to="/youtube/search" className="yt-button yt-button-primary">Search videos <ArrowUpRight size={15} /></Link>
-            </div>
-          </div>
-        )}
-
-        {!loading && !error && history.length > 0 && visibleVideos.length === 0 && (
-          <div className="yt-empty">
-            <Youtube size={28} />
-            <h3>{filter === 'shorts' ? 'No labelled Shorts in this mix yet' : 'No recommendations to show'}</h3>
-            <p>{filter === 'shorts' ? 'Try All or explore Shorts from Search. Public YouTube data does not identify every Short reliably.' : 'Try a different topic or refresh your recommendations.'}</p>
-            <button type="button" className="yt-button yt-button-quiet" onClick={() => setFilter('all')}>Show all</button>
-          </div>
-        )}
-
-        {!loading && visibleVideos.length > 0 && (
+      {!loading && !error && regularVideos.length > 0 && (
+        <section className="yt-feed-section">
           <div className="yt-video-grid yt-feed-grid">
-            {visibleVideos.map(video => (
-              <article className="yt-recommendation-card" key={video.videoId}>
-                <span className="yt-recommendation-reason">{video.recommendationReason}</span>
-                <YouTubeVideoCard video={video} relatedVideos={videos} />
-              </article>
+            {regularVideos.map(video => (
+              <YouTubeVideoCard key={video.videoId} video={video} relatedVideos={videos} />
             ))}
           </div>
-        )}
-      </section>
+        </section>
+      )}
     </section>
   );
 }
