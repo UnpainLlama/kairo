@@ -2,7 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import YouTubeVideoCard, { type YouTubeCardVideo } from '../components/YouTubeVideoCard';
 import { useAccountScope } from '../hooks/useAccountScope';
-import { readGuestYouTubeHistory, type YouTubeLocalVideo } from '../lib/youtubeLocalLibrary';
+import {
+  readGuestRecommendationState,
+  readGuestYouTubeHistory,
+  saveGuestRecommendationState,
+  type YouTubeLocalVideo,
+} from '../lib/youtubeLocalLibrary';
 import {
   buildRecommendationFeed,
   DEFAULT_RECOMMENDATION_TUNING,
@@ -174,6 +179,24 @@ export default function YouTubeFeedPage() {
         }
       } else {
         recentHistory = await readWatchHistory(null);
+        const guestState = readGuestRecommendationState();
+        topics = guestState.topics.map(topic => ({
+          id: topic.id,
+          text: topic.topic,
+          kind: topic.kind,
+          share: topic.share,
+          expiresAt: topic.expiresAt,
+        }));
+        feedback = guestState.feedback;
+        impressions = guestState.impressions;
+        tuning = {
+          ...DEFAULT_RECOMMENDATION_TUNING,
+          ...(guestState.tuning as Partial<RecommendationTuning>),
+          shares: {
+            ...DEFAULT_RECOMMENDATION_TUNING.shares,
+            ...((guestState.tuning as Partial<RecommendationTuning>).shares ?? {}),
+          },
+        };
         const seeds = buildDiscoverySeeds(recentHistory);
         if (seeds.length > 0) {
           const settled = await Promise.allSettled(seeds.map(async (seed) => ({
@@ -205,13 +228,19 @@ export default function YouTubeFeedPage() {
         seed: refreshKey + 1,
         limit: 60,
       });
-      if (accountId && mixed.length > 0) {
-        void fetch('/api/v1/youtube/recommendations/impressions', {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-          body: JSON.stringify({ videoIds: mixed.map(video => video.videoId) }),
-        }).catch(() => undefined);
+      if (mixed.length > 0) {
+        if (accountId) {
+          void fetch('/api/v1/youtube/recommendations/impressions', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+            body: JSON.stringify({ videoIds: mixed.map(video => video.videoId) }),
+          }).catch(() => undefined);
+        } else {
+          const nextImpressions = { ...impressions };
+          for (const video of mixed) nextImpressions[video.videoId] = (nextImpressions[video.videoId] ?? 0) + 1;
+          saveGuestRecommendationState({ impressions: nextImpressions });
+        }
       }
       setVideos(mixed);
       if (mixed.length === 0 && recentHistory.length > 0) {
@@ -237,9 +266,9 @@ export default function YouTubeFeedPage() {
     action: 'not_interested' | 'dont_recommend_channel',
   ) => {
     try {
+      const targetId = action === 'not_interested' ? video.videoId : (video.channelId ?? '');
       if (accountId) {
         const targetType = action === 'not_interested' ? 'video' : 'channel';
-        const targetId = action === 'not_interested' ? video.videoId : (video.channelId ?? '');
         const response = await fetch('/api/v1/youtube/recommendations/feedback', {
           method: 'POST',
           credentials: 'same-origin',
@@ -250,6 +279,12 @@ export default function YouTubeFeedPage() {
         if (!response.ok || !payload?.success) {
           throw new Error(payload?.error?.message ?? 'Recommendation feedback could not be saved.');
         }
+      } else {
+        const current = readGuestRecommendationState();
+        const field = action === 'not_interested' ? 'notInterestedVideoIds' : 'blockedChannelIds';
+        const values = new Set(current.feedback[field]);
+        values.add(targetId);
+        saveGuestRecommendationState({ feedback: { ...current.feedback, [field]: [...values] } });
       }
       setVideos(current => current.filter(item =>
         action === 'not_interested'
